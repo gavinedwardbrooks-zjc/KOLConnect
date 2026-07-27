@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "KOL Connect 插件",
+  "description": "在 TikTok、Instagram、YouTube 主页手动采集账号信息并发送到本地 KOL联系助手。",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "KOL Connect 插件",
+    "default_popup": "popup.html"
+  },
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": [
+    "http://127.0.0.1:8765/*",
+    "http://localhost:8765/*",
+    "*://*.tiktok.com/*",
+    "*://*.instagram.com/*",
+    "*://*.youtube.com/*"
+  ]
+}

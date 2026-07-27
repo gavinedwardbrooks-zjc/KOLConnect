@@ -1,0 +1,426 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KOL联系助手</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-title" data-i18n="appTitle">KOL联系助手</div>
+        <div class="brand-subtitle" data-i18n="appSubtitle">海外达人管理与合作工具</div>
+      </div>
+      <nav class="top-nav">
+        <button class="nav-btn active" data-page="dashboard" data-i18n="navDashboard">控制台</button>
+        <button class="nav-btn" data-page="scrape" data-i18n="navScrape">邮箱抓取</button>
+        <button class="nav-btn" data-page="review" data-i18n="navReview">审核结果</button>
+        <button class="nav-btn" data-page="discover" data-i18n="navDiscover">链接清洗</button>
+        <button class="nav-btn" data-page="accounts" data-i18n="navAccounts">账号管理</button>
+        <button class="nav-btn" data-page="mail" data-i18n="navMail">邮件发送</button>
+        <button class="nav-btn" data-page="settings" data-i18n="navSettings">设置</button>
+        <button class="nav-btn" data-page="logs" data-i18n="navLogs">日志</button>
+      </nav>
+    </header>
+
+    <main class="workspace">
+      <section class="page active" data-page="dashboard">
+        <div class="page-header">
+          <h1 data-i18n="dashboardTitle">控制台</h1>
+          <p data-i18n="dashboardSubtitle">先看当前配置和运行状态。</p>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="statProfile">当前 Profile</span>
+            <strong id="dashboard-profile">--</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="statTable">当前飞书表</span>
+            <strong id="dashboard-table">--</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="statStatus">运行状态</span>
+            <strong id="dashboard-status">空闲</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label" data-i18n="statResults">结果文件</span>
+            <strong>results.csv</strong>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="quickActions">快捷操作</div>
+
+          <div class="action-row">
+            <button class="primary-btn" id="dash-go-scrape" data-i18n="goScrape">去抓取页</button>
+            <button class="soft-btn" id="dash-open-results" data-i18n="openResults">打开结果文件</button>
+            <button class="soft-btn" id="dash-go-settings" data-i18n="goSettings">去设置</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="logPreview">日志预览</div>
+          <pre class="log-panel" id="dashboard-log-preview">等待运行...</pre>
+        </div>
+      </section>
+
+      <section class="page" data-page="scrape">
+        <div class="page-header">
+          <h1 data-i18n="scrapeTitle">邮箱抓取</h1>
+          <p data-i18n="scrapeSubtitle">抓主页邮箱、外链邮箱和最近发布日期。</p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="scrapeTask">抓取任务</div>
+          <label class="field">
+            <span data-i18n="taskName">任务名称</span>
+            <input id="task-name" type="text" data-i18n-placeholder="taskNamePlaceholder" placeholder="留空则自动命名">
+          </label>
+          <div class="form-grid three">
+            <label class="field task-links-field">
+              <span data-i18n="taskLinks">达人链接</span>
+              <textarea id="task-links" rows="6" data-i18n-placeholder="taskLinksPlaceholder" placeholder="一行一个链接"></textarea>
+            </label>
+            <label class="field">
+              <span data-i18n="runProfile">运行 Profile</span>
+              <select id="profile-select"></select>
+            </label>
+            <label class="field">
+              <span data-i18n="targetPlatform">目标平台</span>
+              <select id="task-target-platform">
+                <option value="全部" data-i18n="platformAll">全部</option>
+                <option value="TikTok">TikTok</option>
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+              </select>
+            </label>
+          </div>
+          <input id="links-file" type="hidden" value="links.txt">
+          <div class="task-current" id="task-current">尚未创建任务</div>
+          <div class="hint" id="scrape-control-status">当前状态：空闲</div>
+
+          <p class="hint">抓取完成后，请在“审核结果”页核对数据，再同步当前任务到四表。</p>
+
+          <div class="action-row">
+            <button class="soft-btn" id="task-create" data-i18n="createTask">创建任务</button>
+            <button class="primary-btn" id="scrape-start" data-i18n="startTask">开始任务</button>
+            <button class="soft-btn" id="scrape-pause" data-i18n="pauseTask" hidden>暂停任务</button>
+            <button class="danger-btn" id="scrape-stop" data-i18n="stopScrape" hidden>停止任务</button>
+            <button class="soft-btn" id="scrape-open-results" data-i18n="openResults">打开结果文件</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title">人工录入任务</div>
+          <p class="hint">主动发现的达人先进入审核流程；主页链接会用于生成账号唯一ID。</p>
+          <div class="form-grid two">
+            <label class="field">
+              <span>任务名称</span>
+              <input id="manual-task-name" type="text" placeholder="留空则自动命名">
+            </label>
+            <label class="field">
+              <span>达人名称</span>
+              <input id="manual-creator-name" type="text" placeholder="可先留空，审核后再补充">
+            </label>
+            <label class="field">
+              <span>平台</span>
+              <select id="manual-platform">
+                <option value="TikTok">TikTok</option>
+                <option value="Instagram">Instagram</option>
+                <option value="YouTube">YouTube</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>主页链接</span>
+              <input id="manual-profile-url" type="url" placeholder="必须填写标准主页或可清洗的主页链接">
+            </label>
+            <label class="field">
+              <span>邮箱</span>
+              <input id="manual-email" type="text" placeholder="可选">
+            </label>
+            <label class="field">
+              <span>粉丝数</span>
+              <input id="manual-follower-count" type="text" placeholder="可选，如 10K、1.2M 或 100000">
+            </label>
+            <label class="field">
+              <span>WhatsApp</span>
+              <input id="manual-whatsapp" type="text" placeholder="可选">
+            </label>
+            <label class="field" id="manual-source-contact-field" hidden>
+              <span>来源联系人</span>
+              <select id="manual-source-contact">
+                <option value="">不选择来源联系人</option>
+              </select>
+            </label>
+          </div>
+          <label class="field">
+            <span>备注</span>
+            <textarea id="manual-note" rows="3" placeholder="可选"></textarea>
+          </label>
+          <div class="action-row manual-task-actions">
+            <button class="primary-btn" id="manual-task-create">创建人工任务</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="task-manager-head">
+            <div>
+              <div class="section-title" data-i18n="taskManagerTitle">任务管理</div>
+              <p class="hint" data-i18n="taskManagerHint">选择一个任务后再开始抓取，进度每2秒刷新。</p>
+            </div>
+            <button class="soft-btn" id="task-list-refresh" data-i18n="taskRefresh">刷新任务</button>
+          </div>
+          <div class="task-list" id="task-list"></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="runtimeLog">运行日志</div>
+          <pre class="log-panel" id="scrape-log">等待运行...</pre>
+        </div>
+      </section>
+
+      <section class="page" data-page="review">
+        <div class="page-header">
+          <h1 data-i18n="reviewTitle">审核结果</h1>
+          <p data-i18n="reviewSubtitle">查看任务抓取结果，补充人工确认的数据后单条保存。</p>
+        </div>
+
+        <div class="section-card">
+          <div class="review-toolbar">
+            <label class="field review-task-field">
+              <span data-i18n="reviewTask">任务</span>
+              <select id="review-task-select"></select>
+            </label>
+            <label class="field review-search-field">
+              <span data-i18n="reviewSearch">搜索平台、达人名称或邮箱</span>
+              <input id="review-search" type="search" data-i18n-placeholder="reviewSearch" placeholder="搜索平台、达人名称或邮箱">
+            </label>
+            <label class="field review-page-size-field">
+              <span data-i18n="reviewPageSize">每页条数</span>
+              <select id="review-page-size">
+                <option value="20">20</option>
+                <option value="50">50</option>
+              </select>
+            </label>
+            <div class="review-toolbar-actions">
+              <button class="soft-btn" id="review-refresh" data-i18n="reviewRefresh">刷新任务</button>
+              <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描四表缺失邮箱</button>
+              <button class="primary-btn" id="review-sync-four-tables" data-i18n="reviewSyncFourTables">同步当前任务到四表</button>
+            </div>
+          </div>
+          <p class="hint" id="review-summary">请选择一个已有任务。</p>
+          <p class="hint" id="review-sync-summary"></p>
+        </div>
+
+        <div class="section-card review-table-card">
+          <div class="review-table-wrap">
+            <table class="review-table">
+              <thead>
+                <tr>
+                  <th data-i18n="reviewPlatform">平台</th>
+                  <th data-i18n="reviewLink">达人链接</th>
+                  <th data-i18n="reviewAccountUid">账号唯一ID</th>
+                  <th data-i18n="reviewLatestDate">最近发布日期</th>
+                  <th data-i18n="reviewScrapeStatus">抓取状态</th>
+                  <th data-i18n="reviewName">达人名称</th>
+                  <th data-i18n="reviewEmail">邮箱</th>
+                  <th data-i18n="reviewFollowerCount">粉丝数</th>
+                  <th>WhatsApp</th>
+                  <th data-i18n="reviewNote">备注</th>
+                  <th data-i18n="reviewDataStatus">数据状态</th>
+                  <th data-i18n="reviewAction">操作</th>
+                </tr>
+              </thead>
+              <tbody id="review-results-body"></tbody>
+            </table>
+          </div>
+          <div class="review-empty" id="review-empty">请选择任务后查看结果。</div>
+          <div class="review-pagination" id="review-pagination"></div>
+        </div>
+      </section>
+
+      <section class="page" data-page="discover">
+        <div class="page-header">
+          <h1 data-i18n="discoverTitle">链接清洗</h1>
+          <p data-i18n="discoverSubtitle">将原始达人链接整理为标准主页链接。</p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="discoverRawTitle">原始链接</div>
+          <label class="field">
+            <span data-i18n="discoverInputLabel">一行一个链接</span>
+            <textarea id="discover-input" rows="10" placeholder="https://www.tiktok.com/@example"></textarea>
+          </label>
+          <div class="action-row">
+            <button class="primary-btn" id="discover-clean" data-i18n="cleanLinks">清洗链接</button>
+            <button class="soft-btn" id="discover-clear" data-i18n="discoverClear">清空</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="discover-results-grid">
+            <div class="discover-result-card">
+              <div class="section-title" data-i18n="discoverOutputTitle">标准主页链接</div>
+              <textarea id="discover-output" rows="10" readonly></textarea>
+              <div class="action-row">
+                <button class="soft-btn" id="discover-copy-links" data-i18n="discoverCopyLinks">复制标准主页链接</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="discoverInvalidTitle">异常链接</div>
+          <textarea id="discover-invalid-output" rows="8" readonly></textarea>
+          <div class="action-row">
+            <button class="soft-btn" id="discover-copy-invalid" data-i18n="discoverCopyInvalid">复制异常链接</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="accounts">
+        <div class="page-header">
+          <h1 data-i18n="accountsTitle">账号管理</h1>
+          <p data-i18n="accountsSubtitle">管理用于抓取的平台账号备注和用途。</p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="profilesTitle">Profile 列表</div>
+          <div class="action-row">
+            <button class="soft-btn" id="accounts-refresh" data-i18n="refreshProfiles">刷新 Profiles</button>
+            <button class="primary-btn" id="accounts-save" data-i18n="saveAccounts">保存账号配置</button>
+          </div>
+          <div id="accounts-list" class="stack-list"></div>
+        </div>
+      </section>
+
+      <section class="page" data-page="mail">
+        <div class="page-header">
+          <h1 data-i18n="mailTitle">邮箱账户</h1>
+          <p data-i18n="mailSubtitle">集中管理多个发件邮箱账户，并保留邮件模板。</p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="mailAccountsTitle">邮箱账户</div>
+          <p class="hint" data-i18n="mailAccountsHint">可配置多个邮箱账号，测试连接时只验证 IMAP/SMTP 登录，不发送真实邮件。</p>
+          <div class="action-row">
+            <button class="soft-btn" id="mail-add-account" data-i18n="mailAddAccount">新增邮箱账户</button>
+          </div>
+          <div id="mail-accounts-list" class="mail-accounts"></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="mailInboxSyncTitle">收件箱同步</div>
+          <p class="hint" data-i18n="mailInboxSyncHint">仅手动同步启用邮箱的 INBOX，默认每个账户最近 20 封，不下载附件。</p>
+          <div class="action-row">
+            <button class="primary-btn" id="mail-inbox-sync" data-i18n="mailInboxSyncButton">同步收件箱</button>
+            <button class="soft-btn" id="mail-sync-crm-replies" data-i18n="mailSyncCrmReplies">同步回复状态到达人表</button>
+          </div>
+          <div class="mail-inbox-summary" id="mail-inbox-summary">
+            <div class="stat-card">
+              <span class="stat-label" data-i18n="mailInboxSummaryAccounts">已检查账户</span>
+              <strong id="mail-summary-accounts">0</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label" data-i18n="mailInboxSummaryFetched">本次读取邮件</span>
+              <strong id="mail-summary-fetched">0</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label" data-i18n="mailInboxSummaryNew">新增邮件</span>
+              <strong id="mail-summary-new">0</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label" data-i18n="mailInboxSummaryUnread">未读邮件</span>
+              <strong id="mail-summary-unread">0</strong>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label" data-i18n="mailInboxSummaryMatched">已匹配达人回复</span>
+              <strong id="mail-summary-matched">0</strong>
+            </div>
+          </div>
+          <p class="hint" id="mail-inbox-updated-at">--</p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="mailInboxMessagesTitle">最近邮件</div>
+          <label class="checkbox-line">
+            <input id="mail-matched-only" type="checkbox">
+            <span data-i18n="mailMatchedOnly">仅看达人回复</span>
+          </label>
+          <div id="mail-inbox-messages" class="mail-message-list"></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="mailTemplateTitle">邮件模板</div>
+          <label class="field"><span data-i18n="mailSubject">邮件标题</span><input id="mail-template-subject" type="text"></label>
+          <label class="field"><span data-i18n="mailBody">邮件正文</span><textarea id="mail-template-body" rows="10"></textarea></label>
+          <div class="action-row">
+            <button class="primary-btn" id="mail-save" data-i18n="saveMail">保存邮箱设置</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="settings">
+        <div class="page-header">
+          <h1 data-i18n="settingsTitle">设置</h1>
+          <p data-i18n="settingsSubtitle">管理界面语言、默认 Profile 和飞书配置。</p>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="uiSettingsTitle">界面设置</div>
+          <div class="form-grid two">
+            <label class="field">
+              <span data-i18n="uiLanguage">界面语言</span>
+              <select id="ui-language">
+                <option value="zh">中文</option>
+                <option value="en">English</option>
+              </select>
+            </label>
+            <label class="field">
+              <span data-i18n="defaultProfile">默认 Profile</span>
+              <select id="default-profile"></select>
+            </label>
+          </div>
+          <div class="action-row">
+            <button class="primary-btn" id="save-ui-settings" data-i18n="saveUi">保存界面设置</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title" data-i18n="feishuSettingsTitle">飞书配置（同一个 App）</div>
+          <div class="form-grid two">
+            <label class="field"><span>App ID</span><input id="feishu-app-id" type="text"></label>
+            <label class="field"><span>App Secret</span><input id="feishu-app-secret" type="password" placeholder="留空表示不修改"></label>
+          </div>
+          <div class="form-grid two">
+            <label class="field"><span>App Token</span><input id="feishu-app-token" type="text"></label>
+            <label class="field"><span>达人 Table ID</span><input id="feishu-creator-table-id" type="text"></label>
+            <label class="field"><span>达人账号 Table ID</span><input id="feishu-account-table-id" type="text"></label>
+            <label class="field"><span>Agency联系人 Table ID</span><input id="feishu-contact-table-id" type="text"></label>
+          </div>
+          <p class="hint">抓取结果仅同步到达人表和达人账号表；当前任务可在“审核结果”页手动同步。</p>
+          <div class="action-row">
+            <button class="primary-btn" id="feishu-save" data-i18n="saveFeishu">保存飞书配置</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="logs">
+        <div class="page-header">
+          <h1 data-i18n="logsTitle">日志</h1>
+          <p data-i18n="logsSubtitle">查看完整运行日志。</p>
+        </div>
+        <div class="section-card">
+          <div class="section-title" data-i18n="runtimeLog">运行日志</div>
+          <pre class="log-panel" id="logs-panel">等待运行...</pre>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

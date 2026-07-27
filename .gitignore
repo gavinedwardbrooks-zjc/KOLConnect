@@ -1,0 +1,36 @@
+# Python bytecode and interpreter caches
+__pycache__/
+*.py[cod]
+
+# PyInstaller build outputs
+packaging/.pyinstaller-build/
+packaging/.pyinstaller-dist/
+/build/
+/dist/
+.pytest_cache/
+*.exe
+
+# Local runtime data and private configuration
+tasks/
+app_state.json
+mail_messages.json
+data_protection.json
+settings.json
+window_state.json
+*.log
+*.bak
+*.tmp
+*.csv
+ChromeProfile/
+
+# Local credentials and environment overrides
+.env
+.env.*
+!.env.example
+
+# Browser and driver caches
+.wdm/
+release/resources/
+
+# Historical private backup data must not enter source control
+archive/private-data-backup/
