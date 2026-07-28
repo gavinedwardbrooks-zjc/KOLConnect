@@ -7,6 +7,8 @@ KOLConnect 是一个面向海外营销团队的达人关系管理工具，帮助
 
 它不是 AI Agent，也不定位为单纯的爬虫工具。数据采集只是工作流的一部分；系统的核心目标是让达人、社交账号、联系人、Agency 与合作信息保持清晰、可审核、可持续维护。
 
+**Current Version:** v0.1.1
+
 **建议 GitHub Topics：** `influencer-marketing` `creator-economy` `kol-management` `crm` `marketing-automation`
 
 ## 功能概览
@@ -19,6 +21,31 @@ KOLConnect 是一个面向海外营销团队的达人关系管理工具，帮助
 - **Chrome 插件**：在达人主页上手动采集基础资料并创建人工录入任务。
 - **任务管理**：支持平台筛选、独立任务进度、暂停、继续、优雅停止和异常中断提示。
 - **邮件管理**：同步工作邮箱的近期邮件，按账号邮箱关联达人，并手动同步允许更新的联系状态。
+
+## v0.1.1 Update
+
+### Task Management Improvements
+
+- Added task pause and resume support
+- Added interrupted task recovery
+- Added task detail view
+- Added link management inside tasks
+
+### Scraping Improvements
+
+- Added multi-platform selection:
+  - TikTok
+  - Instagram
+  - YouTube
+- Improved Instagram scraping stability
+- Added scraping status classification
+- Added retry mechanism without creating duplicate tasks
+
+### Data Quality Improvements
+
+- Added validation before Feishu synchronization
+- Added missing data detection
+- Improved abnormal record handling
 
 ## 工作流程
 
@@ -182,4 +209,3 @@ KOLConnect/
 ## License
 
 本项目采用 [MIT License](LICENSE)。
-

@@ -592,6 +592,12 @@ button {
   gap: 12px;
 }
 
+.task-instagram-warning {
+  margin-top: 10px;
+  color: #9a5410;
+  font-size: 0.9rem;
+}
+
 .task-card-head {
   margin-bottom: 8px;
 }
@@ -717,6 +723,19 @@ button {
 .review-pagination button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
+}
+
+.review-pagination button.active {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.review-page-jump {
+  width: 64px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 @media (max-width: 960px) {

@@ -50,7 +50,7 @@ RUN_LOG_FILE = LOGS_DIR / "kolconnect.log"
 HOST = "127.0.0.1"
 PORT = 8765
 SENSITIVE_MASK = "********"
-TASK_HEARTBEAT_SECONDS = 60
+TASK_HEARTBEAT_SECONDS = 240
 TASK_INTERRUPTION_TIMEOUT_SECONDS = 15 * 60
 
 REVIEW_FIELD_WHATSAPP = "WhatsApp"
@@ -73,6 +73,10 @@ REVIEW_EDITABLE_FIELDS = {
 REVIEW_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 REVIEW_WHATSAPP_PATTERN = re.compile(r"^[0-9+()\- ]+$")
 TASK_PLATFORM_OPTIONS = {"全部", "TikTok", "Instagram", "YouTube"}
+PLATFORM_LABELS = {"tiktok": "TikTok", "instagram": "Instagram", "youtube": "YouTube"}
+RETRYABLE_SCRAPE_STATUSES = {"missing_data", "failed", "login_required", "platform_error"}
+BLOCKING_SCRAPE_STATUSES = {"missing_data", "failed", "login_required", "platform_error"}
+INSTAGRAM_ERROR_STATUSES = {"failed", "login_required", "platform_error"}
 AGENCY_CONTACT_FIELD_NAME = "联系人姓名"
 AGENCY_CONTACT_FIELD_WHATSAPP = "WhatsApp"
 AGENCY_CONTACT_FIELD_AGENCY = "所属 Agency"
@@ -538,21 +542,29 @@ def _task_timestamp_is_stale(value: object) -> bool:
 
 
 def detect_interrupted_tasks() -> int:
-    """Mark stale running tasks left behind by a closed or crashed application."""
+    """Mark running tasks with no live worker or a stale heartbeat as interrupted."""
     interrupted = 0
-    reason = "任务心跳超时，可能由于程序关闭、电脑异常退出或进程异常结束"
     for task in task_manager.list_tasks(TASKS_DIR):
         if str(task.get("status") or "") != "running":
             continue
         heartbeat = task.get("heartbeat_time") or task.get("started_at")
-        if not _task_timestamp_is_stale(heartbeat):
+        task_id = str(task["id"])
+        active_worker = SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id and SCRAPE_JOB.process is not None
+        if active_worker:
             continue
+        reason = (
+            "任务心跳超时，可能由于程序关闭、电脑异常退出或进程异常结束"
+            if _task_timestamp_is_stale(heartbeat)
+            else "任务执行进程不存在，可能由于程序关闭、Chrome 关闭或进程异常结束"
+        )
         task_manager.update_task(
             TASKS_DIR,
-            str(task["id"]),
+            task_id,
             status="interrupted",
             pause_requested=False,
             stop_requested=False,
+            browser_status="closed",
+            worker_status="stopped",
             interrupted_time=_utc_now(),
             interrupted_reason=reason,
         )
@@ -572,6 +584,26 @@ def _task_next_pending_item(task_paths: dict[str, Path]) -> str:
     return next((url for url in links if url not in completed), "")
 
 
+def _instagram_error_count(progress_file: Path) -> int:
+    """Return the current consecutive Instagram acquisition failures from task-local progress."""
+    if not progress_file.exists():
+        return 0
+    consecutive = 0
+    try:
+        with progress_file.open(encoding="utf-8-sig", newline="", errors="ignore") as handle:
+            for row in csv.DictReader(handle):
+                if str(row.get(scraper_module.FIELD_PLATFORM) or "").strip() != "Instagram":
+                    continue
+                status = str(row.get(scraper_module.FIELD_SCRAPE_STATUS) or "success").strip()
+                if status in INSTAGRAM_ERROR_STATUSES:
+                    consecutive += 1
+                else:
+                    consecutive = 0
+    except OSError:
+        return 0
+    return consecutive
+
+
 def _monitor_scrape_task(task_id: str, task_paths: dict[str, Path], stop_event: threading.Event) -> None:
     """Update task liveness and progress without touching scraper output files."""
     last_completed = len(scraper_module.load_progress(str(task_paths["progress"])))
@@ -586,7 +618,16 @@ def _monitor_scrape_task(task_id: str, task_paths: dict[str, Path], stop_event: 
             if completed > last_completed:
                 changes["last_progress_time"] = _utc_now()
                 changes["current_item"] = _task_next_pending_item(task_paths)
+                changes["completed_count"] = completed
+                changes["last_successful_index"] = completed
                 last_completed = completed
+            instagram_errors = _instagram_error_count(task_paths["progress"])
+            if instagram_errors >= 5:
+                changes.update(
+                    instagram_error_count=instagram_errors,
+                    instagram_status="login_required",
+                    instagram_message="Instagram登录状态异常，请重新登录后继续。",
+                )
             if str(task.get("status") or "") in {"running", "stopping"} and time.monotonic() - last_heartbeat >= TASK_HEARTBEAT_SECONDS:
                 changes["heartbeat_time"] = _utc_now()
                 last_heartbeat = time.monotonic()
@@ -653,6 +694,7 @@ def start_scrape(payload: dict) -> dict:
 
     STATE["profiles"]["selected"] = profile
     save_state(STATE)
+    completed_before_start = len(scraper_module.load_progress(str(task_paths["progress"])))
     task_manager.update_task(
         TASKS_DIR,
         task_id,
@@ -668,10 +710,18 @@ def start_scrape(payload: dict) -> dict:
         pause_requested=False,
         stop_requested=False,
         heartbeat_time=_utc_now(),
-        last_progress_time="",
+        heartbeat_interval=TASK_HEARTBEAT_SECONDS,
+        last_progress_time=str(_task.get("last_progress_time") or ""),
         current_item=_task_next_pending_item(task_paths),
+        completed_count=completed_before_start,
+        last_successful_index=completed_before_start,
+        browser_status="starting",
+        worker_status="starting",
         interrupted_time="",
         interrupted_reason="",
+        instagram_error_count=0,
+        instagram_status="",
+        instagram_message="",
     )
 
     SCRAPE_JOB.logs = startup_logs
@@ -697,6 +747,13 @@ def start_scrape(payload: dict) -> dict:
                 encoding="utf-8",
                 errors="replace",
             )
+            task_manager.update_task(
+                TASKS_DIR,
+                task_id,
+                status="running",
+                browser_status="running",
+                worker_status="running",
+            )
             monitor_thread = threading.Thread(
                 target=_monitor_scrape_task,
                 args=(task_id, task_paths, monitor_stop_event),
@@ -716,10 +773,42 @@ def start_scrape(payload: dict) -> dict:
                 monitor_thread.join(timeout=3)
             try:
                 completed_count = len(scraper_module.load_progress(str(task_paths["progress"])))
+                instagram_errors = _instagram_error_count(task_paths["progress"])
                 sync_summary: dict = {}
                 sync_errors: list[str] = []
                 final_task, _ = task_manager.load_task(TASKS_DIR, task_id)
                 stop_requested = bool(final_task.get("stop_requested")) or SCRAPE_JOB.stop_requested
+                retry_urls = [
+                    str(url or "").strip()
+                    for url in final_task.get("retry_requested_urls", [])
+                    if str(url or "").strip()
+                ]
+                retry_history = list(final_task.get("retry_history") or [])
+                retry_changes: dict[str, object] = {}
+                if retry_urls:
+                    latest_rows = scraper_module.load_progress(str(task_paths["progress"]))
+                    retry_success = sum(
+                        1
+                        for url in retry_urls
+                        if str(latest_rows.get(url, {}).get("scrape_status") or "") == "success"
+                    )
+                    remaining_retry_urls = [
+                        url for url in retry_urls
+                        if str(latest_rows.get(url, {}).get("scrape_status") or "") != "success"
+                    ]
+                    retry_history.append(
+                        {
+                            "time": _utc_now(),
+                            "count": len(retry_urls),
+                            "success": retry_success,
+                            "failed": len(remaining_retry_urls),
+                            "round": int(final_task.get("retry_round") or 0),
+                        }
+                    )
+                    retry_changes = {
+                        "retry_history": retry_history,
+                        "retry_requested_urls": remaining_retry_urls,
+                    }
                 if stop_requested:
                     status = "stopped"
                     sync_status = "not_started"
@@ -744,7 +833,14 @@ def start_scrape(payload: dict) -> dict:
                     stop_requested=False,
                     heartbeat_time=_utc_now(),
                     current_item="",
+                    last_successful_index=completed_count,
+                    browser_status="closed",
+                    worker_status="stopped",
+                    instagram_error_count=instagram_errors,
+                    instagram_status="login_required" if instagram_errors >= 5 else "",
+                    instagram_message="Instagram登录状态异常，请重新登录后继续。" if instagram_errors >= 5 else "",
                     has_system_supplement=True if _task.get("task_type") == "manual" and return_code == 0 else _task.get("has_system_supplement", False),
+                    **retry_changes,
                 )
                 SCRAPE_JOB.pause_requested = False
                 SCRAPE_JOB.stop_requested = False
@@ -770,7 +866,14 @@ def pause_scrape() -> dict:
         raise RuntimeError("任务正在停止，不能暂停。")
     if not SCRAPE_JOB.pause_requested:
         SCRAPE_JOB.pause_requested = True
-        task_manager.update_task(TASKS_DIR, task_id, status="paused", pause_requested=True)
+        task_manager.update_task(
+            TASKS_DIR,
+            task_id,
+            status="paused",
+            pause_requested=True,
+            browser_status="open",
+            worker_status="sleep",
+        )
         SCRAPE_JOB.append("任务已暂停，等待继续。\n")
     return {"task_id": task_id, "status": "paused"}
 
@@ -781,7 +884,14 @@ def resume_scrape() -> dict:
         raise RuntimeError("任务正在停止，不能继续。")
     if SCRAPE_JOB.pause_requested:
         SCRAPE_JOB.pause_requested = False
-        task_manager.update_task(TASKS_DIR, task_id, status="running", pause_requested=False)
+        task_manager.update_task(
+            TASKS_DIR,
+            task_id,
+            status="running",
+            pause_requested=False,
+            browser_status="running",
+            worker_status="running",
+        )
         SCRAPE_JOB.append("任务恢复运行。\n")
     return {"task_id": task_id, "status": "running"}
 
@@ -797,9 +907,48 @@ def request_stop_scrape() -> dict:
             status="stopping",
             pause_requested=False,
             stop_requested=True,
+            worker_status="stopping",
         )
         SCRAPE_JOB.append("收到停止请求，正在保存当前进度。\n")
     return {"task_id": task_id, "status": "stopping"}
+
+
+def resume_task(task_id: str) -> dict:
+    """Resume an in-memory pause or relaunch a persisted paused/interrupted task."""
+    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
+    if SCRAPE_JOB.running:
+        if SCRAPE_JOB.task_id != task_id:
+            raise RuntimeError("已有任务正在运行。")
+        return resume_scrape()
+    if str(task.get("status") or "") not in {"paused", "interrupted", "stopped", "created", "failed"}:
+        raise RuntimeError("当前任务不需要恢复。")
+    profile = str(task.get("profile") or "")
+    user_data_dir, profile_directory = resolve_chrome_launch_config(profile)
+    if profile and profile != AUTOMATION_PROFILE_NAME and not (user_data_dir / profile_directory).is_dir():
+        raise RuntimeError("无法恢复任务：原 Chrome Profile 不存在，请在账号管理中选择有效 Profile 后重新开始任务。")
+    SCRAPE_JOB.append("恢复任务：将重新启动 Chrome 和抓取进程，并从已保存进度继续。\n")
+    return start_scrape({"taskId": task_id, "profile": profile})
+
+
+def stop_task(task_id: str) -> dict:
+    """Stop active work gracefully; persist stopped state when no worker remains."""
+    if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
+        return request_stop_scrape()
+    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
+    if str(task.get("status") or "") not in {"paused", "interrupted", "running", "stopping"}:
+        raise RuntimeError("当前任务无需停止。")
+    task_manager.update_task(
+        TASKS_DIR,
+        task_id,
+        status="stopped",
+        pause_requested=False,
+        stop_requested=False,
+        browser_status="closed",
+        worker_status="stopped",
+        current_item="",
+        finished_at=_utc_now(),
+    )
+    return {"task_id": task_id, "status": "stopped"}
 
 
 def _read_task_csv(path: Path) -> tuple[list[str], list[dict]]:
@@ -823,6 +972,7 @@ def _account_uid_for_row(row: dict) -> str:
 
 
 def _review_record(row: dict) -> dict:
+    result = scraper_module.row_to_result(row)
     return {
         "account_uid": _account_uid_for_row(row),
         scraper_module.FIELD_NAME: str(row.get(scraper_module.FIELD_NAME) or ""),
@@ -835,6 +985,9 @@ def _review_record(row: dict) -> dict:
         scraper_module.FIELD_LATEST_DATE: str(row.get(scraper_module.FIELD_LATEST_DATE) or ""),
         scraper_module.FIELD_FOLLOWER_COUNT: str(row.get(scraper_module.FIELD_FOLLOWER_COUNT) or ""),
         scraper_module.FIELD_STATUS: str(row.get(scraper_module.FIELD_STATUS) or ""),
+        scraper_module.FIELD_SCRAPE_STATUS: str(result.get("scrape_status") or "success"),
+        scraper_module.FIELD_LAST_SCRAPE_TIME: str(row.get(scraper_module.FIELD_LAST_SCRAPE_TIME) or ""),
+        scraper_module.FIELD_RETRY_COUNT: str(row.get(scraper_module.FIELD_RETRY_COUNT) or "0"),
         REVIEW_FIELD_WHATSAPP: _review_value(row, REVIEW_FIELD_WHATSAPP),
         REVIEW_FIELD_NOTE: _review_value(row, REVIEW_FIELD_NOTE),
         REVIEW_FIELD_DATA_STATUS: _review_value(row, REVIEW_FIELD_DATA_STATUS),
@@ -843,11 +996,25 @@ def _review_record(row: dict) -> dict:
 
 
 def get_task_review_results(task_id: str) -> dict:
-    _task, paths = task_manager.load_task(TASKS_DIR, task_id)
+    task, paths = task_manager.load_task(TASKS_DIR, task_id)
     if not paths["results"].exists():
-        return {"task_id": task_id, "records": []}
+        return {"task_id": task_id, "platforms": task.get("platforms", []), "platform_results": {}, "records": []}
     _fieldnames, rows = _read_task_csv(paths["results"])
-    return {"task_id": task_id, "records": [_review_record(row) for row in rows]}
+    records = [_review_record(row) for row in rows]
+    platform_results = {platform: 0 for platform in ("TikTok", "Instagram", "YouTube")}
+    for record in records:
+        platform = str(record.get(scraper_module.FIELD_PLATFORM) or "").strip()
+        if platform in platform_results:
+            platform_results[platform] += 1
+    return {
+        "task_id": task_id,
+        "platforms": task_manager.normalize_platforms(
+            task.get("platforms"),
+            task.get("platform") or task.get("target_platform"),
+        ),
+        "platform_results": platform_results,
+        "records": records,
+    }
 
 
 def _task_progress(task_id: str, fallback_total: int = 0) -> dict:
@@ -900,12 +1067,25 @@ def get_task_list() -> dict:
                 "name": str(task.get("name") or "未命名任务"),
                 "task_type": task_type if task_type in {"manual", "email_recheck"} else "scrape",
                 "target_platform": str(task.get("target_platform") or "全部"),
+                "platforms": task_manager.normalize_platforms(
+                    task.get("platforms"),
+                    task.get("platform") or task.get("target_platform"),
+                ),
                 "status": str(task.get("status") or "created"),
                 "heartbeat_time": str(task.get("heartbeat_time") or ""),
+                "heartbeat_interval": int(task.get("heartbeat_interval") or TASK_HEARTBEAT_SECONDS),
                 "last_progress_time": str(task.get("last_progress_time") or ""),
                 "current_item": str(task.get("current_item") or ""),
+                "last_successful_index": int(task.get("last_successful_index") or 0),
+                "browser_status": str(task.get("browser_status") or "closed"),
+                "worker_status": str(task.get("worker_status") or "idle"),
                 "interrupted_time": str(task.get("interrupted_time") or ""),
                 "interrupted_reason": str(task.get("interrupted_reason") or ""),
+                "instagram_error_count": int(task.get("instagram_error_count") or 0),
+                "instagram_status": str(task.get("instagram_status") or ""),
+                "instagram_message": str(task.get("instagram_message") or ""),
+                "retry_round": int(task.get("retry_round") or 0),
+                "retry_history": task.get("retry_history") if isinstance(task.get("retry_history"), list) else [],
                 "created_at": str(task.get("created_at") or ""),
                 "platform_summary": task.get("platform_summary") if isinstance(task.get("platform_summary"), dict) else {},
                 "filtered_count": int(task.get("filtered_count") or 0),
@@ -915,6 +1095,101 @@ def get_task_list() -> dict:
             item.update(_email_recheck_summary(task_id))
         items.append(item)
     return {"tasks": items}
+
+
+def _read_task_links(path: Path) -> list[str]:
+    if not path.exists():
+        raise ValueError("未找到任务链接文件。")
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _write_task_links(path: Path, links: list[str]) -> None:
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        temp_path.write_text("\n".join(links) + ("\n" if links else ""), encoding="utf-8")
+        temp_path.replace(path)
+    finally:
+        temp_path.unlink(missing_ok=True)
+
+
+def _task_platform_summary_from_links(links: list[str]) -> dict[str, int]:
+    summary = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
+    for link in links:
+        platform = str(scraper_module.normalize_link_record(link).get("platform") or "")
+        if platform in summary:
+            summary[platform] += 1
+    return summary
+
+
+def get_task_details(task_id: str) -> dict:
+    task, paths = task_manager.load_task(TASKS_DIR, task_id)
+    links = _read_task_links(paths["links"])
+    progress_by_url = scraper_module.load_progress(str(paths["progress"]))
+    current_item = str(task.get("current_item") or "")
+    records: list[dict] = []
+    for index, link in enumerate(links, start=1):
+        progress = progress_by_url.get(link)
+        if progress:
+            status = "已完成"
+        elif link == current_item and str(task.get("status") or "") in {"running", "stopping"}:
+            status = "处理中"
+        else:
+            status = "等待"
+        platform = str(scraper_module.normalize_link_record(link).get("platform") or "")
+        records.append({"index": index, "url": link, "platform": platform, "status": status})
+    progress = _task_progress(task_id, len(links))
+    return {"task": {**task, **progress, "total_links": len(links)}, "links": records}
+
+
+def update_task_links(task_id: str, action: str, index: object = None, url: object = None) -> dict:
+    if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
+        raise RuntimeError("任务正在运行，不能修改链接。")
+    task, paths = task_manager.load_task(TASKS_DIR, task_id)
+    links = _read_task_links(paths["links"])
+    done_urls = set(scraper_module.load_progress(str(paths["progress"])))
+    normalized_action = str(action or "").strip()
+    normalized_url = ""
+    if normalized_action in {"add", "update"}:
+        record = scraper_module.normalize_link_record(str(url or "").strip())
+        if not record.get("valid"):
+            raise ValueError(str(record.get("reason") or "链接无效。"))
+        normalized_url = str(record.get("normalized_url") or "")
+        if not normalized_url:
+            raise ValueError("链接无效。")
+
+    if normalized_action == "add":
+        if normalized_url in links:
+            raise ValueError("该链接已在任务中。")
+        links.append(normalized_url)
+    else:
+        try:
+            position = int(index) - 1
+        except (TypeError, ValueError) as exc:
+            raise ValueError("链接编号无效。") from exc
+        if position < 0 or position >= len(links):
+            raise ValueError("链接编号不存在。")
+        old_url = links[position]
+        if old_url in done_urls:
+            raise RuntimeError("已完成的链接不能修改或删除。")
+        if normalized_action == "delete":
+            links.pop(position)
+        elif normalized_action == "update":
+            if normalized_url != old_url and normalized_url in links:
+                raise ValueError("该链接已在任务中。")
+            links[position] = normalized_url
+        else:
+            raise ValueError("不支持的链接操作。")
+
+    _write_task_links(paths["links"], links)
+    task_manager.update_task(
+        TASKS_DIR,
+        task_id,
+        valid_count=len(links),
+        input_count=max(int(task.get("input_count") or 0), len(links)),
+        platform_summary=_task_platform_summary_from_links(links),
+        current_item=_task_next_pending_item(paths),
+    )
+    return get_task_details(task_id)
 
 
 def rename_task(task_id: str, name: str) -> dict:
@@ -933,11 +1208,16 @@ def delete_local_task(task_id: str) -> dict:
     return {"task_id": task_id, "deleted": True}
 
 
-def prepare_task_links(raw_links: list[str], target_platform: str) -> dict:
+def _platform_display(platforms: list[str]) -> str:
+    normalized = task_manager.normalize_platforms(platforms)
+    if normalized == list(task_manager.PLATFORM_KEYS):
+        return "全部"
+    return "、".join(PLATFORM_LABELS[key] for key in normalized)
+
+
+def prepare_task_links(raw_links: list[str], selected_platforms: object = None) -> dict:
     """Normalize once, then keep only links selected for this local task."""
-    target_platform = str(target_platform or "全部").strip() or "全部"
-    if target_platform not in TASK_PLATFORM_OPTIONS:
-        raise ValueError("目标平台无效。")
+    platforms = task_manager.normalize_platforms(selected_platforms)
 
     platform_summary = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
     selected_links: list[str] = []
@@ -965,7 +1245,7 @@ def prepare_task_links(raw_links: list[str], target_platform: str) -> dict:
             continue
         seen_links.add(normalized_url)
         platform_summary[platform] += 1
-        if target_platform == "全部" or platform == target_platform:
+        if platform.lower() in platforms:
             selected_links.append(normalized_url)
         else:
             filtered_links.append(
@@ -977,7 +1257,8 @@ def prepare_task_links(raw_links: list[str], target_platform: str) -> dict:
             )
 
     return {
-        "target_platform": target_platform,
+        "target_platform": _platform_display(platforms),
+        "platforms": platforms,
         "platform_summary": platform_summary,
         "normalized_links": selected_links,
         "filtered_links": filtered_links,
@@ -1426,6 +1707,9 @@ def _validate_task_sync_results(rows: list[dict]) -> tuple[list[dict], list[str]
         result = scraper_module.row_to_result(row)
         account_uid = scraper_module.build_creator_uid(result)
         reference = account_uid or f"第 {index} 条"
+        scrape_status = str(result.get("scrape_status") or "success").strip()
+        if scrape_status in BLOCKING_SCRAPE_STATUSES:
+            errors.append(f"{reference}：抓取状态为 {scrape_status}，请重新抓取后再同步。")
         name = str(result.get("name") or "").strip()
         if not name:
             errors.append(f"{reference}：达人名称不能为空。")
@@ -1454,6 +1738,55 @@ def _validate_task_sync_results(rows: list[dict]) -> tuple[list[dict], list[str]
     return results, errors
 
 
+def _partial_scrape_warnings(rows: list[dict]) -> list[str]:
+    warnings: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        if str(scraper_module.row_to_result(row).get("scrape_status") or "success").strip() != "partial_success":
+            continue
+        account_uid = _account_uid_for_row(row)
+        warnings.append(f"{account_uid or f'第 {index} 条'}：部分抓取成功，请确认数据后继续管理。")
+    return warnings
+
+
+def retry_failed_task_results(task_id: str, account_uids: list[object] | None = None) -> dict:
+    """Queue retryable records inside the existing task without duplicating task files."""
+    if SCRAPE_JOB.running:
+        raise RuntimeError("已有任务正在运行，暂不能重新抓取。")
+    task, paths = task_manager.load_task(TASKS_DIR, task_id)
+    _fieldnames, rows = _read_task_csv(paths["results"])
+    requested = {str(value or "").strip() for value in (account_uids or []) if str(value or "").strip()}
+    retry_rows: list[dict] = []
+    for row in rows:
+        scrape_status = str(scraper_module.row_to_result(row).get("scrape_status") or "success").strip()
+        if scrape_status not in RETRYABLE_SCRAPE_STATUSES:
+            continue
+        account_uid = _account_uid_for_row(row)
+        if requested and account_uid not in requested:
+            continue
+        retry_rows.append(row)
+
+    if not retry_rows:
+        raise ValueError("没有可重新抓取的失败记录。")
+
+    links = [str(row.get(scraper_module.FIELD_URL) or "").strip() for row in retry_rows]
+    links = list(dict.fromkeys(link for link in links if link))
+    if not links:
+        raise ValueError("失败记录缺少有效主页链接。")
+
+    next_retry_round = max(0, int(task.get("retry_round") or 0)) + 1
+    retry_task = task_manager.update_task(
+        TASKS_DIR,
+        task_id,
+        status="created",
+        retry_round=next_retry_round,
+        retry_requested_urls=links,
+        retry_requested_at=_utc_now(),
+        retry_reason="抓取状态异常",
+        last_error="",
+    )
+    return {"task": retry_task, "retried_count": len(links), "retry_round": next_retry_round}
+
+
 def _task_data_source(task: dict) -> str:
     task_type = str(task.get("task_type") or "scrape")
     if task_type == "email_recheck":
@@ -1479,11 +1812,33 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
     )
     _fieldnames, rows = _read_task_csv(paths["results"])
     email_recheck_only = task.get("task_type") == "email_recheck"
-    if email_recheck_only:
-        results = [scraper_module.row_to_result(row) for row in rows]
-        validation_errors = []
-    else:
-        results, validation_errors = _validate_task_sync_results(rows)
+    results: list[dict] = []
+    validation_errors: list[str] = []
+    skipped_records: list[str] = []
+    synced_success_count = 0
+    synced_partial_count = 0
+    skipped_abnormal_count = 0
+    for index, row in enumerate(rows, start=1):
+        result = scraper_module.row_to_result(row)
+        account_uid = scraper_module.build_creator_uid(result) or f"第 {index} 条"
+        scrape_status = str(result.get("scrape_status") or "success").strip()
+        if scrape_status not in {"success", "partial_success"}:
+            skipped_abnormal_count += 1
+            skipped_records.append(f"{account_uid}：抓取状态为 {scrape_status}，已跳过。")
+            continue
+        row_results, row_errors = _validate_task_sync_results([row])
+        if email_recheck_only:
+            row_errors = [error for error in row_errors if "抓取状态为" in error]
+        if row_errors:
+            validation_errors.extend(row_errors)
+            skipped_records.extend(row_errors)
+            continue
+        results.extend(row_results)
+        if scrape_status == "partial_success":
+            synced_partial_count += 1
+        else:
+            synced_success_count += 1
+    sync_warnings = _partial_scrape_warnings(rows)
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     empty_summary = {
         "created_creators": 0,
@@ -1496,7 +1851,34 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
 
     if not rows:
         validation_errors.append("当前任务没有可同步的抓取结果。")
-    if validation_errors:
+    if not results and not validation_errors:
+        sync_summary = {
+            **empty_summary,
+            "success_records": synced_success_count,
+            "partial_records": synced_partial_count,
+            "skipped_abnormal": skipped_abnormal_count,
+            "skipped_invalid": 0,
+        }
+        task_manager.update_task(
+            TASKS_DIR,
+            task_id,
+            sync_status="success",
+            sync_time=now,
+            sync_summary=sync_summary,
+            sync_errors=[],
+            sync_warnings=sync_warnings,
+            sync_skipped=skipped_records,
+        )
+        return {
+            "task_id": task_id,
+            "record_count": len(rows),
+            "sync_status": "success",
+            "sync_summary": sync_summary,
+            "sync_errors": [],
+            "sync_warnings": sync_warnings,
+            "sync_skipped": skipped_records,
+        }
+    if validation_errors and not results:
         task_manager.update_task(
             TASKS_DIR,
             task_id,
@@ -1504,6 +1886,8 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
             sync_time=now,
             sync_summary=empty_summary,
             sync_errors=validation_errors,
+            sync_warnings=sync_warnings,
+            sync_skipped=skipped_records,
         )
         return {
             "task_id": task_id,
@@ -1511,6 +1895,8 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
             "sync_status": "failed",
             "sync_summary": empty_summary,
             "sync_errors": validation_errors,
+            "sync_warnings": sync_warnings,
+            "sync_skipped": skipped_records,
         }
 
     try:
@@ -1531,12 +1917,22 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
             "updated_creators": int(summary.get("updated_creators") or 0),
             "skipped": int(summary.get("skipped") or 0),
             "errors": len(sync_errors),
+            "success_records": synced_success_count,
+            "partial_records": synced_partial_count,
+            "skipped_abnormal": skipped_abnormal_count,
+            "skipped_invalid": len(validation_errors),
         }
         sync_status = "success" if not sync_errors else "failed"
     except Exception as exc:
         sync_errors = [str(exc)]
         sync_summary = dict(empty_summary)
         sync_summary["errors"] = 1
+        sync_summary.update(
+            success_records=synced_success_count,
+            partial_records=synced_partial_count,
+            skipped_abnormal=skipped_abnormal_count,
+            skipped_invalid=len(validation_errors),
+        )
         sync_status = "failed"
 
     task_manager.update_task(
@@ -1547,6 +1943,8 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
         last_sync_source=data_source,
         sync_summary=sync_summary,
         sync_errors=sync_errors,
+        sync_warnings=sync_warnings,
+        sync_skipped=skipped_records,
         sync_log=summary.get("sync_logs", []) if "summary" in locals() else [],
     )
     if "summary" in locals():
@@ -1575,6 +1973,8 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
         "sync_status": sync_status,
         "sync_summary": sync_summary,
         "sync_errors": sync_errors,
+        "sync_warnings": sync_warnings,
+        "sync_skipped": skipped_records,
     }
 
 
@@ -1648,6 +2048,13 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/tasks":
             return self._json({"ok": True, **get_task_list()})
 
+        task_details_match = re.fullmatch(r"/api/tasks/([^/]+)/details", parsed.path)
+        if task_details_match:
+            try:
+                return self._json({"ok": True, **get_task_details(task_details_match.group(1))})
+            except ValueError as exc:
+                return self._error(str(exc), status=404)
+
         task_results_match = re.fullmatch(r"/api/tasks/([^/]+)/results", parsed.path)
         if task_results_match:
             try:
@@ -1715,6 +2122,24 @@ class Handler(BaseHTTPRequestHandler):
         payload = self._read_json()
 
         try:
+            task_links_match = re.fullmatch(r"/api/tasks/([^/]+)/links", parsed.path)
+            if task_links_match:
+                result = update_task_links(
+                    task_links_match.group(1),
+                    action=payload.get("action"),
+                    index=payload.get("index"),
+                    url=payload.get("url"),
+                )
+                return self._ok(**result)
+
+            task_resume_match = re.fullmatch(r"/api/tasks/([^/]+)/resume", parsed.path)
+            if task_resume_match:
+                return self._ok(**resume_task(task_resume_match.group(1)))
+
+            task_stop_match = re.fullmatch(r"/api/tasks/([^/]+)/stop", parsed.path)
+            if task_stop_match:
+                return self._ok(**stop_task(task_stop_match.group(1)))
+
             task_result_update_match = re.fullmatch(r"/api/tasks/([^/]+)/results/update", parsed.path)
             if task_result_update_match:
                 try:
@@ -1724,6 +2149,22 @@ class Handler(BaseHTTPRequestHandler):
                         payload.get("fields"),
                     )
                     return self._ok(**result)
+                except (ValueError, RuntimeError) as exc:
+                    return self._error(str(exc))
+
+            task_retry_match = re.fullmatch(r"/api/tasks/([^/]+)/results/retry-failed", parsed.path)
+            if task_retry_match:
+                try:
+                    selected = payload.get("account_uids")
+                    account_uids = selected if isinstance(selected, list) else []
+                    result = retry_failed_task_results(task_retry_match.group(1), account_uids)
+                    start_scrape(
+                        {
+                            "taskId": task_retry_match.group(1),
+                            "profile": payload.get("profile"),
+                        }
+                    )
+                    return self._ok(**result, started=True)
                 except (ValueError, RuntimeError) as exc:
                     return self._error(str(exc))
 
@@ -1892,7 +2333,10 @@ class Handler(BaseHTTPRequestHandler):
                 raw_links = [line.strip() for line in text.splitlines() if line.strip()]
                 if not raw_links:
                     return self._error("请粘贴至少一个链接。")
-                prepared = prepare_task_links(raw_links, payload.get("target_platform"))
+                selected_platforms = payload.get("platforms")
+                if not isinstance(selected_platforms, list):
+                    selected_platforms = payload.get("platform") or payload.get("target_platform")
+                prepared = prepare_task_links(raw_links, selected_platforms)
                 normalized_links = prepared["normalized_links"]
                 if not normalized_links:
                     return self._error("没有符合目标平台的有效链接。")
@@ -1903,6 +2347,7 @@ class Handler(BaseHTTPRequestHandler):
                     len(raw_links),
                     name=payload.get("name"),
                     target_platform=prepared["target_platform"],
+                    platforms=prepared["platforms"],
                     platform_summary=prepared["platform_summary"],
                     filtered_links=prepared["filtered_links"],
                 )

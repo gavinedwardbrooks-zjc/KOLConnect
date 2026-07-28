@@ -88,15 +88,13 @@
               <span data-i18n="runProfile">运行 Profile</span>
               <select id="profile-select"></select>
             </label>
-            <label class="field">
+            <div class="field task-platform-selector">
               <span data-i18n="targetPlatform">目标平台</span>
-              <select id="task-target-platform">
-                <option value="全部" data-i18n="platformAll">全部</option>
-                <option value="TikTok">TikTok</option>
-                <option value="Instagram">Instagram</option>
-                <option value="YouTube">YouTube</option>
-              </select>
-            </label>
+              <label class="checkbox-line"><input id="task-platform-all" type="checkbox" checked><span>全部</span></label>
+              <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="tiktok" checked><span>TikTok</span></label>
+              <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="instagram" checked><span>Instagram</span></label>
+              <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="youtube" checked><span>YouTube</span></label>
+            </div>
           </div>
           <input id="links-file" type="hidden" value="links.txt">
           <div class="task-current" id="task-current">尚未创建任务</div>
@@ -208,7 +206,8 @@
             <div class="review-toolbar-actions">
               <button class="soft-btn" id="review-refresh" data-i18n="reviewRefresh">刷新任务</button>
               <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描四表缺失邮箱</button>
-              <button class="primary-btn" id="review-sync-four-tables" data-i18n="reviewSyncFourTables">同步当前任务到四表</button>
+              <button class="soft-btn" id="review-retry-failed">重新抓取异常记录</button>
+              <button class="primary-btn" id="review-sync-four-tables" data-i18n="reviewSyncFourTables">同步有效结果到四表</button>
             </div>
           </div>
           <p class="hint" id="review-summary">请选择一个已有任务。</p>
@@ -223,8 +222,9 @@
                   <th data-i18n="reviewPlatform">平台</th>
                   <th data-i18n="reviewLink">达人链接</th>
                   <th data-i18n="reviewAccountUid">账号唯一ID</th>
+                  <th>抓取状态</th>
                   <th data-i18n="reviewLatestDate">最近发布日期</th>
-                  <th data-i18n="reviewScrapeStatus">抓取状态</th>
+                  <th>记录状态</th>
                   <th data-i18n="reviewName">达人名称</th>
                   <th data-i18n="reviewEmail">邮箱</th>
                   <th data-i18n="reviewFollowerCount">粉丝数</th>
@@ -239,6 +239,36 @@
           </div>
           <div class="review-empty" id="review-empty">请选择任务后查看结果。</div>
           <div class="review-pagination" id="review-pagination"></div>
+        </div>
+      </section>
+
+      <section class="page" data-page="task-details">
+        <div class="page-header">
+          <h1>任务详情</h1>
+          <p>查看任务链接、进度和待处理队列；仅可修改尚未完成的链接。</p>
+        </div>
+        <div class="section-card">
+          <div class="action-row">
+            <button class="soft-btn" id="task-detail-back">返回任务管理</button>
+            <button class="soft-btn" id="task-detail-refresh">刷新详情</button>
+          </div>
+          <div class="task-current" id="task-detail-summary">请选择任务。</div>
+          <div class="form-grid three">
+            <label class="field"><span>搜索链接</span><input id="task-detail-search" type="search" placeholder="链接、平台或状态"></label>
+            <label class="field"><span>平台</span><select id="task-detail-platform"><option value="">全部</option><option>TikTok</option><option>Instagram</option><option>YouTube</option></select></label>
+            <label class="field"><span>状态</span><select id="task-detail-status"><option value="">全部</option><option>已完成</option><option>处理中</option><option>等待</option></select></label>
+          </div>
+          <div class="action-row">
+            <input id="task-detail-add-url" type="url" placeholder="新增达人主页链接" aria-label="新增达人主页链接">
+            <button class="primary-btn" id="task-detail-add">新增链接</button>
+          </div>
+          <div class="table-wrap">
+            <table class="results-table">
+              <thead><tr><th>编号</th><th>链接</th><th>平台</th><th>状态</th><th>操作</th></tr></thead>
+              <tbody id="task-detail-body"></tbody>
+            </table>
+          </div>
+          <div class="review-empty" id="task-detail-empty">没有可显示的链接。</div>
         </div>
       </section>
 

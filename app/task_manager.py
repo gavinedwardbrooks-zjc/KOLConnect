@@ -15,6 +15,66 @@ from pathlib import Path
 
 TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
 _TASK_LOCK = threading.RLock()
+DEFAULT_HEARTBEAT_INTERVAL = 240
+PLATFORM_KEYS = ("tiktok", "instagram", "youtube")
+PLATFORM_KEY_ALIASES = {
+    "tiktok": "tiktok",
+    "instagram": "instagram",
+    "youtube": "youtube",
+    "全部": "all",
+    "all": "all",
+}
+
+
+def normalize_platforms(value: object, legacy_platform: object = "") -> list[str]:
+    """Normalize new multi-platform metadata while accepting older single-platform tasks."""
+    candidates = value if isinstance(value, list) else [value]
+    if not candidates or not any(str(item or "").strip() for item in candidates):
+        candidates = [legacy_platform]
+    selected: set[str] = set()
+    for item in candidates:
+        raw = str(item or "").strip()
+        key = PLATFORM_KEY_ALIASES.get(raw.lower(), PLATFORM_KEY_ALIASES.get(raw, ""))
+        if key == "all":
+            return list(PLATFORM_KEYS)
+        if key in PLATFORM_KEYS:
+            selected.add(key)
+    return [key for key in PLATFORM_KEYS if key in selected] or list(PLATFORM_KEYS)
+
+
+def _apply_task_defaults(task: dict) -> dict:
+    """Keep task metadata backward compatible as task controls evolve."""
+    task["platforms"] = normalize_platforms(
+        task.get("platforms"),
+        task.get("platform") or task.get("target_platform"),
+    )
+    defaults = {
+        "name": "未命名任务",
+        "task_type": "scrape",
+        "target_platform": "全部",
+        "platform_summary": {},
+        "filtered_count": 0,
+        "pause_requested": False,
+        "stop_requested": False,
+        "heartbeat_time": "",
+        "heartbeat_interval": DEFAULT_HEARTBEAT_INTERVAL,
+        "last_progress_time": "",
+        "current_item": "",
+        "last_successful_index": 0,
+        "browser_status": "closed",
+        "worker_status": "idle",
+        "interrupted_time": "",
+        "interrupted_reason": "",
+        "instagram_error_count": 0,
+        "instagram_status": "",
+        "instagram_message": "",
+        "retry_round": 0,
+        "retry_history": [],
+        "retry_requested_urls": [],
+    }
+    for key, value in defaults.items():
+        task.setdefault(key, value)
+    return task
 
 
 def _now() -> str:
@@ -108,6 +168,7 @@ def create_task(
     name: str = "",
     target_platform: str = "全部",
     platform_summary: dict[str, int] | None = None,
+    platforms: list[str] | None = None,
     filtered_links: list[dict] | None = None,
     task_type: str = "scrape",
 ) -> dict:
@@ -139,6 +200,7 @@ def create_task(
             "valid_count": len(normalized_links),
             "invalid_count": len(invalid_links),
             "target_platform": target_platform or "全部",
+            "platforms": normalize_platforms(platforms, target_platform),
             "platform_summary": platform_summary or {},
             "filtered_count": len(filtered_links),
             "completed_count": 0,
@@ -148,10 +210,20 @@ def create_task(
             "pause_requested": False,
             "stop_requested": False,
             "heartbeat_time": "",
+            "heartbeat_interval": DEFAULT_HEARTBEAT_INTERVAL,
             "last_progress_time": "",
             "current_item": "",
+            "last_successful_index": 0,
+            "browser_status": "closed",
+            "worker_status": "idle",
             "interrupted_time": "",
             "interrupted_reason": "",
+            "instagram_error_count": 0,
+            "instagram_status": "",
+            "instagram_message": "",
+            "retry_round": 0,
+            "retry_history": [],
+            "retry_requested_urls": [],
         }
         _atomic_write_json(paths["metadata"], task)
         return task
@@ -167,13 +239,7 @@ def load_task(tasks_dir: Path, task_id: str) -> tuple[dict, dict[str, Path]]:
         raise ValueError(f"无法读取任务信息：{exc}") from exc
     if not isinstance(task, dict) or task.get("id") != task_id:
         raise ValueError("任务信息无效。")
-    # Older tasks predate platform filtering and continue to behave as "all" tasks.
-    task.setdefault("name", "未命名任务")
-    task.setdefault("task_type", "scrape")
-    task.setdefault("target_platform", "全部")
-    task.setdefault("platform_summary", {})
-    task.setdefault("filtered_count", 0)
-    return task, paths
+    return _apply_task_defaults(task), paths
 
 
 def list_tasks(tasks_dir: Path) -> list[dict]:
@@ -194,19 +260,7 @@ def list_tasks(tasks_dir: Path) -> list[dict]:
             except (OSError, json.JSONDecodeError):
                 continue
             if isinstance(task, dict) and task.get("id") == root.name:
-                task.setdefault("name", "未命名任务")
-                task.setdefault("task_type", "scrape")
-                task.setdefault("target_platform", "全部")
-                task.setdefault("platform_summary", {})
-                task.setdefault("filtered_count", 0)
-                task.setdefault("pause_requested", False)
-                task.setdefault("stop_requested", False)
-                task.setdefault("heartbeat_time", "")
-                task.setdefault("last_progress_time", "")
-                task.setdefault("current_item", "")
-                task.setdefault("interrupted_time", "")
-                task.setdefault("interrupted_reason", "")
-                tasks.append(task)
+                tasks.append(_apply_task_defaults(task))
     return sorted(tasks, key=lambda task: str(task.get("created_at") or ""), reverse=True)
 
 

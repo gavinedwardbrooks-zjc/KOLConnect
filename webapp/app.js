@@ -442,7 +442,7 @@ Object.assign(I18N.zh, {
   reviewNoRecords: "该任务暂无抓取结果。",
   reviewSummary: "共 {count} 条结果，当前显示 {shown} 条。",
   reviewSaved: "审核结果已保存。",
-  reviewSyncFourTables: "同步当前任务到四表",
+  reviewSyncFourTables: "同步有效结果到四表",
   reviewSyncConfirm: "即将同步任务：{task}\n数据数量：{count}\n\n确认继续吗？",
   reviewSyncResult: "创建达人：{creators}，创建账号：{accounts}，更新账号：{updated}，跳过：{skipped}，失败：{failed}。"
 });
@@ -472,7 +472,7 @@ Object.assign(I18N.en, {
   reviewNoRecords: "This task has no scrape results yet.",
   reviewSummary: "{count} results total, showing {shown}.",
   reviewSaved: "Review result saved.",
-  reviewSyncFourTables: "Sync current task to four tables",
+  reviewSyncFourTables: "Sync valid results to four tables",
   reviewSyncConfirm: "Task: {task}\nRecords: {count}\n\nContinue with four-table sync?",
   reviewSyncResult: "Created creators: {creators}, created accounts: {accounts}, updated accounts: {updated}, skipped: {skipped}, failed: {failed}."
 });
@@ -498,12 +498,20 @@ const state = {
   taskStatusTimer: null,
   currentTaskId: window.localStorage.getItem("kolconnect.currentTaskId") || "",
   currentTask: null,
+  scrapeJob: {},
   tasks: [],
   review: {
     tasks: [],
     taskId: "",
     records: [],
+    platforms: [],
+    platformResults: {},
     page: 1
+  },
+  taskDetails: {
+    taskId: "",
+    task: null,
+    links: []
   }
 };
 
@@ -552,19 +560,23 @@ function renderScrapeControls(job = {}) {
   const stop = $("scrape-stop");
   if (!start || !pause || !stop) return;
 
+  job = Object.keys(job).length ? job : (state.scrapeJob || {});
   const taskStatus = state.currentTask?.status || "created";
   const status = job.status && job.status !== "idle" ? job.status : taskStatus;
-  const active = ["running", "paused", "stopping"].includes(status);
+  const resumablePaused = status === "paused" && !job.running;
+  const active = ["running", "paused", "stopping"].includes(status) && !resumablePaused;
   const paused = status === "paused";
   const stopping = status === "stopping";
 
   start.hidden = active;
   pause.hidden = !["running", "paused"].includes(status);
-  stop.hidden = !active;
+  stop.hidden = !active && !(status === "paused" && !job.running);
   pause.textContent = t(paused ? "resumeTask" : "pauseTask");
   stop.textContent = t("stopTask");
   stop.disabled = stopping;
-  start.textContent = t(["stopped", "completed", "failed"].includes(status) ? "restartTask" : "startTask");
+  start.textContent = status === "interrupted" || resumablePaused
+    ? (state.language === "en" ? "Resume task" : "恢复任务")
+    : t(["stopped", "completed", "failed"].includes(status) ? "restartTask" : "startTask");
   setText("scrape-control-status", `${t("currentStatus")}：${scrapeStatusLabel(status)}`);
 }
 
@@ -595,6 +607,12 @@ function renderCurrentTask() {
       `${t("taskLastProgress")}：${task.last_progress_time || "--"}`,
       `${t("taskCurrentItem")}：${task.current_item || "--"}`
     );
+  }
+  if (task.instagram_status === "login_required") {
+    value.push(`Instagram：${task.instagram_message || "登录状态异常，请重新登录后继续。"}`);
+  }
+  if (Number(task.retry_round) > 0) {
+    value.push(`异常重试：第 ${task.retry_round} 轮`);
   }
   setText("task-current", value.join("\n"));
 }
@@ -649,6 +667,18 @@ function renderTaskList() {
     });
     const actions = document.createElement("div");
     actions.className = "action-row";
+    const details = document.createElement("button");
+    details.type = "button";
+    details.className = "mini-btn";
+    details.textContent = "查看任务详情";
+    details.addEventListener("click", async event => {
+      event.stopPropagation();
+      try {
+        await openTaskDetails(task.id);
+      } catch (error) {
+        showError(error);
+      }
+    });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "mini-btn danger";
@@ -704,7 +734,23 @@ function renderTaskList() {
       });
       actions.append(supplement, directSync);
     }
-    actions.append(rename, remove);
+    if (task.status === "interrupted") {
+      const recover = document.createElement("button");
+      recover.type = "button";
+      recover.className = "mini-btn";
+      recover.textContent = "恢复任务";
+      recover.addEventListener("click", async event => {
+        event.stopPropagation();
+        try {
+          await apiPost(`/api/tasks/${encodeURIComponent(task.id)}/resume`, {});
+          state.currentTaskId = task.id;
+          await refreshScrapeStatus();
+          await loadTaskList();
+        } catch (error) { showError(error); }
+      });
+      actions.append(recover);
+    }
+    actions.append(details, rename, remove);
     head.append(name, actions);
 
     const meta = document.createElement("div");
@@ -727,6 +773,12 @@ function renderTaskList() {
       ? `${t("taskEmailFound")} ${task.email_found_count || 0} · ${t("taskEmailFailed")} ${task.email_failed_count || 0} · ${t("taskPending")} ${task.pending_links || 0} · ${task.progress || 0}%`
       : `${t("taskCompleted")} ${task.completed_links || 0} · ${t("taskFailed")} ${task.failed_links || 0} · ${t("taskPending")} ${task.pending_links || 0} · ${task.progress || 0}%`;
     card.append(head, meta, track, progress);
+    if (task.instagram_status === "login_required") {
+      const warning = document.createElement("div");
+      warning.className = "task-instagram-warning";
+      warning.textContent = `Instagram：${task.instagram_message || "登录状态异常，请重新登录后继续。"}`;
+      card.appendChild(warning);
+    }
     wrap.appendChild(card);
   });
 }
@@ -747,6 +799,97 @@ async function loadTaskList() {
   renderCurrentTask();
   renderTaskList();
   renderScrapeControls();
+}
+
+function taskDetailsFilteredLinks() {
+  const search = valueOf("task-detail-search").trim().toLowerCase();
+  const platform = valueOf("task-detail-platform");
+  const status = valueOf("task-detail-status");
+  return state.taskDetails.links.filter(item => {
+    const haystack = `${item.url || ""} ${item.platform || ""} ${item.status || ""}`.toLowerCase();
+    return (!search || haystack.includes(search))
+      && (!platform || item.platform === platform)
+      && (!status || item.status === status);
+  });
+}
+
+function renderTaskDetails() {
+  const body = $("task-detail-body");
+  const empty = $("task-detail-empty");
+  const task = state.taskDetails.task;
+  if (!body || !empty) return;
+  body.textContent = "";
+  if (!task) {
+    setText("task-detail-summary", "请选择任务。");
+    empty.hidden = false;
+    return;
+  }
+  setText(
+    "task-detail-summary",
+    `${task.name || task.id}\n创建时间：${String(task.created_at || "").replace("T", " ").replace("Z", "")}\n进度：${task.completed_links || 0}/${task.total_links || 0}，剩余 ${task.pending_links || 0}\n平台：TikTok ${task.platform_summary?.TikTok || 0} / Instagram ${task.platform_summary?.Instagram || 0} / YouTube ${task.platform_summary?.YouTube || 0}`
+  );
+  const records = taskDetailsFilteredLinks();
+  empty.hidden = records.length > 0;
+  records.forEach(item => {
+    const row = document.createElement("tr");
+    [item.index, item.url, item.platform, item.status].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = String(value || "");
+      row.appendChild(cell);
+    });
+    const actions = document.createElement("td");
+    if (item.status !== "已完成") {
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "mini-btn";
+      edit.textContent = "修改";
+      edit.addEventListener("click", async () => {
+        const nextUrl = window.prompt("修改达人主页链接", item.url || "");
+        if (nextUrl === null || nextUrl.trim() === item.url) return;
+        try {
+          await apiPost(`/api/tasks/${encodeURIComponent(state.taskDetails.taskId)}/links`, {
+            action: "update", index: item.index, url: nextUrl
+          });
+          await loadTaskDetails();
+          await loadTaskList();
+        } catch (error) { showError(error); }
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "mini-btn danger";
+      remove.textContent = "删除";
+      remove.addEventListener("click", async () => {
+        if (!window.confirm(`确定删除第 ${item.index} 条待处理链接吗？`)) return;
+        try {
+          await apiPost(`/api/tasks/${encodeURIComponent(state.taskDetails.taskId)}/links`, {
+            action: "delete", index: item.index
+          });
+          await loadTaskDetails();
+          await loadTaskList();
+        } catch (error) { showError(error); }
+      });
+      actions.append(edit, remove);
+    } else {
+      actions.textContent = "已完成，受保护";
+    }
+    row.appendChild(actions);
+    body.appendChild(row);
+  });
+}
+
+async function loadTaskDetails(taskId = state.taskDetails.taskId) {
+  if (!taskId) return;
+  const data = await apiGet(`/api/tasks/${encodeURIComponent(taskId)}/details`);
+  state.taskDetails.taskId = taskId;
+  state.taskDetails.task = data.task || null;
+  state.taskDetails.links = Array.isArray(data.links) ? data.links : [];
+  renderTaskDetails();
+}
+
+async function openTaskDetails(taskId) {
+  state.taskDetails.taskId = taskId;
+  setPage("task-details");
+  await loadTaskDetails(taskId);
 }
 
 function textAreaOrInputValue(row, selector) {
@@ -836,12 +979,13 @@ function reviewField(record, field) {
 
 function formatReviewSyncSummary(data) {
   const summary = data?.sync_summary || {};
-  return t("reviewSyncResult")
+  const detail = t("reviewSyncResult")
     .replace("{creators}", summary.created_creators || 0)
     .replace("{accounts}", summary.created_accounts || 0)
     .replace("{updated}", summary.updated_accounts || 0)
     .replace("{skipped}", summary.skipped || 0)
     .replace("{failed}", summary.errors || 0);
+  return `${detail}\n成功同步：${summary.success_records || 0} 条，部分同步：${summary.partial_records || 0} 条，跳过异常：${summary.skipped_abnormal || 0} 条`;
 }
 
 function reviewFilteredRecords() {
@@ -882,25 +1026,107 @@ function renderReviewPagination(total, pageSize) {
   if (!pagination) return;
   pagination.textContent = "";
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const goToPage = page => {
+    const normalized = Math.min(totalPages, Math.max(1, Number(page) || 1));
+    state.review.page = normalized;
+    renderReviewResults();
+  };
+  const button = (label, page, disabled = false, active = false) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "mini-btn";
+    item.textContent = label;
+    item.disabled = disabled;
+    if (active) item.classList.add("active");
+    item.addEventListener("click", () => goToPage(page));
+    return item;
+  };
+  pagination.append(button(state.language === "en" ? "First" : "首页", 1, state.review.page <= 1));
   const previous = document.createElement("button");
   previous.type = "button";
+  previous.className = "mini-btn";
   previous.textContent = state.language === "en" ? "Previous" : "上一页";
   previous.disabled = state.review.page <= 1;
-  previous.addEventListener("click", () => {
-    state.review.page -= 1;
-    renderReviewResults();
+  previous.addEventListener("click", () => goToPage(state.review.page - 1));
+  pagination.appendChild(previous);
+
+  const pages = new Set([1, totalPages]);
+  for (let page = state.review.page - 2; page <= state.review.page + 2; page += 1) {
+    if (page >= 1 && page <= totalPages) pages.add(page);
+  }
+  let previousPage = 0;
+  [...pages].sort((a, b) => a - b).forEach(page => {
+    if (previousPage && page - previousPage > 1) {
+      const ellipsis = document.createElement("span");
+      ellipsis.textContent = "…";
+      pagination.appendChild(ellipsis);
+    }
+    pagination.append(button(String(page), page, false, page === state.review.page));
+    previousPage = page;
   });
   const next = document.createElement("button");
   next.type = "button";
+  next.className = "mini-btn";
   next.textContent = state.language === "en" ? "Next" : "下一页";
   next.disabled = state.review.page >= totalPages;
-  next.addEventListener("click", () => {
-    state.review.page += 1;
-    renderReviewResults();
+  next.addEventListener("click", () => goToPage(state.review.page + 1));
+  pagination.append(next, button(state.language === "en" ? "Last" : "尾页", totalPages, state.review.page >= totalPages));
+
+  const jumpLabel = document.createElement("span");
+  jumpLabel.textContent = state.language === "en" ? "Go to" : "跳转到";
+  const jumpInput = document.createElement("input");
+  jumpInput.type = "number";
+  jumpInput.min = "1";
+  jumpInput.max = String(totalPages);
+  jumpInput.value = String(state.review.page);
+  jumpInput.className = "review-page-jump";
+  const jumpButton = document.createElement("button");
+  jumpButton.type = "button";
+  jumpButton.className = "mini-btn";
+  jumpButton.textContent = state.language === "en" ? "Go" : "确认";
+  jumpButton.addEventListener("click", () => goToPage(jumpInput.value));
+  jumpInput.addEventListener("keydown", event => {
+    if (event.key === "Enter") goToPage(jumpInput.value);
   });
-  const label = document.createElement("span");
-  label.textContent = `${state.review.page} / ${totalPages}`;
-  pagination.append(previous, label, next);
+  pagination.append(jumpLabel, jumpInput, jumpButton);
+}
+
+function reviewScrapeStatusLabel(status) {
+  const labels = {
+    success: "正常完成",
+    partial_success: "部分完成",
+    missing_data: "缺少有效数据",
+    failed: "抓取失败",
+    login_required: "需要重新登录",
+    platform_error: "平台异常"
+  };
+  return labels[String(status || "success").trim()] || String(status || "success");
+}
+
+function isRetryableReviewStatus(status) {
+  return ["missing_data", "failed", "login_required", "platform_error"].includes(String(status || "").trim());
+}
+
+async function retryAllFailedReviewRecords() {
+  if (!state.review.taskId) throw new Error("请选择任务。");
+  const data = await apiPost(`/api/tasks/${encodeURIComponent(state.review.taskId)}/results/retry-failed`, {
+    profile: valueOf("profile-select")
+  });
+  showSaved(`已在当前任务中开始重新抓取（${data.retried_count || 0} 条）。`);
+  await loadTaskList();
+  await refreshScrapeStatus();
+}
+
+async function retryFailedReviewRecord(record) {
+  const accountUid = reviewField(record, "account_uid");
+  if (!accountUid || !state.review.taskId) return;
+  const data = await apiPost(`/api/tasks/${encodeURIComponent(state.review.taskId)}/results/retry-failed`, {
+    account_uids: [accountUid],
+    profile: valueOf("profile-select")
+  });
+  showSaved(`已在当前任务中开始重新抓取（${data.retried_count || 0} 条）。`);
+  await loadTaskList();
+  await refreshScrapeStatus();
 }
 
 function renderReviewResults() {
@@ -922,12 +1148,25 @@ function renderReviewResults() {
   summary.textContent = state.review.taskId
     ? t("reviewSummary").replace("{count}", records.length).replace("{shown}", visible.length)
     : t("reviewSelectTask");
+  if (state.review.taskId) {
+    const statusCounts = { success: 0, partial_success: 0, missing_data: 0, failed: 0, login_required: 0, platform_error: 0 };
+    state.review.records.forEach(record => {
+      const status = reviewField(record, "scrape_status") || "success";
+      if (Object.hasOwn(statusCounts, status)) statusCounts[status] += 1;
+    });
+    const labels = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
+    const platforms = (state.review.platforms || []).map(item => labels[item] || item).join("、") || "全部";
+    const counts = state.review.platformResults || {};
+    summary.textContent += `\n成功：${statusCounts.success} / 部分成功：${statusCounts.partial_success} / 缺少数据：${statusCounts.missing_data} / 失败：${statusCounts.failed + statusCounts.login_required + statusCounts.platform_error}`;
+    summary.textContent += `\n本次抓取：${platforms}\n结果：TikTok ${counts.TikTok || 0} / Instagram ${counts.Instagram || 0} / YouTube ${counts.YouTube || 0}`;
+  }
 
   visible.forEach(record => {
     const row = document.createElement("tr");
     reviewCell(row, reviewField(record, "平台"));
     reviewCell(row, reviewField(record, "达人链接"));
     reviewCell(row, reviewField(record, "account_uid"));
+    reviewCell(row, reviewScrapeStatusLabel(reviewField(record, "scrape_status")));
     reviewCell(row, reviewField(record, "最近发布日期"));
     reviewCell(row, reviewField(record, "状态"));
     reviewEditableCell(row, reviewField(record, "达人名称"), "达人名称");
@@ -962,6 +1201,23 @@ function renderReviewResults() {
       }
     });
     actionCell.appendChild(saveButton);
+    if (isRetryableReviewStatus(reviewField(record, "scrape_status"))) {
+      const retryButton = document.createElement("button");
+      retryButton.type = "button";
+      retryButton.className = "mini-btn";
+      retryButton.textContent = "重新抓取";
+      retryButton.addEventListener("click", async () => {
+        retryButton.disabled = true;
+        try {
+          await retryFailedReviewRecord(record);
+        } catch (error) {
+          showError(error);
+        } finally {
+          retryButton.disabled = false;
+        }
+      });
+      actionCell.appendChild(retryButton);
+    }
     row.appendChild(actionCell);
     body.appendChild(row);
   });
@@ -976,6 +1232,8 @@ async function loadReviewResults() {
   }
   const data = await apiGet(`/api/tasks/${encodeURIComponent(state.review.taskId)}/results`);
   state.review.records = Array.isArray(data.records) ? data.records : [];
+  state.review.platforms = Array.isArray(data.platforms) ? data.platforms : [];
+  state.review.platformResults = data.platform_results || {};
   renderReviewResults();
 }
 
@@ -1371,6 +1629,7 @@ async function loadState() {
 async function refreshScrapeStatus() {
   try {
     const data = await apiGet("/api/scrape/status");
+    state.scrapeJob = data;
     const statusText = scrapeStatusLabel(data.status || (data.running ? "running" : "idle"));
     setText("dashboard-status", statusText);
     setText("dashboard-log-preview", data.logs || t("waiting"));
@@ -1412,7 +1671,28 @@ function formatInvalidLinks(items) {
   }).filter(Boolean).join("\n\n");
 }
 
+function selectedTaskPlatforms() {
+  return [...document.querySelectorAll(".task-platform-option:checked")]
+    .map(input => String(input.value || "").trim())
+    .filter(Boolean);
+}
+
+function bindTaskPlatformSelector() {
+  const all = $("task-platform-all");
+  const options = [...document.querySelectorAll(".task-platform-option")];
+  if (!all || !options.length) return;
+  all.addEventListener("change", () => {
+    options.forEach(option => { option.checked = all.checked; });
+  });
+  options.forEach(option => {
+    option.addEventListener("change", () => {
+      all.checked = options.every(item => item.checked);
+    });
+  });
+}
+
 function bindEvents() {
+  bindTaskPlatformSelector();
   document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.addEventListener("click", () => setPage(btn.dataset.page));
   });
@@ -1435,8 +1715,35 @@ function bindEvents() {
     state.review.page = 1;
     renderReviewResults();
   });
+  $("task-detail-back").addEventListener("click", () => setPage("scrape"));
+  $("task-detail-refresh").addEventListener("click", () => loadTaskDetails().catch(showError));
+  ["task-detail-search", "task-detail-platform", "task-detail-status"].forEach(id => {
+    const eventName = id === "task-detail-search" ? "input" : "change";
+    $(id).addEventListener(eventName, renderTaskDetails);
+  });
+  $("task-detail-add").addEventListener("click", async () => {
+    try {
+      if (!state.taskDetails.taskId) throw new Error("请选择任务。");
+      const url = valueOf("task-detail-add-url").trim();
+      if (!url) throw new Error("请输入达人主页链接。");
+      await apiPost(`/api/tasks/${encodeURIComponent(state.taskDetails.taskId)}/links`, { action: "add", url });
+      setValue("task-detail-add-url", "");
+      await loadTaskDetails();
+      await loadTaskList();
+    } catch (error) { showError(error); }
+  });
   $("review-refresh").addEventListener("click", () => {
     loadReviewTasks().catch(showError);
+  });
+  $("review-retry-failed").addEventListener("click", async () => {
+    try {
+      const failedCount = state.review.records.filter(record => isRetryableReviewStatus(reviewField(record, "scrape_status"))).length;
+      if (!failedCount) throw new Error("当前任务没有需要重新抓取的异常记录。 ");
+      if (!window.confirm(`将在当前任务中重新抓取 ${failedCount} 条异常记录，是否继续？`)) return;
+      await retryAllFailedReviewRecords();
+    } catch (error) {
+      showError(error);
+    }
   });
   $("review-scan-missing-email").addEventListener("click", async () => {
     if (!window.confirm(t("reviewScanMissingEmailConfirm"))) return;
@@ -1466,6 +1773,10 @@ function bindEvents() {
       if (!state.review.taskId) {
         throw new Error(t("reviewSelectTask"));
       }
+      const partialCount = state.review.records.filter(
+        record => reviewField(record, "scrape_status") === "partial_success"
+      ).length;
+      if (partialCount && !window.confirm(`当前有 ${partialCount} 条部分成功记录，仍建议人工确认。是否继续同步？`)) return;
       const confirmation = t("reviewSyncConfirm")
         .replace("{task}", state.review.taskId)
         .replace("{count}", state.review.records.length);
@@ -1474,8 +1785,10 @@ function bindEvents() {
       button.disabled = true;
       const data = await apiPost(`/api/tasks/${encodeURIComponent(state.review.taskId)}/sync-four-tables`, {});
       const summary = formatReviewSyncSummary(data);
-      setText("review-sync-summary", summary);
-      showSaved(summary);
+      const warnings = Array.isArray(data.sync_warnings) ? data.sync_warnings : [];
+      const message = warnings.length ? `${summary}\n${warnings.join("\n")}` : summary;
+      setText("review-sync-summary", message);
+      showSaved(message);
     } catch (error) {
       const responseData = error.responseData || {};
       const syncErrors = Array.isArray(responseData.sync_errors) ? responseData.sync_errors : [];
@@ -1502,9 +1815,13 @@ function bindEvents() {
     try {
       const text = valueOf("task-links");
       if (!text.trim()) throw new Error(state.language === "en" ? "Paste at least one link." : "请粘贴至少一个链接。");
+      if (!selectedTaskPlatforms().length) {
+        throw new Error(state.language === "en" ? "Select at least one platform." : "请至少选择一个平台。");
+      }
       const data = await apiPost("/api/tasks", {
         text,
         name: valueOf("task-name").trim(),
+        platforms: selectedTaskPlatforms(),
         target_platform: valueOf("task-target-platform", "全部")
       });
       state.currentTaskId = data.task?.id || "";
@@ -1554,10 +1871,14 @@ function bindEvents() {
       if (!state.currentTaskId) {
         throw new Error(state.language === "en" ? "Create a task first." : "请先创建任务。");
       }
-      await apiPost("/api/scrape/start", {
-        taskId: state.currentTaskId,
-        profile: valueOf("profile-select")
-      });
+      if (state.currentTask?.status === "interrupted") {
+        await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/resume`, {});
+      } else {
+        await apiPost("/api/scrape/start", {
+          taskId: state.currentTaskId,
+          profile: valueOf("profile-select")
+        });
+      }
       await refreshScrapeStatus();
     } catch (error) {
       showError(error);
@@ -1566,7 +1887,11 @@ function bindEvents() {
 
   $("scrape-stop").addEventListener("click", async () => {
     try {
-      await apiPost("/api/scrape/stop", {});
+      if (state.currentTaskId && !state.scrapeJob?.running) {
+        await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/stop`, {});
+      } else {
+        await apiPost("/api/scrape/stop", {});
+      }
       await refreshScrapeStatus();
     } catch (error) {
       showError(error);
@@ -1576,7 +1901,11 @@ function bindEvents() {
   $("scrape-pause").addEventListener("click", async () => {
     try {
       const status = await apiGet("/api/scrape/status");
-      await apiPost(status.status === "paused" ? "/api/scrape/resume" : "/api/scrape/pause", {});
+      if (status.status === "paused" && !status.running) {
+        await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/resume`, {});
+      } else {
+        await apiPost(status.status === "paused" ? "/api/scrape/resume" : "/api/scrape/pause", {});
+      }
       await refreshScrapeStatus();
       await loadTaskList();
     } catch (error) {
