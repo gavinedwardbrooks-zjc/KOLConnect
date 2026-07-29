@@ -641,11 +641,6 @@ def load_page_source_with_context(url: str, driver, session: requests.Session) -
     return page, "fallback" if browser_failed else "direct"
 
 
-def load_page_source(url: str, driver, session: requests.Session) -> str:
-    """Compatibility wrapper for existing page extractors."""
-    return load_page_source_with_context(url, driver, session)[0]
-
-
 def _page_text(page: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", " ", page or "")).lower()
 
@@ -1212,6 +1207,27 @@ def ensure_progress_review_fields(progress_file: str) -> None:
             row.setdefault(FIELD_LAST_MODIFIED_AT, "")
             writer.writerow(row)
     os.replace(temp_path, path)
+
+
+def ensure_progress_file(progress_file: str) -> None:
+    """Create an empty, valid progress file before browser work begins."""
+    path = Path(progress_file)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        ensure_progress_review_fields(progress_file)
+        return
+
+    temp_path = path.with_suffix(f"{path.suffix}.tmp")
+    try:
+        with open(temp_path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=PROGRESS_FIELDS)
+            writer.writeheader()
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def load_existing_progress_by_uid(progress_file: str) -> dict[str, dict]:
@@ -1952,6 +1968,32 @@ def build_output_rows(results: list[dict]) -> list[dict]:
     ]
 
 
+def write_results_file(results: list[dict], output_file: str) -> None:
+    """Atomically replace results.csv so an interrupted write keeps the old file intact."""
+    output_path = Path(output_file)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = output_path.with_suffix(f"{output_path.suffix}.tmp")
+    rows = build_output_rows(results)
+    try:
+        if PANDAS_AVAILABLE:
+            pd.DataFrame(rows, columns=OUTPUT_FIELDS).to_csv(
+                temp_path,
+                index=False,
+                encoding="utf-8-sig",
+            )
+        else:
+            with open(temp_path, "w", newline="", encoding="utf-8-sig") as handle:
+                writer = csv.DictWriter(handle, fieldnames=OUTPUT_FIELDS)
+                writer.writeheader()
+                writer.writerows(rows)
+                handle.flush()
+                os.fsync(handle.fileno())
+        os.replace(temp_path, output_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+
+
 def write_sync_result(path: str | None, sync_status: str, summary: dict | None = None, sync_errors: list[str] | None = None) -> None:
     """Write a task-only handoff file without changing the sync implementation."""
     if not path:
@@ -1985,7 +2027,6 @@ def main() -> None:
     parser.add_argument("--feishu-app-id", default=None)
     parser.add_argument("--feishu-app-secret", default=None)
     parser.add_argument("--feishu-app-token", default=None)
-    parser.add_argument("--feishu-table-id", default=None)
     parser.add_argument("--feishu-creator-table-id", default=None)
     parser.add_argument("--feishu-account-table-id", default=None)
     parser.add_argument("--four-table-sync", action="store_true")
@@ -2010,31 +2051,55 @@ def main() -> None:
     if args.reset and Path(args.progress_file).exists():
         Path(args.progress_file).unlink()
 
+    ensure_progress_file(args.progress_file)
     driver = None
-    if not args.no_browser and SELENIUM_AVAILABLE:
-        chrome_dir = args.chrome_dir or find_chrome_user_data_dir()
-        log.warning("当前为有头模式。若同一用户目录的 Chrome 正在运行，请先关闭对应 Chrome 窗口后再运行。")
-        log.warning("Selenium Chrome 用户目录: %s", chrome_dir)
-        log.warning("Selenium Chrome profile: %s", args.chrome_profile)
-        try:
-            driver = make_chrome_driver(user_data_dir=chrome_dir, profile=args.chrome_profile)
-            log.warning("Chrome 已启动，当前 profile: %s", args.chrome_profile)
-        except Exception as exc:
-            raise BrowserStartError(f"Chrome 启动失败: {exc}")
-
+    browser_start_required = not args.no_browser and SELENIUM_AVAILABLE
+    browser_started = False
+    results: list[dict] = []
+    run_error: Exception | None = None
+    output_error: Exception | None = None
     try:
+        if browser_start_required:
+            chrome_dir = args.chrome_dir or find_chrome_user_data_dir()
+            log.warning("当前为有头模式。若同一用户目录的 Chrome 正在运行，请先关闭对应 Chrome 窗口后再运行。")
+            log.warning("Selenium Chrome 用户目录: %s", chrome_dir)
+            log.warning("Selenium Chrome profile: %s", args.chrome_profile)
+            driver = make_chrome_driver(user_data_dir=chrome_dir, profile=args.chrome_profile)
+            browser_started = True
+            log.warning("Chrome 已启动，当前 profile: %s", args.chrome_profile)
+
         results = scrape_all(
             urls,
             driver=driver,
             progress_file=args.progress_file,
             task_file=args.task_file,
         )
+    except Exception as exc:
+        run_error = BrowserStartError(f"Chrome 启动失败: {exc}") if browser_start_required and not browser_started else exc
+        saved_results = load_progress(args.progress_file)
+        results = [saved_results[url] for url in urls if url in saved_results]
+        log.warning("抓取异常退出，已从 progress.csv 恢复 %d 条结果: %s", len(results), run_error)
     finally:
+        try:
+            write_results_file(results, args.output)
+        except Exception as exc:
+            output_error = exc
+            log.warning("results.csv 保存失败: %s", exc)
+
         if driver:
             temp_user_data_dir = getattr(driver, "_potato_temp_user_data_dir", None)
-            driver.quit()
-            if temp_user_data_dir:
-                shutil.rmtree(temp_user_data_dir, ignore_errors=True)
+            try:
+                driver.quit()
+            except Exception as exc:
+                log.warning("ChromeDriver 关闭异常，结果文件已提前保存: %s", exc)
+            finally:
+                if temp_user_data_dir:
+                    shutil.rmtree(temp_user_data_dir, ignore_errors=True)
+
+    if run_error:
+        raise run_error
+    if output_error:
+        raise output_error
 
     print("\n" + "=" * 96)
     print(f"{FIELD_PLATFORM:<12} {FIELD_EMAIL:<36} {FIELD_LATEST_DATE:<14} {FIELD_URL}")
@@ -2049,15 +2114,6 @@ def main() -> None:
         print("任务已停止，当前进度已保存。")
     else:
         print("任务完成。")
-
-    rows = build_output_rows(results)
-    if PANDAS_AVAILABLE:
-        pd.DataFrame(rows, columns=OUTPUT_FIELDS).to_csv(args.output, index=False, encoding="utf-8-sig")
-    else:
-        with open(args.output, "w", newline="", encoding="utf-8-sig") as handle:
-            writer = csv.DictWriter(handle, fieldnames=OUTPUT_FIELDS)
-            writer.writeheader()
-            writer.writerows(rows)
 
     if not args.no_feishu:
         if args.four_table_sync:

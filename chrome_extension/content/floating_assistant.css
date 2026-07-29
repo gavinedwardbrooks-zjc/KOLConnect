@@ -1,0 +1,227 @@
+#kolconnect-next-root {
+  all: initial;
+  position: fixed;
+  top: 88px;
+  right: 24px;
+  z-index: 2147483647;
+  width: 380px;
+  color: #344038;
+  font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+#kolconnect-next-root * {
+  box-sizing: border-box;
+}
+
+#kolconnect-next-root .kol-panel {
+  overflow: hidden;
+  max-height: calc(100vh - 112px);
+  border: 1px solid #e9e5dd;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 22px 60px rgba(74, 61, 43, 0.2);
+}
+
+#kolconnect-next-root .kol-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 15px;
+  border-radius: 19px 19px 0 0;
+  background: #f7f5ef;
+  cursor: move;
+  user-select: none;
+}
+
+#kolconnect-next-root .kol-brand {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+#kolconnect-next-root button {
+  border: 0;
+  border-radius: 10px;
+  background: #f1eee7;
+  color: #56775b;
+  cursor: pointer;
+  font: 700 13px/1.2 "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+#kolconnect-next-root .kol-icon-button {
+  width: 29px;
+  height: 29px;
+  background: #fff;
+}
+
+#kolconnect-next-root .kol-body {
+  overflow: auto;
+  max-height: calc(100vh - 170px);
+  padding: 14px;
+}
+
+#kolconnect-next-root .kol-status {
+  margin-bottom: 12px;
+  padding: 10px 11px;
+  border-radius: 11px;
+  background: #f2f6ee;
+  color: #56775b;
+  font-size: 13px;
+}
+
+#kolconnect-next-root .kol-status[data-tone="warning"] {
+  background: #fff8e9;
+  color: #8d6518;
+}
+
+#kolconnect-next-root .kol-status[data-tone="error"] {
+  background: #fff1ee;
+  color: #a3544b;
+}
+
+#kolconnect-next-root .kol-card {
+  display: grid;
+  gap: 9px;
+  padding: 13px;
+  border: 1px solid #eee9e1;
+  border-radius: 14px;
+}
+
+#kolconnect-next-root .kol-content-section {
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #eee9e1;
+  border-radius: 14px;
+  background: #fffdf9;
+}
+
+#kolconnect-next-root .kol-section-title {
+  margin: 0 0 9px;
+  color: #344038;
+  font-size: 14px;
+}
+
+#kolconnect-next-root .kol-content-status {
+  margin-bottom: 10px;
+  color: #7b857a;
+  font-size: 12px;
+}
+
+#kolconnect-next-root .kol-content-summary {
+  display: grid;
+  gap: 7px;
+}
+
+#kolconnect-next-root .kol-row {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 10px;
+  font-size: 13px;
+}
+
+#kolconnect-next-root .kol-content-details {
+  margin-top: 11px;
+  color: #667166;
+  font-size: 12px;
+}
+
+#kolconnect-next-root .kol-content-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+#kolconnect-next-root .kol-content-item {
+  padding: 9px;
+  border-radius: 10px;
+  background: #f8f6f0;
+}
+
+#kolconnect-next-root .kol-content-item-title {
+  display: block;
+  overflow: hidden;
+  color: #344038;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#kolconnect-next-root .kol-content-item-metrics,
+#kolconnect-next-root .kol-content-missing {
+  margin-top: 5px;
+  color: #7b857a;
+  line-height: 1.45;
+}
+
+#kolconnect-next-root .kol-content-missing {
+  color: #a06b55;
+}
+
+#kolconnect-next-root .kol-content-link {
+  display: inline-block;
+  margin-top: 5px;
+  color: #66866b;
+}
+
+#kolconnect-next-root .kol-label {
+  color: #7b857a;
+}
+
+#kolconnect-next-root .kol-value {
+  overflow-wrap: anywhere;
+  text-align: right;
+  white-space: pre-wrap;
+}
+
+#kolconnect-next-root .kol-actions {
+  position: sticky;
+  bottom: -14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding-top: 12px;
+  background: #fff;
+}
+
+#kolconnect-next-root .kol-actions button {
+  min-height: 39px;
+  padding: 8px;
+}
+
+#kolconnect-next-root .kol-actions .kol-primary {
+  background: #8baa8c;
+  color: #fff;
+}
+
+#kolconnect-next-root .kol-actions .kol-danger {
+  background: #fff1ee;
+  color: #a3544b;
+}
+
+#kolconnect-next-root .kol-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+#kolconnect-next-root .kol-diagnostics {
+  margin-top: 12px;
+  color: #7b857a;
+  font-size: 12px;
+}
+
+#kolconnect-next-root .kol-diagnostics pre {
+  overflow: auto;
+  max-height: 180px;
+  padding: 9px;
+  border-radius: 9px;
+  background: #fcfaf7;
+  font: 11px/1.5 Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+#kolconnect-next-root.kol-minimized {
+  width: 250px;
+}
+
+#kolconnect-next-root.kol-minimized .kol-body {
+  display: none;
+}

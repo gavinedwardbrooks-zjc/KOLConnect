@@ -1,5 +1,8 @@
 # Python bytecode and interpreter caches
 __pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
 *.py[cod]
 
 # PyInstaller build outputs
@@ -7,11 +10,16 @@ packaging/.pyinstaller-build/
 packaging/.pyinstaller-dist/
 /build/
 /dist/
+*.spec.backup
 .pytest_cache/
 *.exe
+/release/
 
 # Local runtime data and private configuration
 tasks/
+logs/
+userdata/
+runtime/
 app_state.json
 mail_messages.json
 data_protection.json
@@ -27,6 +35,14 @@ ChromeProfile/
 .env
 .env.*
 !.env.example
+*.key
+*.pem
+*.pfx
+*.p12
+credentials.json
+credentials.*.json
+cookies.json
+cookies/
 
 # Browser and driver caches
 .wdm/

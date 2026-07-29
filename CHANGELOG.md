@@ -2,7 +2,7 @@
 
 All notable changes to KOLConnect are documented in this file.
 
-## v0.2.1
+## v0.1.2
 
 ### Added
 

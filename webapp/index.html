@@ -10,61 +10,100 @@
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-title" data-i18n="appTitle">KOL联系助手</div>
+        <div class="brand-title-row">
+          <div class="brand-title" data-i18n="appTitle">KOL联系助手</div>
+          <span class="app-version">KOLConnect v0.1.2</span>
+        </div>
         <div class="brand-subtitle" data-i18n="appSubtitle">海外达人管理与合作工具</div>
       </div>
       <nav class="top-nav">
-        <button class="nav-btn active" data-page="dashboard" data-i18n="navDashboard">控制台</button>
-        <button class="nav-btn" data-page="scrape" data-i18n="navScrape">邮箱抓取</button>
-        <button class="nav-btn" data-page="review" data-i18n="navReview">审核结果</button>
-        <button class="nav-btn" data-page="discover" data-i18n="navDiscover">链接清洗</button>
-        <button class="nav-btn" data-page="accounts" data-i18n="navAccounts">账号管理</button>
-        <button class="nav-btn" data-page="mail" data-i18n="navMail">邮件发送</button>
-        <button class="nav-btn" data-page="settings" data-i18n="navSettings">设置</button>
-        <button class="nav-btn" data-page="logs" data-i18n="navLogs">日志</button>
+        <button class="nav-btn nav-primary active" data-page="dashboard" data-primary="dashboard">工作台</button>
+        <button class="nav-btn nav-primary" data-page="scrape" data-primary="scrape">发现达人</button>
+        <button class="nav-btn nav-primary" data-page="creator-library" data-primary="creator-library">达人库</button>
+        <button class="nav-btn nav-primary" data-page="mail" data-primary="mail">合作管理</button>
+        <button class="nav-btn nav-primary" data-page="settings" data-primary="settings">设置</button>
+      </nav>
+      <nav class="sub-nav" aria-label="功能入口">
+        <button class="nav-btn nav-sub" data-page="scrape" data-primary="scrape" data-i18n="navScrape">抓取任务</button>
+        <button class="nav-btn nav-sub" data-page="review" data-primary="scrape" data-i18n="navReview">审核结果</button>
+        <button class="nav-btn nav-sub" data-page="discover" data-primary="scrape" data-i18n="navDiscover">链接清洗</button>
+        <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">账号管理</button>
+        <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件与联系</button>
+        <button class="nav-btn nav-sub" data-page="logs" data-primary="settings" data-i18n="navLogs">系统日志</button>
       </nav>
     </header>
 
     <main class="workspace">
       <section class="page active" data-page="dashboard">
         <div class="page-header">
-          <h1 data-i18n="dashboardTitle">控制台</h1>
-          <p data-i18n="dashboardSubtitle">先看当前配置和运行状态。</p>
-        </div>
-
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-label" data-i18n="statProfile">当前 Profile</span>
-            <strong id="dashboard-profile">--</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label" data-i18n="statTable">当前飞书表</span>
-            <strong id="dashboard-table">--</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label" data-i18n="statStatus">运行状态</span>
-            <strong id="dashboard-status">空闲</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label" data-i18n="statResults">结果文件</span>
-            <strong>results.csv</strong>
+          <div class="dashboard-page-heading">
+            <div>
+              <p class="eyebrow">KOL OPERATIONS</p>
+              <h1>今天的 KOL 工作台</h1>
+              <p>先处理最重要的达人跟进、数据更新和合作复盘。</p>
+            </div>
+            <button class="soft-btn" id="dashboard-refresh">刷新数据</button>
           </div>
         </div>
 
-        <div class="section-card">
-          <div class="section-title" data-i18n="quickActions">快捷操作</div>
-
-          <div class="action-row">
-            <button class="primary-btn" id="dash-go-scrape" data-i18n="goScrape">去抓取页</button>
-            <button class="soft-btn" id="dash-open-results" data-i18n="openResults">打开结果文件</button>
-            <button class="soft-btn" id="dash-go-settings" data-i18n="goSettings">去设置</button>
+        <div class="stats-grid dashboard-overview-grid">
+          <div class="stat-card">
+            <span class="stat-label">达人资产</span>
+            <strong id="dashboard-total-creators">--</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">本周新增达人</span>
+            <strong id="dashboard-new-creators">--</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">等待联系</span>
+            <strong id="dashboard-discovered">--</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">正在合作</span>
+            <strong id="dashboard-cooperating">--</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">累计合作花费</span>
+            <strong id="dashboard-spend">--</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">平均 ROI</span>
+            <strong id="dashboard-average-roi">--</strong>
           </div>
         </div>
 
-        <div class="section-card">
-          <div class="section-title" data-i18n="logPreview">日志预览</div>
-          <pre class="log-panel" id="dashboard-log-preview">等待运行...</pre>
+        <div class="dashboard-section-grid">
+          <section class="section-card dashboard-card">
+            <h2>值得关注的达人</h2>
+            <div class="dashboard-health-columns">
+              <div><h3>上升达人</h3><div id="dashboard-rising-creators" class="dashboard-list"></div></div>
+              <div><h3>下滑达人</h3><div id="dashboard-falling-creators" class="dashboard-list"></div></div>
+              <div><h3>数据过期</h3><div id="dashboard-expired-creators" class="dashboard-list"></div></div>
+            </div>
+          </section>
+
+          <section class="section-card dashboard-card">
+            <h2>最近合作表现</h2>
+            <div class="dashboard-cooperation-metrics">
+              <div><span>合作数量</span><strong id="dashboard-campaigns">--</strong></div>
+              <div><span>花费</span><strong id="dashboard-total-cost">--</strong></div>
+              <div><span>播放</span><strong id="dashboard-total-views">--</strong></div>
+              <div><span>ROI</span><strong id="dashboard-cooperation-roi">--</strong></div>
+            </div>
+            <h3>Top 达人</h3>
+            <div id="dashboard-top-creators" class="dashboard-list"></div>
+          </section>
         </div>
+
+        <section class="section-card dashboard-card">
+          <h2>今日待处理</h2>
+          <div class="dashboard-action-columns">
+            <div><h3>数据过期</h3><div id="dashboard-action-expired" class="dashboard-list"></div></div>
+            <div><h3>待联系</h3><div id="dashboard-pending-contact" class="dashboard-list"></div></div>
+            <div><h3>合作记录缺失</h3><div id="dashboard-incomplete-cooperations" class="dashboard-list"></div></div>
+          </div>
+        </section>
       </section>
 
       <section class="page" data-page="scrape">
@@ -180,6 +219,189 @@
         </div>
       </section>
 
+      <section class="page" data-page="creator-library">
+        <div class="page-header">
+          <h1>达人库</h1>
+          <p>集中查看已从 KOL Connect 插件导入的达人分析，并在本地记录合作进度。</p>
+        </div>
+
+        <div class="section-card">
+          <div class="creator-library-toolbar">
+            <label class="field creator-library-search-field">
+              <span>搜索达人</span>
+              <input id="creator-library-search" type="search" placeholder="达人名称、主页链接或标签">
+            </label>
+            <label class="field">
+              <span>平台</span>
+              <select id="creator-library-platform"><option value="">全部平台</option></select>
+            </label>
+            <label class="field">
+              <span>国家/地区</span>
+              <select id="creator-library-country"><option value="">全部国家/地区</option></select>
+            </label>
+            <label class="field">
+              <span>语言</span>
+              <select id="creator-library-language"><option value="">全部语言</option></select>
+            </label>
+            <label class="field">
+              <span>内容类型</span>
+              <select id="creator-library-category"><option value="">全部内容类型</option></select>
+            </label>
+            <label class="field">
+              <span>标签</span>
+              <select id="creator-library-tag"><option value="">全部标签</option></select>
+            </label>
+            <label class="field">
+              <span>Insight 等级</span>
+              <select id="creator-library-level">
+                <option value="">全部等级</option>
+                <option value="excellent">excellent</option>
+                <option value="good">good</option>
+                <option value="average">average</option>
+                <option value="insufficient">insufficient</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>排序</span>
+              <select id="creator-library-sort">
+                <option value="analysis_time_desc">分析时间（最新）</option>
+                <option value="followers_desc">粉丝数（高到低）</option>
+                <option value="median_views_desc">中位播放（高到低）</option>
+                <option value="average_views_desc">平均播放（高到低）</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>当前状态</span>
+              <select id="creator-library-status">
+                <option value="">全部状态</option>
+                <option value="discovered">已发现</option>
+                <option value="contacted">已联系</option>
+                <option value="negotiating">洽谈中</option>
+                <option value="cooperating">合作中</option>
+                <option value="completed">已完成</option>
+                <option value="rejected">已拒绝</option>
+              </select>
+            </label>
+            <div class="creator-library-actions">
+              <div class="view-toggle" role="group" aria-label="达人库视图">
+                <button class="soft-btn compact-btn active" id="creator-library-card-view" type="button">卡片</button>
+                <button class="soft-btn compact-btn" id="creator-library-table-view" type="button">表格</button>
+              </div>
+              <button class="soft-btn" id="creator-library-refresh">刷新达人库</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="creator-library-card-grid" id="creator-library-cards"></div>
+        <div class="section-card review-table-card" id="creator-library-table-wrap" hidden>
+          <div class="review-table-wrap">
+            <table class="review-table creator-library-table">
+              <thead><tr>
+                <th>达人名称</th><th>平台</th><th>主页链接</th><th>粉丝数</th><th>内容类型</th>
+                <th>Insight 等级</th><th>平均播放</th><th>中位播放</th><th>粉丝变化</th><th>中位播放变化</th><th>评分变化</th><th>最新分析时间</th><th>数据更新时间</th><th>当前状态</th><th>操作</th>
+              </tr></thead>
+              <tbody id="creator-library-body"></tbody>
+            </table>
+          </div>
+          <div class="review-empty" id="creator-library-empty" hidden>暂无达人分析数据。请先在插件中导入达人。</div>
+        </div>
+      </section>
+
+      <section class="page" data-page="creator-library-detail">
+        <div class="page-header creator-library-detail-header">
+          <div>
+            <h1>达人分析</h1>
+            <p id="creator-library-detail-summary">--</p>
+          </div>
+          <div class="action-row">
+            <button class="soft-btn" id="creator-library-detail-back">返回达人库</button>
+            <button class="primary-btn" id="creator-library-detail-task">创建合作任务</button>
+          </div>
+        </div>
+
+        <div class="creator-library-detail-grid">
+          <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
+            <h2>基础信息</h2>
+            <dl id="creator-library-basic"></dl>
+            <p class="hint" id="creator-library-data-meta">--</p>
+          </div>
+          <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="content">
+            <h2>视频分析</h2>
+            <dl id="creator-library-video-metrics"></dl>
+          </div>
+          <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="content">
+            <h2>Creator Insight</h2>
+            <p class="creator-library-level" id="creator-library-detail-level">--</p>
+            <p id="creator-library-recommendation">--</p>
+          </div>
+          <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
+            <h2>数据新鲜度</h2>
+            <p id="creator-library-freshness">--</p>
+          </div>
+        </div>
+
+        <div class="detail-tabs" role="tablist" aria-label="达人详情">
+          <button class="detail-tab active" type="button" data-detail-tab="overview">概览</button>
+          <button class="detail-tab" type="button" data-detail-tab="content">内容表现</button>
+          <button class="detail-tab" type="button" data-detail-tab="history">历史趋势</button>
+          <button class="detail-tab" type="button" data-detail-tab="cooperations">合作记录</button>
+        </div>
+        <div class="creator-analysis-columns detail-panel" data-detail-panel="content">
+          <div class="section-card creator-library-detail-card"><h2>优势</h2><ul class="creator-library-list" id="creator-library-strengths"></ul></div>
+          <div class="section-card creator-library-detail-card"><h2>风险</h2><ul class="creator-library-list" id="creator-library-risks"></ul></div>
+        </div>
+        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="content">
+          <h2>最近视频</h2>
+          <div class="creator-analysis-videos" id="creator-library-videos"></div>
+        </div>
+
+        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="history">
+          <h2>历史分析</h2>
+          <div class="review-table-wrap">
+            <table class="review-table">
+              <thead><tr><th>时间</th><th>粉丝</th><th>平均播放</th><th>中位播放</th><th>评分</th><th>Insight</th></tr></thead>
+              <tbody id="creator-library-snapshots"></tbody>
+            </table>
+          </div>
+          <p class="hint" id="creator-library-snapshots-empty">暂无历史 Snapshot 数据。</p>
+        </div>
+
+        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="cooperations">
+          <h2>合作历史</h2>
+          <div class="stats-grid creator-cooperation-stats">
+            <div class="stat-card"><span class="stat-label">合作次数</span><strong id="cooperation-stat-count">0</strong></div>
+            <div class="stat-card"><span class="stat-label">总花费</span><strong id="cooperation-stat-spend">0</strong></div>
+            <div class="stat-card"><span class="stat-label">平均播放</span><strong id="cooperation-stat-views">0</strong></div>
+            <div class="stat-card"><span class="stat-label">平均 ROI</span><strong id="cooperation-stat-roi">0</strong></div>
+          </div>
+          <div class="review-table-wrap creator-cooperations-wrap">
+            <table class="review-table creator-cooperations-table">
+              <thead><tr><th>项目</th><th>平台</th><th>联系日期</th><th>价格</th><th>发布数量</th><th>总播放</th><th>平均播放</th><th>ROI</th><th>结果</th><th>备注</th></tr></thead>
+              <tbody id="creator-cooperations-body"></tbody>
+            </table>
+          </div>
+          <p class="hint" id="creator-cooperations-empty">暂无合作记录。</p>
+        </div>
+
+        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="cooperations">
+          <h2>新增合作记录</h2>
+          <div class="form-grid three">
+            <label class="field"><span>合作项目</span><input id="cooperation-campaign" type="text" placeholder="例如：2026 夏季推广"></label>
+            <label class="field"><span>平台</span><select id="cooperation-platform"><option value="">使用达人平台</option><option>TikTok</option><option>Instagram</option><option>YouTube</option></select></label>
+            <label class="field"><span>联系日期</span><input id="cooperation-contact-date" type="date"></label>
+            <label class="field"><span>合作价格</span><input id="cooperation-price" type="number" min="0" step="0.01"></label>
+            <label class="field"><span>发布数量</span><input id="cooperation-published-count" type="number" min="0" step="1"></label>
+            <label class="field"><span>总播放</span><input id="cooperation-total-views" type="number" min="0" step="1"></label>
+            <label class="field"><span>平均播放</span><input id="cooperation-average-views" type="number" min="0" step="1"></label>
+            <label class="field"><span>ROI</span><input id="cooperation-roi" type="number" step="0.01"></label>
+            <label class="field"><span>更新达人状态（可选）</span><select id="cooperation-status"><option value="">不修改</option><option value="discovered">已发现</option><option value="contacted">已联系</option><option value="negotiating">洽谈中</option><option value="cooperating">合作中</option><option value="completed">已完成</option><option value="rejected">已拒绝</option></select></label>
+          </div>
+          <label class="field"><span>合作结果</span><input id="cooperation-result" type="text"></label>
+          <label class="field"><span>备注</span><textarea id="cooperation-note" rows="3"></textarea></label>
+          <div class="action-row"><button class="primary-btn" id="cooperation-save">保存合作记录</button></div>
+        </div>
+      </section>
+
       <section class="page" data-page="review">
         <div class="page-header">
           <h1 data-i18n="reviewTitle">审核结果</h1>
@@ -206,12 +428,37 @@
             <div class="review-toolbar-actions">
               <button class="soft-btn" id="review-refresh" data-i18n="reviewRefresh">刷新任务</button>
               <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描四表缺失邮箱</button>
+              <button class="soft-btn" id="review-view-analysis" hidden>达人分析</button>
               <button class="soft-btn" id="review-retry-failed">重新抓取异常记录</button>
               <button class="primary-btn" id="review-sync-four-tables" data-i18n="reviewSyncFourTables">同步有效结果到四表</button>
             </div>
           </div>
           <p class="hint" id="review-summary">请选择一个已有任务。</p>
           <p class="hint" id="review-sync-summary"></p>
+        </div>
+
+        <div class="section-card creator-analysis-card" id="creator-analysis-panel" hidden>
+          <div class="creator-analysis-heading">
+            <div>
+              <h2>达人分析</h2>
+              <p id="creator-analysis-summary" class="hint"></p>
+            </div>
+            <span id="creator-analysis-level" class="creator-analysis-level"></span>
+          </div>
+          <p id="creator-analysis-metrics" class="creator-analysis-metrics"></p>
+          <div class="creator-analysis-columns">
+            <div>
+              <h3>优势</h3>
+              <ul id="creator-analysis-strengths"></ul>
+            </div>
+            <div>
+              <h3>风险</h3>
+              <ul id="creator-analysis-risks"></ul>
+            </div>
+          </div>
+          <p id="creator-analysis-recommendation" class="creator-analysis-recommendation"></p>
+          <h3>最近视频</h3>
+          <div id="creator-analysis-videos" class="creator-analysis-videos"></div>
         </div>
 
         <div class="section-card review-table-card">
@@ -416,6 +663,37 @@
           </div>
           <div class="action-row">
             <button class="primary-btn" id="save-ui-settings" data-i18n="saveUi">保存界面设置</button>
+          </div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title">系统调试</div>
+          <label class="checkbox-field">
+            <input id="debug-mode" type="checkbox">
+            <span>开启 Debug 模式</span>
+          </label>
+          <p class="hint">开启后显示本机运行信息，不会显示密码、Token 或邮件授权码。</p>
+          <div id="debug-system-info" class="system-info" hidden></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title">系统健康检查</div>
+          <p class="hint">检查本地数据目录、达人库 Excel、插件最近导入记录与飞书配置，不会写入 Excel 或发送飞书请求。</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="system-health-run">运行健康检查</button>
+          </div>
+          <div id="system-health-result" class="system-health-result" hidden></div>
+        </div>
+
+        <div class="section-card">
+          <div class="section-title">达人库文件</div>
+          <label class="field">
+            <span>Excel 工作簿路径</span>
+            <input id="creator-library-workbook-path" type="text" placeholder="例如：WPS云盘\KOLConnect\Creator_Library.xlsx">
+          </label>
+          <p class="hint">可设置为 WPS 云盘或其他同步文件夹。首次使用时会自动创建 Creators、Videos、Insights 工作表。</p>
+          <div class="action-row">
+            <button class="primary-btn" id="creator-library-save-config">保存达人库文件设置</button>
           </div>
         </div>
 

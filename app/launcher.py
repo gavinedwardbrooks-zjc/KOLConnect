@@ -163,7 +163,7 @@ def run_desktop() -> None:
 
     width, height = load_window_size()
     window = webview.create_window(
-        "KOL联系助手",
+        "KOLConnect v0.1.2",
         APP_URL,
         width=width,
         height=height,

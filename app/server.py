@@ -17,6 +17,7 @@ import os
 import re
 import smtplib
 import subprocess
+import sys
 import task_manager
 import threading
 import time
@@ -28,6 +29,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import scraper as scraper_module
+from creator_repository import CreatorRepository
+from dashboard_repository import DashboardRepository
+from dashboard_service import DashboardService
+from app_logging import log_error, log_event
+from openpyxl import load_workbook
 from runtime_paths import (
     get_app_data_dir,
     get_logs_dir,
@@ -46,7 +52,11 @@ STATIC_DIR = APP_DIR / "webapp"
 STATE_FILE = DATA_DIR / "settings.json"
 TASKS_DIR = DATA_DIR / "tasks"
 DATA_PROTECTION_FILE = DATA_DIR / "data_protection.json"
+CREATOR_ANALYSIS_DIR = DATA_DIR / "creator_analysis"
+CREATOR_LIBRARY_FILE = DATA_DIR / "creator_library.json"
+DEFAULT_CREATOR_LIBRARY_WORKBOOK = DATA_DIR / "Creator_Library.xlsx"
 RUN_LOG_FILE = LOGS_DIR / "kolconnect.log"
+DIAGNOSTICS_FILE = DATA_DIR / "system_diagnostics.json"
 HOST = "127.0.0.1"
 PORT = 8765
 SENSITIVE_MASK = "********"
@@ -109,7 +119,7 @@ CHROME_EXE_CANDIDATES = [
 ]
 
 DEFAULT_STATE = {
-    "ui": {"language": "zh"},
+    "ui": {"language": "zh", "debug_mode": False},
     "profiles": {"selected": AUTOMATION_PROFILE_NAME},
     "accounts": {"entries": []},
     "feishu": {
@@ -125,6 +135,9 @@ DEFAULT_STATE = {
         "accounts": [],
         "template_subject": "",
         "template_body": "",
+    },
+    "creator_library": {
+        "workbook_path": str(DEFAULT_CREATOR_LIBRARY_WORKBOOK),
     },
 }
 
@@ -332,6 +345,7 @@ def normalize_state(raw: dict | None) -> dict:
         state["ui"].update(raw["ui"])
     if state["ui"].get("language") not in {"zh", "en"}:
         state["ui"]["language"] = "zh"
+    state["ui"]["debug_mode"] = bool(state["ui"].get("debug_mode"))
 
     if isinstance(raw.get("profiles"), dict):
         state["profiles"].update(raw["profiles"])
@@ -367,7 +381,22 @@ def normalize_state(raw: dict | None) -> dict:
     if isinstance(raw.get("mail"), dict):
         state["mail"] = normalize_mail_state(raw["mail"])
 
+    if isinstance(raw.get("creator_library"), dict):
+        state["creator_library"]["workbook_path"] = normalize_creator_library_workbook_path(
+            raw["creator_library"].get("workbook_path")
+        )
+
     return state
+
+
+def normalize_creator_library_workbook_path(value: object) -> str:
+    raw_path = str(value or "").strip()
+    if not raw_path:
+        return str(DEFAULT_CREATOR_LIBRARY_WORKBOOK)
+    path = Path(os.path.expandvars(os.path.expanduser(raw_path)))
+    if path.suffix.lower() != ".xlsx":
+        raise ValueError("达人库文件必须是 .xlsx 格式。")
+    return str(path.resolve())
 
 
 def load_state() -> dict:
@@ -390,6 +419,130 @@ def save_state(state: dict) -> None:
 
 
 STATE = load_state()
+
+
+def _load_diagnostics() -> dict:
+    data, _source_path = load_json_with_backup(DIAGNOSTICS_FILE)
+    return data if isinstance(data, dict) else {}
+
+
+DIAGNOSTICS = _load_diagnostics()
+DIAGNOSTICS_LOCK = threading.Lock()
+
+
+def _save_diagnostics() -> None:
+    with DIAGNOSTICS_LOCK:
+        atomic_write_json(DIAGNOSTICS_FILE, DIAGNOSTICS)
+
+
+def _record_diagnostic(key: str, value: dict) -> None:
+    with DIAGNOSTICS_LOCK:
+        DIAGNOSTICS[key] = value
+        atomic_write_json(DIAGNOSTICS_FILE, DIAGNOSTICS)
+
+
+def _record_last_error(message: str) -> None:
+    _record_diagnostic("last_error", {"message": message, "time": _utc_now()})
+
+
+def _diagnostic_timestamp_is_stale(value: object, days: int = 7) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return True
+    try:
+        timestamp = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return (datetime.now(timezone.utc) - timestamp.astimezone(timezone.utc)).total_seconds() > days * 86400
+
+
+def _friendly_error_message(exc: BaseException | str) -> str:
+    raw = str(exc or "").strip()
+    lowered = raw.lower()
+    if isinstance(exc, PermissionError) or "permissionerror" in lowered or "permission denied" in lowered:
+        return "Excel 文件正在被其他程序使用，请关闭 WPS 或 Excel 后重试。"
+    if "excel" in lowered:
+        return "Excel 文件处理失败，请确认文件可读取且未被 WPS 或 Excel 占用。"
+    if "connectionrefused" in lowered or "failed to establish a new connection" in lowered:
+        return "服务连接失败，请确认 KOLConnect 正在运行。"
+    if "traceback" in lowered:
+        return "操作失败，请查看系统日志中的详细原因。"
+    return raw or "操作失败，请查看系统日志中的详细原因。"
+
+
+def get_system_health() -> dict:
+    """Run read-only local checks used by the settings diagnostics panel."""
+    workbook_path = Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
+    required_sheets = {
+        "Creators", "Videos", "Insights", "Cooperations", "CreatorSnapshots", "VideoSnapshots", "_Metadata"
+    }
+    checks: list[dict] = [
+        {"key": "data_directory", "label": "数据目录", "status": "ok", "message": str(DATA_DIR)},
+        {"key": "api", "label": "API 服务", "status": "ok", "message": f"{HOST}:{PORT}"},
+    ]
+    excel_status = "warning"
+    excel_message = "文件尚未创建，首次导入达人时会自动创建。"
+    sheets_message = "等待创建 Excel 文件后检查。"
+    if workbook_path.exists():
+        try:
+            workbook = load_workbook(workbook_path, read_only=True)
+            sheet_names = set(workbook.sheetnames)
+            workbook.close()
+            excel_status = "ok"
+            excel_message = str(workbook_path)
+            missing_sheets = sorted(required_sheets - sheet_names)
+            if missing_sheets:
+                sheets_message = f"缺少工作表：{', '.join(missing_sheets)}"
+                sheets_status = "error"
+            else:
+                sheets_message = "工作表结构完整。"
+                sheets_status = "ok"
+        except Exception as exc:
+            excel_status = "error"
+            excel_message = _friendly_error_message(exc)
+            sheets_status = "error"
+            sheets_message = "无法读取 Excel 工作簿。"
+    else:
+        sheets_status = "warning"
+    checks.extend(
+        [
+            {"key": "excel", "label": "Excel 文件", "status": excel_status, "message": excel_message},
+            {"key": "excel_structure", "label": "Excel 结构", "status": sheets_status, "message": sheets_message},
+        ]
+    )
+    last_import = DIAGNOSTICS.get("last_extension_import") if isinstance(DIAGNOSTICS.get("last_extension_import"), dict) else {}
+    import_time = str(last_import.get("time") or "")
+    checks.append(
+        {
+            "key": "extension", "label": "Chrome 插件", "status": "warning" if _diagnostic_timestamp_is_stale(import_time) else "ok",
+            "message": "最近 7 天无导入记录。" if _diagnostic_timestamp_is_stale(import_time) else f"最近导入：{import_time}",
+        }
+    )
+    feishu = STATE.get("feishu") if isinstance(STATE.get("feishu"), dict) else {}
+    required_feishu = ("app_id", "app_secret", "app_token")
+    missing_feishu = [key for key in required_feishu if not str(feishu.get(key) or "").strip()]
+    checks.append(
+        {
+            "key": "feishu", "label": "飞书配置", "status": "warning" if missing_feishu else "ok",
+            "message": f"缺少：{', '.join(missing_feishu)}" if missing_feishu else "配置已填写，未执行真实连接测试。",
+        }
+    )
+    overall = "error" if any(item["status"] == "error" for item in checks) else "warning" if any(item["status"] == "warning" for item in checks) else "ok"
+    last_error = DIAGNOSTICS.get("last_error") if isinstance(DIAGNOSTICS.get("last_error"), dict) else {}
+    return {
+        "status": overall,
+        "checks": checks,
+        "debug": {
+            "version": "KOLConnect v0.1.2",
+            "api_status": "正常",
+            "excel_path": str(workbook_path),
+            "excel_status": excel_status,
+            "last_extension_import": last_import,
+            "last_error": last_error,
+        },
+    }
 
 
 def find_chrome_exe() -> Path | None:
@@ -502,8 +655,7 @@ class ScrapeJob:
         with self.lock:
             self.logs.append(text)
             self.logs = self.logs[-1000:]
-            with RUN_LOG_FILE.open("a", encoding="utf-8") as handle:
-                handle.write(text)
+            log_event("Scraper", text.strip())
 
     def snapshot(self) -> dict:
         with self.lock:
@@ -998,7 +1150,13 @@ def _review_record(row: dict) -> dict:
 def get_task_review_results(task_id: str) -> dict:
     task, paths = task_manager.load_task(TASKS_DIR, task_id)
     if not paths["results"].exists():
-        return {"task_id": task_id, "platforms": task.get("platforms", []), "platform_results": {}, "records": []}
+        return {
+            "task_id": task_id,
+            "platforms": task.get("platforms", []),
+            "platform_results": {},
+            "creator_analysis_available": bool(task.get("creator_analysis_id")),
+            "records": [],
+        }
     _fieldnames, rows = _read_task_csv(paths["results"])
     records = [_review_record(row) for row in rows]
     platform_results = {platform: 0 for platform in ("TikTok", "Instagram", "YouTube")}
@@ -1013,6 +1171,7 @@ def get_task_review_results(task_id: str) -> dict:
             task.get("platform") or task.get("target_platform"),
         ),
         "platform_results": platform_results,
+        "creator_analysis_available": bool(task.get("creator_analysis_id")),
         "records": records,
     }
 
@@ -1556,6 +1715,152 @@ def create_manual_task(payload: dict) -> dict:
     return {"task": task, "account_uid": account_uid}
 
 
+def get_creator_repository() -> CreatorRepository:
+    """Create the active local adapter; swap this factory for a cloud adapter later."""
+    workbook_path = Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
+    return CreatorRepository(workbook_path, CREATOR_ANALYSIS_DIR, CREATOR_LIBRARY_FILE)
+
+
+def get_dashboard_data() -> dict:
+    """Return read-only operational dashboard data from the Creator Repository."""
+    service = DashboardService(DashboardRepository(get_creator_repository()))
+    return {
+        "overview": service.getOverview(),
+        "creator_health": service.getCreatorHealth(),
+        "cooperation_performance": service.getCooperationPerformance(),
+        "action_items": service.getActionItems(),
+    }
+
+
+def _extension_analysis_payload(payload: dict, task: dict, account_uid: str) -> dict:
+    creator = payload.get("creator") if isinstance(payload.get("creator"), dict) else {}
+    videos = payload.get("videos") if isinstance(payload.get("videos"), list) else []
+    video_analysis = payload.get("video_analysis") if isinstance(payload.get("video_analysis"), dict) else {}
+    creator_insight = payload.get("creator_insight") if isinstance(payload.get("creator_insight"), dict) else {}
+    # The extension is capped at 20 videos; keep the same bound when persisting its snapshot.
+    videos = [item for item in videos[:20] if isinstance(item, dict)]
+    return {
+        "schema_version": "1.0",
+        "analysis_id": f"analysis_{task['id']}",
+        "task_id": task["id"],
+        "account_uid": account_uid,
+        "imported_at": _utc_now(),
+        "source": "chrome_extension",
+        "creator": {
+            "creator_name": str(creator.get("creator_name") or "").strip(),
+            "platform": str(creator.get("platform") or "").strip(),
+            "profile_url": str(creator.get("profile_url") or "").strip(),
+            "followers": str(creator.get("followers") or "").strip(),
+            "bio": str(creator.get("bio") or "").strip(),
+            "country": str(creator.get("country") or "").strip(),
+            "language": str(creator.get("language") or "").strip(),
+            "language_source": str(creator.get("language_source") or "").strip(),
+        },
+        "content_category": str(payload.get("content_category") or "").strip(),
+        "video_analysis": video_analysis,
+        "videos": videos,
+        "creator_insight": creator_insight,
+    }
+
+
+def import_extension_capture(payload: dict) -> dict:
+    """Create one reviewable manual task and persist its extension-only analysis snapshot."""
+    creator = payload.get("creator") if isinstance(payload.get("creator"), dict) else {}
+    profile_url = str(creator.get("profile_url") or "").strip()
+    if not profile_url:
+        raise ValueError("缺少达人主页链接。")
+
+    normalized = scraper_module.normalize_link_record(profile_url)
+    if not normalized.get("valid"):
+        raise ValueError(str(normalized.get("reason") or "主页链接无效。"))
+    normalized_url = str(normalized.get("normalized_url") or "").strip()
+    manual_result = create_manual_task(
+        {
+            "task_name": payload.get("task_name"),
+            "name": creator.get("creator_name"),
+            "platform": creator.get("platform"),
+            "profile_url": normalized_url,
+            "follower_count": creator.get("followers"),
+            "email": "",
+            "whatsapp": "",
+            "note": payload.get("note"),
+        }
+    )
+    task = manual_result["task"]
+    analysis = _extension_analysis_payload(payload, task, manual_result["account_uid"])
+    try:
+        saved_analysis = get_creator_repository().saveCreator(analysis)
+    except Exception:
+        # The task only exists to support this import; remove it if its analysis was not persisted.
+        try:
+            task_manager.delete_task(TASKS_DIR, task["id"])
+        except Exception:
+            pass
+        raise
+    task = task_manager.update_task(
+        TASKS_DIR,
+        task["id"],
+        creator_analysis_id=saved_analysis["creator_id"],
+        creator_snapshot_id=saved_analysis["snapshot_id"],
+        creator_analysis_imported_at=analysis["imported_at"],
+    )
+    return {
+        "duplicate": False,
+        "is_new_creator": saved_analysis["is_new_creator"],
+        "task": task,
+        "account_uid": manual_result["account_uid"],
+        "analysis_id": saved_analysis["creator_id"],
+        "snapshot_id": saved_analysis["snapshot_id"],
+    }
+
+
+def get_task_creator_analysis(task_id: str) -> dict:
+    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
+    if not task.get("creator_analysis_id"):
+        return {"available": False}
+    detail = get_creator_repository().getCreatorDetail(str(task["creator_analysis_id"]))
+    return {
+        "available": True,
+        "analysis": detail["analysis"],
+        "recovered_from_backup": False,
+    }
+
+
+def get_creator_library() -> dict:
+    return {"records": get_creator_repository().getCreators()}
+
+
+def get_creator_library_detail(analysis_id: str) -> dict:
+    return get_creator_repository().getCreatorDetail(analysis_id)
+
+
+def get_creator_library_trend(analysis_id: str) -> dict:
+    return get_creator_repository().getCreatorTrend(analysis_id)
+
+
+def get_creator_library_snapshots(analysis_id: str) -> dict:
+    return {
+        "creator_id": analysis_id,
+        "snapshots": get_creator_repository().getCreatorSnapshots(analysis_id),
+    }
+
+
+def update_creator_library_status(analysis_id: str, status: object) -> dict:
+    return get_creator_repository().updateCreatorStatus(analysis_id, status)
+
+
+def save_creator_library_cooperation(analysis_id: str, payload: dict) -> dict:
+    return get_creator_repository().saveCooperation(analysis_id, payload)
+
+
+def open_creator_library_collaboration_task(analysis_id: str) -> dict:
+    """Reuse the analysis import task as the collaboration review entry; never duplicate it."""
+    detail = get_creator_library_detail(analysis_id)
+    task_id = str(detail["record"].get("task_id") or "")
+    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
+    return {"task": task, "created": False, "message": "已打开关联的审核任务。"}
+
+
 def _normalize_follower_count(value: object) -> str:
     raw = str(value or "").strip()
     normalized = scraper_module.normalize_follower_count(raw)
@@ -1802,6 +2107,7 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
         raise RuntimeError("任务正在运行，暂不能同步审核结果。")
 
     task, paths = task_manager.load_task(TASKS_DIR, task_id)
+    log_event("Feishu", f"同步开始 | task_id={task_id}")
     data_source = _task_data_source(task)
     email_source = _task_email_source(task)
     data_protection = load_data_protection()
@@ -1923,7 +2229,9 @@ def sync_task_results_to_four_tables(task_id: str) -> dict:
             "skipped_invalid": len(validation_errors),
         }
         sync_status = "success" if not sync_errors else "failed"
+        log_event("Feishu", f"同步{sync_status} | task_id={task_id} | errors={len(sync_errors)}")
     except Exception as exc:
+        log_error("Feishu", f"同步失败 | task_id={task_id}", exc)
         sync_errors = [str(exc)]
         sync_summary = dict(empty_summary)
         sync_summary["errors"] = 1
@@ -1990,6 +2298,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+        if self.path.startswith("/api/"):
+            outcome = "success" if status < 400 else "failed"
+            detail = str(data.get("error") or "") if isinstance(data, dict) else ""
+            log_event("API", f"{self.command} {urlparse(self.path).path} | {outcome} | status={status}{f' | {detail}' if detail else ''}")
 
     def _ok(self, **extra) -> None:
         data = {"ok": True}
@@ -1997,7 +2309,10 @@ class Handler(BaseHTTPRequestHandler):
         self._json(data)
 
     def _error(self, message: str, status: int = 400) -> None:
-        self._json({"error": message}, status=status)
+        friendly_message = _friendly_error_message(message)
+        _record_last_error(friendly_message)
+        log_error("API", f"{self.command} {urlparse(self.path).path} | status={status} | {friendly_message}")
+        self._json({"error": friendly_message}, status=status)
 
     def _save_state_and_ok(self) -> None:
         save_state(STATE)
@@ -2045,6 +2360,39 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
 
+        if parsed.path == "/api/system/health":
+            return self._json({"ok": True, **get_system_health()})
+
+        if parsed.path == "/api/dashboard":
+            try:
+                return self._json({"ok": True, **get_dashboard_data()})
+            except (OSError, RuntimeError, ValueError) as exc:
+                return self._error(f"无法读取工作台数据：{exc}", status=500)
+
+        if parsed.path == "/api/creator-library":
+            return self._json({"ok": True, **get_creator_library()})
+
+        creator_library_trend_match = re.fullmatch(r"/api/creator-library/([^/]+)/trend", parsed.path)
+        if creator_library_trend_match:
+            try:
+                return self._json({"ok": True, **get_creator_library_trend(creator_library_trend_match.group(1))})
+            except ValueError as exc:
+                return self._error(str(exc), status=404)
+
+        creator_library_snapshots_match = re.fullmatch(r"/api/creator-library/([^/]+)/snapshots", parsed.path)
+        if creator_library_snapshots_match:
+            try:
+                return self._json({"ok": True, **get_creator_library_snapshots(creator_library_snapshots_match.group(1))})
+            except ValueError as exc:
+                return self._error(str(exc), status=404)
+
+        creator_library_match = re.fullmatch(r"/api/creator-library/([^/]+)", parsed.path)
+        if creator_library_match:
+            try:
+                return self._json({"ok": True, **get_creator_library_detail(creator_library_match.group(1))})
+            except ValueError as exc:
+                return self._error(str(exc), status=404)
+
         if parsed.path == "/api/tasks":
             return self._json({"ok": True, **get_task_list()})
 
@@ -2061,6 +2409,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": True, **get_task_review_results(task_results_match.group(1))})
             except ValueError as exc:
                 return self._error(str(exc))
+
+        task_analysis_match = re.fullmatch(r"/api/tasks/([^/]+)/creator-analysis", parsed.path)
+        if task_analysis_match:
+            try:
+                return self._json({"ok": True, **get_task_creator_analysis(task_analysis_match.group(1))})
+            except ValueError as exc:
+                return self._error(str(exc), status=404)
 
         if parsed.path == "/api/agency-contacts":
             try:
@@ -2089,6 +2444,7 @@ class Handler(BaseHTTPRequestHandler):
                         "agency_table_id": four_table_config["agency_table_id"],
                         "contact_table_id": four_table_config["contact_table_id"],
                     },
+                    "creator_library": client_state.get("creator_library", {}),
                     "mail": client_state["mail"],
                 }
             )
@@ -2200,6 +2556,7 @@ class Handler(BaseHTTPRequestHandler):
             if parsed.path == "/api/settings/ui":
                 language = (payload.get("language") or "").strip()
                 STATE["ui"]["language"] = "en" if language == "en" else "zh"
+                STATE["ui"]["debug_mode"] = bool(payload.get("debug_mode"))
                 return self._save_state_and_ok()
 
             if parsed.path == "/api/settings/profiles":
@@ -2247,6 +2604,15 @@ class Handler(BaseHTTPRequestHandler):
 
             if parsed.path == "/api/settings/mail":
                 STATE["mail"] = normalize_mail_state(merge_masked_mail_passwords(payload, STATE.get("mail")))
+                return self._save_state_and_ok()
+
+            if parsed.path == "/api/settings/creator-library":
+                try:
+                    STATE["creator_library"]["workbook_path"] = normalize_creator_library_workbook_path(
+                        payload.get("workbook_path")
+                    )
+                except ValueError as exc:
+                    return self._error(str(exc))
                 return self._save_state_and_ok()
 
             if parsed.path == "/api/mail/test":
@@ -2322,6 +2688,46 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as exc:
                     return self._error(str(exc))
 
+            if parsed.path == "/api/extension/import":
+                try:
+                    result = import_extension_capture(payload)
+                    creator = payload.get("creator") if isinstance(payload.get("creator"), dict) else {}
+                    _record_diagnostic(
+                        "last_extension_import",
+                        {
+                            "status": "success",
+                            "time": _utc_now(),
+                            "creator": str(creator.get("creator_name") or "").strip(),
+                            "platform": str(creator.get("platform") or "").strip(),
+                        },
+                    )
+                    log_event("Extension", f"导入成功 | creator={creator.get('creator_name') or '--'} | platform={creator.get('platform') or '--'}")
+                    return self._ok(**result)
+                except (RuntimeError, ValueError) as exc:
+                    _record_diagnostic("last_extension_import", {"status": "failed", "time": _utc_now()})
+                    return self._error(str(exc))
+
+            creator_library_status_match = re.fullmatch(r"/api/creator-library/([^/]+)/status", parsed.path)
+            if creator_library_status_match:
+                try:
+                    return self._ok(**update_creator_library_status(creator_library_status_match.group(1), payload.get("status")))
+                except ValueError as exc:
+                    return self._error(str(exc))
+
+            creator_library_cooperation_match = re.fullmatch(r"/api/creator-library/([^/]+)/cooperations", parsed.path)
+            if creator_library_cooperation_match:
+                try:
+                    return self._ok(**save_creator_library_cooperation(creator_library_cooperation_match.group(1), payload))
+                except ValueError as exc:
+                    return self._error(str(exc))
+
+            creator_library_task_match = re.fullmatch(r"/api/creator-library/([^/]+)/create-task", parsed.path)
+            if creator_library_task_match:
+                try:
+                    return self._ok(**open_creator_library_collaboration_task(creator_library_task_match.group(1)))
+                except ValueError as exc:
+                    return self._error(str(exc))
+
             if parsed.path == "/api/tasks/email-recheck/scan":
                 try:
                     return self._ok(**create_email_recheck_task())
@@ -2383,7 +2789,8 @@ class Handler(BaseHTTPRequestHandler):
 
             return self._error("接口不存在。", status=404)
         except Exception as exc:
-            return self._error(str(exc), status=500)
+            log_error("API", f"未处理异常: {self.command} {parsed.path}", exc)
+            return self._error(_friendly_error_message(exc), status=500)
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
@@ -2400,6 +2807,11 @@ class Handler(BaseHTTPRequestHandler):
 
 def run() -> None:
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    workbook_path = STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK
+    log_event(
+        "KOLConnect Start",
+        f"version=KOLConnect v0.1.2 | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
+    )
     if os.environ.get("KOLCONNECT_DESKTOP") != "1":
         webbrowser.open(f"http://{HOST}:{PORT}/?v={int(time.time())}")
     server.serve_forever()

@@ -1,18 +1,51 @@
 {
   "manifest_version": 3,
-  "name": "KOL Connect 插件",
-  "description": "在 TikTok、Instagram、YouTube 主页手动采集账号信息并发送到本地 KOL联系助手。",
-  "version": "0.1.0",
+  "name": "KOLConnect",
+  "description": "TikTok、Instagram、YouTube 达人自动分析与报价工具",
+  "version": "0.1.2",
+  "version_name": "KOLConnect v0.1.2",
   "action": {
-    "default_title": "KOL Connect 插件",
-    "default_popup": "popup.html"
+    "default_title": "打开 KOLConnect"
   },
-  "permissions": ["activeTab", "scripting", "storage"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "webNavigation"
+  ],
   "host_permissions": [
     "http://127.0.0.1:8765/*",
     "http://localhost:8765/*",
     "*://*.tiktok.com/*",
     "*://*.instagram.com/*",
     "*://*.youtube.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.tiktok.com/*",
+        "*://*.instagram.com/*",
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "core/analysis_session.js",
+        "core/page_support.js",
+        "content/floating_assistant.js"
+      ],
+      "css": [
+        "content/floating_assistant.css"
+      ],
+      "run_at": "document_idle"
+    }
   ]
 }
