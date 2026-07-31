@@ -476,7 +476,9 @@ def get_system_health() -> dict:
     """Run read-only local checks used by the settings diagnostics panel."""
     workbook_path = Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
     required_sheets = {
-        "Creators", "Videos", "Insights", "Cooperations", "CreatorSnapshots", "VideoSnapshots", "_Metadata"
+        "Creators", "CreatorAccounts", "Videos", "Insights", "Cooperations",
+        "CreatorSnapshots", "VideoSnapshots", "Agencies", "AgencyContacts",
+        "FollowUpLogs", "_Metadata",
     }
     checks: list[dict] = [
         {"key": "data_directory", "label": "数据目录", "status": "ok", "message": str(DATA_DIR)},
@@ -994,6 +996,20 @@ def start_scrape(payload: dict) -> dict:
                     has_system_supplement=True if _task.get("task_type") == "manual" and return_code == 0 else _task.get("has_system_supplement", False),
                     **retry_changes,
                 )
+                if status == "completed":
+                    try:
+                        import_task_results_to_creator_library(task_id)
+                    except (OSError, RuntimeError, ValueError) as library_error:
+                        log_error(
+                            "CreatorLibrary",
+                            f"任务完成后导入达人库失败 | task_id={task_id}",
+                            library_error,
+                        )
+                        task_manager.update_task(
+                            TASKS_DIR,
+                            task_id,
+                            creator_library_import_error=str(library_error),
+                        )
                 SCRAPE_JOB.pause_requested = False
                 SCRAPE_JOB.stop_requested = False
                 if status == "completed":
@@ -1593,7 +1609,7 @@ def create_email_recheck_task() -> dict:
     }
 
 
-def create_manual_task(payload: dict) -> dict:
+def create_manual_task(payload: dict, *, defer_library_import: bool = False) -> dict:
     """Create a one-record task that enters the same review and four-table flow."""
     profile_url = str(payload.get("profile_url") or "").strip()
     if not profile_url:
@@ -1688,6 +1704,21 @@ def create_manual_task(payload: dict) -> dict:
                 "source": "manual_task",
             }
         )
+    local_source_contact_id = ""
+    if source_contact:
+        try:
+            local_contact = get_creator_repository().upsertExternalAgencyContact(
+                source_contact["record_id"],
+                name=source_contact["name"],
+                whatsapp=source_contact["whatsapp"],
+            )
+            local_source_contact_id = str(local_contact.get("contact_id") or "")
+        except (OSError, RuntimeError, ValueError) as exc:
+            log_error(
+                "CreatorLibrary",
+                f"来源联系人本地兼容保存失败 | record_id={source_contact['record_id']}",
+                exc,
+            )
     task.update(
         {
             "status": "manual_created",
@@ -1695,6 +1726,7 @@ def create_manual_task(payload: dict) -> dict:
             "modified_count": len(modifications),
             "last_modified_time": now if manual_values else "",
             "source_contact_record_id": source_contact["record_id"] if source_contact else "",
+            "local_source_contact_id": local_source_contact_id,
         }
     )
     if source_contact:
@@ -1712,13 +1744,101 @@ def create_manual_task(payload: dict) -> dict:
         protection = load_data_protection()
         if _merge_data_protection(protection, account_uid, manual_values, "人工录入", task["id"], now):
             _save_data_protection(protection)
-    return {"task": task, "account_uid": account_uid}
+    library_import = None
+    if not defer_library_import:
+        try:
+            library_import = import_task_results_to_creator_library(
+                task["id"],
+                allowed_task_statuses={"manual_created"},
+            )
+            task, _paths = task_manager.load_task(TASKS_DIR, task["id"])
+        except (OSError, RuntimeError, ValueError) as exc:
+            log_error("CreatorLibrary", f"人工任务进入达人库失败 | task_id={task['id']}", exc)
+            library_import = {"status": "failed", "error": str(exc)}
+    return {"task": task, "account_uid": account_uid, "creator_library_import": library_import}
 
 
 def get_creator_repository() -> CreatorRepository:
     """Create the active local adapter; swap this factory for a cloud adapter later."""
     workbook_path = Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
     return CreatorRepository(workbook_path, CREATOR_ANALYSIS_DIR, CREATOR_LIBRARY_FILE)
+
+
+def _task_rows_for_creator_library(task: dict, rows: list[dict]) -> list[dict]:
+    """Map task CSV rows to the repository contract without changing CSV fields."""
+    records: list[dict] = []
+    source_contact_id = str(task.get("local_source_contact_id") or "").strip()
+    for row in rows:
+        result = scraper_module.row_to_result(row)
+        profile_url = str(result.get("url") or "").strip()
+        normalized = scraper_module.normalize_link_record(profile_url)
+        platform = str(result.get("platform") or normalized.get("platform") or "").strip()
+        account_uid = scraper_module.build_creator_uid(result)
+        email = str(result.get("email_display") or "").strip()
+        if email == scraper_module.NO_EMAIL:
+            email = ""
+        records.append(
+            {
+                "account_uid": account_uid,
+                "platform": platform,
+                "profile_url": str(normalized.get("normalized_url") or profile_url),
+                "creator_name": str(result.get("name") or "").strip(),
+                "followers": str(result.get("follower_count") or "").strip(),
+                "email": email,
+                "whatsapp": str(result.get("whatsapp") or "").strip(),
+                "note": str(result.get("note") or ""),
+                "latest_post_date": str(result.get("latest_publish_date") or "").strip(),
+                "last_scrape_time": str(result.get("last_scrape_time") or "").strip(),
+                "data_source": _task_data_source(task),
+                "scrape_status": str(result.get("scrape_status") or "").strip(),
+                "source_contact_id": source_contact_id,
+            }
+        )
+    return records
+
+
+def import_task_results_to_creator_library(
+    task_id: str,
+    *,
+    allowed_task_statuses: set[str] | None = None,
+) -> dict:
+    """Persist eligible task results locally and record a traceable import summary."""
+    task, paths = task_manager.load_task(TASKS_DIR, task_id)
+    if not bool(task.get("creator_library_import_eligible")):
+        return {"status": "skipped", "reason": "historical_task_requires_manual_import"}
+    if str(task.get("task_type") or "scrape") == "email_recheck":
+        return {"status": "skipped", "reason": "email_recheck_task"}
+    allowed_statuses = allowed_task_statuses or {"completed"}
+    if str(task.get("status") or "") not in allowed_statuses:
+        return {"status": "skipped", "reason": "task_not_completed"}
+    if not paths["results"].exists():
+        return {"status": "skipped", "reason": "results_missing"}
+    _fieldnames, rows = _read_task_csv(paths["results"])
+    summary = get_creator_repository().importTaskResults(
+        task_id,
+        _task_rows_for_creator_library(task, rows),
+        source=_task_data_source(task),
+        imported_at=str(task.get("finished_at") or task.get("created_at") or _utc_now()),
+    )
+    imported_at = _utc_now()
+    task_manager.update_task(
+        TASKS_DIR,
+        task_id,
+        creator_library_imported_at=imported_at,
+        creator_library_creator_ids=summary["creator_ids"],
+        creator_library_account_ids=summary["account_ids"],
+        creator_library_import_summary={
+            key: value
+            for key, value in summary.items()
+            if key not in {"creator_ids", "account_ids"}
+        },
+        creator_library_import_error="",
+    )
+    log_event(
+        "CreatorLibrary",
+        f"任务结果已导入 | task_id={task_id} | creators={len(summary['creator_ids'])} | accounts={len(summary['account_ids'])}",
+    )
+    return {"status": "success", **summary}
 
 
 def get_dashboard_data() -> dict:
@@ -1784,7 +1904,8 @@ def import_extension_capture(payload: dict) -> dict:
             "email": "",
             "whatsapp": "",
             "note": payload.get("note"),
-        }
+        },
+        defer_library_import=True,
     )
     task = manual_result["task"]
     analysis = _extension_analysis_payload(payload, task, manual_result["account_uid"])
@@ -1810,6 +1931,7 @@ def import_extension_capture(payload: dict) -> dict:
         "task": task,
         "account_uid": manual_result["account_uid"],
         "analysis_id": saved_analysis["creator_id"],
+        "account_id": saved_analysis["account_id"],
         "snapshot_id": saved_analysis["snapshot_id"],
     }
 
@@ -1851,6 +1973,30 @@ def update_creator_library_status(analysis_id: str, status: object) -> dict:
 
 def save_creator_library_cooperation(analysis_id: str, payload: dict) -> dict:
     return get_creator_repository().saveCooperation(analysis_id, payload)
+
+
+def get_local_agencies() -> dict:
+    return {"agencies": get_creator_repository().getAgencies()}
+
+
+def get_local_agency_detail(agency_id: str) -> dict:
+    return get_creator_repository().getAgencyDetail(agency_id)
+
+
+def get_local_agency_contacts(agency_id: str = "") -> dict:
+    return {"contacts": get_creator_repository().getAgencyContacts(agency_id)}
+
+
+def save_local_agency(payload: dict) -> dict:
+    return {"agency": get_creator_repository().saveAgency(payload)}
+
+
+def save_local_agency_contact(payload: dict) -> dict:
+    return {"contact": get_creator_repository().saveAgencyContact(payload)}
+
+
+def update_creator_local_relations(creator_id: str, payload: dict) -> dict:
+    return get_creator_repository().updateCreatorRelations(creator_id, payload)
 
 
 def open_creator_library_collaboration_task(analysis_id: str) -> dict:
@@ -1996,12 +2142,23 @@ def update_task_review_result(task_id: str, account_uid: str, fields: dict) -> d
     protection_source = "人工录入" if task.get("task_type") == "manual" else "审核修改"
     if _merge_data_protection(protection, account_uid, updates, protection_source, task_id, now):
         _save_data_protection(protection)
+    library_import = None
+    if str(task.get("status") or "") in {"completed", "manual_created"}:
+        try:
+            library_import = import_task_results_to_creator_library(
+                task_id,
+                allowed_task_statuses={"completed", "manual_created"},
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            log_error("CreatorLibrary", f"审核结果更新达人库失败 | task_id={task_id}", exc)
+            library_import = {"status": "failed", "error": str(exc)}
     return {
         "task_id": task_id,
         "account_uid": account_uid,
         "modified_fields": modified_fields,
         "data_status": "待同步",
         "modified_at": now,
+        "creator_library_import": library_import,
     }
 
 
@@ -2393,6 +2550,19 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 return self._error(str(exc), status=404)
 
+        if parsed.path == "/api/local/agencies":
+            return self._json({"ok": True, **get_local_agencies()})
+
+        local_agency_match = re.fullmatch(r"/api/local/agencies/([^/]+)", parsed.path)
+        if local_agency_match:
+            try:
+                return self._json({"ok": True, **get_local_agency_detail(local_agency_match.group(1))})
+            except ValueError as exc:
+                return self._error(str(exc), status=404)
+
+        if parsed.path == "/api/local/agency-contacts":
+            return self._json({"ok": True, **get_local_agency_contacts()})
+
         if parsed.path == "/api/tasks":
             return self._json({"ok": True, **get_task_list()})
 
@@ -2718,6 +2888,30 @@ class Handler(BaseHTTPRequestHandler):
             if creator_library_cooperation_match:
                 try:
                     return self._ok(**save_creator_library_cooperation(creator_library_cooperation_match.group(1), payload))
+                except ValueError as exc:
+                    return self._error(str(exc))
+
+            creator_library_relations_match = re.fullmatch(r"/api/creator-library/([^/]+)/relations", parsed.path)
+            if creator_library_relations_match:
+                try:
+                    return self._ok(
+                        **update_creator_local_relations(
+                            creator_library_relations_match.group(1),
+                            payload,
+                        )
+                    )
+                except ValueError as exc:
+                    return self._error(str(exc))
+
+            if parsed.path == "/api/local/agencies":
+                try:
+                    return self._ok(**save_local_agency(payload))
+                except ValueError as exc:
+                    return self._error(str(exc))
+
+            if parsed.path == "/api/local/agency-contacts":
+                try:
+                    return self._ok(**save_local_agency_contact(payload))
                 except ValueError as exc:
                     return self._error(str(exc))
 

@@ -71,6 +71,12 @@ def _apply_task_defaults(task: dict) -> dict:
         "retry_round": 0,
         "retry_history": [],
         "retry_requested_urls": [],
+        "creator_library_import_eligible": False,
+        "creator_library_imported_at": "",
+        "creator_library_creator_ids": [],
+        "creator_library_account_ids": [],
+        "creator_library_import_summary": {},
+        "creator_library_import_error": "",
     }
     for key, value in defaults.items():
         task.setdefault(key, value)
@@ -224,6 +230,12 @@ def create_task(
             "retry_round": 0,
             "retry_history": [],
             "retry_requested_urls": [],
+            "creator_library_import_eligible": True,
+            "creator_library_imported_at": "",
+            "creator_library_creator_ids": [],
+            "creator_library_account_ids": [],
+            "creator_library_import_summary": {},
+            "creator_library_import_error": "",
         }
         _atomic_write_json(paths["metadata"], task)
         return task

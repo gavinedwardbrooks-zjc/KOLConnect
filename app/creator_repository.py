@@ -12,11 +12,13 @@ import os
 import re
 import shutil
 import threading
+import time
 import uuid
 from functools import wraps
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
@@ -35,10 +37,19 @@ CREATOR_LIBRARY_STATUSES = {
 }
 
 _TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
-CREATOR_LIBRARY_SCHEMA_VERSION = "1.3"
+CREATOR_LIBRARY_SCHEMA_VERSION = "2.0-phase1"
 _CREATORS_HEADERS = [
     "creator_id", "name", "platform", "profile_url", "country", "language",
     "content_category", "followers", "insight_level", "status", "created_at", "tags", "updated_at",
+    "email", "whatsapp", "cooperation_stage", "recent_product", "quote", "owner",
+    "last_contact_time", "next_follow_up_time", "note", "agency_id",
+    "current_contact_id", "source_contact_id",
+]
+_CREATOR_ACCOUNTS_HEADERS = [
+    "account_id", "creator_id", "account_uid", "platform", "username", "profile_url",
+    "followers", "account_email", "latest_post_date", "last_scrape_time", "data_source",
+    "scrape_status", "platform_account_id", "attribution_status", "note", "source_task_id",
+    "created_at", "updated_at",
 ]
 _VIDEOS_HEADERS = ["creator_id", "video_url", "views", "likes", "comments", "captured_at"]
 _INSIGHTS_HEADERS = ["creator_id", "average_views", "median_views", "stability", "risks", "recommendation"]
@@ -53,6 +64,21 @@ _VIDEO_SNAPSHOTS_HEADERS = [
 _COOPERATIONS_HEADERS = [
     "cooperation_id", "creator_id", "campaign", "platform", "contact_date", "price",
     "published_count", "total_views", "average_views", "roi", "result", "note", "created_at",
+]
+_AGENCIES_HEADERS = [
+    "agency_id", "name", "country", "website", "public_email", "whatsapp",
+    "cooperation_stage", "tags", "last_contact_time", "next_follow_up_time",
+    "owner", "note", "resource_files", "created_at", "updated_at",
+]
+_AGENCY_CONTACTS_HEADERS = [
+    "contact_id", "name", "agency_id", "position", "email", "whatsapp", "language",
+    "status", "last_contact_time", "next_follow_up_time", "owner", "note",
+    "external_record_id", "source", "created_at", "updated_at",
+]
+_FOLLOW_UP_LOGS_HEADERS = [
+    "follow_up_id", "object_type", "object_id", "contact_method", "content",
+    "stage_before", "stage_after", "contacted_at", "next_follow_up_time", "owner",
+    "created_at",
 ]
 # Hidden technical metadata preserves the full snapshot and review-task handoff.
 _ANALYSIS_METADATA_HEADERS = ["creator_id", "task_id", "account_uid", "status_updated_at", "analysis_json", "source"]
@@ -85,6 +111,7 @@ class CreatorRepository:
         self.workbook_path = workbook_path
         self.legacy_analysis_dir = legacy_analysis_dir
         self.legacy_library_file = legacy_library_file
+        self.last_migration_report: dict[str, Any] | None = None
 
     @_synchronized
     def saveCreator(self, analysis: dict[str, Any]) -> dict[str, Any]:
@@ -92,7 +119,13 @@ class CreatorRepository:
         self._validate_analysis(analysis)
         workbook = self._load_workbook()
         requested_creator_id = str(analysis["analysis_id"])
-        creator_id = self._creator_id_for_account_uid(workbook, str(analysis.get("account_uid") or "")) or requested_creator_id
+        account_uid = str(analysis.get("account_uid") or "").strip()
+        preferred_creator_id = str(analysis.get("creator_id") or "").strip()
+        creator_id = (
+            self._creator_id_for_account_uid(workbook, account_uid)
+            or (preferred_creator_id if self._creator_row(workbook["Creators"], preferred_creator_id) else "")
+            or requested_creator_id
+        )
         existing = self._creator_row(workbook["Creators"], creator_id)
         is_new_creator = not bool(existing)
         status = str(existing.get("status") or "discovered") if existing else "discovered"
@@ -101,11 +134,20 @@ class CreatorRepository:
         creator_values = self._creator_values(analysis, status, creator_id)
         if existing:
             # Extension imports should never erase optional data already curated in Excel.
-            for field in ("country", "language", "tags"):
+            for field in (
+                "country", "language", "tags", "email", "whatsapp", "cooperation_stage",
+                "recent_product", "quote", "owner", "last_contact_time",
+                "next_follow_up_time", "note", "agency_id", "current_contact_id",
+                "source_contact_id",
+            ):
                 if not creator_values.get(field) and existing.get(field):
                     creator_values[field] = existing[field]
             creator_values["created_at"] = existing.get("created_at") or creator_values["created_at"]
+            if not self._account_row_by_uid(workbook["CreatorAccounts"], account_uid):
+                for field in ("platform", "profile_url", "followers"):
+                    creator_values[field] = existing.get(field) or creator_values.get(field)
         self._upsert_row(workbook["Creators"], "creator_id", creator_id, creator_values)
+        account = self._upsert_account_from_analysis(workbook, analysis, creator_id)
         self._replace_video_rows(workbook["Videos"], creator_id, analysis.get("videos"))
         self._upsert_row(
             workbook["Insights"],
@@ -131,6 +173,7 @@ class CreatorRepository:
         return {
             **analysis,
             "creator_id": creator_id,
+            "account_id": account["account_id"],
             "snapshot_id": snapshot["snapshot_id"],
             "is_new_creator": is_new_creator,
         }
@@ -171,6 +214,330 @@ class CreatorRepository:
         return self._snapshots_from_workbook(workbook, creator_id)
 
     @_synchronized
+    def getCreatorAccounts(self, creator_id: str = "") -> list[dict[str, Any]]:
+        """Return normalized social accounts, optionally scoped to one creator."""
+        workbook = self._load_workbook()
+        creator_id = str(creator_id or "").strip()
+        accounts = self._rows(workbook["CreatorAccounts"])
+        if creator_id:
+            accounts = [
+                row for row in accounts
+                if str(row.get("creator_id") or "") == creator_id
+            ]
+        accounts.sort(key=lambda row: (str(row.get("created_at") or ""), str(row.get("account_id") or "")))
+        return accounts
+
+    @_synchronized
+    def importTaskResults(
+        self,
+        task_id: str,
+        records: list[dict[str, Any]],
+        *,
+        source: str,
+        imported_at: str = "",
+    ) -> dict[str, Any]:
+        """Idempotently add valid task results to the local creator library."""
+        task_id = str(task_id or "").strip()
+        if not _TASK_ID_PATTERN.fullmatch(task_id):
+            raise ValueError("任务 ID 无效。")
+        workbook = self._load_workbook()
+        imported_at = str(imported_at or _utc_now())
+        seen_uids: set[str] = set()
+        creator_ids: list[str] = []
+        account_ids: list[str] = []
+        summary = {
+            "input_records": len(records),
+            "created_creators": 0,
+            "created_accounts": 0,
+            "updated_accounts": 0,
+            "duplicate_records": 0,
+            "skipped_failed": 0,
+            "skipped_invalid": 0,
+        }
+
+        for record in records:
+            if not isinstance(record, dict):
+                summary["skipped_invalid"] += 1
+                continue
+            scrape_status = str(record.get("scrape_status") or "").strip()
+            if scrape_status not in {"success", "partial_success"}:
+                summary["skipped_failed"] += 1
+                continue
+            account_uid = str(record.get("account_uid") or "").strip()
+            platform = str(record.get("platform") or "").strip()
+            profile_url = str(record.get("profile_url") or "").strip()
+            if not account_uid or platform not in {"TikTok", "Instagram", "YouTube"} or not profile_url:
+                summary["skipped_invalid"] += 1
+                continue
+            if account_uid in seen_uids:
+                summary["duplicate_records"] += 1
+                continue
+            seen_uids.add(account_uid)
+
+            existing_account = self._account_row_by_uid(workbook["CreatorAccounts"], account_uid)
+            creator_id = str(existing_account.get("creator_id") or "") if existing_account else ""
+            if not creator_id or not self._creator_row(workbook["Creators"], creator_id):
+                creator_id = f"creator_{hashlib.sha256(account_uid.encode('utf-8')).hexdigest()[:16]}"
+            existing_creator = self._creator_row(workbook["Creators"], creator_id)
+            is_new_creator = not bool(existing_creator)
+            creator_name = str(record.get("creator_name") or "").strip()
+            creator_values = {
+                "creator_id": creator_id,
+                "name": creator_name or str(existing_creator.get("name") or ""),
+                "platform": str(existing_creator.get("platform") or platform),
+                "profile_url": str(existing_creator.get("profile_url") or profile_url),
+                "country": str(existing_creator.get("country") or record.get("country") or ""),
+                "language": str(existing_creator.get("language") or record.get("language") or ""),
+                "content_category": str(existing_creator.get("content_category") or record.get("content_category") or ""),
+                "followers": str(record.get("followers") or existing_creator.get("followers") or ""),
+                "insight_level": str(existing_creator.get("insight_level") or "insufficient"),
+                "status": str(existing_creator.get("status") or "discovered"),
+                "created_at": str(existing_creator.get("created_at") or imported_at),
+                "tags": str(existing_creator.get("tags") or record.get("tags") or ""),
+                "updated_at": imported_at,
+                "email": str(existing_creator.get("email") or record.get("email") or ""),
+                "whatsapp": str(existing_creator.get("whatsapp") or record.get("whatsapp") or ""),
+                "note": str(existing_creator.get("note") or record.get("note") or ""),
+                "agency_id": str(existing_creator.get("agency_id") or ""),
+                "current_contact_id": str(existing_creator.get("current_contact_id") or ""),
+                "source_contact_id": str(
+                    existing_creator.get("source_contact_id")
+                    or (record.get("source_contact_id") if is_new_creator else "")
+                    or ""
+                ),
+            }
+            self._upsert_row(workbook["Creators"], "creator_id", creator_id, creator_values)
+            if is_new_creator:
+                summary["created_creators"] += 1
+
+            account_values = self._task_account_values(record, creator_id, task_id, source, imported_at)
+            if existing_account:
+                account_values["account_id"] = str(existing_account.get("account_id") or account_values["account_id"])
+                account_values["created_at"] = str(existing_account.get("created_at") or account_values["created_at"])
+                summary["updated_accounts"] += 1
+            else:
+                summary["created_accounts"] += 1
+            self._upsert_row(
+                workbook["CreatorAccounts"],
+                "account_uid",
+                account_uid,
+                account_values,
+            )
+
+            analysis = self._task_analysis(record, creator_id, task_id, source, imported_at)
+            existing_metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
+            keep_existing_analysis = (
+                str(existing_metadata.get("source") or "") == "chrome_extension"
+                and bool(self._decode_analysis(existing_metadata.get("analysis_json")))
+            )
+            if not keep_existing_analysis:
+                self._upsert_row(
+                    workbook["_AnalysisData"],
+                    "creator_id",
+                    creator_id,
+                    {
+                        "creator_id": creator_id,
+                        "task_id": task_id,
+                        "account_uid": account_uid,
+                        "source": source,
+                        "status_updated_at": str(existing_metadata.get("status_updated_at") or ""),
+                        "analysis_json": json.dumps(analysis, ensure_ascii=False),
+                    },
+                )
+            self._upsert_task_snapshot(
+                workbook,
+                creator_id,
+                task_id,
+                account_uid,
+                record,
+                source,
+                imported_at,
+            )
+            creator_ids.append(creator_id)
+            account_ids.append(str(account_values["account_id"]))
+
+        if creator_ids or account_ids:
+            self._save_workbook(workbook)
+        return {
+            **summary,
+            "creator_ids": list(dict.fromkeys(creator_ids)),
+            "account_ids": list(dict.fromkeys(account_ids)),
+        }
+
+    @_synchronized
+    def getAgencies(self) -> list[dict[str, Any]]:
+        workbook = self._load_workbook()
+        creators = self._rows(workbook["Creators"])
+        contacts = self._rows(workbook["AgencyContacts"])
+        agencies = []
+        for agency in self._rows(workbook["Agencies"]):
+            agency_id = str(agency.get("agency_id") or "")
+            agencies.append({
+                **agency,
+                "creator_count": sum(1 for row in creators if str(row.get("agency_id") or "") == agency_id),
+                "contact_count": sum(1 for row in contacts if str(row.get("agency_id") or "") == agency_id),
+            })
+        agencies.sort(key=lambda row: str(row.get("name") or "").casefold())
+        return agencies
+
+    @_synchronized
+    def getAgencyDetail(self, agency_id: str) -> dict[str, Any]:
+        workbook = self._load_workbook()
+        agency_id = str(agency_id or "").strip()
+        agency = self._row_by_key(workbook["Agencies"], "agency_id", agency_id)
+        if not agency:
+            raise ValueError("未找到 Agency。")
+        contacts = [
+            row for row in self._rows(workbook["AgencyContacts"])
+            if str(row.get("agency_id") or "") == agency_id
+        ]
+        creators = [
+            row for row in self._rows(workbook["Creators"])
+            if str(row.get("agency_id") or "") == agency_id
+        ]
+        return {"agency": agency, "contacts": contacts, "creators": creators}
+
+    @_synchronized
+    def saveAgency(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("Agency 数据无效。")
+        workbook = self._load_workbook()
+        agency_id = str(payload.get("agency_id") or "").strip()
+        existing = self._row_by_key(workbook["Agencies"], "agency_id", agency_id) if agency_id else {}
+        if agency_id and not existing:
+            raise ValueError("未找到 Agency。")
+        agency_id = agency_id or f"agency_{uuid.uuid4().hex[:16]}"
+        name = str(payload.get("name") if "name" in payload else existing.get("name") or "").strip()
+        if not name:
+            raise ValueError("Agency 名称不能为空。")
+        now = _utc_now()
+        values = {
+            **existing,
+            "agency_id": agency_id,
+            "name": name,
+            "created_at": str(existing.get("created_at") or now),
+            "updated_at": now,
+        }
+        for field in _AGENCIES_HEADERS:
+            if field in {"agency_id", "created_at", "updated_at"}:
+                continue
+            if field in payload:
+                values[field] = str(payload.get(field) or "").strip()
+        self._upsert_row(workbook["Agencies"], "agency_id", agency_id, values)
+        self._save_workbook(workbook)
+        return values
+
+    @_synchronized
+    def getAgencyContacts(self, agency_id: str = "") -> list[dict[str, Any]]:
+        workbook = self._load_workbook()
+        agency_id = str(agency_id or "").strip()
+        contacts = self._rows(workbook["AgencyContacts"])
+        if agency_id:
+            contacts = [row for row in contacts if str(row.get("agency_id") or "") == agency_id]
+        contacts.sort(key=lambda row: str(row.get("name") or "").casefold())
+        return contacts
+
+    @_synchronized
+    def saveAgencyContact(self, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("联系人数据无效。")
+        workbook = self._load_workbook()
+        contact_id = str(payload.get("contact_id") or "").strip()
+        existing = self._row_by_key(workbook["AgencyContacts"], "contact_id", contact_id) if contact_id else {}
+        if contact_id and not existing:
+            raise ValueError("未找到 Agency 联系人。")
+        agency_id = str(payload.get("agency_id") if "agency_id" in payload else existing.get("agency_id") or "").strip()
+        if agency_id and not self._row_by_key(workbook["Agencies"], "agency_id", agency_id):
+            raise ValueError("联系人关联的 Agency 不存在。")
+        name = str(payload.get("name") if "name" in payload else existing.get("name") or "").strip()
+        if not name:
+            raise ValueError("联系人姓名不能为空。")
+        contact_id = contact_id or f"contact_{uuid.uuid4().hex[:16]}"
+        now = _utc_now()
+        values = {
+            **existing,
+            "contact_id": contact_id,
+            "name": name,
+            "agency_id": agency_id,
+            "created_at": str(existing.get("created_at") or now),
+            "updated_at": now,
+        }
+        for field in _AGENCY_CONTACTS_HEADERS:
+            if field in {"contact_id", "name", "agency_id", "created_at", "updated_at"}:
+                continue
+            if field in payload:
+                values[field] = str(payload.get(field) or "").strip()
+        self._upsert_row(workbook["AgencyContacts"], "contact_id", contact_id, values)
+        self._save_workbook(workbook)
+        return values
+
+    @_synchronized
+    def upsertExternalAgencyContact(
+        self,
+        external_record_id: str,
+        *,
+        name: str,
+        whatsapp: str = "",
+        source: str = "feishu_compat",
+    ) -> dict[str, Any]:
+        """Preserve a legacy external contact locally without inferring an Agency."""
+        external_record_id = str(external_record_id or "").strip()
+        if not external_record_id:
+            raise ValueError("外部联系人标识不能为空。")
+        workbook = self._load_workbook()
+        existing = self._row_by_key(
+            workbook["AgencyContacts"],
+            "external_record_id",
+            external_record_id,
+        )
+        contact_id = str(
+            existing.get("contact_id")
+            or f"contact_{hashlib.sha256(external_record_id.encode('utf-8')).hexdigest()[:16]}"
+        )
+        now = _utc_now()
+        values = {
+            **existing,
+            "contact_id": contact_id,
+            "name": str(name or existing.get("name") or "").strip(),
+            "agency_id": str(existing.get("agency_id") or ""),
+            "whatsapp": str(whatsapp or existing.get("whatsapp") or "").strip(),
+            "external_record_id": external_record_id,
+            "source": str(source or "feishu_compat"),
+            "created_at": str(existing.get("created_at") or now),
+            "updated_at": now,
+        }
+        self._upsert_row(workbook["AgencyContacts"], "contact_id", contact_id, values)
+        self._save_workbook(workbook)
+        return values
+
+    @_synchronized
+    def updateCreatorRelations(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        if not isinstance(payload, dict):
+            raise ValueError("达人关系数据无效。")
+        allowed = {"agency_id", "current_contact_id", "source_contact_id"}
+        unknown = set(payload) - allowed
+        if unknown:
+            raise ValueError(f"不允许修改关系字段：{', '.join(sorted(unknown))}")
+        workbook = self._load_workbook()
+        creator_id = str(creator_id or "").strip()
+        creator = self._creator_row(workbook["Creators"], creator_id)
+        if not creator:
+            raise ValueError("未找到达人分析记录。")
+        agency_id = str(payload.get("agency_id") if "agency_id" in payload else creator.get("agency_id") or "").strip()
+        if agency_id and not self._row_by_key(workbook["Agencies"], "agency_id", agency_id):
+            raise ValueError("关联的 Agency 不存在。")
+        relations = {"agency_id": agency_id}
+        for field in ("current_contact_id", "source_contact_id"):
+            contact_id = str(payload.get(field) if field in payload else creator.get(field) or "").strip()
+            if contact_id and not self._row_by_key(workbook["AgencyContacts"], "contact_id", contact_id):
+                raise ValueError("关联的 Agency 联系人不存在。")
+            relations[field] = contact_id
+        updated = {**creator, **relations, "updated_at": _utc_now()}
+        self._upsert_row(workbook["Creators"], "creator_id", creator_id, updated)
+        self._save_workbook(workbook)
+        return {"creator_id": creator_id, **relations}
+
+    @_synchronized
     def getCreatorTrend(self, creator_id: str) -> dict[str, Any]:
         """Return latest/previous snapshots, field deltas, and data freshness."""
         workbook = self._load_workbook()
@@ -186,28 +553,94 @@ class CreatorRepository:
     @_synchronized
     def getCreators(self) -> list[dict[str, Any]]:
         """Return concise Creator Library records from the Excel workbook."""
+        request_started = time.perf_counter()
         workbook = self._load_workbook()
-        insights = {row["creator_id"]: row for row in self._rows(workbook["Insights"]) if row.get("creator_id")}
-        metadata = {row["creator_id"]: row for row in self._rows(workbook["_AnalysisData"]) if row.get("creator_id")}
+        load_duration_ms = round((time.perf_counter() - request_started) * 1000, 2)
+        records, index = self._creator_records_from_workbook(workbook)
+        response_duration_ms = round((time.perf_counter() - request_started) * 1000, 2)
+        log_event(
+            "CreatorLibrary",
+            "列表加载完成"
+            f" | creators_count={len(records)}"
+            f" | accounts_count={index['accounts_count']}"
+            f" | snapshots_count={index['snapshots_count']}"
+            f" | load_duration_ms={load_duration_ms}"
+            f" | index_duration_ms={index['index_duration_ms']}"
+            f" | response_duration_ms={response_duration_ms}",
+        )
+        return records
+
+    def _creator_records_from_workbook(self, workbook) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+        """Build request-scoped indexes and assemble Creator summaries in linear time."""
+        index_started = time.perf_counter()
+        creators = self._rows(workbook["Creators"])
+        insights = {
+            str(row["creator_id"]): row
+            for row in self._rows(workbook["Insights"])
+            if row.get("creator_id")
+        }
+        metadata = {
+            str(row["creator_id"]): row
+            for row in self._rows(workbook["_AnalysisData"])
+            if row.get("creator_id")
+        }
+        accounts_by_creator: dict[str, list[dict[str, Any]]] = {}
+        accounts = self._rows(workbook["CreatorAccounts"])
+        for account in accounts:
+            account_creator_id = str(account.get("creator_id") or "")
+            if account_creator_id:
+                accounts_by_creator.setdefault(account_creator_id, []).append(account)
+
+        indexed_snapshots_by_creator: dict[str, list[tuple[int, dict[str, Any]]]] = {}
+        all_snapshots = self._rows(workbook["CreatorSnapshots"])
+        for snapshot_index, snapshot in enumerate(all_snapshots):
+            snapshot_creator_id = str(snapshot.get("creator_id") or "")
+            if snapshot_creator_id:
+                indexed_snapshots_by_creator.setdefault(snapshot_creator_id, []).append(
+                    (snapshot_index, snapshot)
+                )
+        snapshots_by_creator = {
+            creator_id: [
+                row
+                for _index, row in sorted(
+                    snapshots,
+                    key=lambda item: (str(item[1].get("captured_at") or ""), item[0]),
+                    reverse=True,
+                )
+            ]
+            for creator_id, snapshots in indexed_snapshots_by_creator.items()
+        }
+
         records = []
-        for creator in self._rows(workbook["Creators"]):
+        creator_by_id: dict[str, dict[str, Any]] = {}
+        for creator in creators:
             creator_id = str(creator.get("creator_id") or "")
             if not creator_id:
                 continue
+            creator_by_id[creator_id] = creator
             insight = insights.get(creator_id, {})
             meta = metadata.get(creator_id, {})
-            snapshots = self._snapshots_from_workbook(workbook, creator_id)
+            snapshots = snapshots_by_creator.get(creator_id, [])
             snapshot = snapshots[0] if snapshots else {}
             trend = self._trend_from_snapshots(snapshots)
+            creator_accounts = accounts_by_creator.get(creator_id, [])
+            metadata_uid = str(meta.get("account_uid") or "")
+            primary_account = next(
+                (
+                    account for account in creator_accounts
+                    if str(account.get("account_uid") or "") == metadata_uid
+                ),
+                creator_accounts[0] if creator_accounts else {},
+            )
             records.append({
                 "analysis_id": creator_id,
                 "creator_id": creator_id,
                 "task_id": str(meta.get("task_id") or ""),
-                "account_uid": str(meta.get("account_uid") or ""),
+                "account_uid": str(primary_account.get("account_uid") or metadata_uid),
                 "creator_name": str(creator.get("name") or ""),
-                "platform": str(creator.get("platform") or ""),
-                "profile_url": str(creator.get("profile_url") or ""),
-                "followers": str(snapshot.get("followers") or creator.get("followers") or ""),
+                "platform": str(primary_account.get("platform") or creator.get("platform") or ""),
+                "profile_url": str(primary_account.get("profile_url") or creator.get("profile_url") or ""),
+                "followers": str(snapshot.get("followers") or primary_account.get("followers") or creator.get("followers") or ""),
                 "content_category": str(creator.get("content_category") or ""),
                 "country": str(creator.get("country") or ""),
                 "language": str(creator.get("language") or ""),
@@ -222,33 +655,48 @@ class CreatorRepository:
                 "status": self._status_value(creator.get("status")),
                 "status_updated_at": str(meta.get("status_updated_at") or ""),
                 "trend": trend,
+                "account_count": len(creator_accounts),
+                "agency_id": str(creator.get("agency_id") or ""),
+                "current_contact_id": str(creator.get("current_contact_id") or ""),
+                "source_contact_id": str(creator.get("source_contact_id") or ""),
             })
         records.sort(key=lambda item: item["analysis_time"], reverse=True)
-        return records
+        return records, {
+            "creator_by_id": creator_by_id,
+            "metadata_by_creator": metadata,
+            "accounts_by_creator": accounts_by_creator,
+            "snapshots_by_creator": snapshots_by_creator,
+            "accounts_count": len(accounts),
+            "snapshots_count": len(all_snapshots),
+            "index_duration_ms": round((time.perf_counter() - index_started) * 1000, 2),
+        }
 
     @_synchronized
     def getCreatorDetail(self, analysis_id: str) -> dict[str, Any]:
         """Return one full analysis snapshot reconstructed from the workbook."""
         creator_id = str(analysis_id or "").strip()
         workbook = self._load_workbook()
-        creator = self._creator_row(workbook["Creators"], creator_id)
+        records, index = self._creator_records_from_workbook(workbook)
+        creator = index["creator_by_id"].get(creator_id, {})
         if not creator:
             raise ValueError("未找到达人分析记录。")
-        metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
+        metadata = index["metadata_by_creator"].get(creator_id, {})
         analysis = self._decode_analysis(metadata.get("analysis_json"))
         if not analysis:
             analysis = self._rebuild_analysis(workbook, creator, metadata)
-        record = next((item for item in self.getCreators() if item["analysis_id"] == creator_id), None)
+        record = next((item for item in records if item["analysis_id"] == creator_id), None)
         if not record:
             raise ValueError("达人分析记录不可用。")
-        snapshots = self._snapshots_from_workbook(workbook, creator_id)
+        snapshots = index["snapshots_by_creator"].get(creator_id, [])
         history_times = [str(item.get("captured_at") or "") for item in snapshots]
         if not history_times and creator.get("created_at"):
             history_times = [str(creator["created_at"])]
         cooperations = self.getCreatorCooperations(creator_id, workbook)
+        accounts = index["accounts_by_creator"].get(creator_id, [])
         return {
             "record": record,
             "analysis": analysis,
+            "accounts": accounts,
             "snapshots": snapshots,
             "trend": self._trend_from_snapshots(snapshots),
             "history_analysis_times": sorted(history_times, reverse=True),
@@ -265,6 +713,20 @@ class CreatorRepository:
             if str(row.get("creator_id") or "") == str(creator_id or "")
         ]
         rows.sort(key=lambda row: (str(row.get("contact_date") or ""), str(row.get("created_at") or "")), reverse=True)
+        return rows
+
+    @_synchronized
+    def getCooperations(self) -> list[dict[str, Any]]:
+        """Return all cooperation records in one workbook read for Dashboard requests."""
+        workbook = self._load_workbook()
+        rows = self._rows(workbook["Cooperations"])
+        rows.sort(
+            key=lambda row: (
+                str(row.get("contact_date") or ""),
+                str(row.get("created_at") or ""),
+            ),
+            reverse=True,
+        )
         return rows
 
     @_synchronized
@@ -334,6 +796,12 @@ class CreatorRepository:
         if not self.workbook_path.exists():
             workbook = self._new_workbook()
             self._migrate_legacy_json(workbook)
+            self.last_migration_report = self._migrate_phase1_workbook(
+                workbook,
+                from_schema="new",
+                backup_path="",
+                created_sheets={"CreatorAccounts", "Agencies", "AgencyContacts", "FollowUpLogs"},
+            )
             self._save_workbook(workbook)
             log_event("Excel", f"已创建达人库文件: {self.workbook_path}")
             return workbook
@@ -343,8 +811,32 @@ class CreatorRepository:
             log_event("Excel", f"读取失败: {self.workbook_path} | {exc}")
             raise RuntimeError(f"无法读取达人库 Excel 文件：{exc}") from exc
         log_event("Excel", f"打开成功: {self.workbook_path}")
-        if self._ensure_sheets(workbook):
-            self._save_workbook(workbook)
+        from_schema = self._schema_version(workbook)
+        existing_sheets = set(workbook.sheetnames)
+        requires_migration = self._requires_phase1_migration(workbook, from_schema)
+        backup_path = self._create_migration_backup() if requires_migration else None
+        try:
+            changed = self._ensure_sheets(workbook)
+            if requires_migration:
+                self.last_migration_report = self._migrate_phase1_workbook(
+                    workbook,
+                    from_schema=from_schema,
+                    backup_path=str(backup_path or ""),
+                    created_sheets={
+                        name
+                        for name in ("CreatorAccounts", "Agencies", "AgencyContacts", "FollowUpLogs")
+                        if name not in existing_sheets
+                    },
+                )
+                changed = True
+            if changed:
+                self._save_workbook(workbook)
+        except Exception as exc:
+            log_event(
+                "Migration",
+                f"迁移失败，原工作簿保持不变 | backup={backup_path or '--'} | {exc}",
+            )
+            raise
         return workbook
 
     def _new_workbook(self):
@@ -352,11 +844,15 @@ class CreatorRepository:
         creators = workbook.active
         creators.title = "Creators"
         self._set_headers(creators, _CREATORS_HEADERS)
+        self._set_headers(workbook.create_sheet("CreatorAccounts"), _CREATOR_ACCOUNTS_HEADERS)
         self._set_headers(workbook.create_sheet("Videos"), _VIDEOS_HEADERS)
         self._set_headers(workbook.create_sheet("Insights"), _INSIGHTS_HEADERS)
         self._set_headers(workbook.create_sheet("CreatorSnapshots"), _CREATOR_SNAPSHOTS_HEADERS)
         self._set_headers(workbook.create_sheet("VideoSnapshots"), _VIDEO_SNAPSHOTS_HEADERS)
         self._set_headers(workbook.create_sheet("Cooperations"), _COOPERATIONS_HEADERS)
+        self._set_headers(workbook.create_sheet("Agencies"), _AGENCIES_HEADERS)
+        self._set_headers(workbook.create_sheet("AgencyContacts"), _AGENCY_CONTACTS_HEADERS)
+        self._set_headers(workbook.create_sheet("FollowUpLogs"), _FOLLOW_UP_LOGS_HEADERS)
         metadata = workbook.create_sheet("_AnalysisData")
         self._set_headers(metadata, _ANALYSIS_METADATA_HEADERS)
         metadata.sheet_state = "hidden"
@@ -368,11 +864,15 @@ class CreatorRepository:
     def _ensure_sheets(self, workbook) -> bool:
         sheets = {
             "Creators": _CREATORS_HEADERS,
+            "CreatorAccounts": _CREATOR_ACCOUNTS_HEADERS,
             "Videos": _VIDEOS_HEADERS,
             "Insights": _INSIGHTS_HEADERS,
             "CreatorSnapshots": _CREATOR_SNAPSHOTS_HEADERS,
             "VideoSnapshots": _VIDEO_SNAPSHOTS_HEADERS,
             "Cooperations": _COOPERATIONS_HEADERS,
+            "Agencies": _AGENCIES_HEADERS,
+            "AgencyContacts": _AGENCY_CONTACTS_HEADERS,
+            "FollowUpLogs": _FOLLOW_UP_LOGS_HEADERS,
             "_AnalysisData": _ANALYSIS_METADATA_HEADERS,
             "_Metadata": _WORKBOOK_METADATA_HEADERS,
         }
@@ -382,7 +882,7 @@ class CreatorRepository:
                 self._set_headers(workbook.create_sheet(name), headers)
                 changed = True
             else:
-                changed = self._set_headers(workbook[name], headers) or changed
+                changed = self._ensure_headers(workbook[name], headers) or changed
         workbook["_AnalysisData"].sheet_state = "hidden"
         workbook["_Metadata"].sheet_state = "hidden"
         return changed
@@ -398,6 +898,161 @@ class CreatorRepository:
         sheet.freeze_panes = "A2"
         sheet.auto_filter.ref = f"A1:{chr(64 + min(len(headers), 26))}{max(sheet.max_row, 1)}"
         return changed
+
+    @staticmethod
+    def _ensure_headers(sheet, headers: list[str]) -> bool:
+        """Append missing columns without renaming or reordering existing data."""
+        existing = [str(cell.value or "") for cell in sheet[1]] if sheet.max_row else []
+        changed = False
+        for header in headers:
+            if header in existing:
+                continue
+            column = len(existing) + 1
+            sheet.cell(1, column, header)
+            sheet.cell(1, column).font = Font(bold=True)
+            existing.append(header)
+            changed = True
+        sheet.freeze_panes = "A2"
+        sheet.auto_filter.ref = f"A1:{chr(64 + min(len(existing), 26))}{max(sheet.max_row, 1)}"
+        return changed
+
+    def _schema_version(self, workbook) -> str:
+        if "_Metadata" not in workbook.sheetnames:
+            return ""
+        versions = [
+            str(row.get("schema_version") or "").strip()
+            for row in self._rows(workbook["_Metadata"])
+            if str(row.get("schema_version") or "").strip()
+        ]
+        return versions[-1] if versions else ""
+
+    def _requires_phase1_migration(self, workbook, schema_version: str) -> bool:
+        required = {
+            "Creators": _CREATORS_HEADERS,
+            "CreatorAccounts": _CREATOR_ACCOUNTS_HEADERS,
+            "Agencies": _AGENCIES_HEADERS,
+            "AgencyContacts": _AGENCY_CONTACTS_HEADERS,
+            "FollowUpLogs": _FOLLOW_UP_LOGS_HEADERS,
+        }
+        for sheet_name, headers in required.items():
+            if sheet_name not in workbook.sheetnames:
+                return True
+            existing = {str(cell.value or "") for cell in workbook[sheet_name][1]}
+            if not set(headers).issubset(existing):
+                return True
+        if schema_version == CREATOR_LIBRARY_SCHEMA_VERSION:
+            return False
+        # Do not downgrade a future v2+ workbook that already satisfies this contract.
+        return not schema_version.startswith("2.")
+
+    def _create_migration_backup(self) -> Path:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        backup_path = self.workbook_path.with_name(
+            f"{self.workbook_path.stem}.pre_v2_{timestamp}{self.workbook_path.suffix}"
+        )
+        shutil.copy2(self.workbook_path, backup_path)
+        log_event("Migration", f"迁移前备份已创建: {backup_path}")
+        return backup_path
+
+    def _migrate_phase1_workbook(
+        self,
+        workbook,
+        *,
+        from_schema: str,
+        backup_path: str,
+        created_sheets: set[str],
+    ) -> dict[str, Any]:
+        creators = self._rows(workbook["Creators"])
+        metadata_by_creator = {
+            str(row.get("creator_id") or ""): row
+            for row in self._rows(workbook["_AnalysisData"])
+            if str(row.get("creator_id") or "")
+        }
+        snapshots_by_creator: dict[str, list[dict[str, Any]]] = {}
+        for snapshot in self._rows(workbook["CreatorSnapshots"]):
+            creator_id = str(snapshot.get("creator_id") or "")
+            if creator_id:
+                snapshots_by_creator.setdefault(creator_id, []).append(snapshot)
+
+        created_accounts = 0
+        duplicates = 0
+        unresolved = 0
+        for creator in creators:
+            creator_id = str(creator.get("creator_id") or "").strip()
+            if not creator_id:
+                unresolved += 1
+                continue
+            metadata = metadata_by_creator.get(creator_id, {})
+            analysis = self._decode_analysis(metadata.get("analysis_json"))
+            analysis_creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}
+            snapshots = snapshots_by_creator.get(creator_id, [])
+            snapshots.sort(key=lambda item: str(item.get("captured_at") or ""), reverse=True)
+            latest_snapshot = snapshots[0] if snapshots else {}
+            platform = str(creator.get("platform") or analysis_creator.get("platform") or latest_snapshot.get("platform") or "").strip()
+            profile_url = str(creator.get("profile_url") or analysis_creator.get("profile_url") or "").strip()
+            account_uid = str(metadata.get("account_uid") or latest_snapshot.get("account_uid") or "").strip()
+            if not account_uid and platform and profile_url:
+                account_uid = self._build_account_uid(platform, profile_url)
+            if not account_uid or not platform or not profile_url:
+                unresolved += 1
+                continue
+
+            existing_account = self._account_row_by_uid(workbook["CreatorAccounts"], account_uid)
+            if existing_account:
+                if str(existing_account.get("creator_id") or "") != creator_id:
+                    duplicates += 1
+                continue
+            captured_at = str(
+                latest_snapshot.get("captured_at")
+                or creator.get("updated_at")
+                or creator.get("created_at")
+                or _utc_now()
+            )
+            self._upsert_row(
+                workbook["CreatorAccounts"],
+                "account_uid",
+                account_uid,
+                {
+                    "account_id": self._account_id(account_uid),
+                    "creator_id": creator_id,
+                    "account_uid": account_uid,
+                    "platform": platform,
+                    "username": self._username_from_profile_url(platform, profile_url),
+                    "profile_url": profile_url,
+                    "followers": str(latest_snapshot.get("followers") or creator.get("followers") or ""),
+                    "account_email": str(analysis_creator.get("email") or ""),
+                    "latest_post_date": str(analysis_creator.get("latest_post_date") or ""),
+                    "last_scrape_time": captured_at,
+                    "data_source": str(metadata.get("source") or latest_snapshot.get("source") or "legacy_excel"),
+                    "scrape_status": "",
+                    "platform_account_id": "",
+                    "attribution_status": "confirmed",
+                    "note": "",
+                    "source_task_id": str(metadata.get("task_id") or analysis.get("task_id") or ""),
+                    "created_at": str(creator.get("created_at") or captured_at),
+                    "updated_at": captured_at,
+                },
+            )
+            created_accounts += 1
+
+        report = {
+            "from_schema": from_schema or "unknown",
+            "to_schema": CREATOR_LIBRARY_SCHEMA_VERSION,
+            "legacy_creator_rows": len(creators),
+            "creators_created": 0,
+            "creators_preserved": len(creators),
+            "accounts_created": created_accounts,
+            "duplicate_accounts": duplicates,
+            "unresolved_accounts": unresolved,
+            "agencies_sheet_created": "Agencies" in created_sheets,
+            "agency_contacts_sheet_created": "AgencyContacts" in created_sheets,
+            "follow_up_logs_sheet_created": "FollowUpLogs" in created_sheets,
+            "backup_path": backup_path,
+            "result": "success",
+            "migrated_at": _utc_now(),
+        }
+        log_event("Migration", json.dumps(report, ensure_ascii=False))
+        return report
 
     def _save_workbook(self, workbook) -> None:
         self.workbook_path.parent.mkdir(parents=True, exist_ok=True)
@@ -436,8 +1091,185 @@ class CreatorRepository:
     def _creator_row(self, sheet, creator_id: str) -> dict[str, Any]:
         return next((row for row in self._rows(sheet) if str(row.get("creator_id") or "") == creator_id), {})
 
+    def _row_by_key(self, sheet, key: str, value: str) -> dict[str, Any]:
+        return next(
+            (row for row in self._rows(sheet) if str(row.get(key) or "") == str(value or "")),
+            {},
+        )
+
+    def _account_row_by_uid(self, sheet, account_uid: str) -> dict[str, Any]:
+        return self._row_by_key(sheet, "account_uid", str(account_uid or "").strip())
+
     def _metadata_row(self, sheet, creator_id: str) -> dict[str, Any]:
         return self._creator_row(sheet, creator_id)
+
+    @staticmethod
+    def _account_id(account_uid: str) -> str:
+        return f"account_{hashlib.sha256(account_uid.encode('utf-8')).hexdigest()[:16]}"
+
+    @staticmethod
+    def _build_account_uid(platform: str, profile_url: str) -> str:
+        try:
+            import scraper as scraper_module
+        except ImportError:
+            from . import scraper as scraper_module
+        return scraper_module.build_creator_uid({"platform": platform, "url": profile_url})
+
+    @staticmethod
+    def _username_from_profile_url(platform: str, profile_url: str) -> str:
+        parsed = urlparse(str(profile_url or ""))
+        parts = [part for part in parsed.path.split("/") if part]
+        if not parts:
+            return ""
+        if platform == "TikTok":
+            return parts[0].lstrip("@")
+        if platform == "Instagram":
+            return parts[0]
+        if platform == "YouTube":
+            if parts[0].startswith("@"):
+                return parts[0].lstrip("@")
+            if len(parts) >= 2 and parts[0].lower() in {"channel", "c", "user"}:
+                return parts[1]
+        return ""
+
+    def _upsert_account_from_analysis(
+        self,
+        workbook,
+        analysis: dict[str, Any],
+        creator_id: str,
+    ) -> dict[str, Any]:
+        creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}
+        platform = str(creator.get("platform") or "").strip()
+        profile_url = str(creator.get("profile_url") or "").strip()
+        account_uid = str(analysis.get("account_uid") or "").strip()
+        if not account_uid and platform and profile_url:
+            account_uid = self._build_account_uid(platform, profile_url)
+        if not account_uid:
+            return {"account_id": ""}
+        existing = self._account_row_by_uid(workbook["CreatorAccounts"], account_uid)
+        now = str(analysis.get("imported_at") or _utc_now())
+        values = {
+            **existing,
+            "account_id": str(existing.get("account_id") or self._account_id(account_uid)),
+            "creator_id": creator_id,
+            "account_uid": account_uid,
+            "platform": platform or str(existing.get("platform") or ""),
+            "username": str(
+                creator.get("username")
+                or existing.get("username")
+                or self._username_from_profile_url(platform, profile_url)
+                or ""
+            ),
+            "profile_url": profile_url or str(existing.get("profile_url") or ""),
+            "followers": str(creator.get("followers") or existing.get("followers") or ""),
+            "account_email": str(creator.get("account_email") or creator.get("email") or existing.get("account_email") or ""),
+            "latest_post_date": str(creator.get("latest_post_date") or existing.get("latest_post_date") or ""),
+            "last_scrape_time": now,
+            "data_source": str(analysis.get("source") or existing.get("data_source") or ""),
+            "scrape_status": str(analysis.get("scrape_status") or existing.get("scrape_status") or ""),
+            "platform_account_id": str(creator.get("platform_account_id") or existing.get("platform_account_id") or ""),
+            "attribution_status": str(existing.get("attribution_status") or "confirmed"),
+            "note": str(existing.get("note") or ""),
+            "source_task_id": str(analysis.get("task_id") or existing.get("source_task_id") or ""),
+            "created_at": str(existing.get("created_at") or now),
+            "updated_at": now,
+        }
+        self._upsert_row(workbook["CreatorAccounts"], "account_uid", account_uid, values)
+        return values
+
+    def _task_account_values(
+        self,
+        record: dict[str, Any],
+        creator_id: str,
+        task_id: str,
+        source: str,
+        imported_at: str,
+    ) -> dict[str, Any]:
+        account_uid = str(record.get("account_uid") or "").strip()
+        platform = str(record.get("platform") or "").strip()
+        profile_url = str(record.get("profile_url") or "").strip()
+        return {
+            "account_id": self._account_id(account_uid),
+            "creator_id": creator_id,
+            "account_uid": account_uid,
+            "platform": platform,
+            "username": str(record.get("username") or self._username_from_profile_url(platform, profile_url)),
+            "profile_url": profile_url,
+            "followers": str(record.get("followers") or ""),
+            "account_email": str(record.get("email") or ""),
+            "latest_post_date": str(record.get("latest_post_date") or ""),
+            "last_scrape_time": str(record.get("last_scrape_time") or imported_at),
+            "data_source": str(record.get("data_source") or source),
+            "scrape_status": str(record.get("scrape_status") or ""),
+            "platform_account_id": str(record.get("platform_account_id") or ""),
+            "attribution_status": str(record.get("attribution_status") or "confirmed"),
+            "note": str(record.get("note") or ""),
+            "source_task_id": task_id,
+            "created_at": imported_at,
+            "updated_at": imported_at,
+        }
+
+    @staticmethod
+    def _task_analysis(
+        record: dict[str, Any],
+        creator_id: str,
+        task_id: str,
+        source: str,
+        imported_at: str,
+    ) -> dict[str, Any]:
+        return {
+            "schema_version": "2.0-phase1",
+            "analysis_id": creator_id,
+            "task_id": task_id,
+            "account_uid": str(record.get("account_uid") or ""),
+            "imported_at": imported_at,
+            "source": source,
+            "creator": {
+                "creator_name": str(record.get("creator_name") or ""),
+                "platform": str(record.get("platform") or ""),
+                "profile_url": str(record.get("profile_url") or ""),
+                "followers": str(record.get("followers") or ""),
+                "bio": str(record.get("bio") or ""),
+                "country": str(record.get("country") or ""),
+                "language": str(record.get("language") or ""),
+            },
+            "content_category": str(record.get("content_category") or ""),
+            "video_analysis": {},
+            "videos": [],
+            "creator_insight": {"level": "insufficient", "risks": [], "recommendation": ""},
+        }
+
+    def _upsert_task_snapshot(
+        self,
+        workbook,
+        creator_id: str,
+        task_id: str,
+        account_uid: str,
+        record: dict[str, Any],
+        source: str,
+        imported_at: str,
+    ) -> None:
+        suffix = hashlib.sha256(account_uid.encode("utf-8")).hexdigest()[:12]
+        snapshot_id = f"snapshot_{task_id}_{suffix}"
+        self._upsert_row(
+            workbook["CreatorSnapshots"],
+            "snapshot_id",
+            snapshot_id,
+            {
+                "snapshot_id": snapshot_id,
+                "creator_id": creator_id,
+                "platform": str(record.get("platform") or ""),
+                "account_uid": account_uid,
+                "followers": str(record.get("followers") or ""),
+                "average_views": record.get("average_views", ""),
+                "median_views": record.get("median_views", ""),
+                "video_count": record.get("video_count", 0),
+                "creator_score": record.get("creator_score", ""),
+                "insight_level": str(record.get("insight_level") or "insufficient"),
+                "captured_at": str(record.get("last_scrape_time") or imported_at),
+                "source": source,
+            },
+        )
 
     def _snapshots_from_workbook(self, workbook, creator_id: str) -> list[dict[str, Any]]:
         snapshots = [
@@ -510,6 +1342,11 @@ class CreatorRepository:
         account_uid = str(account_uid or "").strip()
         if not account_uid:
             return ""
+        if "CreatorAccounts" in workbook.sheetnames:
+            account = self._account_row_by_uid(workbook["CreatorAccounts"], account_uid)
+            candidate = str(account.get("creator_id") or "")
+            if candidate and self._creator_row(workbook["Creators"], candidate):
+                return candidate
         for snapshot in self._rows(workbook["CreatorSnapshots"]):
             if str(snapshot.get("account_uid") or "") == account_uid:
                 candidate = str(snapshot.get("creator_id") or "")
@@ -627,6 +1464,18 @@ class CreatorRepository:
             "status": status,
             "created_at": str(analysis.get("imported_at") or _utc_now()),
             "updated_at": _utc_now(),
+            "email": str(creator.get("email") or ""),
+            "whatsapp": str(creator.get("whatsapp") or ""),
+            "cooperation_stage": str(creator.get("cooperation_stage") or ""),
+            "recent_product": str(creator.get("recent_product") or ""),
+            "quote": str(creator.get("quote") or ""),
+            "owner": str(creator.get("owner") or ""),
+            "last_contact_time": str(creator.get("last_contact_time") or ""),
+            "next_follow_up_time": str(creator.get("next_follow_up_time") or ""),
+            "note": str(creator.get("note") or ""),
+            "agency_id": str(creator.get("agency_id") or ""),
+            "current_contact_id": str(creator.get("current_contact_id") or ""),
+            "source_contact_id": str(creator.get("source_contact_id") or ""),
         }
 
     @staticmethod
