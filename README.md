@@ -1,245 +1,233 @@
-# KOLConnect v0.1.2
+# KOLConnect v0.2.0-dev.2
 
-海外 KOL 达人管理与合作分析工具。
+**KOL Management & Campaign Operations Platform**
 
-KOLConnect 帮助海外营销团队完成达人发现、资料采集、人工审核、达人管理、合作记录和 CRM 同步。桌面端、Chrome Extension、Creator Library 与 Dashboard 共同组成完整的 KOL 运营工作流。
+KOLConnect 是用于 KOL/Creator 管理、达人关系维护、Influencer Campaign 执行和数据分析的平台。它将达人发现、资料审核、长期维护、Campaign 协作与效果复盘连接为一套本地运营工作流。
 
-## 功能介绍
+> 当前版本为内部测试版，适合功能验收和日常试用，不属于正式稳定版本。
 
-### 1. Chrome Extension
-
-支持在以下平台的公开达人主页中采集和分析资料：
-
-- TikTok
-- Instagram
-- YouTube
-
-达人资料采集包括：
-
-- 用户名
-- 达人名称
-- 粉丝或订阅数据
-- 公开简介
-
-最近内容分析包括：
-
-- 视频、Reels 或 Shorts 列表
-- 播放数据
-- 发布时间
-- 点赞、评论等互动数据
-
-采集结果取决于平台当前公开的数据、页面结构和登录状态。无法确认的字段会保留为空，不会自动猜测。
-
-### 2. Creator Library
-
-Creator Library 用于长期维护达人资产，支持：
-
-- 达人数据库
-- Creator Snapshot 数据快照
-- 粉丝与内容表现趋势
-- 达人状态管理
-- 合作历史记录
-- 合作花费、播放表现和 ROI 汇总
-
-同一达人再次分析时可以保存新的数据快照，用于查看不同时间的数据变化。
-
-### 3. Dashboard
-
-Dashboard 是 KOL 运营工作台，提供：
-
-- 达人总量和新增概览
-- 待联系与合作中达人统计
-- 达人数据健康状态
-- 上升、下滑和数据过期提醒
-- 合作数量、花费、播放和 ROI 表现
-- 待处理事项
-
-### 4. 邮件与飞书同步
-
-KOLConnect 支持：
-
-- 连接工作邮箱并同步近期邮件
-- 按公开邮箱匹配达人账号和达人
-- 将允许更新的回复状态同步到达人表
-- 管理 Agency、Agency 联系人和来源联系人
-- 将有效审核结果同步到飞书达人表与达人账号表
-
-飞书仍可作为最终 CRM 数据库直接维护。KOLConnect 主要负责数据采集、整理、审核、补全和同步。
-
-## 飞书集成配置
-
-飞书四表字段、开放平台权限和 Table ID 配置请参阅：
-
-- [飞书集成配置指南](docs/飞书集成配置指南.md)
-
-## 安装方式
-
-### Windows
-
-1. 下载 `KOLConnect.exe`。
-2. 双击运行。
-3. 首次启动时，系统会自动创建：
+## Product Workflow
 
 ```text
-%APPDATA%\KOLConnect
+Creator Discovery
+        ↓
+Data Review
+        ↓
+Creator Library
+        ↓
+Campaign Management
+        ↓
+Performance Analytics
 ```
 
-4. 打开“设置”，按需配置达人库文件、飞书信息和邮箱账户。
+## Features
 
-运行达人抓取功能前，请确保 Windows 已安装 Google Chrome。部分平台可能需要先在抓取所使用的 Chrome Profile 中完成登录。
+### Creator Management
 
-## Chrome Extension 安装
+- Creator Library 达人库
+- Creator 资料编辑
+- 达人 Agency 归属维护
+- Creator Account 账号管理
+- Creator 归档与恢复
+- Creator Campaign 历史查看
+- Creator Snapshot、Insight 和历史趋势
 
-1. 在 Chrome 地址栏打开：
+### Product & Campaign Management
+
+- Product 管理
+- Campaign 创建与编辑
+- Campaign 业务状态与归档生命周期
+- CampaignCreator 合作关系管理
+- 合作阶段跟踪
+- 执行账号选择
+- 报价与成本记录
+
+### Campaign Detail
+
+- Campaign 概览
+- Product 信息
+- Creator 与 Agency 归属信息
+- Creator 执行账号
+- 发布链接与发布时间
+- 播放、点赞和评论结果
+- ROI 记录与复盘信息
+
+### Dashboard
+
+- 活跃 Campaign 概览
+- 成本统计
+- ROI 分析
+- Creator 表现排行
+- 执行中事项
+- 待联系与待复盘事项
+
+### Supporting Workflows
+
+- Chrome Extension 达人资料采集与导入
+- 抓取任务与数据审核
+- 邮件匹配
+- 飞书四表同步
+- Legacy Cooperation 历史合作只读查看
+
+## Data Workflow
 
 ```text
-chrome://extensions
+Creator Discovery
+        → Data Review
+        → Creator Library
+        → Campaign Collaboration
+        → Analytics
 ```
 
-2. 开启右上角的“开发者模式”。
-3. 点击“加载已解压的扩展程序”。
-4. 选择项目中的：
+1. 通过 Chrome Extension 或抓取任务发现 Creator。
+2. 在审核流程中确认资料质量。
+3. 将 Creator 保存到 Creator Library，并维护账号和 Agency 归属。
+4. 创建 Product 和 Campaign，将 Creator 加入 CampaignCreator 协作关系。
+5. 记录执行账号、合作阶段、成本、发布信息和表现结果。
+6. 通过 Dashboard 与 Campaign Detail 查看执行进度和数据表现。
+
+## Architecture
+
+### Backend
+
+- Python 本地服务
+- Repository 数据访问层
+- API Service Layer
+- Excel-based storage
+- PyInstaller Windows 打包
+
+### Frontend
+
+- 原生 JavaScript 模块化页面架构
+- `load()` / `bind()` / `unbind()` 页面生命周期管理
+- PageResources 资源释放管理
+- 统一 API Client
+- PyWebView compatible interface
 
 ```text
-chrome_extension/
+webapp/
+├── core/       # 页面注册、导航和资源生命周期
+├── services/   # API Client 等共享服务
+└── pages/      # Product、Campaign、Dashboard、Creator Library 等页面模块
 ```
 
-5. 在 Chrome 工具栏固定 KOLConnect 插件图标。
-6. 打开支持的达人主页，点击插件图标开始分析。
-
-导入功能需要桌面端 KOLConnect 正在运行。
-
-## 项目结构
+### Project Structure
 
 ```text
 KOLConnect/
-├─ app/                # 桌面入口、本地服务、任务、抓取、邮件和数据仓库
-├─ webapp/             # 本地 Web 管理界面
-├─ chrome_extension/   # Chrome Extension 正式源码
-├─ assets/             # 应用图标等正式资源
-├─ packaging/          # PyInstaller、版本资源和安装器配置
-├─ tests/              # 桌面端与前端回归测试
-├─ docs/               # 用户说明和文档资源
-├─ release/            # Windows 发布产物
-├─ CHANGELOG.md
-├─ LICENSE
-└─ README.md
+├── app/                # Python 服务、Repository、任务及同步模块
+├── webapp/             # PyWebView 本地管理界面
+├── chrome_extension/   # Chrome Extension 源码
+├── assets/             # 应用图标和静态资源
+├── packaging/          # PyInstaller 与 Windows 构建配置
+├── tests/              # Python 和前端回归测试
+├── docs/               # 架构、配置及阶段报告
+├── release/            # 本地构建产物，不提交 Git
+├── CHANGELOG.md
+├── LICENSE
+└── README.md
 ```
 
-## 数据存储
+## Data Model
 
-默认数据目录：
+```text
+Creator
+ |
+ ├── CreatorAccount
+ ├── CreatorSnapshot
+ ├── Insights
+ |
+ └── CampaignCreator
+          |
+       Campaign
+          |
+        Product
+```
+
+- `Creator` 保存达人主体资料和 Agency 归属。
+- `CreatorAccount` 保存 TikTok、Instagram、YouTube 等平台账号。
+- `CreatorSnapshot` 与 `Insights` 保存阶段性分析结果。
+- `Product` 是 Campaign 的业务父级。
+- `Campaign` 保存项目目标、周期、预算和业务状态。
+- `CampaignCreator` 保存 Creator 在具体 Campaign 中的合作阶段、执行账号、成本和表现结果。
+- `Legacy Cooperation` 仅保留历史兼容读取，不再作为新合作的写入模型。
+
+## Installation
+
+### Windows Internal Test Build
+
+当前版本为内部测试版：
+
+```text
+release/KOLConnect_v0.2.0-dev.2.exe
+```
+
+1. 获取内部测试 EXE。
+2. 双击启动 KOLConnect。
+3. 首次运行时，应用会在 `%APPDATA%\KOLConnect` 创建本地配置、日志和数据目录。
+4. 使用 Product、Campaign、Creator Library 等模块前，建议先备份现有 Creator Library 工作簿。
+
+该测试版本尚未作为正式 GitHub Release 发布。
+
+### Chrome Extension
+
+1. 打开 `chrome://extensions`。
+2. 开启“开发者模式”。
+3. 点击“加载已解压的扩展程序”。
+4. 选择项目中的 `chrome_extension/`。
+5. 使用导入功能时，请保持 KOLConnect 桌面端正在运行。
+
+## Data Storage
+
+默认运行数据目录：
 
 ```text
 %APPDATA%\KOLConnect
 ```
 
-其中包括：
+Creator、Campaign、Snapshot 和相关运营数据当前保存在 Excel 工作簿中。建议避免多台设备同时写入同一云同步工作簿，并在迁移或大批量操作前保留备份。
 
-- 软件配置
-- 邮箱设置
-- 任务记录
-- 运行日志
-- 邮件缓存
-- Creator Library 数据
-- 数据备份
-- Chrome Profile 运行数据
+真实工作簿、凭证、日志、Chrome Profile 和用户运行数据不应提交到 Git 仓库。
 
-Creator Library 默认使用 Excel 工作簿保存，也可以在设置中指定 WPS 云盘或其他同步目录。为避免文件冲突，建议同一时间只在一台设备上写入该工作簿。
-
-请勿将真实配置、邮箱密码、飞书密钥、任务数据、达人数据或 Chrome Profile 提交到公共代码仓库。
-
-## 使用流程
+## Current Version
 
 ```text
-发现达人
-  ↓
-Chrome Extension 分析或创建抓取任务
-  ↓
-导入 KOLConnect
-  ↓
-人工审核和补充资料
-  ↓
-Creator Library 管理
-  ↓
-联系达人并记录合作
-  ↓
-查看结果和复盘
+KOLConnect v0.2.0-dev.2
 ```
 
-需要同步 CRM 时，可在审核页面将有效结果同步到飞书四表。同步不会自动替代运营人员的合作判断。
+当前阶段已完成：
 
-## 当前版本说明
+- Creator Library 与生命周期模块化
+- Creator 资料编辑、Agency 归属和归档恢复
+- Product Management
+- Campaign Management
+- Campaign Detail 与 CampaignCreator 管理
+- Dashboard CampaignCreator 指标迁移
+- Legacy Cooperation 只读收口
+- 前端页面生命周期和资源管理基础
 
-当前版本：
+## Development Status
 
-```text
-KOLConnect v0.1.2
-```
+`v0.2.0-dev.2` 是 Product-Campaign 模型的内部开发基线。现有功能仍需通过真实工作簿、长时间运行和完整运营流程进行人工验收。
 
-包含：
+当前边界：
 
-- Windows 桌面端 Tool
-- Chrome Extension
-- Dashboard 工作台
-- Creator Library
-- 动态数据快照
-- 合作历史
-- Excel 数据存储
-- 任务管理与审核
-- 邮件匹配
-- 飞书四表同步
+- CampaignCreator 是新合作的主要数据模型。
+- Legacy Cooperation 仅用于查看历史记录。
+- Agency 目前支持达人归属维护，独立 Agency 管理页尚未开发。
+- Excel 仍是当前本地数据存储方案。
 
-## 已知限制
+## Roadmap
 
-- Creator Library 当前使用 Excel 作为本地数据存储，建议避免多设备同时写入。
-- 社交平台采集能力受登录状态、地区、公开范围和页面结构影响。
-- TikTok、Instagram、YouTube 页面更新后，部分字段可能暂时无法读取。
-- 点赞、评论、播放量和发布时间仅在平台公开时采集；缺失字段不会填入虚假数据。
-- 邮件与飞书功能需要用户自行提供有效配置和访问权限。
+- Agency 管理页
+- 达人库 Excel 批量导入
+- Chrome 插件 Agency 选择
+- 批量加入 Campaign
 
-## 开发说明
+## Documentation
 
-主要技术：
-
-- Python
-- JavaScript
-- Chrome Extension Manifest V3
-- PyInstaller
-- pywebview
-
-安装桌面端运行依赖：
-
-```bash
-pip install -r packaging/requirements.txt
-```
-
-从源码运行：
-
-```bash
-python app/launcher.py
-```
-
-执行基础检查：
-
-```bash
-python -m py_compile app/*.py
-node --check webapp/app.js
-```
-
-构建 Windows EXE：
-
-```powershell
-powershell -ExecutionPolicy Bypass -File packaging/build_release.ps1
-```
-
-构建产物：
-
-```text
-release/KOLConnect.exe
-```
-
-修改业务逻辑时，应保持账号 UID、数据快照、飞书字段保护、邮件匹配和历史 Excel 兼容规则稳定。
+- [飞书集成配置指南](docs/飞书集成配置指南.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 

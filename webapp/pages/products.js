@@ -59,9 +59,13 @@
     const errorMessage = element("product-list-error-message");
     const empty = element("product-list-empty");
     const table = element("product-list-table-wrap");
+    const hasError = state === "error";
     if (loading) loading.hidden = state !== "loading";
-    if (error) error.hidden = state !== "error";
-    if (errorMessage && message) errorMessage.textContent = message;
+    if (error) {
+      error.hidden = !hasError;
+      error.style.display = hasError ? "" : "none";
+    }
+    if (errorMessage) errorMessage.textContent = hasError ? message : "";
     if (empty) empty.hidden = state !== "empty";
     if (table) table.hidden = state !== "loaded";
   }

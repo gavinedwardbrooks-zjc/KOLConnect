@@ -33,6 +33,7 @@ class FakeElement {
     this.children = [];
     this.listeners = new Map();
     this.hidden = false;
+    this.style = {};
     this.textContent = "";
     this.value = "";
     this.checked = false;
@@ -356,7 +357,15 @@ async function run() {
   campaignApiError = true;
   await elements.get("campaign-list-retry").dispatch("click");
   assert.equal(elements.get("campaign-list-error").hidden, false, "real API failure must show error state");
+  assert.equal(elements.get("campaign-list-error").style.display, "");
   assert.equal(elements.get("campaign-list-empty").hidden, true, "error state must not be presented as empty data");
+
+  campaignApiError = false;
+  await elements.get("campaign-list-retry").dispatch("click");
+  assert.equal(elements.get("campaign-list-error").hidden, true, "successful retry must clear the error state");
+  assert.equal(elements.get("campaign-list-error").style.display, "none");
+  assert.equal(elements.get("campaign-list-error-message").textContent, "");
+  assert.equal(elements.get("campaign-list-empty").hidden, false, "successful empty response must show empty state");
 
   const source = read("webapp/pages/campaigns.js");
   assert.doesNotMatch(source, /\bfetch\s*\(/);

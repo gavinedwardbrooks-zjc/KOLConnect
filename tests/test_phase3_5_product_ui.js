@@ -33,6 +33,7 @@ class FakeElement {
     this.children = [];
     this.listeners = new Map();
     this.hidden = false;
+    this.style = {};
     this.textContent = "";
     this.value = "";
     this.checked = false;
@@ -172,11 +173,13 @@ async function run() {
     updated_at: "2026-07-20T00:00:00Z",
     archived_at: null,
   }];
+  let productApiError = false;
   const calls = [];
   const notices = [];
   const api = {
     async get(url, options = {}) {
       calls.push({ method: "GET", url, signal: options.signal });
+      if (productApiError) throw new Error("Product API failed");
       const includeArchived = url.includes("include_archived=true");
       return { products: clone(products.filter(product => includeArchived || !product.archived_at)) };
     },
@@ -273,6 +276,16 @@ async function run() {
 
   assert.equal(calls.some(call => call.url.startsWith("/api/campaigns")), false);
   assert.equal(calls.some(call => call.method === "DELETE"), false);
+
+  productApiError = true;
+  await elements.get("product-list-retry").dispatch("click");
+  assert.equal(elements.get("product-list-error").hidden, false);
+  assert.equal(elements.get("product-list-error").style.display, "");
+  productApiError = false;
+  await elements.get("product-list-retry").dispatch("click");
+  assert.equal(elements.get("product-list-error").hidden, true);
+  assert.equal(elements.get("product-list-error").style.display, "none");
+  assert.equal(elements.get("product-list-error-message").textContent, "");
 
   await window.KOLConnectPages.navigate("products");
   assert.equal(elements.get("product-create-open").listenerCount("click"), 1);

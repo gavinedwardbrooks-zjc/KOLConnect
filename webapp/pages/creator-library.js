@@ -318,6 +318,7 @@
     const status = valueOf("creator-library-status");
     const sort = valueOf("creator-library-sort", "analysis_time_desc");
     const records = libraryState().records.filter(record => {
+      const archived = Boolean(record.archived_at);
       const searchable = [
         record.creator_name,
         record.platform,
@@ -334,7 +335,7 @@
         && (!category || record.content_category === category)
         && (!tag || tagsFor(record).includes(tag))
         && (!level || record.insight_level === level)
-        && (!status || record.status === status);
+        && (status === "archived" ? archived : !archived && (!status || record.status === status));
     });
     const sortValues = {
       followers_desc: record => numericValue(record.followers),
@@ -361,6 +362,7 @@
     cards.replaceChildren();
     records.forEach(record => {
       const creatorId = String(record.creator_id || record.analysis_id || "");
+      const archived = Boolean(record.archived_at);
       const card = document.createElement("article");
       card.className = "creator-card";
 
@@ -408,10 +410,15 @@
 
       const actions = document.createElement("div");
       actions.className = "creator-card-actions";
-      actions.append(
-        createAction("查看达人", "detail", creatorId, "soft-btn creator-card-action"),
-        createAction("加入 Campaign", "campaign", creatorId, "primary-btn creator-card-action"),
-      );
+      actions.appendChild(createAction("查看达人", "detail", creatorId, "soft-btn creator-card-action"));
+      if (archived) {
+        actions.appendChild(createAction("恢复达人", "restore", creatorId, "soft-btn creator-card-action"));
+      } else {
+        actions.append(
+          createAction("加入 Campaign", "campaign", creatorId, "primary-btn creator-card-action"),
+          createAction("归档达人", "archive", creatorId, "soft-btn creator-card-action"),
+        );
+      }
       card.append(identity, tags, metrics, actions);
       cards.appendChild(card);
     });
@@ -422,6 +429,7 @@
     body.replaceChildren();
     records.forEach(record => {
       const creatorId = String(record.creator_id || record.analysis_id || "");
+      const archived = Boolean(record.archived_at);
       const row = document.createElement("tr");
       const values = [
         record.creator_name || "未命名达人",
@@ -444,7 +452,7 @@
           const link = document.createElement("a");
           link.href = record.profile_url || "#";
           link.target = "_blank";
-          link.rel = "noreferrer";
+          link.rel = "noopener noreferrer";
           link.textContent = record.profile_url || "--";
           cell.appendChild(link);
         } else {
@@ -454,20 +462,33 @@
       });
 
       const statusCell = document.createElement("td");
-      const statusSelect = document.createElement("select");
-      statusSelect.dataset.creatorStatusId = creatorId;
-      Object.entries(STATUS_LABELS).forEach(([value, label]) => {
-        statusSelect.add(new Option(label, value, false, value === record.status));
-      });
-      statusCell.appendChild(statusSelect);
+      if (archived) {
+        const archivedLabel = document.createElement("span");
+        archivedLabel.className = "status-pill";
+        archivedLabel.dataset.status = "archived";
+        archivedLabel.textContent = "已归档";
+        statusCell.appendChild(archivedLabel);
+      } else {
+        const statusSelect = document.createElement("select");
+        statusSelect.dataset.creatorStatusId = creatorId;
+        Object.entries(STATUS_LABELS).forEach(([value, label]) => {
+          statusSelect.add(new Option(label, value, false, value === record.status));
+        });
+        statusCell.appendChild(statusSelect);
+      }
       row.appendChild(statusCell);
 
       const actions = document.createElement("td");
-      actions.append(
-        createAction("查看分析", "detail", creatorId, "soft-btn compact-btn"),
-        createAction("加入 Campaign", "campaign", creatorId, "soft-btn compact-btn"),
-        createAction("创建合作任务", "task", creatorId, "primary-btn compact-btn"),
-      );
+      actions.appendChild(createAction("查看分析", "detail", creatorId, "soft-btn compact-btn"));
+      if (archived) {
+        actions.appendChild(createAction("恢复", "restore", creatorId, "soft-btn compact-btn"));
+      } else {
+        actions.append(
+          createAction("加入 Campaign", "campaign", creatorId, "soft-btn compact-btn"),
+          createAction("创建合作任务", "task", creatorId, "primary-btn compact-btn"),
+          createAction("归档", "archive", creatorId, "soft-btn compact-btn"),
+        );
+      }
       row.appendChild(actions);
       body.appendChild(row);
     });
@@ -500,7 +521,9 @@
     const currentLifecycle = lifecycleId;
     listController?.abort();
     listController = pageContext.resources.createAbortController();
-    const data = await pageContext.api.get("/api/creator-library", { signal: listController.signal });
+    const includeArchived = valueOf("creator-library-status") === "archived";
+    const url = includeArchived ? "/api/creator-library?include_archived=true" : "/api/creator-library";
+    const data = await pageContext.api.get(url, { signal: listController.signal });
     if (!pageContext || currentLifecycle !== lifecycleId) return;
     libraryState().records = Array.isArray(data.records) ? data.records : [];
     render();
@@ -529,6 +552,20 @@
     context.ui.showSaved(data.message || "已打开关联的审核任务。");
   }
 
+  async function changeArchiveState(creatorId, archived) {
+    const message = archived
+      ? "归档后，达人将从默认列表隐藏，历史分析和 Campaign 关联会保留。"
+      : "恢复该达人到默认达人库？";
+    if (!global.confirm(message)) return;
+    await pageContext.api.patch(
+      `/api/creator-library/${encodeURIComponent(creatorId)}`,
+      { archived_at: archived ? new Date().toISOString() : null },
+      { signal: pageContext.resources.signal },
+    );
+    pageContext.ui.showSaved(archived ? "达人已归档。" : "达人已恢复。");
+    await loadRecords();
+  }
+
   async function handleAction(event) {
     const button = event.target.closest("[data-creator-action]");
     if (!button) return;
@@ -544,6 +581,10 @@
         await campaignModal.open(record);
       } else if (button.dataset.creatorAction === "task") {
         await openCollaborationTask(creatorId);
+      } else if (button.dataset.creatorAction === "archive") {
+        await changeArchiveState(creatorId, true);
+      } else if (button.dataset.creatorAction === "restore") {
+        await changeArchiveState(creatorId, false);
       }
     } catch (error) {
       showError(error);
@@ -602,9 +643,9 @@
         "creator-library-category",
         "creator-library-tag",
         "creator-library-level",
-        "creator-library-status",
         "creator-library-sort",
       ].forEach(id => listen(id, "change", render));
+      listen("creator-library-status", "change", () => loadRecords().catch(showError));
       listen("creator-library-search", "input", render);
       listen("creator-library-cards", "click", handleAction);
       listen("creator-library-body", "click", handleAction);

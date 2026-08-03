@@ -282,6 +282,7 @@
                 <option value="cooperating">合作中</option>
                 <option value="completed">已完成</option>
                 <option value="rejected">已拒绝</option>
+                <option value="archived">已归档</option>
               </select>
             </label>
             <div class="creator-library-actions">
@@ -317,6 +318,8 @@
           </div>
           <div class="action-row">
             <button class="soft-btn" id="creator-library-detail-back">返回达人库</button>
+            <button class="soft-btn" id="creator-library-detail-edit">编辑资料</button>
+            <button class="soft-btn danger" id="creator-library-detail-archive">归档达人</button>
             <button class="soft-btn" id="creator-library-detail-add-campaign">加入 Campaign</button>
             <button class="primary-btn" id="creator-library-detail-task">创建合作任务</button>
           </div>
@@ -405,6 +408,34 @@
         </div>
 
       </section>
+
+      <div class="creator-edit-modal" id="creator-edit-modal" hidden>
+        <div class="creator-edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="creator-edit-modal-title">
+          <div class="creator-campaign-modal-heading">
+            <div>
+              <p class="eyebrow">Creator CRM</p>
+              <h2 id="creator-edit-modal-title">编辑达人资料</h2>
+            </div>
+            <button class="icon-btn" id="creator-edit-modal-close" type="button" aria-label="关闭">×</button>
+          </div>
+          <form id="creator-edit-form">
+            <div class="form-grid two-columns">
+              <label class="field"><span>达人名称</span><input id="creator-edit-name" required></label>
+              <label class="field"><span>平台（不可修改）</span><input id="creator-edit-platform" disabled></label>
+              <label class="field"><span>主页链接</span><input id="creator-edit-profile-url" type="url" required></label>
+              <label class="field"><span>粉丝数</span><input id="creator-edit-followers"></label>
+              <label class="field"><span>内容类型</span><input id="creator-edit-content-category"></label>
+              <label class="field"><span>Agency</span><select id="creator-edit-agency"><option value="">No Agency</option></select></label>
+            </div>
+            <label class="field"><span>简介</span><textarea id="creator-edit-bio" rows="5"></textarea></label>
+            <p class="form-message" id="creator-edit-message" hidden></p>
+            <div class="action-row creator-campaign-modal-actions">
+              <button class="soft-btn" id="creator-edit-cancel" type="button">取消</button>
+              <button class="primary-btn" id="creator-edit-save" type="submit">保存资料</button>
+            </div>
+          </form>
+        </div>
+      </div>
 
       <div class="creator-campaign-modal" id="creator-campaign-modal" hidden>
         <div class="creator-campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="creator-campaign-modal-title">

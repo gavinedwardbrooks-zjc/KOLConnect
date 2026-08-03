@@ -6,6 +6,7 @@
   let pageContext = null;
   let detailController = null;
   let campaignsController = null;
+  let editController = null;
   let campaignModal = null;
   let creatorId = "";
   let detail = null;
@@ -72,7 +73,16 @@
       const dt = document.createElement("dt");
       dt.textContent = term;
       const dd = document.createElement("dd");
-      dd.textContent = value || "--";
+      if (typeof value === "string" && /^https?:\/\//i.test(value)) {
+        const link = document.createElement("a");
+        link.href = value;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = value;
+        dd.appendChild(link);
+      } else {
+        dd.textContent = value || "--";
+      }
       return [dt, dd];
     }));
   }
@@ -206,6 +216,7 @@
     const videoAnalysis = analysis.video_analysis || {};
     const insight = analysis.creator_insight || {};
     const trend = data.trend || {};
+    const archived = Boolean(record.archived_at);
 
     setText(
       "creator-library-detail-summary",
@@ -240,6 +251,12 @@
     renderSnapshots(data);
     renderCooperations(data);
     renderVideos(analysis);
+    const archiveButton = element("creator-library-detail-archive");
+    if (archiveButton) archiveButton.textContent = archived ? "恢复达人" : "归档达人";
+    ["creator-library-detail-edit", "creator-library-detail-add-campaign", "creator-library-detail-task"].forEach(id => {
+      const button = element(id);
+      if (button) button.disabled = archived;
+    });
     setDetailTab(pageContext.state.creatorLibrary.detailTab);
   }
 
@@ -308,6 +325,7 @@
   }
 
   async function openCollaborationTask() {
+    if (detail?.record?.archived_at) return;
     const context = pageContext;
     const data = await context.api.post(
       `/api/creator-library/${encodeURIComponent(creatorId)}/create-task`,
@@ -330,8 +348,113 @@
   }
 
   function openCampaignModal() {
-    if (!detail?.record) throw new Error("达人详情尚未加载完成。");
+    if (!detail?.record || detail.record.archived_at) throw new Error("已归档达人需恢复后才能加入 Campaign。");
     return campaignModal.open(detail.record, { onCreated: reloadCreatorCampaigns });
+  }
+
+  function closeEditModal() {
+    const modal = element("creator-edit-modal");
+    if (modal) modal.hidden = true;
+    const message = element("creator-edit-message");
+    if (message) {
+      message.hidden = true;
+      message.textContent = "";
+    }
+  }
+
+  function showEditMessage(message) {
+    const target = element("creator-edit-message");
+    if (!target) return;
+    target.textContent = message;
+    target.hidden = !message;
+  }
+
+  function renderAgencyOptions(agencies, selectedAgencyId) {
+    const select = element("creator-edit-agency");
+    if (!select) return;
+    select.replaceChildren();
+    const emptyOption = document.createElement("option");
+    emptyOption.value = "";
+    emptyOption.textContent = "No Agency";
+    select.appendChild(emptyOption);
+    agencies.forEach(agency => {
+      const option = document.createElement("option");
+      option.value = String(agency.agency_id || "");
+      option.textContent = String(agency.name || agency.agency_id || "Unnamed Agency");
+      select.appendChild(option);
+    });
+    select.value = String(selectedAgencyId || "");
+  }
+
+  async function openEditModal() {
+    if (!detail?.record || detail.record.archived_at) return;
+    const record = detail.record;
+    const analysis = detail.analysis || {};
+    const creator = analysis.creator || {};
+    setValue("creator-edit-name", record.creator_name || creator.creator_name);
+    setValue("creator-edit-platform", record.platform || creator.platform);
+    setValue("creator-edit-profile-url", record.profile_url || creator.profile_url);
+    setValue("creator-edit-followers", record.followers || creator.followers);
+    setValue("creator-edit-content-category", record.content_category || analysis.content_category);
+    setValue("creator-edit-bio", record.bio || creator.bio);
+    renderAgencyOptions([], record.agency_id);
+    element("creator-edit-modal").hidden = false;
+    showEditMessage("");
+
+    editController?.abort();
+    editController = pageContext.resources.createAbortController();
+    try {
+      const data = await pageContext.api.get("/api/local/agencies", { signal: editController.signal });
+      if (!pageContext || element("creator-edit-modal")?.hidden) return;
+      renderAgencyOptions(Array.isArray(data.agencies) ? data.agencies : [], record.agency_id);
+    } catch (error) {
+      if (error?.name !== "AbortError") showEditMessage(error.message || "Agency 列表加载失败。");
+    }
+  }
+
+  async function saveCreatorProfile(event) {
+    event.preventDefault();
+    if (!detail?.record || detail.record.archived_at) return;
+    const saveButton = element("creator-edit-save");
+    if (saveButton) saveButton.disabled = true;
+    showEditMessage("");
+    try {
+      await pageContext.api.patch(
+        `/api/creator-library/${encodeURIComponent(creatorId)}`,
+        {
+          creator_name: valueOf("creator-edit-name").trim(),
+          profile_url: valueOf("creator-edit-profile-url").trim(),
+          followers: valueOf("creator-edit-followers").trim(),
+          content_category: valueOf("creator-edit-content-category").trim(),
+          bio: valueOf("creator-edit-bio").trim(),
+          agency_id: valueOf("creator-edit-agency").trim(),
+        },
+        { signal: pageContext.resources.signal },
+      );
+      closeEditModal();
+      await loadDetail();
+      pageContext.ui.showSaved("达人资料已保存。");
+    } catch (error) {
+      if (error?.name !== "AbortError") showEditMessage(error.message || "达人资料保存失败。");
+    } finally {
+      if (saveButton) saveButton.disabled = false;
+    }
+  }
+
+  async function changeArchiveState() {
+    if (!detail?.record) return;
+    const archived = Boolean(detail.record.archived_at);
+    const message = archived
+      ? "恢复该达人到默认达人库？"
+      : "归档后，达人将从默认列表隐藏，Campaign、Snapshot 和 Insight 数据会保留。";
+    if (!global.confirm(message)) return;
+    await pageContext.api.patch(
+      `/api/creator-library/${encodeURIComponent(creatorId)}`,
+      { archived_at: archived ? null : new Date().toISOString() },
+      { signal: pageContext.resources.signal },
+    );
+    await loadDetail();
+    pageContext.ui.showSaved(archived ? "达人已恢复。" : "达人已归档。");
   }
 
   function handleCampaignAction(event) {
@@ -371,9 +494,14 @@
         pageContext.resources.listen(button, "click", () => setDetailTab(button.dataset.detailTab));
       });
       listen("creator-library-detail-back", "click", () => pageContext.navigate("creator-library"));
+      listen("creator-library-detail-edit", "click", () => openEditModal().catch(showError));
+      listen("creator-library-detail-archive", "click", () => changeArchiveState().catch(showError));
       listen("creator-library-detail-add-campaign", "click", () => openCampaignModal().catch(showError));
       listen("creator-library-detail-task", "click", () => openCollaborationTask().catch(showError));
       listen("creator-campaigns-body", "click", handleCampaignAction);
+      listen("creator-edit-modal-close", "click", closeEditModal);
+      listen("creator-edit-cancel", "click", closeEditModal);
+      listen("creator-edit-form", "submit", saveCreatorProfile);
     },
 
     unbind() {
@@ -383,10 +511,12 @@
       pageContext = null;
       detailController = null;
       campaignsController = null;
+      editController = null;
       campaignModal = null;
       creatorId = "";
       detail = null;
       creatorCampaigns = [];
+      closeEditModal();
     },
   };
 

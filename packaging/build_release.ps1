@@ -34,7 +34,7 @@ if (-not (Test-Path -LiteralPath $builtExe)) {
   throw "Build did not generate KOLConnect.exe; release copy stopped."
 }
 
-$release = Join-Path $root "release\dev"
+$release = Join-Path $root "release"
 $releaseExe = Join-Path $release $releaseFileName
 New-Item -ItemType Directory -Force -Path $release | Out-Null
 Copy-Item $builtExe $releaseExe -Force

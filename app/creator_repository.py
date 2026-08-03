@@ -162,6 +162,11 @@ class CreatorRepository:
             creator_id,
             self._insight_values(analysis, creator_id),
         )
+        stored_analysis = dict(analysis)
+        existing_analysis = self._decode_analysis(existing_metadata.get("analysis_json"))
+        existing_crm = existing_analysis.get("_crm") if isinstance(existing_analysis.get("_crm"), dict) else {}
+        if existing_crm:
+            stored_analysis["_crm"] = dict(existing_crm)
         self._upsert_row(
             workbook["_AnalysisData"],
             "creator_id",
@@ -172,7 +177,7 @@ class CreatorRepository:
                 "account_uid": str(analysis.get("account_uid") or ""),
                 "source": str(analysis.get("source") or ""),
                 "status_updated_at": status_updated_at,
-                "analysis_json": json.dumps(analysis, ensure_ascii=False),
+                "analysis_json": json.dumps(stored_analysis, ensure_ascii=False),
             },
         )
         snapshot = self.createSnapshot(analysis, creator_id, workbook)
@@ -545,6 +550,138 @@ class CreatorRepository:
         return {"creator_id": creator_id, **relations}
 
     @_synchronized
+    def updateCreator(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Update CRM-maintained Creator fields without changing identity or schema."""
+        if not isinstance(payload, dict) or not payload:
+            raise ValueError("缺少可更新的达人资料。")
+        allowed = {
+            "creator_name", "profile_url", "followers", "content_category",
+            "bio", "agency_id", "archived_at",
+        }
+        unknown = set(payload) - allowed
+        if unknown:
+            raise ValueError(f"不允许修改达人字段：{', '.join(sorted(unknown))}")
+
+        workbook = self._load_workbook()
+        creator_id = str(creator_id or "").strip()
+        creator = self._creator_row(workbook["Creators"], creator_id)
+        if not creator:
+            raise ValueError("未找到达人记录。")
+
+        metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
+        analysis = self._decode_analysis(metadata.get("analysis_json"))
+        if not analysis:
+            analysis = self._rebuild_analysis(workbook, creator, metadata)
+        analysis_creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}
+        analysis_creator = dict(analysis_creator)
+        crm = analysis.get("_crm") if isinstance(analysis.get("_crm"), dict) else {}
+        crm = dict(crm)
+        updated = dict(creator)
+        now = _utc_now()
+
+        if "creator_name" in payload:
+            name = str(payload.get("creator_name") or "").strip()
+            if not name:
+                raise ValueError("达人名称不能为空。")
+            updated["name"] = name
+            analysis_creator["creator_name"] = name
+            crm["creator_name"] = name
+
+        old_profile_url = str(creator.get("profile_url") or "").strip()
+        if "profile_url" in payload:
+            profile_url = str(payload.get("profile_url") or "").strip()
+            parsed_url = urlparse(profile_url)
+            if not profile_url or parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
+                raise ValueError("主页链接必须是有效的 HTTP 或 HTTPS 地址。")
+            updated["profile_url"] = profile_url
+            analysis_creator["profile_url"] = profile_url
+            crm["profile_url"] = profile_url
+
+        if "followers" in payload:
+            followers = str(payload.get("followers") or "").strip()
+            updated["followers"] = followers
+            analysis_creator["followers"] = followers
+            crm["followers"] = followers
+
+        if "content_category" in payload:
+            content_category = str(payload.get("content_category") or "").strip()
+            updated["content_category"] = content_category
+            analysis["content_category"] = content_category
+            crm["content_category"] = content_category
+
+        if "bio" in payload:
+            bio = str(payload.get("bio") or "").strip()
+            crm["bio"] = bio
+            analysis_creator["bio"] = bio
+
+        if "agency_id" in payload:
+            agency_id = str(payload.get("agency_id") or "").strip()
+            if agency_id and not self._row_by_key(workbook["Agencies"], "agency_id", agency_id):
+                raise ValueError("关联的 Agency 不存在。")
+            updated["agency_id"] = agency_id
+            crm["agency_id"] = agency_id
+
+        if "archived_at" in payload:
+            archived_at = payload.get("archived_at")
+            if archived_at is not None:
+                archived_at = str(archived_at or "").strip()
+                try:
+                    datetime.fromisoformat(archived_at.replace("Z", "+00:00"))
+                except ValueError as exc:
+                    raise ValueError("归档时间必须是有效的 ISO 时间。") from exc
+            crm["archived_at"] = archived_at
+
+        updated["updated_at"] = now
+        analysis["creator"] = analysis_creator
+        analysis["_crm"] = crm
+        self._upsert_row(workbook["Creators"], "creator_id", creator_id, updated)
+
+        if any(field in payload for field in ("profile_url", "followers")):
+            accounts = [
+                row for row in self._rows(workbook["CreatorAccounts"])
+                if str(row.get("creator_id") or "") == creator_id
+            ]
+            metadata_uid = str(metadata.get("account_uid") or "")
+            primary_account = next(
+                (row for row in accounts if str(row.get("account_uid") or "") == metadata_uid),
+                next(
+                    (row for row in accounts if str(row.get("profile_url") or "") == old_profile_url),
+                    accounts[0] if accounts else {},
+                ),
+            )
+            account_id = str(primary_account.get("account_id") or "")
+            if account_id:
+                account_values = {**primary_account, "updated_at": now}
+                if "profile_url" in payload:
+                    account_values["profile_url"] = updated["profile_url"]
+                if "followers" in payload:
+                    account_values["followers"] = updated["followers"]
+                self._upsert_row(workbook["CreatorAccounts"], "account_id", account_id, account_values)
+
+        self._upsert_row(
+            workbook["_AnalysisData"],
+            "creator_id",
+            creator_id,
+            {
+                **metadata,
+                "creator_id": creator_id,
+                "analysis_json": json.dumps(analysis, ensure_ascii=False),
+            },
+        )
+        self._save_workbook(workbook)
+        return {
+            "creator_id": creator_id,
+            "creator_name": str(updated.get("name") or ""),
+            "profile_url": str(updated.get("profile_url") or ""),
+            "followers": str(updated.get("followers") or ""),
+            "content_category": str(updated.get("content_category") or ""),
+            "bio": str(crm.get("bio") or analysis_creator.get("bio") or ""),
+            "agency_id": str(updated.get("agency_id") or ""),
+            "archived_at": crm.get("archived_at"),
+            "updated_at": now,
+        }
+
+    @_synchronized
     def getCreatorTrend(self, creator_id: str) -> dict[str, Any]:
         """Return latest/previous snapshots, field deltas, and data freshness."""
         workbook = self._load_workbook()
@@ -558,12 +695,14 @@ class CreatorRepository:
         }
 
     @_synchronized
-    def getCreators(self) -> list[dict[str, Any]]:
+    def getCreators(self, include_archived: bool = False) -> list[dict[str, Any]]:
         """Return concise Creator Library records from the Excel workbook."""
         request_started = time.perf_counter()
         workbook = self._load_workbook()
         load_duration_ms = round((time.perf_counter() - request_started) * 1000, 2)
         records, index = self._creator_records_from_workbook(workbook)
+        if not include_archived:
+            records = [record for record in records if not record.get("archived_at")]
         response_duration_ms = round((time.perf_counter() - request_started) * 1000, 2)
         log_event(
             "CreatorLibrary",
@@ -636,6 +775,9 @@ class CreatorRepository:
             snapshot = snapshots[0] if snapshots else {}
             trend = self._trend_from_snapshots(snapshots)
             creator_accounts = accounts_by_creator.get(creator_id, [])
+            analysis = self._decode_analysis(meta.get("analysis_json"))
+            analysis_creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}
+            crm = analysis.get("_crm") if isinstance(analysis.get("_crm"), dict) else {}
             metadata_uid = str(meta.get("account_uid") or "")
             primary_account = next(
                 (
@@ -644,17 +786,18 @@ class CreatorRepository:
                 ),
                 creator_accounts[0] if creator_accounts else {},
             )
-            agency_id = str(creator.get("agency_id") or "")
+            agency_id = str(crm.get("agency_id") if "agency_id" in crm else creator.get("agency_id") or "")
             records.append({
                 "analysis_id": creator_id,
                 "creator_id": creator_id,
                 "task_id": str(meta.get("task_id") or ""),
                 "account_uid": str(primary_account.get("account_uid") or metadata_uid),
-                "creator_name": str(creator.get("name") or ""),
+                "creator_name": str(crm.get("creator_name") or creator.get("name") or ""),
                 "platform": str(primary_account.get("platform") or creator.get("platform") or ""),
-                "profile_url": str(primary_account.get("profile_url") or creator.get("profile_url") or ""),
-                "followers": str(snapshot.get("followers") or primary_account.get("followers") or creator.get("followers") or ""),
-                "content_category": str(creator.get("content_category") or ""),
+                "profile_url": str(crm.get("profile_url") or primary_account.get("profile_url") or creator.get("profile_url") or ""),
+                "followers": str(crm.get("followers") if "followers" in crm else creator.get("followers") or primary_account.get("followers") or snapshot.get("followers") or ""),
+                "content_category": str(crm.get("content_category") if "content_category" in crm else creator.get("content_category") or ""),
+                "bio": str(crm.get("bio") if "bio" in crm else analysis_creator.get("bio") or ""),
                 "country": str(creator.get("country") or ""),
                 "language": str(creator.get("language") or ""),
                 "tags": str(creator.get("tags") or ""),
@@ -673,6 +816,7 @@ class CreatorRepository:
                 "agency_name": agency_names.get(agency_id, ""),
                 "current_contact_id": str(creator.get("current_contact_id") or ""),
                 "source_contact_id": str(creator.get("source_contact_id") or ""),
+                "archived_at": crm.get("archived_at"),
             })
         records.sort(key=lambda item: item["analysis_time"], reverse=True)
         return records, {
@@ -701,6 +845,16 @@ class CreatorRepository:
         record = next((item for item in records if item["analysis_id"] == creator_id), None)
         if not record:
             raise ValueError("达人分析记录不可用。")
+        analysis_creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}
+        analysis["creator"] = {
+            **analysis_creator,
+            "creator_name": record.get("creator_name") or analysis_creator.get("creator_name") or "",
+            "platform": record.get("platform") or analysis_creator.get("platform") or "",
+            "profile_url": record.get("profile_url") or analysis_creator.get("profile_url") or "",
+            "followers": record.get("followers") or analysis_creator.get("followers") or "",
+            "bio": record.get("bio") if "bio" in record else analysis_creator.get("bio") or "",
+        }
+        analysis["content_category"] = record.get("content_category") or analysis.get("content_category") or ""
         snapshots = index["snapshots_by_creator"].get(creator_id, [])
         history_times = [str(item.get("captured_at") or "") for item in snapshots]
         if not history_times and creator.get("created_at"):

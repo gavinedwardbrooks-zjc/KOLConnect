@@ -1297,7 +1297,8 @@ button {
 .creator-campaign-section-heading h2 { margin-bottom: 4px; }
 .creator-campaign-table td:last-child { white-space: nowrap; }
 
-.creator-campaign-modal {
+.creator-campaign-modal,
+.creator-edit-modal {
   position: fixed;
   z-index: 1200;
   inset: 0;
@@ -1307,8 +1308,10 @@ button {
   background: rgb(52 64 56 / 32%);
   backdrop-filter: blur(3px);
 }
-.creator-campaign-modal[hidden] { display: none; }
-.creator-campaign-modal-card {
+.creator-campaign-modal[hidden],
+.creator-edit-modal[hidden] { display: none; }
+.creator-campaign-modal-card,
+.creator-edit-modal-card {
   width: min(520px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
@@ -1318,6 +1321,7 @@ button {
   background: var(--surface);
   box-shadow: 0 24px 70px rgb(52 64 56 / 22%);
 }
+.creator-edit-modal-card { width: min(680px, 100%); }
 .creator-campaign-modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
 .creator-campaign-modal-heading h2 { margin: 2px 0 0; }
 .creator-campaign-modal-heading .icon-btn { width: 34px; height: 34px; border-radius: 50%; font-size: 22px; line-height: 1; }

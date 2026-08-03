@@ -158,6 +158,7 @@ async function run() {
     "creator-library-freshness", "creator-library-recommendation", "creator-library-strengths",
     "creator-library-risks", "creator-library-snapshots", "creator-library-snapshots-empty",
     "creator-library-videos", "creator-library-detail-back", "creator-library-detail-task",
+    "creator-library-detail-edit", "creator-library-detail-archive",
     "cooperation-stat-count", "cooperation-stat-spend", "cooperation-stat-views",
     "cooperation-stat-roi", "creator-cooperations-body", "creator-cooperations-empty",
     "cooperation-platform", "cooperation-campaign", "cooperation-contact-date",
@@ -170,15 +171,21 @@ async function run() {
     "creator-campaign-agency-name", "creator-campaign-form", "creator-campaign-select",
     "creator-campaign-account-select", "creator-campaign-account-hint",
     "creator-campaign-modal-message", "creator-campaign-submit",
+    "creator-edit-modal", "creator-edit-modal-close", "creator-edit-cancel",
+    "creator-edit-form", "creator-edit-name", "creator-edit-platform",
+    "creator-edit-profile-url", "creator-edit-followers", "creator-edit-content-category",
+    "creator-edit-agency", "creator-edit-bio", "creator-edit-message", "creator-edit-save",
   ];
   const selectIds = new Set(ids.filter(id => id.includes("platform") || id.includes("language")
     || id.includes("category") || id.includes("tag") || id.includes("level")
     || id.includes("status") || id.includes("sort")));
   selectIds.add("creator-campaign-select");
   selectIds.add("creator-campaign-account-select");
+  selectIds.add("creator-edit-agency");
   const elements = new Map(ids.map(id => [id, new FakeElement(selectIds.has(id) ? "select" : "div", id)]));
   elements.get("creator-library-sort").value = "analysis_time_desc";
   elements.get("creator-campaign-modal").hidden = true;
+  elements.get("creator-edit-modal").hidden = true;
 
   const tabs = ["overview", "content", "history", "cooperations"].map(name => {
     const tab = new FakeElement("button");
@@ -269,7 +276,13 @@ async function run() {
   const api = {
     async get(url, options = {}) {
       calls.push({ method: "GET", url, signal: options.signal });
-      if (url === "/api/creator-library") return { records: clone(records) };
+      if (url === "/api/creator-library") {
+        return { records: clone(records.filter(record => !record.archived_at)) };
+      }
+      if (url === "/api/creator-library?include_archived=true") return { records: clone(records) };
+      if (url === "/api/local/agencies") {
+        return { agencies: [{ agency_id: "agency_new", name: "New Agency" }] };
+      }
       if (url === "/api/campaigns") return { campaigns: clone(campaigns) };
       if (url.startsWith("/api/campaigns?creator_id=")) {
         const id = decodeURIComponent(url.split("=").at(-1));
@@ -314,6 +327,34 @@ async function run() {
       }
       throw new Error(`Unexpected POST ${url}`);
     },
+    async patch(url, payload, options = {}) {
+      calls.push({ method: "PATCH", url, payload: clone(payload), signal: options.signal });
+      const match = url.match(/^\/api\/creator-library\/(.+)$/);
+      if (!match) throw new Error(`Unexpected PATCH ${url}`);
+      const id = decodeURIComponent(match[1]);
+      const record = records.find(item => item.creator_id === id);
+      const creator = details[id].analysis.creator;
+      if (Object.hasOwn(payload, "archived_at")) {
+        record.archived_at = payload.archived_at;
+        details[id].record.archived_at = payload.archived_at;
+      } else {
+        record.creator_name = payload.creator_name;
+        record.profile_url = payload.profile_url;
+        record.followers = payload.followers;
+        record.content_category = payload.content_category;
+        record.agency_id = payload.agency_id;
+        record.agency_name = payload.agency_id ? "New Agency" : "";
+        Object.assign(details[id].record, clone(record));
+        Object.assign(creator, {
+          creator_name: payload.creator_name,
+          profile_url: payload.profile_url,
+          followers: payload.followers,
+          bio: payload.bio,
+        });
+        details[id].analysis.content_category = payload.content_category;
+      }
+      return { creator: clone(record) };
+    },
   };
 
   const notices = [];
@@ -324,6 +365,7 @@ async function run() {
     clearInterval,
     setTimeout,
     clearTimeout,
+    confirm: () => true,
   };
   const sandbox = { window, document, console, AbortController, Option: FakeOption, Intl, Date, Set, Map };
   sandbox.globalThis = sandbox;
@@ -449,6 +491,29 @@ async function run() {
   assert.equal(elements.get("creator-campaigns-body").children.length, 2, "detail must show joined Campaigns");
   assert.equal(elements.get("creator-library-detail-back").listenerCount("click"), 1);
 
+  const profileLink = findNode(
+    elements.get("creator-library-basic"),
+    node => node.tagName === "a" && node.href === details.creator_b.record.profile_url,
+  );
+  assert.ok(profileLink, "profile URL must render as a link");
+  assert.equal(profileLink.target, "_blank");
+  assert.equal(profileLink.rel, "noopener noreferrer");
+
+  await elements.get("creator-library-detail-edit").dispatch("click");
+  assert.equal(elements.get("creator-edit-modal").hidden, false);
+  assert.equal(elements.get("creator-edit-agency").children.length, 2);
+  elements.get("creator-edit-name").value = "Bella Updated";
+  elements.get("creator-edit-profile-url").value = "https://www.tiktok.com/@bella-updated";
+  elements.get("creator-edit-followers").value = "25K";
+  elements.get("creator-edit-content-category").value = "Lifestyle";
+  elements.get("creator-edit-bio").value = "Updated bio";
+  elements.get("creator-edit-agency").value = "agency_new";
+  await elements.get("creator-edit-form").dispatch("submit");
+  const profilePatch = calls.find(call => call.method === "PATCH" && call.payload.creator_name);
+  assert.ok(profilePatch, "profile edit must use the Creator PATCH endpoint");
+  assert.equal(profilePatch.payload.agency_id, "agency_new");
+  assert.match(elements.get("creator-library-detail-summary").textContent, /Bella Updated/);
+
   assert.equal(elements.get("creator-cooperations-body").children.length, 1, "legacy cooperation history must remain visible");
   assert.equal(elements.get("cooperation-save").listenerCount("click"), 0, "legacy cooperation must be read-only");
   assert.equal(calls.some(call => call.url.endsWith("/cooperations")), false);
@@ -462,13 +527,28 @@ async function run() {
   await navigate("creator-library-detail", { creatorId: "creator_b" });
   await elements.get("creator-library-detail-add-campaign").dispatch("click");
   assert.equal(elements.get("creator-campaign-modal").hidden, false, "detail must open the shared Campaign modal");
-  assert.equal(elements.get("creator-campaign-creator-name").textContent, "Bella");
+  assert.equal(elements.get("creator-campaign-creator-name").textContent, "Bella Updated");
   await elements.get("creator-campaign-modal-cancel").dispatch("click");
 
+  await elements.get("creator-library-detail-archive").dispatch("click");
+  assert.ok(details.creator_b.record.archived_at, "archive must preserve the record with archived_at");
+  assert.equal(elements.get("creator-library-detail-add-campaign").disabled, true);
+
+  elements.get("creator-library-search").value = "";
   await elements.get("creator-library-detail-back").dispatch("click");
   assert.equal(window.KOLConnectPages.getCurrentPage(), "creator-library");
   assert.equal(elements.get("creator-library-detail-back").listenerCount("click"), 0);
   assert.equal(elements.get("creator-library-refresh").listenerCount("click"), 1);
+  assert.equal(elements.get("creator-library-cards").children.length, 1, "archived Creator must be hidden by default");
+  elements.get("creator-library-status").value = "archived";
+  await elements.get("creator-library-status").dispatch("change");
+  assert.equal(elements.get("creator-library-cards").children.length, 1, "archived filter must show archived Creators");
+  const restoreButton = findNode(
+    elements.get("creator-library-cards"),
+    node => node.dataset.creatorAction === "restore" && node.dataset.creatorId === "creator_b",
+  );
+  await elements.get("creator-library-cards").dispatch("click", { target: restoreButton });
+  assert.equal(details.creator_b.record.archived_at, null, "restore must clear archived_at");
 
   await navigate("creator-library");
   assert.equal(elements.get("creator-library-refresh").listenerCount("click"), 1, "repeat entry must not duplicate listeners");

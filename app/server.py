@@ -1969,8 +1969,8 @@ def get_task_creator_analysis(task_id: str) -> dict:
     }
 
 
-def get_creator_library() -> dict:
-    return {"records": get_creator_repository().getCreators()}
+def get_creator_library(include_archived: bool = False) -> dict:
+    return {"records": get_creator_repository().getCreators(include_archived=include_archived)}
 
 
 def get_creator_library_detail(analysis_id: str) -> dict:
@@ -2018,6 +2018,10 @@ def save_local_agency_contact(payload: dict) -> dict:
 
 def update_creator_local_relations(creator_id: str, payload: dict) -> dict:
     return get_creator_repository().updateCreatorRelations(creator_id, payload)
+
+
+def update_creator_library_profile(creator_id: str, payload: dict) -> dict:
+    return {"creator": get_creator_repository().updateCreator(creator_id, payload)}
 
 
 def open_creator_library_collaboration_task(analysis_id: str) -> dict:
@@ -2608,7 +2612,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error(f"无法读取工作台数据：{exc}", status=500)
 
         if parsed.path == "/api/creator-library":
-            return self._json({"ok": True, **get_creator_library()})
+            include_archived = parse_qs(parsed.query).get("include_archived", [""])[0].lower() == "true"
+            return self._json({"ok": True, **get_creator_library(include_archived=include_archived)})
 
         creator_library_trend_match = re.fullmatch(r"/api/creator-library/([^/]+)/trend", parsed.path)
         if creator_library_trend_match:
@@ -3142,6 +3147,18 @@ class Handler(BaseHTTPRequestHandler):
                         else repository.updateCampaignCreator(campaign_creator_match.group(1), payload)
                     )
                     return self._json({"ok": True, "campaign_creator": record})
+                except ValueError as exc:
+                    return self._repository_error(exc)
+
+            creator_library_match = re.fullmatch(r"/api/creator-library/([^/]+)", parsed.path)
+            if creator_library_match:
+                try:
+                    return self._json(
+                        {
+                            "ok": True,
+                            **update_creator_library_profile(creator_library_match.group(1), payload),
+                        }
+                    )
                 except ValueError as exc:
                     return self._repository_error(exc)
 
