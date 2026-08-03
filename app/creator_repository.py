@@ -24,6 +24,9 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
 from app_logging import log_event
+from campaign_creator_repository import CAMPAIGN_CREATORS_HEADERS
+from campaign_repository import CAMPAIGNS_HEADERS, migrate_legacy_campaign_archives
+from product_repository import PRODUCTS_HEADERS
 from runtime_paths import load_json_with_backup
 
 
@@ -37,7 +40,7 @@ CREATOR_LIBRARY_STATUSES = {
 }
 
 _TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
-CREATOR_LIBRARY_SCHEMA_VERSION = "2.0-phase1"
+CREATOR_LIBRARY_SCHEMA_VERSION = "2.0-product-campaign-phase2-api"
 _CREATORS_HEADERS = [
     "creator_id", "name", "platform", "profile_url", "country", "language",
     "content_category", "followers", "insight_level", "status", "created_at", "tags", "updated_at",
@@ -65,6 +68,8 @@ _COOPERATIONS_HEADERS = [
     "cooperation_id", "creator_id", "campaign", "platform", "contact_date", "price",
     "published_count", "total_views", "average_views", "roi", "result", "note", "created_at",
 ]
+# Legacy cooperation records remain read/write compatible until the UI and
+# Dashboard move to CampaignCreators. Phase 1 does not migrate or delete them.
 _AGENCIES_HEADERS = [
     "agency_id", "name", "country", "website", "public_email", "whatsapp",
     "cooperation_stage", "tags", "last_contact_time", "next_follow_up_time",
@@ -84,6 +89,7 @@ _FOLLOW_UP_LOGS_HEADERS = [
 _ANALYSIS_METADATA_HEADERS = ["creator_id", "task_id", "account_uid", "status_updated_at", "analysis_json", "source"]
 _WORKBOOK_METADATA_HEADERS = ["schema_version", "last_update_time"]
 _WORKBOOK_LOCK = threading.RLock()
+_CAMPAIGN_LIFECYCLE_LOGGED_PATHS: set[str] = set()
 
 
 def _utc_now() -> str:
@@ -112,6 +118,7 @@ class CreatorRepository:
         self.legacy_analysis_dir = legacy_analysis_dir
         self.legacy_library_file = legacy_library_file
         self.last_migration_report: dict[str, Any] | None = None
+        self.last_campaign_lifecycle_report: dict[str, Any] | None = None
 
     @_synchronized
     def saveCreator(self, analysis: dict[str, Any]) -> dict[str, Any]:
@@ -584,6 +591,11 @@ class CreatorRepository:
             for row in self._rows(workbook["_AnalysisData"])
             if row.get("creator_id")
         }
+        agency_names = {
+            str(row.get("agency_id") or ""): str(row.get("name") or "")
+            for row in self._rows(workbook["Agencies"])
+            if str(row.get("agency_id") or "")
+        }
         accounts_by_creator: dict[str, list[dict[str, Any]]] = {}
         accounts = self._rows(workbook["CreatorAccounts"])
         for account in accounts:
@@ -632,6 +644,7 @@ class CreatorRepository:
                 ),
                 creator_accounts[0] if creator_accounts else {},
             )
+            agency_id = str(creator.get("agency_id") or "")
             records.append({
                 "analysis_id": creator_id,
                 "creator_id": creator_id,
@@ -656,7 +669,8 @@ class CreatorRepository:
                 "status_updated_at": str(meta.get("status_updated_at") or ""),
                 "trend": trend,
                 "account_count": len(creator_accounts),
-                "agency_id": str(creator.get("agency_id") or ""),
+                "agency_id": agency_id,
+                "agency_name": agency_names.get(agency_id, ""),
                 "current_contact_id": str(creator.get("current_contact_id") or ""),
                 "source_contact_id": str(creator.get("source_contact_id") or ""),
             })
@@ -731,41 +745,8 @@ class CreatorRepository:
 
     @_synchronized
     def saveCooperation(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        """Append a local cooperation record and optionally update the Creator Library status."""
-        if not isinstance(payload, dict):
-            raise ValueError("合作记录数据无效。")
-        creator_id = str(creator_id or "").strip()
-        workbook = self._load_workbook()
-        creator = self._creator_row(workbook["Creators"], creator_id)
-        if not creator:
-            raise ValueError("未找到达人分析记录。")
-        now = _utc_now()
-        status = str(payload.get("status") or "").strip()
-        if status:
-            self._upsert_row(
-                workbook["Creators"],
-                "creator_id",
-                creator_id,
-                {**creator, "status": self._status_value(status), "updated_at": now},
-            )
-        cooperation = {
-            "cooperation_id": f"cooperation_{uuid.uuid4().hex[:12]}",
-            "creator_id": creator_id,
-            "campaign": str(payload.get("campaign") or "").strip(),
-            "platform": str(payload.get("platform") or creator.get("platform") or "").strip(),
-            "contact_date": str(payload.get("contact_date") or "").strip(),
-            "price": self._optional_number(payload.get("price"), "合作价格"),
-            "published_count": self._optional_number(payload.get("published_count"), "发布数量", integer=True),
-            "total_views": self._optional_number(payload.get("total_views"), "总播放"),
-            "average_views": self._optional_number(payload.get("average_views"), "平均播放"),
-            "roi": self._optional_number(payload.get("roi"), "ROI"),
-            "result": str(payload.get("result") or "").strip(),
-            "note": str(payload.get("note") or "").strip(),
-            "created_at": now,
-        }
-        self._upsert_row(workbook["Cooperations"], "cooperation_id", cooperation["cooperation_id"], cooperation)
-        self._save_workbook(workbook)
-        return cooperation
+        """Reject writes to the preserved, read-only Legacy Cooperation store."""
+        raise PermissionError("请使用 Campaign 创建新的合作。")
 
     @_synchronized
     def updateCreatorStatus(self, analysis_id: str, status: object) -> dict[str, str]:
@@ -817,6 +798,26 @@ class CreatorRepository:
         backup_path = self._create_migration_backup() if requires_migration else None
         try:
             changed = self._ensure_sheets(workbook)
+            lifecycle_changed, review_required = migrate_legacy_campaign_archives(workbook)
+            changed = lifecycle_changed or changed
+            self.last_campaign_lifecycle_report = {
+                "manual_review_required": review_required,
+                "count": len(review_required),
+            }
+            lifecycle_report_key = str(self.workbook_path.resolve())
+            if review_required and lifecycle_report_key not in _CAMPAIGN_LIFECYCLE_LOGGED_PATHS:
+                log_event(
+                    "Migration",
+                    json.dumps(
+                        {
+                            "type": "campaign_archive_lifecycle",
+                            "manual_review_required": review_required,
+                            "count": len(review_required),
+                        },
+                        ensure_ascii=False,
+                    ),
+                )
+                _CAMPAIGN_LIFECYCLE_LOGGED_PATHS.add(lifecycle_report_key)
             if requires_migration:
                 self.last_migration_report = self._migrate_phase1_workbook(
                     workbook,
@@ -853,6 +854,9 @@ class CreatorRepository:
         self._set_headers(workbook.create_sheet("Agencies"), _AGENCIES_HEADERS)
         self._set_headers(workbook.create_sheet("AgencyContacts"), _AGENCY_CONTACTS_HEADERS)
         self._set_headers(workbook.create_sheet("FollowUpLogs"), _FOLLOW_UP_LOGS_HEADERS)
+        self._set_headers(workbook.create_sheet("Products"), PRODUCTS_HEADERS)
+        self._set_headers(workbook.create_sheet("Campaigns"), CAMPAIGNS_HEADERS)
+        self._set_headers(workbook.create_sheet("CampaignCreators"), CAMPAIGN_CREATORS_HEADERS)
         metadata = workbook.create_sheet("_AnalysisData")
         self._set_headers(metadata, _ANALYSIS_METADATA_HEADERS)
         metadata.sheet_state = "hidden"
@@ -873,6 +877,9 @@ class CreatorRepository:
             "Agencies": _AGENCIES_HEADERS,
             "AgencyContacts": _AGENCY_CONTACTS_HEADERS,
             "FollowUpLogs": _FOLLOW_UP_LOGS_HEADERS,
+            "Products": PRODUCTS_HEADERS,
+            "Campaigns": CAMPAIGNS_HEADERS,
+            "CampaignCreators": CAMPAIGN_CREATORS_HEADERS,
             "_AnalysisData": _ANALYSIS_METADATA_HEADERS,
             "_Metadata": _WORKBOOK_METADATA_HEADERS,
         }
@@ -1069,7 +1076,14 @@ class CreatorRepository:
             load_workbook(temp_path, read_only=True).close()
             if self.workbook_path.exists():
                 shutil.copy2(self.workbook_path, backup_path)
-            os.replace(temp_path, self.workbook_path)
+            for attempt in range(3):
+                try:
+                    os.replace(temp_path, self.workbook_path)
+                    break
+                except PermissionError:
+                    if attempt == 2:
+                        raise
+                    time.sleep(0.1 * (attempt + 1))
             log_event("Excel", f"保存成功: {self.workbook_path}")
         except PermissionError as exc:
             log_event("Excel", f"保存失败，文件可能被占用: {self.workbook_path} | {exc}")

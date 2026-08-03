@@ -511,12 +511,9 @@ const state = {
   },
   creatorLibrary: {
     records: [],
-    selectedAnalysisId: "",
-    detail: null,
     view: window.localStorage.getItem("kolconnect.creatorLibraryView") || "cards",
     detailTab: "overview"
   },
-  dashboard: null,
   taskDetails: {
     taskId: "",
     task: null,
@@ -897,7 +894,7 @@ async function loadTaskDetails(taskId = state.taskDetails.taskId) {
 
 async function openTaskDetails(taskId) {
   state.taskDetails.taskId = taskId;
-  setPage("task-details");
+  await setPage("task-details");
   await loadTaskDetails(taskId);
 }
 
@@ -906,63 +903,20 @@ function textAreaOrInputValue(row, selector) {
   return el ? el.value.trim() : "";
 }
 
-async function apiGet(url) {
-  let response;
-  try {
-    response = await fetch(url, { cache: "no-store" });
-  } catch (_error) {
-    throw new Error("服务连接失败，请确认 KOLConnect 正在运行。");
-  }
-  let data;
-  try {
-    data = await response.json();
-  } catch (_error) {
-    throw new Error("服务返回异常，请查看系统日志中的详细原因。");
-  }
-  if (!response.ok) throw new Error(data.error || `GET ${url} failed`);
-  return data;
+async function apiGet(url, options = {}) {
+  return window.KOLConnectAPI.get(url, options);
 }
 
-async function apiPost(url, payload) {
-  let response;
-  try {
-    response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
-  } catch (_error) {
-    throw new Error("服务连接失败，请确认 KOLConnect 正在运行。");
-  }
-  let data;
-  try {
-    data = await response.json();
-  } catch (_error) {
-    throw new Error("服务返回异常，请查看系统日志中的详细原因。");
-  }
-  if (!response.ok) {
-    const error = new Error(data.error || `POST ${url} failed`);
-    error.responseData = data;
-    throw error;
-  }
-  return data;
+async function apiPost(url, payload, options = {}) {
+  return window.KOLConnectAPI.post(url, payload, options);
 }
 
-async function apiDelete(url) {
-  let response;
-  try {
-    response = await fetch(url, { method: "DELETE" });
-  } catch (_error) {
-    throw new Error("服务连接失败，请确认 KOLConnect 正在运行。");
-  }
-  let data;
-  try {
-    data = await response.json();
-  } catch (_error) {
-    throw new Error("服务返回异常，请查看系统日志中的详细原因。");
-  }
-  if (!response.ok) throw new Error(data.error || `DELETE ${url} failed`);
-  return data;
+async function apiPatch(url, payload, options = {}) {
+  return window.KOLConnectAPI.patch(url, payload, options);
+}
+
+async function apiDelete(url, options = {}) {
+  return window.KOLConnectAPI.delete(url, options);
 }
 
 function t(key) {
@@ -1378,325 +1332,6 @@ async function loadReviewTasks() {
   await loadReviewResults();
 }
 
-const CREATOR_LIBRARY_STATUS_LABELS = {
-  discovered: "已发现",
-  contacted: "已联系",
-  negotiating: "洽谈中",
-  cooperating: "合作中",
-  completed: "已完成",
-  rejected: "已拒绝"
-};
-
-function formatCreatorLibraryMetric(value) {
-  if (value === null || value === undefined || value === "") return "--";
-  const number = Number(value);
-  return Number.isFinite(number) ? number.toLocaleString() : String(value);
-}
-
-function formatCreatorLibraryTime(value) {
-  if (!value) return "--";
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
-}
-
-function formatCreatorTrend(change) {
-  if (!change || change.status === "no_history") return "暂无历史数据";
-  if (change.status !== "available" || change.delta === null || change.delta === undefined) return "--";
-  const amount = formatCreatorLibraryMetric(Math.abs(Number(change.delta)));
-  if (change.direction === "growth") return `↑ 增长 ${amount}`;
-  if (change.direction === "decline") return `↓ 下降 ${amount}`;
-  return "— 无变化";
-}
-
-function formatCreatorFreshness(freshness) {
-  if (!freshness || freshness.status === "unknown") return "分析时间未知";
-  const days = Number(freshness.days || 0);
-  if (freshness.status === "fresh") return `最新（${days} 天前）`;
-  if (freshness.status === "update_recommended") return `建议更新（${days} 天前）`;
-  return `数据过期（${days} 天前）`;
-}
-
-function renderCreatorLibraryOptions(id, values, label) {
-  const select = $(id);
-  if (!select) return;
-  const selected = select.value;
-  select.replaceChildren(new Option(label, ""));
-  [...new Set(values.filter(Boolean))].sort().forEach(value => select.add(new Option(value, value)));
-  select.value = [...select.options].some(option => option.value === selected) ? selected : "";
-}
-
-function creatorLibraryNumericValue(value) {
-  if (value === null || value === undefined || value === "") return 0;
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-  const raw = String(value).trim().replace(/,/g, "");
-  const match = raw.match(/^([0-9]+(?:\.[0-9]+)?)\s*([kmb])?$/i);
-  if (!match) return Number(raw) || 0;
-  const multiplier = { k: 1e3, m: 1e6, b: 1e9 }[(match[2] || "").toLowerCase()] || 1;
-  return Number(match[1]) * multiplier;
-}
-
-function creatorLibraryTags(record) {
-  return String(record.tags || "").replace(/\uFF0C/g, ",").split(",").map(tag => tag.trim()).filter(Boolean);
-}
-
-function creatorLibraryFilteredRecords() {
-  const keyword = valueOf("creator-library-search").trim().toLowerCase();
-  const platform = valueOf("creator-library-platform");
-  const country = valueOf("creator-library-country");
-  const language = valueOf("creator-library-language");
-  const category = valueOf("creator-library-category");
-  const tag = valueOf("creator-library-tag");
-  const level = valueOf("creator-library-level");
-  const status = valueOf("creator-library-status");
-  const sort = valueOf("creator-library-sort", "analysis_time_desc");
-  const records = state.creatorLibrary.records.filter(record => {
-    const searchable = [record.creator_name, record.platform, record.profile_url, record.country, record.language, record.content_category, record.tags]
-      .join(" ").toLowerCase();
-    return (!keyword || searchable.includes(keyword)) &&
-      (!platform || record.platform === platform) &&
-      (!country || record.country === country) &&
-      (!language || record.language === language) &&
-      (!category || record.content_category === category) &&
-      (!tag || creatorLibraryTags(record).includes(tag)) &&
-      (!level || record.insight_level === level) &&
-      (!status || record.status === status);
-  });
-  const sortValues = {
-    followers_desc: record => creatorLibraryNumericValue(record.followers),
-    median_views_desc: record => creatorLibraryNumericValue(record.median_views),
-    average_views_desc: record => creatorLibraryNumericValue(record.average_views),
-    analysis_time_desc: record => Date.parse(record.last_analysis_time || record.analysis_time || "") || 0
-  };
-  const valueForSort = sortValues[sort] || sortValues.analysis_time_desc;
-  return records.sort((left, right) => valueForSort(right) - valueForSort(left));
-}
-
-function renderCreatorLibrary() {
-  const body = $("creator-library-body");
-  const empty = $("creator-library-empty");
-  const cards = $("creator-library-cards");
-  const tableWrap = $("creator-library-table-wrap");
-  if (!body || !empty || !cards || !tableWrap) return;
-  renderCreatorLibraryOptions("creator-library-platform", state.creatorLibrary.records.map(item => item.platform), "全部平台");
-  renderCreatorLibraryOptions("creator-library-category", state.creatorLibrary.records.map(item => item.content_category), "全部内容类型");
-  renderCreatorLibraryOptions("creator-library-country", state.creatorLibrary.records.map(item => item.country), "全部国家/地区");
-  renderCreatorLibraryOptions("creator-library-language", state.creatorLibrary.records.map(item => item.language), "全部语言");
-  renderCreatorLibraryOptions("creator-library-tag", state.creatorLibrary.records.flatMap(creatorLibraryTags), "全部标签");
-  const records = creatorLibraryFilteredRecords();
-  body.textContent = "";
-  cards.textContent = "";
-  empty.hidden = records.length > 0;
-  cards.hidden = state.creatorLibrary.view !== "cards";
-  // Keep the existing empty-state message visible even when the card view has no records.
-  tableWrap.hidden = state.creatorLibrary.view !== "table" && records.length > 0;
-  $("creator-library-card-view").classList.toggle("active", state.creatorLibrary.view === "cards");
-  $("creator-library-table-view").classList.toggle("active", state.creatorLibrary.view === "table");
-
-  records.forEach(record => {
-    const card = document.createElement("article");
-    card.className = "creator-card";
-    const identity = document.createElement("div");
-    identity.className = "creator-card-identity";
-    const avatar = document.createElement("div");
-    avatar.className = `creator-card-avatar platform-${String(record.platform || "other").toLowerCase()}`;
-    avatar.textContent = String(record.creator_name || record.platform || "K").trim().slice(0, 1).toUpperCase();
-    const identityText = document.createElement("div");
-    const title = document.createElement("h2");
-    title.textContent = record.creator_name || "未命名达人";
-    const subtitle = document.createElement("p");
-    subtitle.textContent = [record.platform, record.country || "未知地区"].filter(Boolean).join(" · ");
-    identityText.append(title, subtitle);
-    identity.append(avatar, identityText);
-    const tags = document.createElement("div");
-    tags.className = "creator-card-tags";
-    [record.content_category, record.insight_level || "insufficient", CREATOR_LIBRARY_STATUS_LABELS[record.status] || "已发现"].filter(Boolean).forEach((label, index) => {
-      const tag = document.createElement("span");
-      tag.className = index === 1 ? "creator-card-level" : "creator-card-tag";
-      tag.textContent = label;
-      tags.appendChild(tag);
-    });
-    const metrics = document.createElement("div");
-    metrics.className = "creator-card-metrics";
-    [["粉丝", record.followers || "--"], ["平均播放", formatCreatorLibraryMetric(record.average_views)], ["最近分析", formatCreatorLibraryTime(record.last_analysis_time || record.analysis_time)]].forEach(([label, value]) => {
-      const metric = document.createElement("div");
-      const metricLabel = document.createElement("span");
-      const metricValue = document.createElement("strong");
-      metricLabel.textContent = label;
-      metricValue.textContent = value;
-      metric.append(metricLabel, metricValue);
-      metrics.appendChild(metric);
-    });
-    const cardAction = document.createElement("button");
-    cardAction.className = "soft-btn creator-card-action";
-    cardAction.textContent = "查看达人";
-    cardAction.addEventListener("click", () => loadCreatorLibraryDetail(record.analysis_id).catch(showError));
-    card.append(identity, tags, metrics, cardAction);
-    cards.appendChild(card);
-
-    const row = document.createElement("tr");
-    const cells = [
-      record.creator_name || "未命名达人",
-      record.platform || "--",
-      "link",
-      record.followers || "--",
-      record.content_category || "--",
-      record.insight_level || "insufficient",
-      formatCreatorLibraryMetric(record.average_views),
-      formatCreatorLibraryMetric(record.median_views),
-      formatCreatorTrend(record.trend?.changes?.followers),
-      formatCreatorTrend(record.trend?.changes?.median_views),
-      formatCreatorTrend(record.trend?.changes?.creator_score),
-      formatCreatorLibraryTime(record.last_analysis_time || record.analysis_time),
-      formatCreatorLibraryTime(record.data_updated_at)
-    ];
-    cells.forEach((value, index) => {
-      const cell = document.createElement("td");
-      if (value === "link") {
-        const link = document.createElement("a");
-        link.href = record.profile_url || "#";
-        link.target = "_blank";
-        link.rel = "noreferrer";
-        link.textContent = record.profile_url || "--";
-        cell.appendChild(link);
-      } else {
-        cell.textContent = value;
-        if (index === 2) cell.className = "review-readonly";
-      }
-      row.appendChild(cell);
-    });
-
-    const statusCell = document.createElement("td");
-    const statusSelect = document.createElement("select");
-    Object.entries(CREATOR_LIBRARY_STATUS_LABELS).forEach(([value, label]) => {
-      statusSelect.add(new Option(label, value, false, value === record.status));
-    });
-    statusSelect.addEventListener("change", async () => {
-      try {
-        await apiPost(`/api/creator-library/${encodeURIComponent(record.analysis_id)}/status`, { status: statusSelect.value });
-        record.status = statusSelect.value;
-        showSaved("达人状态已保存。");
-      } catch (error) {
-        statusSelect.value = record.status || "discovered";
-        showError(error);
-      }
-    });
-    statusCell.appendChild(statusSelect);
-    row.appendChild(statusCell);
-
-    const actions = document.createElement("td");
-    const detailButton = document.createElement("button");
-    detailButton.className = "soft-btn compact-btn";
-    detailButton.textContent = "查看分析";
-    detailButton.addEventListener("click", () => loadCreatorLibraryDetail(record.analysis_id).catch(showError));
-    const taskButton = document.createElement("button");
-    taskButton.className = "primary-btn compact-btn";
-    taskButton.textContent = "创建合作任务";
-    taskButton.addEventListener("click", () => openCreatorLibraryCollaborationTask(record.analysis_id).catch(showError));
-    actions.append(detailButton, taskButton);
-    row.appendChild(actions);
-    body.appendChild(row);
-  });
-}
-
-function setCreatorLibraryView(view) {
-  state.creatorLibrary.view = view === "table" ? "table" : "cards";
-  window.localStorage.setItem("kolconnect.creatorLibraryView", state.creatorLibrary.view);
-  renderCreatorLibrary();
-}
-
-function setCreatorDetailTab(tab) {
-  const allowed = new Set(["overview", "content", "history", "cooperations"]);
-  state.creatorLibrary.detailTab = allowed.has(tab) ? tab : "overview";
-  document.querySelectorAll(".detail-tab").forEach(button => {
-    button.classList.toggle("active", button.dataset.detailTab === state.creatorLibrary.detailTab);
-  });
-  document.querySelectorAll(".detail-panel").forEach(panel => {
-    panel.hidden = panel.dataset.detailPanel !== state.creatorLibrary.detailTab;
-  });
-}
-
-async function loadCreatorLibrary() {
-  const data = await apiGet("/api/creator-library");
-  state.creatorLibrary.records = Array.isArray(data.records) ? data.records : [];
-  renderCreatorLibrary();
-}
-
-function formatDashboardNumber(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "--";
-  return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(number);
-}
-
-function formatDashboardChange(change) {
-  if (!change || !change.metric) return "暂无趋势数据";
-  const metric = change.metric === "median_views" ? "中位播放" : "粉丝";
-  const direction = change.direction === "growth" ? "增长" : "下降";
-  return `${metric}${direction} ${formatDashboardNumber(Math.abs(Number(change.delta) || 0))}`;
-}
-
-function renderDashboardCreatorList(id, records, emptyText, reasonForRecord) {
-  const target = $(id);
-  if (!target) return;
-  target.textContent = "";
-  const values = Array.isArray(records) ? records : [];
-  if (!values.length) {
-    const empty = document.createElement("p");
-    empty.className = "dashboard-empty";
-    empty.textContent = emptyText;
-    target.appendChild(empty);
-    return;
-  }
-  values.forEach(record => {
-    const item = document.createElement("button");
-    item.type = "button";
-    item.className = "dashboard-list-item";
-    const title = document.createElement("strong");
-    title.textContent = record.creator_name || "未命名达人";
-    const detail = document.createElement("span");
-    detail.textContent = `${record.platform || "--"} · ${reasonForRecord(record)}`;
-    item.append(title, detail);
-    item.addEventListener("click", () => {
-      const creatorId = record.creator_id || record.analysis_id;
-      if (creatorId) loadCreatorLibraryDetail(creatorId).catch(showError);
-    });
-    target.appendChild(item);
-  });
-}
-
-function renderDashboard(data) {
-  const overview = data?.overview || {};
-  const health = data?.creator_health || {};
-  const cooperation = data?.cooperation_performance || {};
-  const actionItems = data?.action_items || {};
-  setText("dashboard-total-creators", formatDashboardNumber(overview.total_creators));
-  setText("dashboard-new-creators", formatDashboardNumber(overview.new_creators_7d));
-  setText("dashboard-discovered", formatDashboardNumber(overview.discovered_count));
-  setText("dashboard-cooperating", formatDashboardNumber(overview.cooperating_count));
-  setText("dashboard-spend", formatDashboardNumber(overview.cooperation_spend));
-  setText("dashboard-average-roi", formatDashboardNumber(overview.average_roi));
-  setText("dashboard-campaigns", formatDashboardNumber(cooperation.total_campaigns));
-  setText("dashboard-total-cost", formatDashboardNumber(cooperation.total_cost));
-  setText("dashboard-total-views", formatDashboardNumber(cooperation.total_views));
-  setText("dashboard-cooperation-roi", formatDashboardNumber(cooperation.average_roi));
-
-  renderDashboardCreatorList("dashboard-rising-creators", health.rising_creators, "暂无上升达人。", record => formatDashboardChange(record.change));
-  renderDashboardCreatorList("dashboard-falling-creators", health.falling_creators, "暂无下滑达人。", record => formatDashboardChange(record.change));
-  renderDashboardCreatorList("dashboard-expired-creators", health.expired_creators, "暂无过期数据。", record => `最近分析：${formatCreatorLibraryTime(record.last_analysis_time)}`);
-  renderDashboardCreatorList("dashboard-action-expired", actionItems.expired_creators, "暂无需要更新的数据。", record => `已过期 ${record.freshness?.days ?? "--"} 天`);
-  renderDashboardCreatorList("dashboard-pending-contact", actionItems.pending_contact, "暂无待联系达人。", () => "状态：待联系");
-  renderDashboardCreatorList("dashboard-incomplete-cooperations", actionItems.incomplete_cooperations, "暂无待补充的合作记录。", record => `项目：${record.campaign || "未命名项目"}`);
-  renderDashboardCreatorList("dashboard-top-creators", cooperation.top_creators, "暂无合作数据。", record => {
-    const roi = record.average_roi == null ? "ROI 暂无" : `ROI ${formatDashboardNumber(record.average_roi)}`;
-    return `${record.campaign_count || 0} 次合作 · ${roi}`;
-  });
-}
-
-async function loadDashboard() {
-  const data = await apiGet("/api/dashboard");
-  state.dashboard = data;
-  renderDashboard(data);
-}
-
 function healthStatusLabel(status) {
   return status === "ok" ? "正常" : status === "warning" ? "需要关注" : "异常";
 }
@@ -1716,7 +1351,7 @@ function renderSystemHealth(data) {
   }));
   const debug = data?.debug || {};
   info.replaceChildren(...[
-    ["版本", debug.version || "KOLConnect v0.2.0-dev.1"],
+    ["版本", debug.version || "KOLConnect v0.2.0-dev.2"],
     ["API状态", debug.api_status || "正常"],
     ["Excel路径", debug.excel_path || "--"],
     ["Excel状态", healthStatusLabel(debug.excel_status)],
@@ -1734,198 +1369,43 @@ function setDebugModeVisible(enabled) {
   if (info) info.hidden = !enabled;
 }
 
-async function loadSystemHealth() {
-  const data = await apiGet("/api/system/health");
+async function loadSystemHealth(options = {}) {
+  const data = await apiGet("/api/system/health", options);
   renderSystemHealth(data);
   return data;
 }
 
-function renderCreatorLibraryList(id, items, emptyText) {
-  const list = $(id);
-  if (!list) return;
-  const values = Array.isArray(items) && items.length ? items : [emptyText];
-  list.replaceChildren(...values.map(value => {
-    const item = document.createElement("li");
-    item.textContent = value;
-    return item;
-  }));
-}
-
-function renderCreatorCooperations(detail) {
-  const statistics = detail.cooperation_statistics || {};
-  const cooperations = Array.isArray(detail.cooperations) ? detail.cooperations : [];
-  setText("cooperation-stat-count", String(statistics.cooperation_count || 0));
-  setText("cooperation-stat-spend", formatCreatorLibraryMetric(statistics.total_spend));
-  setText("cooperation-stat-views", formatCreatorLibraryMetric(statistics.average_views));
-  setText("cooperation-stat-roi", formatCreatorLibraryMetric(statistics.average_roi));
-  const body = $("creator-cooperations-body");
-  const empty = $("creator-cooperations-empty");
-  if (!body || !empty) return;
-  body.textContent = "";
-  empty.hidden = cooperations.length > 0;
-  cooperations.forEach(cooperation => {
-    const row = document.createElement("tr");
-    [
-      cooperation.campaign || "--", cooperation.platform || "--", cooperation.contact_date || "--",
-      formatCreatorLibraryMetric(cooperation.price), formatCreatorLibraryMetric(cooperation.published_count),
-      formatCreatorLibraryMetric(cooperation.total_views), formatCreatorLibraryMetric(cooperation.average_views),
-      formatCreatorLibraryMetric(cooperation.roi), cooperation.result || "--", cooperation.note || "--"
-    ].forEach(value => {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      row.appendChild(cell);
+function setPage(pageName, params = {}) {
+  if (pageName === "creator-library" || pageName === "creator-library-detail") {
+    return window.KOLConnectPages.navigate(pageName, {
+      state,
+      api: window.KOLConnectAPI,
+      resources: window.KOLConnectPageResources.create(),
+      params,
+      navigate: setPage,
+      ui: { showSaved, showError },
     });
-    body.appendChild(row);
-  });
+  }
+  return window.KOLConnectPages.navigate(pageName, params);
 }
 
-function renderCreatorLibraryDetail(detail) {
-  const record = detail.record || {};
-  const analysis = detail.analysis || {};
-  const creator = analysis.creator || {};
-  const videoAnalysis = analysis.video_analysis || {};
-  const insight = analysis.creator_insight || {};
-  const trend = detail.trend || {};
-  setText("creator-library-detail-summary", `${record.creator_name || "未命名达人"} · ${record.platform || "--"} · ${record.profile_url || "--"}`);
-  setText("creator-library-detail-level", record.insight_level || "insufficient");
-  const basic = $("creator-library-basic");
-  const metrics = $("creator-library-video-metrics");
-  setText(
-    "creator-library-data-meta",
-    `数据更新时间：${formatCreatorLibraryTime(record.data_updated_at)} · 来源：${record.source || "--"} · 最近分析时间：${formatCreatorLibraryTime(record.last_analysis_time || record.analysis_time)}`
-  );
-  setText("creator-library-freshness", formatCreatorFreshness(trend.freshness));
-  const renderDefinitionList = (target, entries) => {
-    target.replaceChildren(...entries.flatMap(([term, value]) => {
-      const dt = document.createElement("dt");
-      dt.textContent = term;
-      const dd = document.createElement("dd");
-      dd.textContent = value || "--";
-      return [dt, dd];
-    }));
+function registerLegacyPages() {
+  const registry = window.KOLConnectPages;
+  const noop = () => {};
+  const pageLoaders = {
+    review: () => loadReviewTasks(),
   };
-  renderDefinitionList(basic, [
-    ["达人名称", creator.creator_name], ["平台", creator.platform], ["主页链接", creator.profile_url],
-    ["粉丝数", creator.followers], ["内容类型", analysis.content_category], ["简介", creator.bio]
-  ]);
-  renderDefinitionList(metrics, [
-    ["样本数量", formatCreatorLibraryMetric(videoAnalysis.sample_size)], ["平均播放", formatCreatorLibraryMetric(videoAnalysis.average_views)],
-    ["中位播放", formatCreatorLibraryMetric(videoAnalysis.median_views)], ["最高播放", formatCreatorLibraryMetric(videoAnalysis.max_views)],
-    ["最低播放", formatCreatorLibraryMetric(videoAnalysis.min_views)], ["播放稳定性", formatCreatorLibraryMetric(videoAnalysis.view_stability)],
-    ["播放完整率", `${Math.round(Number(videoAnalysis.view_coverage || 0) * 100)}%`]
-  ]);
-  setText("creator-library-recommendation", insight.recommendation || "请结合主页内容进行人工判断。");
-  renderCreatorLibraryList("creator-library-strengths", insight.strengths, "暂无优势结论。");
-  renderCreatorLibraryList("creator-library-risks", insight.risks, "暂无风险结论。");
-  const snapshotBody = $("creator-library-snapshots");
-  const snapshotEmpty = $("creator-library-snapshots-empty");
-  const snapshots = Array.isArray(detail.snapshots) ? detail.snapshots : [];
-  snapshotBody.textContent = "";
-  snapshotEmpty.hidden = snapshots.length > 0;
-  snapshots.forEach(snapshot => {
-    const row = document.createElement("tr");
-    [
-      formatCreatorLibraryTime(snapshot.captured_at),
-      snapshot.followers || "--",
-      formatCreatorLibraryMetric(snapshot.average_views),
-      formatCreatorLibraryMetric(snapshot.median_views),
-      formatCreatorLibraryMetric(snapshot.creator_score),
-      snapshot.insight_level || "--"
-    ].forEach(value => {
-      const cell = document.createElement("td");
-      cell.textContent = value;
-      row.appendChild(cell);
-    });
-    snapshotBody.appendChild(row);
-  });
-  renderCreatorCooperations(detail);
-  if (!valueOf("cooperation-platform")) setValue("cooperation-platform", record.platform || "");
-  const videos = $("creator-library-videos");
-  videos.replaceChildren(...(Array.isArray(analysis.videos) ? analysis.videos : []).map(video => {
-    const item = document.createElement("div");
-    item.className = "creator-analysis-video";
-    const link = document.createElement("a");
-    link.href = video.video_url || "#";
-    link.target = "_blank";
-    link.rel = "noreferrer";
-    link.textContent = video.video_url || video.video_key || "视频";
-    const metric = document.createElement("span");
-    metric.textContent = `播放 ${video.views || "--"} · 点赞 ${video.likes || "--"} · 评论 ${video.comments || "--"}`;
-    item.append(link, metric);
-    return item;
-  }));
-}
-
-async function loadCreatorLibraryDetail(analysisId) {
-  const data = await apiGet(`/api/creator-library/${encodeURIComponent(analysisId)}`);
-  state.creatorLibrary.selectedAnalysisId = analysisId;
-  state.creatorLibrary.detail = data;
-  renderCreatorLibraryDetail(data);
-  setPage("creator-library-detail");
-}
-
-async function openCreatorLibraryCollaborationTask(analysisId) {
-  const data = await apiPost(`/api/creator-library/${encodeURIComponent(analysisId)}/create-task`, {});
-  const task = data.task;
-  if (!task?.id) throw new Error("未找到关联的审核任务。");
-  state.currentTaskId = task.id;
-  state.currentTask = task;
-  state.review.taskId = task.id;
-  window.localStorage.setItem("kolconnect.currentTaskId", task.id);
-  setPage("review");
-  await loadReviewTasks();
-  showSaved(data.message || "已打开关联的审核任务。");
-}
-
-function clearCooperationForm() {
   [
-    "cooperation-campaign", "cooperation-contact-date", "cooperation-price", "cooperation-published-count",
-    "cooperation-total-views", "cooperation-average-views", "cooperation-roi", "cooperation-result", "cooperation-note"
-  ].forEach(id => setValue(id, ""));
-  setValue("cooperation-status", "");
-}
-
-async function saveCreatorCooperation() {
-  const analysisId = state.creatorLibrary.selectedAnalysisId;
-  if (!analysisId) throw new Error("请先选择达人分析记录。");
-  await apiPost(`/api/creator-library/${encodeURIComponent(analysisId)}/cooperations`, {
-    campaign: valueOf("cooperation-campaign").trim(),
-    platform: valueOf("cooperation-platform").trim(),
-    contact_date: valueOf("cooperation-contact-date"),
-    price: valueOf("cooperation-price").trim(),
-    published_count: valueOf("cooperation-published-count").trim(),
-    total_views: valueOf("cooperation-total-views").trim(),
-    average_views: valueOf("cooperation-average-views").trim(),
-    roi: valueOf("cooperation-roi").trim(),
-    result: valueOf("cooperation-result").trim(),
-    note: valueOf("cooperation-note"),
-    status: valueOf("cooperation-status")
+    "scrape", "task-details", "review", "discover", "accounts",
+    "mail", "logs",
+  ].forEach(pageName => {
+    if (registry.getPage(pageName)) return;
+    registry.registerPage(pageName, {
+      load: pageLoaders[pageName] || noop,
+      bind: noop,
+      unbind: noop,
+    });
   });
-  clearCooperationForm();
-  await loadCreatorLibraryDetail(analysisId);
-  await loadCreatorLibrary();
-  showSaved("合作记录已保存。");
-}
-
-function setPage(pageName) {
-  const primaryPage = document.querySelector(`.nav-primary[data-primary="${document.querySelector(`.nav-btn[data-page="${pageName}"]`)?.dataset.primary || pageName}"]`)?.dataset.primary || pageName;
-  document.querySelectorAll(".nav-btn").forEach(btn => {
-    const isPrimary = btn.classList.contains("nav-primary");
-    btn.classList.toggle("active", isPrimary ? btn.dataset.primary === primaryPage : btn.dataset.page === pageName);
-  });
-  document.querySelectorAll(".page").forEach(page => {
-    page.classList.toggle("active", page.dataset.page === pageName);
-  });
-  if (pageName === "review") {
-    loadReviewTasks().catch(showError);
-  }
-  if (pageName === "dashboard") {
-    loadDashboard().catch(showError);
-  }
-  if (pageName === "creator-library") {
-    loadCreatorLibrary().catch(showError);
-  }
-  if (pageName === "creator-library-detail") setCreatorDetailTab(state.creatorLibrary.detailTab);
 }
 
 function renderStaticText() {
@@ -1970,6 +1450,31 @@ function renderFourTableConfig(feishu) {
 
 function renderCreatorLibraryConfig(config) {
   setValue("creator-library-workbook-path", config?.workbook_path || "");
+}
+
+function renderSettingsState(data) {
+  state.language = data.ui?.language || "zh";
+  setValue("ui-language", state.language);
+  const debugMode = !!data.ui?.debug_mode;
+  const debugInput = $("debug-mode");
+  if (debugInput) debugInput.checked = debugMode;
+  setDebugModeVisible(debugMode);
+  renderStaticText();
+  renderProfiles(data.profiles || [], data.selectedProfile || "Default");
+  renderFourTableConfig(data.feishu || {});
+  renderCreatorLibraryConfig(data.creator_library || {});
+  return debugMode;
+}
+
+async function loadSettingsState(options = {}) {
+  const data = await apiGet("/api/state", options);
+  const debugMode = renderSettingsState(data);
+  if (debugMode) {
+    loadSystemHealth(options).catch(error => {
+      if (error?.name !== "AbortError") console.warn("[KOLConnect] health check unavailable", error);
+    });
+  }
+  return data;
 }
 
 async function loadManualSourceContacts() {
@@ -2287,18 +1792,9 @@ async function loadMailInbox() {
   }
 }
 
-async function loadState() {
-  const data = await apiGet("/api/state");
-  state.language = data.ui?.language || "zh";
-  setValue("ui-language", state.language);
-  const debugMode = !!data.ui?.debug_mode;
-  const debugInput = $("debug-mode");
-  if (debugInput) debugInput.checked = debugMode;
-  setDebugModeVisible(debugMode);
-  renderStaticText();
-  renderProfiles(data.profiles || [], data.selectedProfile || "Default");
-  renderFourTableConfig(data.feishu || {});
-  renderCreatorLibraryConfig(data.creator_library || {});
+async function loadState(options = {}) {
+  const data = await apiGet("/api/state", options);
+  const debugMode = renderSettingsState(data);
   await loadManualSourceContacts();
   renderAccounts(data.accounts || []);
   renderMail(data.mail || {});
@@ -2371,38 +1867,7 @@ function bindTaskPlatformSelector() {
 function bindEvents() {
   bindTaskPlatformSelector();
   document.querySelectorAll(".nav-btn").forEach(btn => {
-    btn.addEventListener("click", () => setPage(btn.dataset.page));
-  });
-
-  $("creator-library-refresh").addEventListener("click", () => loadCreatorLibrary().catch(showError));
-  $("creator-library-card-view").addEventListener("click", () => setCreatorLibraryView("cards"));
-  $("creator-library-table-view").addEventListener("click", () => setCreatorLibraryView("table"));
-  document.querySelectorAll(".detail-tab").forEach(button => {
-    button.addEventListener("click", () => setCreatorDetailTab(button.dataset.detailTab));
-  });
-  [
-    "creator-library-platform",
-    "creator-library-country",
-    "creator-library-language",
-    "creator-library-category",
-    "creator-library-tag",
-    "creator-library-level",
-    "creator-library-status",
-    "creator-library-sort"
-  ].forEach(id => {
-    $(id).addEventListener("change", renderCreatorLibrary);
-  });
-  $("creator-library-search").addEventListener("input", renderCreatorLibrary);
-  $("creator-library-detail-back").addEventListener("click", () => setPage("creator-library"));
-  $("creator-library-detail-task").addEventListener("click", () => {
-    if (!state.creatorLibrary.selectedAnalysisId) {
-      showError(new Error("请先选择达人分析记录。"));
-      return;
-    }
-    openCreatorLibraryCollaborationTask(state.creatorLibrary.selectedAnalysisId).catch(showError);
-  });
-  $("cooperation-save").addEventListener("click", () => {
-    saveCreatorCooperation().catch(showError);
+    btn.addEventListener("click", () => setPage(btn.dataset.page).catch(showError));
   });
 
   $("review-task-select").addEventListener("change", async () => {
@@ -2423,7 +1888,7 @@ function bindEvents() {
     state.review.page = 1;
     renderReviewResults();
   });
-  $("task-detail-back").addEventListener("click", () => setPage("scrape"));
+  $("task-detail-back").addEventListener("click", () => setPage("scrape").catch(showError));
   $("task-detail-refresh").addEventListener("click", () => loadTaskDetails().catch(showError));
   ["task-detail-search", "task-detail-platform", "task-detail-status"].forEach(id => {
     const eventName = id === "task-detail-search" ? "input" : "change";
@@ -2511,8 +1976,6 @@ function bindEvents() {
       button.disabled = false;
     }
   });
-
-  $("dashboard-refresh").addEventListener("click", () => loadDashboard().catch(showError));
 
   $("task-list-refresh").addEventListener("click", () => {
     loadTaskList().catch(showError);
@@ -2710,71 +2173,10 @@ function bindEvents() {
     }
   });
 
-  $("save-ui-settings").addEventListener("click", async () => {
-    try {
-      await apiPost("/api/settings/ui", {
-        language: valueOf("ui-language"),
-        debug_mode: checkedOf("debug-mode")
-      });
-      await apiPost("/api/settings/profiles", { selected: valueOf("default-profile") });
-      state.language = valueOf("ui-language");
-      renderStaticText();
-      showSaved();
-      await loadState();
-    } catch (error) {
-      showError(error);
-    }
-  });
-
-  $("system-health-run").addEventListener("click", async () => {
-    try {
-      await loadSystemHealth();
-    } catch (error) {
-      showError(error);
-    }
-  });
-
-  $("debug-mode").addEventListener("change", () => {
-    setDebugModeVisible(checkedOf("debug-mode"));
-  });
-
-  $("feishu-save").addEventListener("click", async () => {
-    try {
-      await apiPost("/api/settings/feishu", {
-        app_id: valueOf("feishu-app-id").trim(),
-        app_secret: valueOf("feishu-app-secret").trim(),
-        app_token: valueOf("feishu-app-token").trim(),
-        creator_table_id: valueOf("feishu-creator-table-id").trim(),
-        account_table_id: valueOf("feishu-account-table-id").trim(),
-        contact_table_id: valueOf("feishu-contact-table-id").trim()
-      });
-      showSaved();
-      await loadState();
-    } catch (error) {
-      showError(error);
-    }
-  });
-
-  $("creator-library-save-config").addEventListener("click", async () => {
-    try {
-      await apiPost("/api/settings/creator-library", {
-        workbook_path: valueOf("creator-library-workbook-path").trim()
-      });
-      showSaved("达人库文件设置已保存。");
-      await loadState();
-    } catch (error) {
-      showError(error);
-    }
-  });
-
-  $("ui-language").addEventListener("change", () => {
-    state.language = valueOf("ui-language");
-    renderStaticText();
-    renderCurrentTask();
-  });
 }
 
 async function init() {
+  registerLegacyPages();
   bindEvents();
   renderStaticText();
   renderCurrentTask();
@@ -2782,9 +2184,25 @@ async function init() {
   await loadTaskList();
   await refreshScrapeStatus();
   // Dashboard availability must not prevent task controls from initializing.
-  await loadDashboard().catch(error => console.warn("[KOLConnect] dashboard unavailable during startup", error));
+  await setPage("dashboard").catch(error => console.warn("[KOLConnect] dashboard unavailable during startup", error));
   state.scrapeStatusTimer = window.setInterval(refreshScrapeStatus, 3000);
   state.taskStatusTimer = window.setInterval(() => loadTaskList().catch(() => {}), 2000);
 }
+
+window.KOLConnectApp = Object.freeze({
+  valueOf,
+  checkedOf,
+  loadSettingsState,
+  loadSystemHealth,
+  setDebugModeVisible,
+  renderStaticText,
+  renderCurrentTask,
+  showSaved,
+  showError,
+  navigate: setPage,
+  setLanguage(language) {
+    state.language = language;
+  },
+});
 
 window.addEventListener("DOMContentLoaded", init);

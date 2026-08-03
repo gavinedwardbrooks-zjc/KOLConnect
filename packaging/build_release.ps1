@@ -4,6 +4,8 @@ $packaging = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $packaging
 Set-Location $root
 
+$releaseVersion = "v0.2.0-dev.2"
+$releaseFileName = "KOLConnect_$releaseVersion.exe"
 $workPath = Join-Path $packaging ".pyinstaller-build"
 $distPath = Join-Path $packaging ".pyinstaller-dist"
 $specFile = Join-Path $packaging "spec\KOLConnect.spec"
@@ -32,7 +34,8 @@ if (-not (Test-Path -LiteralPath $builtExe)) {
   throw "Build did not generate KOLConnect.exe; release copy stopped."
 }
 
-$release = Join-Path $root "release"
+$release = Join-Path $root "release\dev"
+$releaseExe = Join-Path $release $releaseFileName
 New-Item -ItemType Directory -Force -Path $release | Out-Null
-Copy-Item $builtExe (Join-Path $release "KOLConnect.exe") -Force
-Write-Host "Built: $release\\KOLConnect.exe"
+Copy-Item $builtExe $releaseExe -Force
+Write-Host "Built: $releaseExe"

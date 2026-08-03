@@ -10,10 +10,14 @@ packaging/.pyinstaller-build/
 packaging/.pyinstaller-dist/
 /build/
 /dist/
+/release_candidate/
 *.spec.backup
 .pytest_cache/
 *.exe
 /release/
+
+# JavaScript dependency directories
+node_modules/
 
 # Local runtime data and private configuration
 tasks/
@@ -29,6 +33,10 @@ window_state.json
 *.bak
 *.tmp
 *.csv
+*.xlsx
+*.xls
+*.xlsm
+~$*.xlsx
 ChromeProfile/
 
 # Local credentials and environment overrides
@@ -43,6 +51,7 @@ credentials.json
 credentials.*.json
 cookies.json
 cookies/
+*.local.json
 
 # Browser and driver caches
 .wdm/

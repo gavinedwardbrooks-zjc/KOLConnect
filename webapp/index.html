@@ -12,7 +12,7 @@
       <div class="brand">
         <div class="brand-title-row">
           <div class="brand-title" data-i18n="appTitle">KOL联系助手</div>
-          <span class="app-version">KOLConnect v0.2.0-dev.1</span>
+          <span class="app-version">KOLConnect v0.2.0-dev.2</span>
         </div>
         <div class="brand-subtitle" data-i18n="appSubtitle">海外达人管理与合作工具</div>
       </div>
@@ -28,6 +28,8 @@
         <button class="nav-btn nav-sub" data-page="review" data-primary="scrape" data-i18n="navReview">审核结果</button>
         <button class="nav-btn nav-sub" data-page="discover" data-primary="scrape" data-i18n="navDiscover">链接清洗</button>
         <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">账号管理</button>
+        <button class="nav-btn nav-sub" data-page="products" data-primary="mail">产品管理</button>
+        <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign 管理</button>
         <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件与联系</button>
         <button class="nav-btn nav-sub" data-page="logs" data-primary="settings" data-i18n="navLogs">系统日志</button>
       </nav>
@@ -86,7 +88,7 @@
           <section class="section-card dashboard-card">
             <h2>最近合作表现</h2>
             <div class="dashboard-cooperation-metrics">
-              <div><span>合作数量</span><strong id="dashboard-campaigns">--</strong></div>
+              <div><span>活跃 Campaign</span><strong id="dashboard-campaigns">--</strong></div>
               <div><span>花费</span><strong id="dashboard-total-cost">--</strong></div>
               <div><span>播放</span><strong id="dashboard-total-views">--</strong></div>
               <div><span>ROI</span><strong id="dashboard-cooperation-roi">--</strong></div>
@@ -101,7 +103,7 @@
           <div class="dashboard-action-columns">
             <div><h3>数据过期</h3><div id="dashboard-action-expired" class="dashboard-list"></div></div>
             <div><h3>待联系</h3><div id="dashboard-pending-contact" class="dashboard-list"></div></div>
-            <div><h3>合作记录缺失</h3><div id="dashboard-incomplete-cooperations" class="dashboard-list"></div></div>
+            <div><h3>待复盘</h3><div id="dashboard-incomplete-cooperations" class="dashboard-list"></div></div>
           </div>
         </section>
       </section>
@@ -315,6 +317,7 @@
           </div>
           <div class="action-row">
             <button class="soft-btn" id="creator-library-detail-back">返回达人库</button>
+            <button class="soft-btn" id="creator-library-detail-add-campaign">加入 Campaign</button>
             <button class="primary-btn" id="creator-library-detail-task">创建合作任务</button>
           </div>
         </div>
@@ -340,11 +343,28 @@
           </div>
         </div>
 
+        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
+          <div class="creator-campaign-section-heading">
+            <div>
+              <h2>参与 Campaign</h2>
+              <p class="hint">当前达人已加入的 Campaign，不包含旧版合作记录。</p>
+            </div>
+          </div>
+          <div class="review-table-wrap">
+            <table class="review-table creator-campaign-table">
+              <thead><tr><th>Campaign</th><th>Product</th><th>状态</th><th>平台</th><th>日期</th><th>操作</th></tr></thead>
+              <tbody id="creator-campaigns-body"></tbody>
+            </table>
+          </div>
+          <p class="hint" id="creator-campaigns-empty">暂未加入 Campaign。</p>
+          <p class="form-message" id="creator-campaigns-error" hidden></p>
+        </div>
+
         <div class="detail-tabs" role="tablist" aria-label="达人详情">
           <button class="detail-tab active" type="button" data-detail-tab="overview">概览</button>
           <button class="detail-tab" type="button" data-detail-tab="content">内容表现</button>
           <button class="detail-tab" type="button" data-detail-tab="history">历史趋势</button>
-          <button class="detail-tab" type="button" data-detail-tab="cooperations">合作记录</button>
+          <button class="detail-tab" type="button" data-detail-tab="cooperations">Legacy Cooperation</button>
         </div>
         <div class="creator-analysis-columns detail-panel" data-detail-panel="content">
           <div class="section-card creator-library-detail-card"><h2>优势</h2><ul class="creator-library-list" id="creator-library-strengths"></ul></div>
@@ -367,7 +387,8 @@
         </div>
 
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="cooperations">
-          <h2>合作历史</h2>
+          <h2>历史合作（只读）</h2>
+          <p class="hint">以下为旧版本历史数据，不参与 Campaign 和 Dashboard 统计。新的合作请通过 Campaign 管理。</p>
           <div class="stats-grid creator-cooperation-stats">
             <div class="stat-card"><span class="stat-label">合作次数</span><strong id="cooperation-stat-count">0</strong></div>
             <div class="stat-card"><span class="stat-label">总花费</span><strong id="cooperation-stat-spend">0</strong></div>
@@ -383,24 +404,39 @@
           <p class="hint" id="creator-cooperations-empty">暂无合作记录。</p>
         </div>
 
-        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="cooperations">
-          <h2>新增合作记录</h2>
-          <div class="form-grid three">
-            <label class="field"><span>合作项目</span><input id="cooperation-campaign" type="text" placeholder="例如：2026 夏季推广"></label>
-            <label class="field"><span>平台</span><select id="cooperation-platform"><option value="">使用达人平台</option><option>TikTok</option><option>Instagram</option><option>YouTube</option></select></label>
-            <label class="field"><span>联系日期</span><input id="cooperation-contact-date" type="date"></label>
-            <label class="field"><span>合作价格</span><input id="cooperation-price" type="number" min="0" step="0.01"></label>
-            <label class="field"><span>发布数量</span><input id="cooperation-published-count" type="number" min="0" step="1"></label>
-            <label class="field"><span>总播放</span><input id="cooperation-total-views" type="number" min="0" step="1"></label>
-            <label class="field"><span>平均播放</span><input id="cooperation-average-views" type="number" min="0" step="1"></label>
-            <label class="field"><span>ROI</span><input id="cooperation-roi" type="number" step="0.01"></label>
-            <label class="field"><span>更新达人状态（可选）</span><select id="cooperation-status"><option value="">不修改</option><option value="discovered">已发现</option><option value="contacted">已联系</option><option value="negotiating">洽谈中</option><option value="cooperating">合作中</option><option value="completed">已完成</option><option value="rejected">已拒绝</option></select></label>
-          </div>
-          <label class="field"><span>合作结果</span><input id="cooperation-result" type="text"></label>
-          <label class="field"><span>备注</span><textarea id="cooperation-note" rows="3"></textarea></label>
-          <div class="action-row"><button class="primary-btn" id="cooperation-save">保存合作记录</button></div>
-        </div>
       </section>
+
+      <div class="creator-campaign-modal" id="creator-campaign-modal" hidden>
+        <div class="creator-campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="creator-campaign-modal-title">
+          <div class="creator-campaign-modal-heading">
+            <div>
+              <p class="eyebrow">Creator Campaign</p>
+              <h2 id="creator-campaign-modal-title">加入 Campaign</h2>
+            </div>
+            <button class="icon-btn" id="creator-campaign-modal-close" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="creator-campaign-identity">
+            <strong id="creator-campaign-creator-name">--</strong>
+            <span id="creator-campaign-agency-name">暂无 Agency</span>
+          </div>
+          <form id="creator-campaign-form">
+            <label class="field">
+              <span>Campaign</span>
+              <select id="creator-campaign-select" required><option value="">请选择 Campaign</option></select>
+            </label>
+            <label class="field">
+              <span>执行账号</span>
+              <select id="creator-campaign-account-select" required><option value="">请选择执行账号</option></select>
+            </label>
+            <p class="hint" id="creator-campaign-account-hint">选择本次合作使用的社交账号。</p>
+            <p class="form-message" id="creator-campaign-modal-message" hidden></p>
+            <div class="action-row creator-campaign-modal-actions">
+              <button class="soft-btn" id="creator-campaign-modal-cancel" type="button">取消</button>
+              <button class="primary-btn" id="creator-campaign-submit" type="submit">确认加入</button>
+            </div>
+          </form>
+        </div>
+      </div>
 
       <section class="page" data-page="review">
         <div class="page-header">
@@ -574,6 +610,366 @@
         </div>
       </section>
 
+      <section class="page" data-page="products">
+        <div class="page-header product-page-heading">
+          <div>
+            <p class="eyebrow">PRODUCT MANAGEMENT</p>
+            <h1>产品管理</h1>
+            <p>管理产品资料，并查看每个产品当前关联的 Campaign 数量。</p>
+          </div>
+          <div class="product-page-actions">
+            <label class="checkbox-field product-archive-toggle">
+              <input id="product-include-archived" type="checkbox">
+              <span>显示已归档</span>
+            </label>
+            <button class="primary-btn" id="product-create-open" type="button">创建 Product</button>
+          </div>
+        </div>
+
+        <div class="section-card product-form-card" id="product-form-card" hidden>
+          <div class="section-title" id="product-form-title">创建 Product</div>
+          <form id="product-form" novalidate>
+            <div class="form-grid two">
+              <label class="field">
+                <span>产品名称 *</span>
+                <input id="product-name" type="text" autocomplete="off" required>
+              </label>
+              <label class="field">
+                <span>公司名称 *</span>
+                <input id="product-company-name" type="text" autocomplete="organization" required>
+              </label>
+            </div>
+            <label class="field">
+              <span>备注</span>
+              <textarea id="product-note" rows="4" placeholder="记录产品定位、市场或合作注意事项"></textarea>
+            </label>
+            <p class="product-form-error" id="product-form-error" role="alert" hidden></p>
+            <div class="action-row">
+              <button class="primary-btn" id="product-form-save" type="submit">保存 Product</button>
+              <button class="soft-btn" id="product-form-cancel" type="button">取消</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="section-card product-list-card">
+          <div class="product-list-heading">
+            <div class="section-title">Product 列表</div>
+            <span class="product-list-count" id="product-list-count">--</span>
+          </div>
+          <div class="product-list-message" id="product-list-loading">正在加载产品...</div>
+          <div class="product-list-message product-list-error" id="product-list-error" hidden>
+            <span id="product-list-error-message">产品列表加载失败。</span>
+            <button class="soft-btn" id="product-list-retry" type="button">重新加载</button>
+          </div>
+          <div class="empty-note product-list-empty" id="product-list-empty" hidden>
+            暂无产品。点击“创建 Product”建立第一条产品记录。
+          </div>
+          <div class="review-table-wrap" id="product-list-table-wrap" hidden>
+            <table class="review-table product-table">
+              <thead>
+                <tr>
+                  <th>产品名称</th>
+                  <th>公司名称</th>
+                  <th>Campaign 数量</th>
+                  <th>创建时间</th>
+                  <th>更新时间</th>
+                  <th>状态</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="product-list-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="campaigns">
+        <div class="page-header campaign-page-heading">
+          <div>
+            <p class="eyebrow">CAMPAIGN MANAGEMENT</p>
+            <h1>Campaign 管理</h1>
+            <p>按产品和状态管理达人合作项目，集中查看预算、周期与执行负责人。</p>
+          </div>
+          <button class="primary-btn" id="campaign-create-open" type="button">创建 Campaign</button>
+        </div>
+
+        <div class="section-card campaign-filter-card">
+          <div class="campaign-filter-grid">
+            <label class="field">
+              <span>Product</span>
+              <select id="campaign-product-filter">
+                <option value="">全部 Product</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>状态</span>
+              <select id="campaign-status-filter">
+                <option value="">全部进行中状态</option>
+                <option value="draft">Draft</option>
+                <option value="sourcing">Sourcing</option>
+                <option value="running">Running</option>
+                <option value="completed">Completed</option>
+              </select>
+            </label>
+            <label class="checkbox-field campaign-archive-filter">
+              <input id="campaign-include-archived" type="checkbox">
+              <span>显示已归档</span>
+            </label>
+          </div>
+          <p class="campaign-products-error" id="campaign-products-error" role="alert" hidden></p>
+        </div>
+
+        <div class="section-card campaign-form-card" id="campaign-form-card" hidden>
+          <div class="section-title" id="campaign-form-title">创建 Campaign</div>
+          <form id="campaign-form" novalidate>
+            <div class="form-grid three">
+              <label class="field">
+                <span>Campaign 名称 *</span>
+                <input id="campaign-name" type="text" autocomplete="off" required>
+              </label>
+              <label class="field">
+                <span>Product *</span>
+                <select id="campaign-product-id" required>
+                  <option value="">请选择 Product</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>状态</span>
+                <select id="campaign-status">
+                  <option value="draft">Draft</option>
+                  <option value="sourcing">Sourcing</option>
+                  <option value="running">Running</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>平台</span>
+                <select id="campaign-platform">
+                  <option value="">不限平台</option>
+                  <option value="TikTok">TikTok</option>
+                  <option value="Instagram">Instagram</option>
+                  <option value="YouTube">YouTube</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>国家/地区</span>
+                <input id="campaign-country" type="text" autocomplete="country-name">
+              </label>
+              <label class="field">
+                <span>预算</span>
+                <input id="campaign-budget" type="number" min="0" step="0.01">
+              </label>
+              <label class="field">
+                <span>开始日期</span>
+                <input id="campaign-start-date" type="date">
+              </label>
+              <label class="field">
+                <span>结束日期</span>
+                <input id="campaign-end-date" type="date">
+              </label>
+              <label class="field">
+                <span>负责人</span>
+                <input id="campaign-owner" type="text" autocomplete="off">
+              </label>
+            </div>
+            <label class="field">
+              <span>目标</span>
+              <textarea id="campaign-goal" rows="3" placeholder="记录本次 Campaign 的目标"></textarea>
+            </label>
+            <p class="campaign-form-note" id="campaign-country-edit-note" hidden>国家/地区仅在创建时录入，本阶段编辑不修改该字段。</p>
+            <p class="campaign-form-error" id="campaign-form-error" role="alert" hidden></p>
+            <div class="action-row">
+              <button class="primary-btn" id="campaign-form-save" type="submit">保存 Campaign</button>
+              <button class="soft-btn" id="campaign-form-cancel" type="button">取消</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="section-card campaign-list-card">
+          <div class="campaign-list-heading">
+            <div class="section-title">Campaign 列表</div>
+            <span class="campaign-list-count" id="campaign-list-count">--</span>
+          </div>
+          <div class="campaign-list-message" id="campaign-list-loading">正在加载 Campaign...</div>
+          <div class="campaign-list-message campaign-list-error" id="campaign-list-error" hidden>
+            <span id="campaign-list-error-message">Campaign 列表加载失败。</span>
+            <button class="soft-btn" id="campaign-list-retry" type="button">重新加载</button>
+          </div>
+          <div class="empty-note campaign-list-empty" id="campaign-list-empty" hidden>
+            当前筛选条件下暂无 Campaign。
+          </div>
+          <div class="review-table-wrap" id="campaign-list-table-wrap" hidden>
+            <table class="review-table campaign-table">
+              <thead>
+                <tr>
+                  <th>Campaign 名称</th>
+                  <th>Product 名称</th>
+                  <th>达人数</th>
+                  <th>业务状态</th>
+                  <th>归档状态</th>
+                  <th>平台</th>
+                  <th>预算</th>
+                  <th>开始日期</th>
+                  <th>结束日期</th>
+                  <th>负责人</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody id="campaign-list-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="campaign-detail">
+        <div class="page-header campaign-detail-heading">
+          <div>
+            <p class="eyebrow">CAMPAIGN DETAIL</p>
+            <h1 id="campaign-detail-title">Campaign 详情</h1>
+            <p id="campaign-detail-subtitle">查看项目信息、参与达人和执行结果。</p>
+          </div>
+          <button class="soft-btn" id="campaign-detail-back" type="button">返回 Campaign 列表</button>
+        </div>
+
+        <div class="section-card campaign-detail-message" id="campaign-detail-loading">
+          正在加载 Campaign 详情...
+        </div>
+        <div class="section-card campaign-detail-message campaign-detail-error" id="campaign-detail-error" hidden>
+          <span id="campaign-detail-error-message">Campaign 详情加载失败。</span>
+          <button class="soft-btn" id="campaign-detail-retry" type="button">重新加载</button>
+        </div>
+
+        <div class="campaign-detail-content" id="campaign-detail-content" hidden>
+          <section class="section-card campaign-detail-section" data-campaign-section="overview">
+            <div class="campaign-detail-section-heading">
+              <div>
+                <p class="eyebrow">CAMPAIGN OVERVIEW</p>
+                <h2>项目概览</h2>
+              </div>
+              <div class="campaign-detail-badges" id="campaign-detail-badges"></div>
+            </div>
+            <div class="campaign-detail-overview-grid" id="campaign-detail-overview"></div>
+            <div class="campaign-detail-goal">
+              <span>Campaign 目标</span>
+              <p id="campaign-detail-goal">--</p>
+            </div>
+            <div class="campaign-readonly-note" id="campaign-detail-readonly" hidden>
+              此 Campaign 已归档，当前为只读状态。恢复后可继续添加或编辑达人合作记录。
+            </div>
+          </section>
+
+          <section class="section-card campaign-detail-section campaign-creator-section" data-campaign-section="creator-management">
+            <div class="campaign-detail-section-heading">
+              <div>
+                <p class="eyebrow">CREATOR MANAGEMENT</p>
+                <h2>达人合作管理</h2>
+              </div>
+              <div class="campaign-creator-heading-actions">
+                <span class="campaign-list-count" id="campaign-creator-count">0 位达人</span>
+                <button class="primary-btn" id="campaign-creator-add-open" type="button">添加达人</button>
+              </div>
+            </div>
+
+            <div class="campaign-creator-form-card" id="campaign-creator-form-card" hidden>
+              <div class="section-title" id="campaign-creator-form-title">添加达人</div>
+              <form id="campaign-creator-form" novalidate>
+                <div class="form-grid three">
+                  <label class="field">
+                    <span>达人 *</span>
+                    <select id="campaign-creator-id" required>
+                      <option value="">请选择达人</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>执行账号 *</span>
+                    <select id="campaign-creator-account-id" required disabled>
+                      <option value="">请先选择达人</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>合作阶段</span>
+                    <select id="campaign-creator-stage">
+                      <option value="pending_contact">待联系</option>
+                      <option value="contacted">已联系</option>
+                      <option value="quoted">已报价</option>
+                      <option value="negotiating">谈判中</option>
+                      <option value="agreed">已确认</option>
+                      <option value="executing">执行中</option>
+                      <option value="completed">已完成</option>
+                      <option value="rejected">已拒绝</option>
+                    </select>
+                  </label>
+                  <label class="field">
+                    <span>达人报价</span>
+                    <input id="campaign-creator-quote" type="number" min="0" step="0.01">
+                  </label>
+                  <label class="field">
+                    <span>实际成本</span>
+                    <input id="campaign-creator-cost" type="number" min="0" step="0.01">
+                  </label>
+                  <label class="field">
+                    <span>发布日期</span>
+                    <input id="campaign-creator-publish-date" type="date">
+                  </label>
+                </div>
+
+                <div class="campaign-form-subsection" data-campaign-section="execution-data">
+                  <h3>执行数据</h3>
+                  <label class="field">
+                    <span>发布链接</span>
+                    <textarea id="campaign-creator-publish-links" rows="3" placeholder="每行一个发布链接"></textarea>
+                  </label>
+                </div>
+
+                <div class="campaign-form-subsection" data-campaign-section="performance-result">
+                  <h3>效果复盘</h3>
+                  <div class="form-grid four">
+                    <label class="field"><span>播放量</span><input id="campaign-creator-views" type="number" min="0" step="1"></label>
+                    <label class="field"><span>点赞数</span><input id="campaign-creator-likes" type="number" min="0" step="1"></label>
+                    <label class="field"><span>评论数</span><input id="campaign-creator-comments" type="number" min="0" step="1"></label>
+                    <label class="field"><span>ROI</span><input id="campaign-creator-roi" type="number" step="0.01"></label>
+                  </div>
+                  <label class="field">
+                    <span>复盘备注</span>
+                    <textarea id="campaign-creator-performance-note" rows="3"></textarea>
+                  </label>
+                </div>
+
+                <p class="campaign-form-error" id="campaign-creator-form-error" role="alert" hidden></p>
+                <div class="action-row">
+                  <button class="primary-btn" id="campaign-creator-form-save" type="submit">保存合作记录</button>
+                  <button class="soft-btn" id="campaign-creator-form-cancel" type="button">取消</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="campaign-detail-message" id="campaign-creator-empty" hidden>
+              暂无参与达人。点击“添加达人”建立第一条合作记录。
+            </div>
+            <div class="review-table-wrap" id="campaign-creator-table-wrap" hidden>
+              <table class="review-table campaign-creator-table">
+                <thead>
+                  <tr>
+                    <th>达人名称</th>
+                    <th>Agency</th>
+                    <th>执行账号</th>
+                    <th>平台</th>
+                    <th>合作阶段</th>
+                    <th>报价</th>
+                    <th>成本</th>
+                    <th>发布链接</th>
+                    <th>播放</th>
+                    <th>ROI</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="campaign-creator-list-body"></tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="page" data-page="mail">
         <div class="page-header">
           <h1 data-i18n="mailTitle">邮箱账户</h1>
@@ -729,6 +1125,16 @@
     </main>
   </div>
 
+  <script src="services/api-client.js"></script>
+  <script src="core/page-resources.js"></script>
+  <script src="core/page-registry.js"></script>
   <script src="app.js"></script>
+  <script src="pages/dashboard.js"></script>
+  <script src="pages/creator-library.js"></script>
+  <script src="pages/creator-library-detail.js"></script>
+  <script src="pages/products.js"></script>
+  <script src="pages/campaigns.js"></script>
+  <script src="pages/campaign-detail.js"></script>
+  <script src="pages/settings.js"></script>
 </body>
 </html>

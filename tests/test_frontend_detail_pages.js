@@ -115,14 +115,15 @@ const sandbox = {
   },
 };
 sandbox.globalThis = sandbox;
+sandbox.window.fetch = sandbox.fetch;
 
+const apiClientPath = path.join(__dirname, "..", "webapp", "services", "api-client.js");
 const appPath = path.join(__dirname, "..", "webapp", "app.js");
-const source = `${fs.readFileSync(appPath, "utf8")}
+const source = `${fs.readFileSync(apiClientPath, "utf8")}
+${fs.readFileSync(appPath, "utf8")}
 globalThis.__frontendTest = {
   state,
-  viewCreatorAnalysis,
-  renderCreatorLibraryDetail,
-  setCreatorDetailTab
+  viewCreatorAnalysis
 };`;
 vm.createContext(sandbox);
 vm.runInContext(source, sandbox, { filename: appPath });
@@ -159,42 +160,7 @@ async function run() {
   assert.equal(elements.get("creator-analysis-panel").hidden, false);
   assert.match(elements.get("creator-analysis-summary").textContent, /Maria/);
 
-  const detail = {
-    record: {
-      creator_name: "Maria",
-      platform: "TikTok",
-      profile_url: "https://www.tiktok.com/@maria",
-      insight_level: "good",
-      last_analysis_time: "2026-07-29T10:00:00Z",
-    },
-    analysis: apiPayload.analysis,
-    trend: {
-      freshness: {
-        status: "fresh",
-        days: 1,
-      },
-    },
-    snapshots: [{
-      captured_at: "2026-07-29T10:00:00Z",
-      followers: "10K",
-      average_views: 1200,
-      median_views: 1000,
-      creator_score: 80,
-      insight_level: "good",
-    }],
-    cooperations: [],
-    cooperation_statistics: {},
-  };
-  api.renderCreatorLibraryDetail(detail);
-  assert.match(elements.get("creator-library-detail-summary").textContent, /Maria/);
-  assert.match(elements.get("creator-library-freshness").textContent, /最新/);
-  assert.equal(elements.get("creator-library-snapshots").children.length, 1);
-
-  api.setCreatorDetailTab("history");
-  const historyPanel = panels.find(panel => panel.dataset.detailPanel === "history");
-  assert.equal(historyPanel.hidden, false);
-  assert.equal(api.state.creatorLibrary.detailTab, "history");
-  console.log("Creator analysis/detail/trend pages: OK");
+  console.log("Creator analysis panel: OK");
 }
 
 run().catch(error => {

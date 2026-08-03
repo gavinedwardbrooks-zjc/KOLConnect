@@ -26,12 +26,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 import scraper as scraper_module
+from campaign_creator_repository import CampaignCreatorRepository
+from campaign_repository import CampaignRepository
 from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
+from product_repository import ProductRepository
 from app_logging import log_error, log_event
 from openpyxl import load_workbook
 from runtime_paths import (
@@ -85,6 +88,8 @@ REVIEW_WHATSAPP_PATTERN = re.compile(r"^[0-9+()\- ]+$")
 TASK_PLATFORM_OPTIONS = {"全部", "TikTok", "Instagram", "YouTube"}
 PLATFORM_LABELS = {"tiktok": "TikTok", "instagram": "Instagram", "youtube": "YouTube"}
 RETRYABLE_SCRAPE_STATUSES = {"missing_data", "failed", "login_required", "platform_error"}
+LEGACY_COOPERATION_READ_ONLY_MESSAGE = "请使用 Campaign 创建新的合作。"
+LEGACY_COOPERATION_PATH_PATTERN = re.compile(r"/api/creator-library/[^/]+/cooperations")
 BLOCKING_SCRAPE_STATUSES = {"missing_data", "failed", "login_required", "platform_error"}
 INSTAGRAM_ERROR_STATUSES = {"failed", "login_required", "platform_error"}
 AGENCY_CONTACT_FIELD_NAME = "联系人姓名"
@@ -537,7 +542,7 @@ def get_system_health() -> dict:
         "status": overall,
         "checks": checks,
         "debug": {
-            "version": "KOLConnect v0.2.0-dev.1",
+            "version": "KOLConnect v0.2.0-dev.2",
             "api_status": "正常",
             "excel_path": str(workbook_path),
             "excel_status": excel_status,
@@ -1764,6 +1769,22 @@ def get_creator_repository() -> CreatorRepository:
     return CreatorRepository(workbook_path, CREATOR_ANALYSIS_DIR, CREATOR_LIBRARY_FILE)
 
 
+def _creator_library_workbook_path() -> Path:
+    return Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
+
+
+def get_product_repository() -> ProductRepository:
+    return ProductRepository(_creator_library_workbook_path())
+
+
+def get_campaign_repository() -> CampaignRepository:
+    return CampaignRepository(_creator_library_workbook_path())
+
+
+def get_campaign_creator_repository() -> CampaignCreatorRepository:
+    return CampaignCreatorRepository(_creator_library_workbook_path())
+
+
 def _task_rows_for_creator_library(task: dict, rows: list[dict]) -> list[dict]:
     """Map task CSV rows to the repository contract without changing CSV fields."""
     records: list[dict] = []
@@ -2471,6 +2492,16 @@ class Handler(BaseHTTPRequestHandler):
         log_error("API", f"{self.command} {urlparse(self.path).path} | status={status} | {friendly_message}")
         self._json({"error": friendly_message}, status=status)
 
+    def _repository_error(self, exc: Exception) -> None:
+        message = str(exc)
+        if isinstance(exc, RuntimeError):
+            return self._error(message, status=500)
+        if "不存在" in message:
+            return self._error(message, status=404)
+        if "已加入" in message or "已归档" in message or "不能归档" in message:
+            return self._error(message, status=409)
+        return self._error(message, status=400)
+
     def _save_state_and_ok(self) -> None:
         save_state(STATE)
         self._ok()
@@ -2516,6 +2547,56 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        query = parse_qs(parsed.query)
+
+        if parsed.path == "/api/products":
+            include_archived = str((query.get("include_archived") or [""])[0]).lower() == "true"
+            try:
+                products = get_product_repository().getProducts(include_archived=include_archived)
+                return self._json({"ok": True, "products": products})
+            except (RuntimeError, ValueError) as exc:
+                return self._repository_error(exc)
+
+        product_match = re.fullmatch(r"/api/products/([^/]+)", parsed.path)
+        if product_match:
+            try:
+                return self._json({"ok": True, "product": get_product_repository().getProduct(product_match.group(1))})
+            except (RuntimeError, ValueError) as exc:
+                return self._repository_error(exc)
+
+        if parsed.path == "/api/campaigns":
+            try:
+                campaigns = get_campaign_repository().getCampaigns(
+                    product_id=(query.get("product_id") or [""])[0],
+                    status=(query.get("status") or [""])[0],
+                    creator_id=(query.get("creator_id") or [""])[0],
+                    include_archived=str((query.get("include_archived") or [""])[0]).lower() == "true",
+                )
+                return self._json({"ok": True, "campaigns": campaigns if isinstance(campaigns, list) else []})
+            except (RuntimeError, ValueError) as exc:
+                return self._repository_error(exc)
+
+        campaign_creators_match = re.fullmatch(r"/api/campaigns/([^/]+)/creators", parsed.path)
+        if campaign_creators_match:
+            campaign_id = campaign_creators_match.group(1)
+            try:
+                get_campaign_repository().getCampaign(campaign_id)
+                records = get_campaign_creator_repository().getCampaignCreators(
+                    campaign_id=campaign_id,
+                    include_archived=str((query.get("include_archived") or [""])[0]).lower() == "true",
+                )
+                return self._json({"ok": True, "campaign_creators": records})
+            except (RuntimeError, ValueError) as exc:
+                return self._repository_error(exc)
+
+        campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", parsed.path)
+        if campaign_match:
+            try:
+                return self._json(
+                    {"ok": True, "campaign": get_campaign_repository().getCampaign(campaign_match.group(1))}
+                )
+            except (RuntimeError, ValueError) as exc:
+                return self._repository_error(exc)
 
         if parsed.path == "/api/system/health":
             return self._json({"ok": True, **get_system_health()})
@@ -2645,9 +2726,42 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:
         global STATE
         parsed = urlparse(self.path)
-        payload = self._read_json()
+        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
+            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
+        try:
+            payload = self._read_json()
+        except json.JSONDecodeError:
+            return self._error("请求数据不是有效 JSON。")
 
         try:
+            if parsed.path == "/api/products":
+                try:
+                    product = get_product_repository().createProduct(payload)
+                    return self._json({"ok": True, "product": product}, status=201)
+                except ValueError as exc:
+                    return self._repository_error(exc)
+
+            if parsed.path == "/api/campaigns":
+                try:
+                    campaign = get_campaign_repository().createCampaign(payload)
+                    return self._json({"ok": True, "campaign": campaign}, status=201)
+                except ValueError as exc:
+                    return self._repository_error(exc)
+
+            campaign_creators_match = re.fullmatch(r"/api/campaigns/([^/]+)/creators", parsed.path)
+            if campaign_creators_match:
+                campaign_id = campaign_creators_match.group(1)
+                supplied_campaign_id = str(payload.get("campaign_id") or "").strip()
+                if supplied_campaign_id and supplied_campaign_id != campaign_id:
+                    return self._error("请求路径与数据中的 Campaign ID 不一致。")
+                try:
+                    record = get_campaign_creator_repository().createCampaignCreator(
+                        {**payload, "campaign_id": campaign_id}
+                    )
+                    return self._json({"ok": True, "campaign_creator": record}, status=201)
+                except ValueError as exc:
+                    return self._repository_error(exc)
+
             task_links_match = re.fullmatch(r"/api/tasks/([^/]+)/links", parsed.path)
             if task_links_match:
                 result = update_task_links(
@@ -2884,13 +2998,6 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError as exc:
                     return self._error(str(exc))
 
-            creator_library_cooperation_match = re.fullmatch(r"/api/creator-library/([^/]+)/cooperations", parsed.path)
-            if creator_library_cooperation_match:
-                try:
-                    return self._ok(**save_creator_library_cooperation(creator_library_cooperation_match.group(1), payload))
-                except ValueError as exc:
-                    return self._error(str(exc))
-
             creator_library_relations_match = re.fullmatch(r"/api/creator-library/([^/]+)/relations", parsed.path)
             if creator_library_relations_match:
                 try:
@@ -2986,8 +3093,75 @@ class Handler(BaseHTTPRequestHandler):
             log_error("API", f"未处理异常: {self.command} {parsed.path}", exc)
             return self._error(_friendly_error_message(exc), status=500)
 
+    def do_PATCH(self) -> None:
+        parsed = urlparse(self.path)
+        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
+            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
+        try:
+            payload = self._read_json()
+
+            product_match = re.fullmatch(r"/api/products/([^/]+)", parsed.path)
+            if product_match:
+                try:
+                    repository = get_product_repository()
+                    if "archived_at" in payload:
+                        product = repository.setProductArchivedAt(
+                            product_match.group(1), payload.get("archived_at")
+                        )
+                    elif payload.get("archived") is True:
+                        product = repository.archiveProduct(product_match.group(1))
+                    else:
+                        product = repository.updateProduct(product_match.group(1), payload)
+                    return self._json({"ok": True, "product": product})
+                except ValueError as exc:
+                    return self._repository_error(exc)
+
+            campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", parsed.path)
+            if campaign_match:
+                try:
+                    repository = get_campaign_repository()
+                    if "archived_at" in payload:
+                        campaign = repository.setCampaignArchivedAt(
+                            campaign_match.group(1), payload.get("archived_at")
+                        )
+                    elif payload.get("archived") is True:
+                        campaign = repository.archiveCampaign(campaign_match.group(1))
+                    else:
+                        campaign = repository.updateCampaign(campaign_match.group(1), payload)
+                    return self._json({"ok": True, "campaign": campaign})
+                except ValueError as exc:
+                    return self._repository_error(exc)
+
+            campaign_creator_match = re.fullmatch(r"/api/campaign-creators/([^/]+)", parsed.path)
+            if campaign_creator_match:
+                try:
+                    repository = get_campaign_creator_repository()
+                    record = (
+                        repository.archiveCampaignCreator(campaign_creator_match.group(1))
+                        if payload.get("archived") is True
+                        else repository.updateCampaignCreator(campaign_creator_match.group(1), payload)
+                    )
+                    return self._json({"ok": True, "campaign_creator": record})
+                except ValueError as exc:
+                    return self._repository_error(exc)
+
+            return self._error("接口不存在。", status=404)
+        except json.JSONDecodeError:
+            return self._error("请求数据不是有效 JSON。")
+        except Exception as exc:
+            log_error("API", f"未处理异常: {self.command} {parsed.path}", exc)
+            return self._error(_friendly_error_message(exc), status=500)
+
+    def do_PUT(self) -> None:
+        parsed = urlparse(self.path)
+        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
+            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
+        return self._error("接口不存在。", status=404)
+
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
+        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
+            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
         task_match = re.fullmatch(r"/api/tasks/([^/]+)", parsed.path)
         if not task_match:
             return self._error("接口不存在。", status=404)
@@ -3004,7 +3178,7 @@ def run() -> None:
     workbook_path = STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK
     log_event(
         "KOLConnect Start",
-        f"version=KOLConnect v0.2.0-dev.1 | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
+        f"version=KOLConnect v0.2.0-dev.2 | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
     )
     if os.environ.get("KOLCONNECT_DESKTOP") != "1":
         webbrowser.open(f"http://{HOST}:{PORT}/?v={int(time.time())}")

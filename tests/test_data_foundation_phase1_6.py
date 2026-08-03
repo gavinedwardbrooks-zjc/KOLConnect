@@ -20,8 +20,11 @@ APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
 
 import creator_repository
+from campaign_creator_repository import CAMPAIGN_CREATORS_HEADERS
+from campaign_repository import CAMPAIGNS_HEADERS
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
+from product_repository import PRODUCTS_HEADERS
 
 
 def close_app_logger() -> None:
@@ -58,6 +61,9 @@ def create_schema2_workbook(
         "Agencies": creator_repository._AGENCIES_HEADERS,
         "AgencyContacts": creator_repository._AGENCY_CONTACTS_HEADERS,
         "FollowUpLogs": creator_repository._FOLLOW_UP_LOGS_HEADERS,
+        "Products": PRODUCTS_HEADERS,
+        "Campaigns": CAMPAIGNS_HEADERS,
+        "CampaignCreators": CAMPAIGN_CREATORS_HEADERS,
         "_AnalysisData": creator_repository._ANALYSIS_METADATA_HEADERS,
         "_Metadata": creator_repository._WORKBOOK_METADATA_HEADERS,
     }
@@ -224,7 +230,7 @@ class CreatorLibraryPerformanceTests(unittest.TestCase):
             self.assertEqual(1, repository.row_read_counts["CreatorSnapshots"])
             self.assertEqual(3, len(detail["snapshots"]))
 
-    def test_dashboard_request_reuses_creator_and_cooperation_reads(self) -> None:
+    def test_dashboard_request_reuses_creator_and_campaign_creator_reads(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch.object(
             creator_repository, "log_event"
         ):
@@ -235,17 +241,29 @@ class CreatorLibraryPerformanceTests(unittest.TestCase):
                 snapshots_per_creator=3,
             )
             repository = CountingRepository(workbook_path)
-            service = DashboardService(DashboardRepository(repository))
+            campaign_creator_repository = mock.Mock()
+            campaign_creator_repository.getCampaignCreators.return_value = []
+            campaign_repository = mock.Mock()
+            campaign_repository.getCampaigns.return_value = []
+            service = DashboardService(DashboardRepository(
+                repository,
+                campaign_creator_repository,
+                campaign_repository,
+            ))
 
             service.getOverview()
             service.getCreatorHealth()
             service.getCooperationPerformance()
             service.getActionItems()
 
-            self.assertEqual(2, repository.load_count)
+            self.assertEqual(1, repository.load_count)
             self.assertEqual(1, repository.row_read_counts["Creators"])
             self.assertEqual(1, repository.row_read_counts["CreatorSnapshots"])
-            self.assertEqual(1, repository.row_read_counts["Cooperations"])
+            self.assertEqual(0, repository.row_read_counts["Cooperations"])
+            campaign_creator_repository.getCampaignCreators.assert_called_once_with(
+                include_archived=False
+            )
+            campaign_repository.getCampaigns.assert_called_once_with(include_archived=True)
 
 
 class HistoricalTaskBoundaryTests(unittest.TestCase):

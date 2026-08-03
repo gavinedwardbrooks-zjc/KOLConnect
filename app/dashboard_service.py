@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Read-only KPI calculations for the KOLConnect operational dashboard."""
 
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -11,20 +12,25 @@ from dashboard_repository import DashboardRepository
 class DashboardService:
     """Build dashboard responses from repository records, never from Excel directly."""
 
+    _COOPERATION_STAGES = {"agreed", "executing", "completed"}
+    _EXECUTING_STAGES = {"agreed", "executing"}
+
     def __init__(self, repository: DashboardRepository) -> None:
         self._repository = repository
 
     def getOverview(self) -> dict[str, Any]:
         creators = self._repository.get_creators()
-        cooperations = self._repository.get_cooperation_records(creators)
+        relations = self._repository.get_campaign_creator_records(creators)
+        cooperation_records = self._records_in_stages(relations, self._COOPERATION_STAGES)
+        operational_records = [record for record in relations if self._is_operational(record)]
         recent_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
         return {
             "total_creators": len(creators),
             "new_creators_7d": sum(1 for creator in creators if self._is_on_or_after(creator.get("analysis_time"), recent_cutoff)),
-            "discovered_count": self._status_count(creators, "discovered"),
-            "cooperating_count": self._status_count(creators, "cooperating"),
-            "cooperation_spend": self._sum_numbers(cooperations, "price"),
-            "average_roi": self._average_numbers(cooperations, "roi"),
+            "discovered_count": self._stage_count(operational_records, {"pending_contact"}),
+            "cooperating_count": self._stage_count(operational_records, self._EXECUTING_STAGES),
+            "cooperation_spend": self._sum_valid_numbers(cooperation_records, "cost"),
+            "average_roi": self._weighted_completed_roi(relations),
         }
 
     def getCreatorHealth(self) -> dict[str, list[dict[str, Any]]]:
@@ -55,61 +61,91 @@ class DashboardService:
 
     def getCooperationPerformance(self) -> dict[str, Any]:
         creators = self._repository.get_creators()
-        cooperations = self._repository.get_cooperation_records(creators)
+        relations = self._repository.get_campaign_creator_records(creators)
+        cooperation_records = self._records_in_stages(relations, self._COOPERATION_STAGES)
+        completed_records = self._records_in_stages(relations, {"completed"})
         totals_by_creator: dict[str, dict[str, Any]] = {}
-        for cooperation in cooperations:
-            creator_id = str(cooperation.get("creator_id") or "")
+        for relation in completed_records:
+            creator_id = str(relation.get("creator_id") or "")
             if not creator_id:
                 continue
             aggregate = totals_by_creator.setdefault(creator_id, {
                 "creator_id": creator_id,
-                "creator_name": str(cooperation.get("creator_name") or ""),
+                "creator_name": str(relation.get("creator_name") or ""),
+                "platform": str(relation.get("platform") or ""),
+                "profile_url": str(relation.get("profile_url") or ""),
                 "campaign_count": 0,
                 "total_cost": 0.0,
                 "total_views": 0.0,
-                "roi_values": [],
+                "roi_cost_total": 0.0,
+                "roi_weighted_total": 0.0,
             })
             aggregate["campaign_count"] += 1
-            aggregate["total_cost"] += self._number(cooperation.get("price")) or 0.0
-            aggregate["total_views"] += self._number(cooperation.get("total_views")) or 0.0
-            roi = self._number(cooperation.get("roi"))
-            if roi is not None:
-                aggregate["roi_values"].append(roi)
+            cost = self._nonnegative_number(relation.get("cost"))
+            views = self._nonnegative_number(relation.get("views"))
+            aggregate["total_cost"] += cost or 0.0
+            aggregate["total_views"] += views or 0.0
+            roi = self._nonnegative_number(relation.get("roi"))
+            if cost is not None and cost > 0 and roi is not None:
+                aggregate["roi_cost_total"] += cost
+                aggregate["roi_weighted_total"] += cost * roi
 
         top_creators = []
         for aggregate in totals_by_creator.values():
-            roi_values = aggregate.pop("roi_values")
-            aggregate["average_roi"] = sum(roi_values) / len(roi_values) if roi_values else None
+            roi_cost_total = aggregate.pop("roi_cost_total")
+            roi_weighted_total = aggregate.pop("roi_weighted_total")
+            aggregate["average_roi"] = (
+                roi_weighted_total / roi_cost_total if roi_cost_total > 0 else None
+            )
             top_creators.append(aggregate)
-        top_creators.sort(key=lambda item: (item["average_roi"] is not None, item["average_roi"] or item["total_views"]), reverse=True)
+        top_creators.sort(
+            key=lambda item: (
+                -item["total_views"],
+                0 if item["average_roi"] is not None else 1,
+                -(item["average_roi"] or 0),
+                -item["campaign_count"],
+                item["creator_id"],
+            )
+        )
 
         return {
-            "total_campaigns": len(cooperations),
-            "total_cost": self._sum_numbers(cooperations, "price"),
-            "total_views": self._sum_numbers(cooperations, "total_views"),
-            "average_roi": self._average_numbers(cooperations, "roi"),
+            "total_campaigns": len({
+                str(record.get("campaign_id") or "")
+                for record in relations
+                if str(record.get("campaign_id") or "")
+            }),
+            "total_cost": self._sum_valid_numbers(cooperation_records, "cost"),
+            "total_views": self._sum_valid_numbers(cooperation_records, "views"),
+            "average_roi": self._weighted_completed_roi(relations),
             "top_creators": top_creators[:5],
         }
 
     def getActionItems(self) -> dict[str, list[dict[str, Any]]]:
         creators = self._repository.get_creators()
         health = self.getCreatorHealth()
+        relations = self._repository.get_campaign_creator_records(creators)
+        operational_records = [record for record in relations if self._is_operational(record)]
         pending_contact = [
-            self._creator_summary(creator)
-            for creator in creators
-            if str(creator.get("status") or "") == "discovered"
+            self._campaign_creator_summary(record)
+            for record in operational_records
+            if str(record.get("stage") or "") == "pending_contact"
         ]
         incomplete_cooperations = []
-        for cooperation in self._repository.get_cooperation_records(creators):
-            if str(cooperation.get("result") or "").strip():
+        for relation in operational_records:
+            if str(relation.get("stage") or "") != "completed":
+                continue
+            if str(relation.get("performance_note") or "").strip():
                 continue
             incomplete_cooperations.append({
-                "cooperation_id": str(cooperation.get("cooperation_id") or ""),
-                "creator_id": str(cooperation.get("creator_id") or ""),
-                "creator_name": str(cooperation.get("creator_name") or ""),
-                "campaign": str(cooperation.get("campaign") or ""),
-                "contact_date": str(cooperation.get("contact_date") or ""),
-                "reason": "missing_result",
+                "cooperation_id": str(relation.get("id") or ""),
+                "creator_id": str(relation.get("creator_id") or ""),
+                "creator_name": str(relation.get("creator_name") or ""),
+                "platform": str(relation.get("platform") or ""),
+                "campaign": str(relation.get("campaign") or ""),
+                "contact_date": str(
+                    relation.get("publish_date") or relation.get("created_at") or ""
+                ),
+                "reason": "missing_performance_note",
             })
         return {
             "expired_creators": health["expired_creators"],
@@ -120,6 +156,42 @@ class DashboardService:
     @staticmethod
     def _status_count(creators: list[dict[str, Any]], status: str) -> int:
         return sum(1 for creator in creators if str(creator.get("status") or "") == status)
+
+    @classmethod
+    def _records_in_stages(
+        cls,
+        records: list[dict[str, Any]],
+        stages: set[str],
+    ) -> list[dict[str, Any]]:
+        return [
+            record
+            for record in records
+            if not str(record.get("archived_at") or "").strip()
+            and str(record.get("stage") or "") in stages
+        ]
+
+    @classmethod
+    def _stage_count(cls, records: list[dict[str, Any]], stages: set[str]) -> int:
+        return len(cls._records_in_stages(records, stages))
+
+    @staticmethod
+    def _is_operational(record: dict[str, Any]) -> bool:
+        return (
+            not str(record.get("archived_at") or "").strip()
+            and not str(record.get("campaign_archived_at") or "").strip()
+        )
+
+    @staticmethod
+    def _campaign_creator_summary(record: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "creator_id": str(record.get("creator_id") or ""),
+            "creator_name": str(record.get("creator_name") or ""),
+            "platform": str(record.get("platform") or ""),
+            "profile_url": str(record.get("profile_url") or ""),
+            "status": str(record.get("stage") or ""),
+            "campaign_id": str(record.get("campaign_id") or ""),
+            "campaign": str(record.get("campaign") or ""),
+        }
 
     @staticmethod
     def _creator_summary(creator: dict[str, Any], *, change: dict[str, Any] | None = None, freshness: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -146,13 +218,45 @@ class DashboardService:
     @staticmethod
     def _number(value: object) -> float | None:
         if isinstance(value, (int, float)) and not isinstance(value, bool):
-            return float(value)
+            number = float(value)
+            return number if math.isfinite(number) else None
         if isinstance(value, str) and value.strip():
             try:
-                return float(value.replace(",", "").strip())
+                number = float(value.replace(",", "").strip())
+                return number if math.isfinite(number) else None
             except ValueError:
                 return None
         return None
+
+    @classmethod
+    def _nonnegative_number(cls, value: object) -> float | None:
+        number = cls._number(value)
+        return number if number is not None and number >= 0 else None
+
+    @classmethod
+    def _sum_valid_numbers(cls, rows: list[dict[str, Any]], field: str) -> float:
+        return sum(
+            value
+            for row in rows
+            if (value := cls._nonnegative_number(row.get(field))) is not None
+        )
+
+    @classmethod
+    def _weighted_completed_roi(cls, rows: list[dict[str, Any]]) -> float:
+        total_cost = 0.0
+        weighted_roi = 0.0
+        for row in rows:
+            if str(row.get("archived_at") or "").strip():
+                continue
+            if str(row.get("stage") or "") != "completed":
+                continue
+            cost = cls._nonnegative_number(row.get("cost"))
+            roi = cls._nonnegative_number(row.get("roi"))
+            if cost is None or cost <= 0 or roi is None:
+                continue
+            total_cost += cost
+            weighted_roi += cost * roi
+        return weighted_roi / total_cost if total_cost > 0 else 0
 
     @classmethod
     def _sum_numbers(cls, rows: list[dict[str, Any]], field: str) -> float:
