@@ -267,3 +267,16 @@ class CampaignCreatorRepository(ExcelDataRepository):
     def deleteCampaignCreator(self, record_id: str) -> None:
         """Backward-compatible name; relationship records are archived, never deleted."""
         self.archiveCampaignCreator(record_id)
+
+    def remove_creator_from_campaign(self, record_id: str) -> dict[str, Any]:
+        """Permanently remove only the Campaign-Creator relationship row."""
+        record_id = self.require_text(record_id, "Campaign 达人记录 ID")
+        with self.workbook(write=True) as workbook:
+            existing = self.row_by_key(workbook["CampaignCreators"], "id", record_id)
+            deleted = self.delete_row(workbook["CampaignCreators"], "id", record_id)
+        return {
+            "campaign_creator_id": record_id,
+            "campaign_id": str(existing.get("campaign_id") or ""),
+            "creator_id": str(existing.get("creator_id") or ""),
+            "deleted": deleted,
+        }

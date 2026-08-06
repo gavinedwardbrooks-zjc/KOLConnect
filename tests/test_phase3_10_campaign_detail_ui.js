@@ -76,7 +76,7 @@ function findAction(node, action, recordId) {
 
 async function run() {
   const ids = [
-    "campaign-detail-title", "campaign-detail-subtitle", "campaign-detail-back",
+    "campaign-detail-title", "campaign-detail-subtitle", "campaign-detail-back", "campaign-detail-delete",
     "campaign-detail-loading", "campaign-detail-error", "campaign-detail-error-message",
     "campaign-detail-retry", "campaign-detail-content", "campaign-detail-badges",
     "campaign-detail-overview", "campaign-detail-goal", "campaign-detail-readonly",
@@ -179,6 +179,21 @@ async function run() {
       relations = relations.map(item => item.id === recordId ? { ...item, ...clone(payload) } : item);
       return { campaign_creator: clone(relations.find(item => item.id === recordId)) };
     },
+    async delete(url, options = {}) {
+      calls.push({ method: "DELETE", url, signal: options.signal });
+      if (url.startsWith("/api/campaign-creators/")) {
+        const recordId = url.split("/").at(-1);
+        const before = relations.length;
+        relations = relations.filter(item => item.id !== recordId);
+        return { deleted: relations.length !== before };
+      }
+      if (url === "/api/campaigns/campaign_one") {
+        campaign = null;
+        relations = [];
+        return { deleted: true, removed_campaign_creators: 0 };
+      }
+      throw new Error(`Unexpected DELETE ${url}`);
+    },
   };
 
   let registeredPage = null;
@@ -207,19 +222,21 @@ async function run() {
   }
 
   const notices = [];
+  const navigations = [];
   const window = {
     KOLConnectAPI: api,
     KOLConnectApp: {
       showSaved(message) { notices.push(message); },
       showError(error) { throw error; },
     },
+    confirm() { return true; },
     KOLConnectPageResources: { create: createResources },
     KOLConnectPages: {
       registerPage(name, page) {
         assert.equal(name, "campaign-detail");
         registeredPage = page;
       },
-      async navigate() {},
+      async navigate(name) { navigations.push(name); },
     },
   };
 
@@ -289,6 +306,12 @@ async function run() {
   assert.equal(patchCall.payload.roi, "3.2");
   assert.equal(patchCall.payload.performance_note, "Strong result");
 
+  const removeActiveButton = findAction(elements.get("campaign-creator-list-body"), "remove", "relation_two");
+  assert.ok(removeActiveButton, "active Campaign should expose relation remove action");
+  await elements.get("campaign-creator-list-body").dispatch("click", { target: removeActiveButton });
+  assert.equal(relations.some(item => item.id === "relation_two"), false);
+  assert.ok(calls.splice(0).some(call => call.method === "DELETE" && call.url === "/api/campaign-creators/relation_two"));
+
   await registeredPage.unbind();
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 0);
   campaign.archived_at = "2026-08-30T00:00:00Z";
@@ -297,6 +320,14 @@ async function run() {
   assert.equal(elements.get("campaign-creator-add-open").disabled, true);
   assert.equal(elements.get("campaign-detail-readonly").hidden, false);
   assert.equal(findAction(elements.get("campaign-creator-list-body"), "edit", "relation_one"), null);
+  const removeArchivedButton = findAction(elements.get("campaign-creator-list-body"), "remove", "relation_one");
+  assert.ok(removeArchivedButton, "archived Campaign must still allow relation removal");
+  await elements.get("campaign-creator-list-body").dispatch("click", { target: removeArchivedButton });
+  assert.equal(relations.length, 0);
+  assert.ok(calls.splice(0).some(call => call.method === "DELETE" && call.url === "/api/campaign-creators/relation_one"));
+  await elements.get("campaign-detail-delete").dispatch("click");
+  assert.ok(calls.splice(0).some(call => call.method === "DELETE" && call.url === "/api/campaigns/campaign_one"));
+  assert.equal(navigations.at(-1), "campaigns");
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 1);
   await registeredPage.unbind();
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 0);

@@ -79,6 +79,7 @@ class FakeElement {
     if (selector === "[data-creator-action]" && this.dataset.creatorAction) return this;
     if (selector === "[data-creator-status-id]" && this.dataset.creatorStatusId) return this;
     if (selector === "[data-creator-campaign-id]" && this.dataset.creatorCampaignId) return this;
+    if (selector === "[data-creator-page]" && this.dataset.creatorPage) return this;
     return this.parentElement?.closest(selector) || null;
   }
 
@@ -148,12 +149,14 @@ function creatorDetail(creatorId, name, accounts = []) {
 
 async function run() {
   const ids = [
-    "creator-library-search", "creator-library-platform", "creator-library-country",
+    "creator-library-search", "creator-library-country",
     "creator-library-language", "creator-library-category", "creator-library-tag",
     "creator-library-level", "creator-library-status", "creator-library-sort",
     "creator-library-card-view", "creator-library-table-view", "creator-library-refresh",
     "creator-library-cards", "creator-library-table-wrap", "creator-library-body",
     "creator-library-empty", "creator-library-detail-summary", "creator-library-detail-level",
+    "creator-library-page-size", "creator-library-pagination", "creator-library-page-summary",
+    "creator-library-page-buttons",
     "creator-library-basic", "creator-library-video-metrics", "creator-library-data-meta",
     "creator-library-freshness", "creator-library-recommendation", "creator-library-strengths",
     "creator-library-risks", "creator-library-snapshots", "creator-library-snapshots-empty",
@@ -182,8 +185,10 @@ async function run() {
   selectIds.add("creator-campaign-select");
   selectIds.add("creator-campaign-account-select");
   selectIds.add("creator-edit-agency");
+  selectIds.add("creator-library-page-size");
   const elements = new Map(ids.map(id => [id, new FakeElement(selectIds.has(id) ? "select" : "div", id)]));
-  elements.get("creator-library-sort").value = "analysis_time_desc";
+  elements.get("creator-library-sort").value = "created_at_desc";
+  elements.get("creator-library-page-size").value = "24";
   elements.get("creator-campaign-modal").hidden = true;
   elements.get("creator-edit-modal").hidden = true;
 
@@ -271,15 +276,58 @@ async function run() {
   ];
   const creatorCampaigns = { creator_a: [], creator_b: [campaigns[0]] };
   const calls = [];
+  let paginationTotal = null;
   let holdCreatorA = false;
   let resolveCreatorA = null;
   const api = {
     async get(url, options = {}) {
       calls.push({ method: "GET", url, signal: options.signal });
-      if (url === "/api/creator-library") {
-        return { records: clone(records.filter(record => !record.archived_at)) };
+      if (url.startsWith("/api/creator-library?")) {
+        const queryValue = key => {
+          const match = url.match(new RegExp(`[?&]${key}=([^&]*)`));
+          return match ? decodeURIComponent(match[1]) : "";
+        };
+        let visible = url.includes("include_archived=true")
+          ? records
+          : records.filter(record => !record.archived_at);
+        const filters = {
+          search: queryValue("search"),
+          country: queryValue("country"),
+          language: queryValue("language"),
+          content_category: queryValue("content_category"),
+          tag: queryValue("tag"),
+          insight_level: queryValue("insight_level"),
+          status: queryValue("status"),
+        };
+        visible = visible.filter(record => {
+          const searchable = Object.values(record).join(" ").toLowerCase();
+          return (!filters.search || searchable.includes(filters.search.toLowerCase()))
+            && (!filters.country || record.country === filters.country)
+            && (!filters.language || record.language === filters.language)
+            && (!filters.content_category || record.content_category === filters.content_category)
+            && (!filters.tag || String(record.tags || "").includes(filters.tag))
+            && (!filters.insight_level || record.insight_level === filters.insight_level)
+            && (filters.status === "archived"
+              ? Boolean(record.archived_at)
+              : !filters.status || record.status === filters.status);
+        });
+        const pageSize = url.includes("page_size=50") ? 50 : 24;
+        const total = paginationTotal ?? visible.length;
+        return {
+          total,
+          page: Number(url.match(/[?&]page=(\d+)/)?.[1] || 1),
+          page_size: pageSize,
+          pages: total ? Math.ceil(total / pageSize) : 0,
+          creators: clone(visible),
+          records: clone(visible),
+          filter_options: {
+            country: ["Brazil", "USA"],
+            language: [],
+            content_category: [],
+            tag: [],
+          },
+        };
       }
-      if (url === "/api/creator-library?include_archived=true") return { records: clone(records) };
       if (url === "/api/local/agencies") {
         return { agencies: [{ agency_id: "agency_new", name: "New Agency" }] };
       }
@@ -358,9 +406,14 @@ async function run() {
   };
 
   const notices = [];
+  const storage = new Map();
   const window = {
     AbortController,
-    localStorage: { getItem: () => "", setItem() {}, removeItem() {} },
+    localStorage: {
+      getItem: key => storage.get(key) || "",
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: key => storage.delete(key),
+    },
     setInterval,
     clearInterval,
     setTimeout,
@@ -390,7 +443,7 @@ async function run() {
     currentTaskId: "",
     currentTask: null,
     review: { taskId: "" },
-    creatorLibrary: { records: [], view: "cards", detailTab: "overview" },
+    creatorLibrary: { records: [], viewMode: "card", detailTab: "overview" },
   };
   async function navigate(name, params = {}) {
     const creatorPage = name === "creator-library" || name === "creator-library-detail";
@@ -408,6 +461,17 @@ async function run() {
   assert.equal(window.KOLConnectPages.getCurrentPage(), "creator-library");
   assert.equal(elements.get("creator-library-cards").children.length, 2);
   assert.equal(elements.get("creator-library-refresh").listenerCount("click"), 1);
+  paginationTotal = 30;
+  await elements.get("creator-library-refresh").dispatch("click");
+  const nextPage = findNode(
+    elements.get("creator-library-page-buttons"),
+    node => node.dataset.creatorPage === "2",
+  );
+  await elements.get("creator-library-page-buttons").dispatch("click", { target: nextPage });
+  assert.ok(calls.at(-1).url.includes("page=2"), "pagination must request the selected server page");
+  paginationTotal = null;
+  state.creatorLibrary.page = 1;
+  await elements.get("creator-library-refresh").dispatch("click");
   assert.equal(
     calls.filter(call => call.url.startsWith("/api/campaigns?creator_id=")).length,
     0,
@@ -460,6 +524,7 @@ async function run() {
 
   elements.get("creator-library-search").value = "Bella";
   await elements.get("creator-library-search").dispatch("input");
+  await new Promise(resolve => setTimeout(resolve, 300));
   assert.equal(elements.get("creator-library-cards").children.length, 1, "search must filter cards");
 
   elements.get("creator-library-search").value = "";
@@ -469,19 +534,33 @@ async function run() {
   elements.get("creator-library-country").value = "";
   await elements.get("creator-library-country").dispatch("change");
   await elements.get("creator-library-table-view").dispatch("click");
-  assert.equal(state.creatorLibrary.view, "table");
+  assert.equal(state.creatorLibrary.viewMode, "table");
+  assert.equal(storage.get("creator_library_view_mode"), "table");
   assert.equal(elements.get("creator-library-table-wrap").hidden, false);
+  assert.equal(elements.get("creator-library-cards").children.length, 0, "table mode must not render cards");
+  assert.ok(calls.at(-1).url.includes("page_size=50"), "table mode must request its default page size");
+  await window.KOLConnectPages.navigate("dashboard");
+  state.creatorLibrary.viewMode = "card";
+  await navigate("creator-library");
+  assert.equal(state.creatorLibrary.viewMode, "table", "stored view mode must survive a page reload");
   await elements.get("creator-library-card-view").dispatch("click");
-  assert.equal(state.creatorLibrary.view, "cards");
+  assert.equal(state.creatorLibrary.viewMode, "card");
+  assert.equal(elements.get("creator-library-body").children.length, 0, "card mode must not render table rows");
+  elements.get("creator-library-sort").value = "followers_desc";
+  await elements.get("creator-library-sort").dispatch("change");
+  assert.ok(calls.at(-1).url.includes("sort=followers&order=desc"), "sorting must be requested from the API");
 
   elements.get("creator-library-search").value = "Bella";
   await elements.get("creator-library-search").dispatch("input");
+  await new Promise(resolve => setTimeout(resolve, 300));
 
+  await elements.get("creator-library-table-view").dispatch("click");
   const statusSelect = findNode(elements.get("creator-library-body"), node => node.dataset.creatorStatusId === "creator_b");
   statusSelect.value = "contacted";
   await elements.get("creator-library-body").dispatch("change", { target: statusSelect });
   assert.equal(records[1].status, "contacted");
 
+  await elements.get("creator-library-card-view").dispatch("click");
   const detailButton = findNode(elements.get("creator-library-cards"), node => node.dataset.creatorAction === "detail");
   await elements.get("creator-library-cards").dispatch("click", { target: detailButton });
   assert.equal(window.KOLConnectPages.getCurrentPage(), "creator-library-detail");

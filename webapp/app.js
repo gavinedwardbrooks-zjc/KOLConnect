@@ -41,6 +41,7 @@ const I18N = {
     currentStatus: "当前状态",
     taskStatusCreated: "未开始",
     taskStatusRunning: "运行中",
+    taskStatusFinalizing: "入库收尾中",
     taskStatusPaused: "暂停中",
     taskStatusStopping: "停止中",
     taskStatusStopped: "已停止",
@@ -130,6 +131,7 @@ const I18N = {
     currentStatus: "Current status",
     taskStatusCreated: "Not started",
     taskStatusRunning: "Running",
+    taskStatusFinalizing: "Finalizing",
     taskStatusPaused: "Paused",
     taskStatusStopping: "Stopping",
     taskStatusStopped: "Stopped",
@@ -511,7 +513,20 @@ const state = {
   },
   creatorLibrary: {
     records: [],
-    view: window.localStorage.getItem("kolconnect.creatorLibraryView") || "cards",
+    viewMode: window.localStorage.getItem("creator_library_view_mode") || "card",
+    page: 1,
+    pageSize: 24,
+    sort: "created_at",
+    order: "desc",
+    filters: {
+      search: "",
+      country: "",
+      language: "",
+      content_category: "",
+      tag: "",
+      insight_level: "",
+      status: ""
+    },
     detailTab: "overview"
   },
   taskDetails: {
@@ -548,6 +563,7 @@ function setText(id, value) {
 function scrapeStatusLabel(status) {
   const labels = {
     running: "taskStatusRunning",
+    finalizing: "taskStatusFinalizing",
     paused: "taskStatusPaused",
     stopping: "taskStatusStopping",
     stopped: "taskStatusStopped",
@@ -570,13 +586,14 @@ function renderScrapeControls(job = {}) {
   const taskStatus = state.currentTask?.status || "created";
   const status = job.status && job.status !== "idle" ? job.status : taskStatus;
   const resumablePaused = status === "paused" && !job.running;
-  const active = ["running", "paused", "stopping"].includes(status) && !resumablePaused;
+  const active = ["running", "finalizing", "paused", "stopping"].includes(status) && !resumablePaused;
+  const finalizing = status === "finalizing";
   const paused = status === "paused";
   const stopping = status === "stopping";
 
   start.hidden = active;
   pause.hidden = !["running", "paused"].includes(status);
-  stop.hidden = !active && !(status === "paused" && !job.running);
+  stop.hidden = finalizing || (!active && !(status === "paused" && !job.running));
   pause.textContent = t(paused ? "resumeTask" : "pauseTask");
   stop.textContent = t("stopTask");
   stop.disabled = stopping;

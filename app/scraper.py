@@ -109,6 +109,7 @@ FIELD_LATEST_DATE = "最近发布日期"
 FIELD_FOLLOWER_COUNT = "粉丝数"
 FIELD_STATUS = "状态"
 FIELD_SCRAPE_STATUS = "scrape_status"
+FIELD_STATUS_REASON = "status_reason"
 FIELD_LAST_SCRAPE_TIME = "last_scrape_time"
 FIELD_RETRY_COUNT = "retry_count"
 FIELD_WHATSAPP = "WhatsApp"
@@ -137,6 +138,7 @@ PROGRESS_FIELDS = [
     FIELD_FOLLOWER_COUNT,
     FIELD_STATUS,
     FIELD_SCRAPE_STATUS,
+    FIELD_STATUS_REASON,
     FIELD_LAST_SCRAPE_TIME,
     FIELD_RETRY_COUNT,
     *REVIEW_FIELDS,
@@ -153,6 +155,7 @@ OUTPUT_FIELDS = [
     FIELD_FOLLOWER_COUNT,
     FIELD_STATUS,
     FIELD_SCRAPE_STATUS,
+    FIELD_STATUS_REASON,
     FIELD_LAST_SCRAPE_TIME,
     FIELD_RETRY_COUNT,
     *REVIEW_FIELDS,
@@ -645,11 +648,19 @@ def _page_text(page: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", " ", page or "")).lower()
 
 
-def detect_scrape_status(platform: str, page: str, source: str) -> str:
-    """Classify access failures separately from a valid page with no public email."""
+def _status_reason(code: str, detail: object = "") -> str:
+    normalized_code = str(code or "").strip()
+    normalized_detail = re.sub(r"\s+", " ", str(detail or "")).strip()
+    if not normalized_code:
+        return normalized_detail[:500]
+    return f"{normalized_code}:{normalized_detail}"[:500] if normalized_detail else normalized_code
+
+
+def detect_scrape_access(platform: str, page: str, source: str) -> tuple[str, str]:
+    """Return the page access outcome without deciding whether extracted data is usable."""
     text = _page_text(page)
     if not text:
-        return "failed"
+        return "failed", "page_unavailable"
     if platform == "Instagram":
         login_markers = (
             "log in to instagram",
@@ -659,38 +670,151 @@ def detect_scrape_status(platform: str, page: str, source: str) -> str:
             "登入 instagram",
             "accounts/login",
         )
-        if any(marker in text for marker in login_markers):
-            return "login_required"
-    if is_bad_page(text):
-        return "platform_error"
-    # A browser fallback can still return useful public information, but should be reviewed.
-    return "partial_success" if source == "fallback" else "success"
+        matched_login_marker = next((marker for marker in login_markers if marker in text), "")
+        if matched_login_marker:
+            return "login_required", _status_reason("login_required", matched_login_marker)
+    warning_markers = (
+        "出错了",
+        "请稍后重试",
+        "连接到互联网",
+        "你没有联网",
+        "no internet",
+        "something went wrong",
+        "try again",
+    )
+    matched_warning = next((marker for marker in warning_markers if marker in text), "")
+    if matched_warning:
+        return "platform_error", _status_reason("warning_text_detected", matched_warning)
+    if source == "fallback":
+        return "partial_success", "fallback_channel"
+    return "success", ""
+
+
+def detect_scrape_status(platform: str, page: str, source: str) -> str:
+    """Compatibility wrapper for callers that only need the access outcome."""
+    return detect_scrape_access(platform, page, source)[0]
 
 
 def finalize_scrape_status(
     access_status: str,
     *,
+    platform: str = "",
+    profile_url: str = "",
     name: str = "",
     emails: list[str] | None = None,
     follower_count: str = "",
     whatsapp: str = "",
     latest_publish_date: str = "",
+    has_video_data: bool = False,
 ) -> str:
-    """Only mark a scrape successful when the accessible page produced usable creator data."""
-    if access_status in {"failed", "login_required", "platform_error"}:
-        return access_status
-    has_creator_data = any(
-        (
-            str(name or "").strip(),
-            bool(emails),
-            str(follower_count or "").strip(),
-            str(whatsapp or "").strip(),
-            str(latest_publish_date or "").strip(),
-        )
+    """Classify the usability of extracted creator data, not the transport outcome."""
+    del latest_publish_date  # Publishing dates alone cannot establish creator identity.
+    normalized_platform = str(platform or "").strip()
+    normalized_url = str(profile_url or "").strip()
+    normalized_name = str(name or "").strip()
+    normalized_whatsapp = str(whatsapp or "").strip()
+    has_email = bool(clean_email_candidates(emails or []))
+    has_identity = bool(normalized_name or has_email or normalized_whatsapp)
+    if not has_identity:
+        return "failed"
+
+    has_enhanced_data = bool(
+        has_email
+        or normalized_whatsapp
+        or str(follower_count or "").strip()
+        or has_video_data
     )
-    if not has_creator_data:
-        return "missing_data"
-    return "partial_success" if access_status == "partial_success" else "success"
+    has_complete_identity = bool(
+        normalized_platform in {"TikTok", "Instagram", "YouTube"}
+        and normalized_url
+        and normalized_name
+    )
+    has_access_warning = str(access_status or "").strip() != "success"
+    if has_complete_identity and has_enhanced_data and not has_access_warning:
+        return "success"
+    return "partial_success"
+
+
+def finalize_status_reason(
+    access_status: str,
+    access_reason: str = "",
+    *,
+    platform: str = "",
+    profile_url: str = "",
+    name: str = "",
+    emails: list[str] | None = None,
+    follower_count: str = "",
+    whatsapp: str = "",
+    has_video_data: bool = False,
+) -> str:
+    """Explain why a result is partial or failed without discarding the access warning."""
+    reasons = [item.strip() for item in str(access_reason or "").split("|") if item.strip()]
+    normalized_platform = str(platform or "").strip()
+    normalized_url = str(profile_url or "").strip()
+    normalized_name = str(name or "").strip()
+    normalized_whatsapp = str(whatsapp or "").strip()
+    has_email = bool(clean_email_candidates(emails or []))
+    has_identity = bool(normalized_name or has_email or normalized_whatsapp)
+    has_enhanced_data = bool(
+        has_email
+        or normalized_whatsapp
+        or str(follower_count or "").strip()
+        or has_video_data
+    )
+
+    if not reasons and str(access_status or "").strip() == "partial_success":
+        reasons.append("fallback_channel")
+    if not has_identity:
+        reasons.append("missing_identity")
+    else:
+        if not normalized_name:
+            reasons.append("missing_creator_name")
+        if normalized_platform not in {"TikTok", "Instagram", "YouTube"}:
+            reasons.append("unsupported_platform")
+        if not normalized_url:
+            reasons.append("missing_profile_url")
+        if not has_enhanced_data:
+            reasons.append("missing_enhanced_fields")
+
+    return "|".join(dict.fromkeys(reasons))[:500]
+
+
+def reclassify_result_status(result: dict) -> tuple[str, str]:
+    """Recompute a stored result while retaining any legacy access warning as audit context."""
+    legacy_status = str(result.get("scrape_status") or "").strip()
+    access_reason = str(result.get("status_reason") or "").strip()
+    if not access_reason:
+        access_reason = {
+            "platform_error": "legacy_platform_error",
+            "login_required": "login_required",
+            "missing_data": "legacy_missing_data",
+            "partial_success": "fallback_channel",
+        }.get(legacy_status, "")
+    access_status = legacy_status if legacy_status in {
+        "partial_success", "failed", "login_required", "platform_error", "missing_data"
+    } else "success"
+    status = finalize_scrape_status(
+        access_status,
+        platform=result.get("platform", ""),
+        profile_url=result.get("url", ""),
+        name=result.get("name", ""),
+        emails=result.get("emails"),
+        follower_count=result.get("follower_count", ""),
+        whatsapp=result.get("whatsapp", ""),
+        has_video_data=bool(result.get("videos")),
+    )
+    reason = finalize_status_reason(
+        access_status,
+        access_reason,
+        platform=result.get("platform", ""),
+        profile_url=result.get("url", ""),
+        name=result.get("name", ""),
+        emails=result.get("emails"),
+        follower_count=result.get("follower_count", ""),
+        whatsapp=result.get("whatsapp", ""),
+        has_video_data=bool(result.get("videos")),
+    )
+    return status, reason
 
 
 def ensure_driver_on_url(driver, url: str) -> None:
@@ -981,6 +1105,7 @@ def scrape_instagram(url: str, driver=None, session=None) -> dict:
     emails, external = collect_page_emails_with_external_fallback("Instagram", page, session)
     name = extract_creator_name("Instagram", page)
     latest_publish_date = extract_latest_publish_date(page)
+    access_status, access_reason = detect_scrape_access("Instagram", page, source)
     return build_result(
         url=url,
         platform="Instagram",
@@ -991,10 +1116,20 @@ def scrape_instagram(url: str, driver=None, session=None) -> dict:
         external_source=external["source"],
         latest_publish_date=latest_publish_date,
         scrape_status=finalize_scrape_status(
-            detect_scrape_status("Instagram", page, source),
+            access_status,
+            platform="Instagram",
+            profile_url=url,
             name=name,
             emails=emails,
             latest_publish_date=latest_publish_date,
+        ),
+        status_reason=finalize_status_reason(
+            access_status,
+            access_reason,
+            platform="Instagram",
+            profile_url=url,
+            name=name,
+            emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     )
@@ -1005,6 +1140,7 @@ def scrape_tiktok(url: str, driver=None, session=None) -> dict:
     emails, external = collect_page_emails_with_external_fallback("TikTok", page, session)
     name = extract_creator_name("TikTok", page)
     latest_publish_date = extract_latest_publish_date(page)
+    access_status, access_reason = detect_scrape_access("TikTok", page, source)
     return build_result(
         url=url,
         platform="TikTok",
@@ -1015,10 +1151,20 @@ def scrape_tiktok(url: str, driver=None, session=None) -> dict:
         external_source=external["source"],
         latest_publish_date=latest_publish_date,
         scrape_status=finalize_scrape_status(
-            detect_scrape_status("TikTok", page, source),
+            access_status,
+            platform="TikTok",
+            profile_url=url,
             name=name,
             emails=emails,
             latest_publish_date=latest_publish_date,
+        ),
+        status_reason=finalize_status_reason(
+            access_status,
+            access_reason,
+            platform="TikTok",
+            profile_url=url,
+            name=name,
+            emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     )
@@ -1030,6 +1176,7 @@ def scrape_youtube(url: str, driver=None, session=None) -> dict:
     emails, external = collect_page_emails_with_external_fallback("YouTube", page, session)
     name = extract_creator_name("YouTube", page)
     latest_publish_date = extract_latest_publish_date(page)
+    access_status, access_reason = detect_scrape_access("YouTube", page, source)
     return build_result(
         url=url,
         platform="YouTube",
@@ -1040,10 +1187,20 @@ def scrape_youtube(url: str, driver=None, session=None) -> dict:
         external_source=external["source"],
         latest_publish_date=latest_publish_date,
         scrape_status=finalize_scrape_status(
-            detect_scrape_status("YouTube", page, source),
+            access_status,
+            platform="YouTube",
+            profile_url=url,
             name=name,
             emails=emails,
             latest_publish_date=latest_publish_date,
+        ),
+        status_reason=finalize_status_reason(
+            access_status,
+            access_reason,
+            platform="YouTube",
+            profile_url=url,
+            name=name,
+            emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     )
@@ -1078,7 +1235,7 @@ def normalize_follower_count(value: object) -> str:
     return str(count)
 
 
-def build_result(*, url: str, platform: str, name: str = "", emails: list[str] | None = None, email_source: str = "", external_link: str = "", external_source: str = "", latest_publish_date: str = "", follower_count: str = "", status: str = "ok", scrape_status: str = "success", last_scrape_time: str = "", retry_count: int | str = 0, whatsapp: str = "", note: str = "", data_status: str = "待检查", last_modified_at: str = "") -> dict:
+def build_result(*, url: str, platform: str, name: str = "", emails: list[str] | None = None, email_source: str = "", external_link: str = "", external_source: str = "", latest_publish_date: str = "", follower_count: str = "", status: str = "ok", scrape_status: str = "success", status_reason: str = "", last_scrape_time: str = "", retry_count: int | str = 0, whatsapp: str = "", note: str = "", data_status: str = "待检查", last_modified_at: str = "") -> dict:
     unique_emails = clean_email_candidates(emails or [])
     try:
         normalized_retry_count = max(0, int(retry_count or 0))
@@ -1097,6 +1254,7 @@ def build_result(*, url: str, platform: str, name: str = "", emails: list[str] |
         "follower_count": normalize_follower_count(follower_count),
         "status": status,
         "scrape_status": str(scrape_status or "success").strip() or "success",
+        "status_reason": str(status_reason or "").strip()[:500],
         "last_scrape_time": str(last_scrape_time or "").strip(),
         "retry_count": normalized_retry_count,
         "whatsapp": str(whatsapp or "").strip(),
@@ -1119,6 +1277,7 @@ def result_to_row(result: dict) -> dict:
         FIELD_FOLLOWER_COUNT: result.get("follower_count", ""),
         FIELD_STATUS: "完成" if result["status"] == "ok" else result["status"],
         FIELD_SCRAPE_STATUS: result.get("scrape_status", "success"),
+        FIELD_STATUS_REASON: result.get("status_reason", ""),
         FIELD_LAST_SCRAPE_TIME: result.get("last_scrape_time", ""),
         FIELD_RETRY_COUNT: result.get("retry_count", 0),
         FIELD_WHATSAPP: result.get("whatsapp", ""),
@@ -1142,6 +1301,7 @@ def row_to_result(row: dict) -> dict:
         follower_count=row.get(FIELD_FOLLOWER_COUNT, ""),
         status="ok" if row.get(FIELD_STATUS, "") == "完成" else row.get(FIELD_STATUS, "error"),
         scrape_status=row.get(FIELD_SCRAPE_STATUS, "success"),
+        status_reason=row.get(FIELD_STATUS_REASON, ""),
         last_scrape_time=row.get(FIELD_LAST_SCRAPE_TIME, ""),
         retry_count=row.get(FIELD_RETRY_COUNT, 0),
         whatsapp=row.get(FIELD_WHATSAPP, ""),
@@ -1152,14 +1312,7 @@ def row_to_result(row: dict) -> dict:
     # An explicit manual email clear must survive the CSV round-trip.
     if email_display == "":
         result["email_display"] = ""
-    result["scrape_status"] = finalize_scrape_status(
-        result.get("scrape_status", "success"),
-        name=result.get("name", ""),
-        emails=result.get("emails"),
-        follower_count=result.get("follower_count", ""),
-        whatsapp=result.get("whatsapp", ""),
-        latest_publish_date=result.get("latest_publish_date", ""),
-    )
+    result["scrape_status"], result["status_reason"] = reclassify_result_status(result)
     return result
 
 
@@ -1201,6 +1354,7 @@ def ensure_progress_review_fields(progress_file: str) -> None:
             row.setdefault(FIELD_NOTE, "")
             row.setdefault(FIELD_FOLLOWER_COUNT, "")
             row.setdefault(FIELD_SCRAPE_STATUS, "success")
+            row.setdefault(FIELD_STATUS_REASON, "")
             row.setdefault(FIELD_LAST_SCRAPE_TIME, "")
             row.setdefault(FIELD_RETRY_COUNT, "0")
             row.setdefault(FIELD_DATA_STATUS, "待检查")
@@ -1309,6 +1463,7 @@ def merge_scrape_result_with_review(existing: dict | None, fresh: dict, manual_f
     merged["note"] = existing.get("note", "")
     merged["data_status"] = existing.get("data_status", "待检查") or "待检查"
     merged["last_modified_at"] = existing.get("last_modified_at", "")
+    merged["scrape_status"], merged["status_reason"] = reclassify_result_status(merged)
     return merged
 
 
@@ -1394,7 +1549,8 @@ def scrape_all(
                 url=url,
                 platform=platform,
                 status="ok",
-                scrape_status="login_required",
+                scrape_status="failed",
+                status_reason="login_required_circuit_open|missing_identity",
                 last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
             )
         else:
@@ -1406,14 +1562,22 @@ def scrape_all(
                 elif platform == "YouTube":
                     result = scrape_youtube(url, driver=driver, session=session)
                 else:
-                    result = build_result(url=url, platform="Unknown", status="unsupported", scrape_status="platform_error")
+                    result = build_result(
+                        url=url,
+                        platform="Unknown",
+                        status="unsupported",
+                        scrape_status="failed",
+                        status_reason="unsupported_platform|missing_identity",
+                    )
             except Exception as exc:
                 log.warning("[%s] 抓取异常：%s", platform or "Unknown", exc)
+                reason_code = "selenium_exception" if isinstance(exc, WebDriverException) else "scrape_exception"
                 result = build_result(
                     url=url,
                     platform=platform or "Unknown",
                     status="ok",
-                    scrape_status="platform_error",
+                    scrape_status="failed",
+                    status_reason=f"{_status_reason(reason_code, f'{type(exc).__name__}: {exc}')}|missing_identity",
                     last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
                 )
 

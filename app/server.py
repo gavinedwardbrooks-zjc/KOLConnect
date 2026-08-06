@@ -669,6 +669,14 @@ class ScrapeJob:
             status = "idle"
             if self.running:
                 status = "stopping" if self.stop_requested else "paused" if self.pause_requested else "running"
+                if self.task_id:
+                    try:
+                        task, _paths = task_manager.load_task(TASKS_DIR, self.task_id)
+                        persisted_status = str(task.get("status") or "").strip()
+                        if persisted_status in {"running", "finalizing", "paused", "stopping"}:
+                            status = persisted_status
+                    except ValueError:
+                        pass
             return {
                 "running": self.running,
                 "status": status,
@@ -703,12 +711,33 @@ def _task_timestamp_is_stale(value: object) -> bool:
 def detect_interrupted_tasks() -> int:
     """Mark running tasks with no live worker or a stale heartbeat as interrupted."""
     interrupted = 0
+    recovered_stopping = 0
     for task in task_manager.list_tasks(TASKS_DIR):
-        if str(task.get("status") or "") != "running":
+        status = str(task.get("status") or "")
+        task_id = str(task["id"])
+        active_worker = (
+            SCRAPE_JOB.running
+            and SCRAPE_JOB.task_id == task_id
+            and SCRAPE_JOB.process is not None
+            and SCRAPE_JOB.process.poll() is None
+        )
+        if status == "stopping" and not active_worker:
+            task_manager.update_task(
+                TASKS_DIR,
+                task_id,
+                status="stopped",
+                pause_requested=False,
+                stop_requested=False,
+                browser_status="closed",
+                worker_status="stopped",
+                current_item="",
+                finished_at=str(task.get("finished_at") or _utc_now()),
+            )
+            recovered_stopping += 1
+            continue
+        if status != "running":
             continue
         heartbeat = task.get("heartbeat_time") or task.get("started_at")
-        task_id = str(task["id"])
-        active_worker = SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id and SCRAPE_JOB.process is not None
         if active_worker:
             continue
         reason = (
@@ -730,8 +759,10 @@ def detect_interrupted_tasks() -> int:
         interrupted += 1
     if interrupted:
         SCRAPE_JOB.append(f"检测到任务异常中断：{interrupted} 个。\n")
+    if recovered_stopping:
+        SCRAPE_JOB.append(f"已恢复无活动进程的停止中任务：{recovered_stopping} 个。\n")
     SCRAPE_JOB.append("任务状态检查完成。\n")
-    return interrupted
+    return interrupted + recovered_stopping
 
 
 def _task_next_pending_item(task_paths: dict[str, Path]) -> str:
@@ -968,43 +999,56 @@ def start_scrape(payload: dict) -> dict:
                         "retry_history": retry_history,
                         "retry_requested_urls": remaining_retry_urls,
                     }
+                last_error = error_message or ("" if return_code == 0 else f"抓取进程退出码：{return_code}")
+                common_changes = {
+                    "completed_count": completed_count,
+                    "sync_summary": sync_summary,
+                    "sync_errors": sync_errors,
+                    "pause_requested": False,
+                    "stop_requested": False,
+                    "heartbeat_time": _utc_now(),
+                    "current_item": "",
+                    "last_successful_index": completed_count,
+                    "browser_status": "closed",
+                    "worker_status": "stopped",
+                    "instagram_error_count": instagram_errors,
+                    "instagram_status": "login_required" if instagram_errors >= 5 else "",
+                    "instagram_message": "Instagram登录状态异常，请重新登录后继续。" if instagram_errors >= 5 else "",
+                    "has_system_supplement": True
+                    if _task.get("task_type") == "manual" and return_code == 0
+                    else _task.get("has_system_supplement", False),
+                    **retry_changes,
+                }
+
                 if stop_requested:
                     status = "stopped"
                     sync_status = "not_started"
-                elif return_code == 0:
-                    status = "completed"
-                    sync_status = "not_requested"
-                else:
+                elif return_code != 0:
                     status = "failed"
                     sync_status = "not_started"
-                last_error = error_message or ("" if return_code == 0 else f"抓取进程退出码：{return_code}")
-                task_manager.update_task(
-                    TASKS_DIR,
-                    task_id,
-                    status=status,
-                    finished_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    completed_count=completed_count,
-                    last_error=last_error,
-                    sync_status=sync_status,
-                    sync_summary=sync_summary,
-                    sync_errors=sync_errors,
-                    pause_requested=False,
-                    stop_requested=False,
-                    heartbeat_time=_utc_now(),
-                    current_item="",
-                    last_successful_index=completed_count,
-                    browser_status="closed",
-                    worker_status="stopped",
-                    instagram_error_count=instagram_errors,
-                    instagram_status="login_required" if instagram_errors >= 5 else "",
-                    instagram_message="Instagram登录状态异常，请重新登录后继续。" if instagram_errors >= 5 else "",
-                    has_system_supplement=True if _task.get("task_type") == "manual" and return_code == 0 else _task.get("has_system_supplement", False),
-                    **retry_changes,
-                )
-                if status == "completed":
+                else:
+                    status = "finalizing"
+                    sync_status = "not_requested"
+
+                if status == "finalizing":
+                    task_manager.update_task(
+                        TASKS_DIR,
+                        task_id,
+                        status="finalizing",
+                        finished_at="",
+                        last_error="",
+                        sync_status=sync_status,
+                        **common_changes,
+                    )
                     try:
-                        import_task_results_to_creator_library(task_id)
-                    except (OSError, RuntimeError, ValueError) as library_error:
+                        import_task_results_to_creator_library(
+                            task_id,
+                            allowed_task_statuses={"finalizing"},
+                        )
+                    except Exception as library_error:
+                        status = "failed"
+                        sync_status = "not_started"
+                        last_error = f"Creator Library 入库失败：{library_error}"
                         log_error(
                             "CreatorLibrary",
                             f"任务完成后导入达人库失败 | task_id={task_id}",
@@ -1015,13 +1059,44 @@ def start_scrape(payload: dict) -> dict:
                             task_id,
                             creator_library_import_error=str(library_error),
                         )
-                SCRAPE_JOB.pause_requested = False
-                SCRAPE_JOB.stop_requested = False
+                    else:
+                        status = "completed"
+
+                task_manager.update_task(
+                    TASKS_DIR,
+                    task_id,
+                    status=status,
+                    finished_at=_utc_now(),
+                    last_error=last_error,
+                    sync_status=sync_status,
+                    **common_changes,
+                )
                 if status == "completed":
                     SCRAPE_JOB.append("任务完成。\n")
+                elif status == "failed":
+                    SCRAPE_JOB.append(f"任务失败：{last_error or '结果处理失败'}\n")
             except Exception as task_error:
                 SCRAPE_JOB.append(f"\n任务状态保存失败：{task_error}\n")
-            SCRAPE_JOB.running = False
+                try:
+                    task_manager.update_task(
+                        TASKS_DIR,
+                        task_id,
+                        status="failed",
+                        finished_at=_utc_now(),
+                        last_error=str(task_error),
+                        pause_requested=False,
+                        stop_requested=False,
+                        browser_status="closed",
+                        worker_status="stopped",
+                    )
+                except Exception as recovery_error:
+                    SCRAPE_JOB.append(f"任务失败状态保存失败：{recovery_error}\n")
+            finally:
+                with SCRAPE_JOB.lock:
+                    SCRAPE_JOB.running = False
+                    SCRAPE_JOB.process = None
+                    SCRAPE_JOB.pause_requested = False
+                    SCRAPE_JOB.stop_requested = False
 
     threading.Thread(target=worker, daemon=True).start()
     return {"task_id": task_id}
@@ -1033,8 +1108,25 @@ def _active_scrape_task() -> str:
     return SCRAPE_JOB.task_id
 
 
+def _active_scrape_is_finalizing(task_id: str) -> bool:
+    try:
+        task, _paths = task_manager.load_task(TASKS_DIR, task_id)
+    except ValueError:
+        task = {}
+    if str(task.get("status") or "") == "finalizing":
+        return True
+    process = SCRAPE_JOB.process
+    return bool(process is not None and process.poll() is not None)
+
+
+def _reject_finalizing_control(task_id: str) -> None:
+    if _active_scrape_is_finalizing(task_id):
+        raise RuntimeError("任务已经完成抓取，正在处理中。")
+
+
 def pause_scrape() -> dict:
     task_id = _active_scrape_task()
+    _reject_finalizing_control(task_id)
     if SCRAPE_JOB.stop_requested:
         raise RuntimeError("任务正在停止，不能暂停。")
     if not SCRAPE_JOB.pause_requested:
@@ -1053,6 +1145,7 @@ def pause_scrape() -> dict:
 
 def resume_scrape() -> dict:
     task_id = _active_scrape_task()
+    _reject_finalizing_control(task_id)
     if SCRAPE_JOB.stop_requested:
         raise RuntimeError("任务正在停止，不能继续。")
     if SCRAPE_JOB.pause_requested:
@@ -1071,6 +1164,7 @@ def resume_scrape() -> dict:
 
 def request_stop_scrape() -> dict:
     task_id = _active_scrape_task()
+    _reject_finalizing_control(task_id)
     if not SCRAPE_JOB.stop_requested:
         SCRAPE_JOB.stop_requested = True
         SCRAPE_JOB.pause_requested = False
@@ -1105,9 +1199,11 @@ def resume_task(task_id: str) -> dict:
 
 def stop_task(task_id: str) -> dict:
     """Stop active work gracefully; persist stopped state when no worker remains."""
+    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
+    if str(task.get("status") or "") == "finalizing":
+        raise RuntimeError("任务已经完成抓取，正在处理中。")
     if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
         return request_stop_scrape()
-    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
     if str(task.get("status") or "") not in {"paused", "interrupted", "running", "stopping"}:
         raise RuntimeError("当前任务无需停止。")
     task_manager.update_task(
@@ -1159,6 +1255,7 @@ def _review_record(row: dict) -> dict:
         scraper_module.FIELD_FOLLOWER_COUNT: str(row.get(scraper_module.FIELD_FOLLOWER_COUNT) or ""),
         scraper_module.FIELD_STATUS: str(row.get(scraper_module.FIELD_STATUS) or ""),
         scraper_module.FIELD_SCRAPE_STATUS: str(result.get("scrape_status") or "success"),
+        scraper_module.FIELD_STATUS_REASON: str(result.get("status_reason") or ""),
         scraper_module.FIELD_LAST_SCRAPE_TIME: str(row.get(scraper_module.FIELD_LAST_SCRAPE_TIME) or ""),
         scraper_module.FIELD_RETRY_COUNT: str(row.get(scraper_module.FIELD_RETRY_COUNT) or "0"),
         REVIEW_FIELD_WHATSAPP: _review_value(row, REVIEW_FIELD_WHATSAPP),
@@ -1969,8 +2066,24 @@ def get_task_creator_analysis(task_id: str) -> dict:
     }
 
 
-def get_creator_library(include_archived: bool = False) -> dict:
-    return {"records": get_creator_repository().getCreators(include_archived=include_archived)}
+def get_creator_library(
+    include_archived: bool = False,
+    page: int = 1,
+    page_size: int = 24,
+    sort: str = "created_at",
+    order: str = "desc",
+    filters: dict | None = None,
+) -> dict:
+    result = get_creator_repository().getCreatorsPage(
+        include_archived=include_archived,
+        page=page,
+        page_size=page_size,
+        sort=sort,
+        order=order,
+        filters=filters,
+    )
+    # Keep records for existing clients while exposing the normalized creators field.
+    return {**result, "records": result["creators"]}
 
 
 def get_creator_library_detail(analysis_id: str) -> dict:
@@ -2283,12 +2396,18 @@ def _task_data_source(task: dict) -> str:
     return "系统抓取"
 
 
+def _assert_task_sync_lifecycle(task: dict) -> None:
+    task_status = str(task.get("status") or "").strip()
+    if task_status == "running":
+        raise RuntimeError("任务抓取中，请稍候")
+    if task_status == "finalizing":
+        raise RuntimeError("任务入库收尾中，请稍候")
+
+
 def sync_task_results_to_four_tables(task_id: str) -> dict:
     """Sync one task's reviewed CSV through the existing four-table sync implementation."""
-    if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
-        raise RuntimeError("任务正在运行，暂不能同步审核结果。")
-
     task, paths = task_manager.load_task(TASKS_DIR, task_id)
+    _assert_task_sync_lifecycle(task)
     log_event("Feishu", f"同步开始 | task_id={task_id}")
     data_source = _task_data_source(task)
     email_source = _task_email_source(task)
@@ -2612,8 +2731,27 @@ class Handler(BaseHTTPRequestHandler):
                 return self._error(f"无法读取工作台数据：{exc}", status=500)
 
         if parsed.path == "/api/creator-library":
-            include_archived = parse_qs(parsed.query).get("include_archived", [""])[0].lower() == "true"
-            return self._json({"ok": True, **get_creator_library(include_archived=include_archived)})
+            query = parse_qs(parsed.query)
+            include_archived = query.get("include_archived", [""])[0].lower() == "true"
+            try:
+                payload = get_creator_library(
+                    include_archived=include_archived,
+                    page=int(query.get("page", ["1"])[0]),
+                    page_size=int(query.get("page_size", ["24"])[0]),
+                    sort=str(query.get("sort", ["created_at"])[0]),
+                    order=str(query.get("order", ["desc"])[0]).lower(),
+                    filters={
+                        key: query.get(key, [""])[0]
+                        for key in (
+                            "search", "platform", "country", "language", "content_category",
+                            "agency_id", "tag", "insight_level", "status",
+                        )
+                        if query.get(key, [""])[0]
+                    },
+                )
+            except (TypeError, ValueError) as exc:
+                return self._error(str(exc), status=400)
+            return self._json({"ok": True, **payload})
 
         creator_library_trend_match = re.fullmatch(r"/api/creator-library/([^/]+)/trend", parsed.path)
         if creator_library_trend_match:
@@ -3179,6 +3317,25 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
             return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
+
+        campaign_creator_match = re.fullmatch(r"/api/campaign-creators/([^/]+)", parsed.path)
+        if campaign_creator_match:
+            try:
+                result = get_campaign_creator_repository().remove_creator_from_campaign(
+                    campaign_creator_match.group(1)
+                )
+                return self._ok(**result)
+            except ValueError as exc:
+                return self._repository_error(exc)
+
+        campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", parsed.path)
+        if campaign_match:
+            try:
+                result = get_campaign_repository().delete_campaign(campaign_match.group(1))
+                return self._ok(**result)
+            except ValueError as exc:
+                return self._repository_error(exc)
+
         task_match = re.fullmatch(r"/api/tasks/([^/]+)", parsed.path)
         if not task_match:
             return self._error("接口不存在。", status=404)

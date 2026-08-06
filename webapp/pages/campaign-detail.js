@@ -31,6 +31,7 @@
   let creatorsLoaded = false;
   let editingRelationId = null;
   let saving = false;
+  let deleting = false;
   let lifecycleId = 0;
   const accountCache = new Map();
 
@@ -219,9 +220,14 @@
         editButton.dataset.campaignCreatorId = String(relation.id || "");
         editButton.textContent = "编辑";
         actionCell.appendChild(editButton);
-      } else {
-        actionCell.textContent = "只读";
       }
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "mini-btn danger";
+      removeButton.dataset.campaignCreatorAction = "remove";
+      removeButton.dataset.campaignCreatorId = String(relation.id || "");
+      removeButton.textContent = "移除";
+      actionCell.appendChild(removeButton);
       row.appendChild(actionCell);
       body.appendChild(row);
     });
@@ -492,10 +498,53 @@
     await loadAccounts(element("campaign-creator-id").value);
   }
 
+  async function removeRelation(relationId) {
+    if (deleting || !resources) return;
+    const relation = relations.find(item => String(item.id || "") === String(relationId || ""));
+    const creatorName = relation?.creator_name || "该达人";
+    if (!global.confirm(`确认从 Campaign 移除“${creatorName}”？达人资料和其他 Campaign 关系将保留。`)) return;
+    deleting = true;
+    try {
+      await global.KOLConnectAPI.delete(
+        `/api/campaign-creators/${encodeURIComponent(relationId)}`,
+        { signal: resources.signal },
+      );
+      getApp().showSaved("达人已从 Campaign 移除，达人资料保持不变。");
+      closeCreatorForm();
+      await loadDetail();
+    } catch (error) {
+      if (error?.name !== "AbortError") getApp().showError(error);
+    } finally {
+      deleting = false;
+    }
+  }
+
+  async function deleteCampaign() {
+    if (deleting || !resources || !campaignId) return;
+    if (!global.confirm("删除 Campaign 后，该 Campaign 与达人关系会被删除，但达人资料不会删除。")) return;
+    deleting = true;
+    try {
+      await global.KOLConnectAPI.delete(
+        `/api/campaigns/${encodeURIComponent(campaignId)}`,
+        { signal: resources.signal },
+      );
+      getApp().showSaved("Campaign 已删除，达人资料保持不变。");
+      await global.KOLConnectPages.navigate("campaigns");
+    } catch (error) {
+      if (error?.name !== "AbortError") getApp().showError(error);
+    } finally {
+      deleting = false;
+    }
+  }
+
   async function handleListAction(event) {
     const button = event.target.closest("[data-campaign-creator-action]");
-    if (!button || button.dataset.campaignCreatorAction !== "edit") return;
-    await openEditForm(button.dataset.campaignCreatorId);
+    if (!button) return;
+    if (button.dataset.campaignCreatorAction === "edit") {
+      await openEditForm(button.dataset.campaignCreatorId);
+    } else if (button.dataset.campaignCreatorAction === "remove") {
+      await removeRelation(button.dataset.campaignCreatorId);
+    }
   }
 
   function listen(id, type, listener) {
@@ -524,6 +573,7 @@
 
     bind() {
       listen("campaign-detail-back", "click", () => global.KOLConnectPages.navigate("campaigns"));
+      listen("campaign-detail-delete", "click", deleteCampaign);
       listen("campaign-detail-retry", "click", loadDetail);
       listen("campaign-creator-add-open", "click", openAddForm);
       listen("campaign-creator-form-cancel", "click", closeCreatorForm);
@@ -547,6 +597,7 @@
       creatorsLoaded = false;
       accountCache.clear();
       saving = false;
+      deleting = false;
       closeCreatorForm();
     },
   };

@@ -8,6 +8,7 @@ PostgreSQL adapter can keep this contract without changing the HTTP API or UI.
 
 import json
 import hashlib
+import ctypes
 import os
 import re
 import shutil
@@ -38,6 +39,16 @@ CREATOR_LIBRARY_STATUSES = {
     "completed",
     "rejected",
 }
+
+CREATOR_LIBRARY_PAGE_SIZES = frozenset({12, 24, 25, 48, 50, 100})
+CREATOR_LIBRARY_SORT_FIELDS = frozenset({
+    "created_at", "updated_at", "creator_name", "followers", "platform",
+})
+CREATOR_LIBRARY_FILTER_FIELDS = frozenset({
+    "search", "platform", "country", "language", "content_category",
+    "agency_id", "tag", "insight_level", "status",
+})
+_PLATFORM_SORT_ORDER = {"instagram": 0, "tiktok": 1, "youtube": 2}
 
 _TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
 CREATOR_LIBRARY_SCHEMA_VERSION = "2.0-product-campaign-phase2-api"
@@ -716,6 +727,195 @@ class CreatorRepository:
         )
         return records
 
+    @_synchronized
+    def getCreatorsPage(
+        self,
+        page: int = 1,
+        page_size: int = 24,
+        sort: str = "created_at",
+        order: str = "desc",
+        include_archived: bool = False,
+        filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Return one stable, server-sorted Creator Library page."""
+        if page < 1:
+            raise ValueError("page 必须大于或等于 1。")
+        if page_size not in CREATOR_LIBRARY_PAGE_SIZES:
+            raise ValueError("page_size 仅支持 12、24、25、48、50、100。")
+        if sort not in CREATOR_LIBRARY_SORT_FIELDS:
+            raise ValueError("不支持的达人排序字段。")
+        if order not in {"asc", "desc"}:
+            raise ValueError("order 仅支持 asc 或 desc。")
+
+        request_started = time.perf_counter()
+        workbook = self._load_workbook()
+        records, index = self._creator_records_from_workbook(workbook)
+        if not include_archived:
+            records = [record for record in records if not record.get("archived_at")]
+        filter_options = self._creator_filter_options(records)
+        records = self._filter_creator_records(records, filters or {})
+        records = self._sort_creator_records(records, sort, order)
+        total = len(records)
+        pages = (total + page_size - 1) // page_size
+        start = (page - 1) * page_size
+        creators = records[start:start + page_size]
+        log_event(
+            "CreatorLibrary",
+            "分页列表加载完成"
+            f" | total={total} | page={page} | page_size={page_size}"
+            f" | sort={sort} | order={order}"
+            f" | accounts_count={index['accounts_count']}"
+            f" | response_duration_ms={round((time.perf_counter() - request_started) * 1000, 2)}",
+        )
+        return {
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": pages,
+            "creators": creators,
+            "filter_options": filter_options,
+        }
+
+    @classmethod
+    def _filter_creator_records(
+        cls,
+        records: list[dict[str, Any]],
+        filters: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        unknown = set(filters) - CREATOR_LIBRARY_FILTER_FIELDS
+        if unknown:
+            raise ValueError(f"不支持的达人筛选字段：{', '.join(sorted(unknown))}")
+        normalized = {
+            key: str(value or "").strip()
+            for key, value in filters.items()
+            if str(value or "").strip()
+        }
+        if not normalized:
+            return records
+
+        exact_fields = ("platform", "country", "language", "content_category", "agency_id", "insight_level")
+
+        def matches(record: dict[str, Any]) -> bool:
+            for field in exact_fields:
+                expected = normalized.get(field)
+                if expected and str(record.get(field) or "").strip().casefold() != expected.casefold():
+                    return False
+            status = normalized.get("status")
+            if status == "archived":
+                if not record.get("archived_at"):
+                    return False
+            elif status and (record.get("archived_at") or str(record.get("status") or "") != status):
+                return False
+            tag = normalized.get("tag")
+            if tag:
+                tags = {
+                    item.strip().casefold()
+                    for item in re.split(r"[,，]", str(record.get("tags") or ""))
+                    if item.strip()
+                }
+                if tag.casefold() not in tags:
+                    return False
+            search = normalized.get("search")
+            if search:
+                searchable = " ".join(str(record.get(field) or "") for field in (
+                    "creator_name", "platform", "profile_url", "country", "language",
+                    "content_category", "tags", "agency_name",
+                )).casefold()
+                if search.casefold() not in searchable:
+                    return False
+            return True
+
+        return [record for record in records if matches(record)]
+
+    @staticmethod
+    def _creator_filter_options(records: list[dict[str, Any]]) -> dict[str, list[str]]:
+        def unique(field: str) -> list[str]:
+            return sorted({
+                str(record.get(field) or "").strip()
+                for record in records
+                if str(record.get(field) or "").strip()
+            }, key=str.casefold)
+
+        tags = sorted({
+            tag.strip()
+            for record in records
+            for tag in re.split(r"[,，]", str(record.get("tags") or ""))
+            if tag.strip()
+        }, key=str.casefold)
+        return {
+            "platform": unique("platform"),
+            "country": unique("country"),
+            "language": unique("language"),
+            "content_category": unique("content_category"),
+            "agency_id": unique("agency_id"),
+            "tag": tags,
+        }
+
+    @classmethod
+    def _sort_creator_records(
+        cls,
+        records: list[dict[str, Any]],
+        sort: str,
+        order: str,
+    ) -> list[dict[str, Any]]:
+        """Sort populated values first and use Creator ID as a stable tie-breaker."""
+        def sort_value(record: dict[str, Any]):
+            if sort == "followers":
+                return cls._metric_sort_value(record.get("followers"))
+            if sort == "platform":
+                platform = str(record.get("platform") or "").strip().lower()
+                return _PLATFORM_SORT_ORDER.get(platform)
+            if sort == "creator_name":
+                name = str(record.get("creator_name") or "").strip()
+                return cls._localized_name_sort_key(name) if name else None
+            field = "analysis_time" if sort == "created_at" else "data_updated_at"
+            value = str(record.get(field) or "").strip()
+            return value or None
+
+        populated = []
+        missing = []
+        for record in records:
+            value = sort_value(record)
+            (populated if value is not None else missing).append((value, record))
+        populated.sort(
+            key=lambda item: (item[0], str(item[1].get("creator_id") or "")),
+            reverse=order == "desc",
+        )
+        missing.sort(key=lambda item: str(item[1].get("creator_id") or ""))
+        return [record for _value, record in populated + missing]
+
+    @staticmethod
+    def _metric_sort_value(value: Any) -> float | None:
+        if value is None or value == "":
+            return None
+        raw = str(value).strip().lower().replace(",", "").replace(" ", "")
+        match = re.fullmatch(r"([+-]?[0-9]+(?:\.[0-9]+)?)([kmb]|万|亿)?", raw)
+        if not match:
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return None
+        multipliers = {"": 1, "k": 1e3, "m": 1e6, "b": 1e9, "万": 1e4, "亿": 1e8}
+        return float(match.group(1)) * multipliers[match.group(2) or ""]
+
+    @staticmethod
+    def _localized_name_sort_key(value: str) -> bytes:
+        """Use Windows zh-CN collation (phonetic order) without changing stored names."""
+        normalized = value.casefold()
+        if os.name != "nt":
+            return normalized.encode("utf-8")
+        try:
+            map_string = ctypes.windll.kernel32.LCMapStringEx
+            flags = 0x00000400 | 0x00000001  # LCMAP_SORTKEY | NORM_IGNORECASE
+            size = map_string("zh-CN", flags, normalized, len(normalized), None, 0, None, None, 0)
+            if size <= 0:
+                raise OSError("LCMapStringEx failed")
+            buffer = (ctypes.c_ubyte * size)()
+            map_string("zh-CN", flags, normalized, len(normalized), buffer, size, None, None, 0)
+            return bytes(buffer)
+        except (AttributeError, OSError):
+            return normalized.encode("utf-8")
+
     def _creator_records_from_workbook(self, workbook) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Build request-scoped indexes and assemble Creator summaries in linear time."""
         index_started = time.perf_counter()
@@ -805,8 +1005,10 @@ class CreatorRepository:
                 "average_views": snapshot.get("average_views", insight.get("average_views")),
                 "median_views": snapshot.get("median_views", insight.get("median_views")),
                 "analysis_time": str(creator.get("created_at") or ""),
+                "created_at": str(creator.get("created_at") or ""),
                 "last_analysis_time": str(snapshot.get("captured_at") or creator.get("created_at") or ""),
                 "data_updated_at": str(creator.get("updated_at") or creator.get("created_at") or ""),
+                "updated_at": str(creator.get("updated_at") or creator.get("created_at") or ""),
                 "source": str(snapshot.get("source") or meta.get("source") or "excel"),
                 "status": self._status_value(creator.get("status")),
                 "status_updated_at": str(meta.get("status_updated_at") or ""),

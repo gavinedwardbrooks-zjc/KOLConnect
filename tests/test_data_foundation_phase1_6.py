@@ -208,7 +208,9 @@ class CreatorLibraryPerformanceTests(unittest.TestCase):
             self.assertEqual(1, repository.row_read_counts["Creators"])
             self.assertEqual(1, repository.row_read_counts["CreatorAccounts"])
             self.assertEqual(1, repository.row_read_counts["CreatorSnapshots"])
-            self.assertEqual("9", records[0]["followers"])
+            self.assertEqual("0", records[0]["followers"])
+            self.assertEqual(900, records[0]["average_views"])
+            self.assertEqual("2026-07-10T00:00:00Z", records[0]["last_analysis_time"])
             self.assertLess(elapsed, 45)
 
     def test_detail_reuses_one_workbook_and_request_indexes(self) -> None:

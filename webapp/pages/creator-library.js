@@ -239,6 +239,10 @@
   let listController = null;
   let campaignModal = null;
   let lifecycleId = 0;
+  let filterRequestId = 0;
+  const VIEW_MODE_STORAGE_KEY = "creator_library_view_mode";
+  const PAGE_SIZES = Object.freeze({ card: [12, 24, 48], table: [25, 50, 100] });
+  const DEFAULT_PAGE_SIZE = Object.freeze({ card: 24, table: 50 });
 
   function element(id) {
     return document.getElementById(id);
@@ -284,67 +288,74 @@
     select.value = [...select.options].some(option => option.value === selected) ? selected : "";
   }
 
-  function numericValue(value) {
-    if (value === null || value === undefined || value === "") return 0;
-    if (typeof value === "number") return Number.isFinite(value) ? value : 0;
-    const raw = String(value).trim().replace(/,/g, "");
-    const match = raw.match(/^([0-9]+(?:\.[0-9]+)?)\s*([kmb])?$/i);
-    if (!match) return Number(raw) || 0;
-    const multiplier = { k: 1e3, m: 1e6, b: 1e9 }[(match[2] || "").toLowerCase()] || 1;
-    return Number(match[1]) * multiplier;
-  }
-
-  function tagsFor(record) {
-    return String(record.tags || "")
-      .replace(/，/g, ",")
-      .split(",")
-      .map(tag => tag.trim())
-      .filter(Boolean);
-  }
-
   function valueOf(id, fallback = "") {
     const target = element(id);
     return target ? (target.value ?? fallback) : fallback;
   }
 
-  function filteredRecords() {
-    const keyword = valueOf("creator-library-search").trim().toLowerCase();
-    const platform = valueOf("creator-library-platform");
-    const country = valueOf("creator-library-country");
-    const language = valueOf("creator-library-language");
-    const category = valueOf("creator-library-category");
-    const tag = valueOf("creator-library-tag");
-    const level = valueOf("creator-library-level");
-    const status = valueOf("creator-library-status");
-    const sort = valueOf("creator-library-sort", "analysis_time_desc");
-    const records = libraryState().records.filter(record => {
-      const archived = Boolean(record.archived_at);
-      const searchable = [
-        record.creator_name,
-        record.platform,
-        record.profile_url,
-        record.country,
-        record.language,
-        record.content_category,
-        record.tags,
-      ].join(" ").toLowerCase();
-      return (!keyword || searchable.includes(keyword))
-        && (!platform || record.platform === platform)
-        && (!country || record.country === country)
-        && (!language || record.language === language)
-        && (!category || record.content_category === category)
-        && (!tag || tagsFor(record).includes(tag))
-        && (!level || record.insight_level === level)
-        && (status === "archived" ? archived : !archived && (!status || record.status === status));
-    });
-    const sortValues = {
-      followers_desc: record => numericValue(record.followers),
-      median_views_desc: record => numericValue(record.median_views),
-      average_views_desc: record => numericValue(record.average_views),
-      analysis_time_desc: record => Date.parse(record.last_analysis_time || record.analysis_time || "") || 0,
+  function readFilters() {
+    return {
+      search: valueOf("creator-library-search").trim(),
+      country: valueOf("creator-library-country"),
+      language: valueOf("creator-library-language"),
+      content_category: valueOf("creator-library-category"),
+      tag: valueOf("creator-library-tag"),
+      insight_level: valueOf("creator-library-level"),
+      status: valueOf("creator-library-status"),
     };
-    const valueForSort = sortValues[sort] || sortValues.analysis_time_desc;
-    return records.sort((left, right) => valueForSort(right) - valueForSort(left));
+  }
+
+  function renderPageSizeOptions() {
+    const state = libraryState();
+    const select = element("creator-library-page-size");
+    if (!select) return;
+    const sizes = PAGE_SIZES[state.viewMode];
+    if (!sizes.includes(state.pageSize)) state.pageSize = DEFAULT_PAGE_SIZE[state.viewMode];
+    select.replaceChildren(...sizes.map(size => new Option(String(size), String(size))));
+    select.value = String(state.pageSize);
+  }
+
+  function createPageButton(label, page, disabled = false, active = false) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.dataset.creatorPage = String(page);
+    button.disabled = disabled;
+    button.classList.toggle("active", active);
+    return button;
+  }
+
+  function visiblePageNumbers(current, pages) {
+    if (pages <= 7) return Array.from({ length: pages }, (_value, index) => index + 1);
+    return [...new Set([1, 2, current - 1, current, current + 1, pages - 1, pages])]
+      .filter(page => page >= 1 && page <= pages)
+      .sort((left, right) => left - right);
+  }
+
+  function renderPagination() {
+    const state = libraryState();
+    const pagination = element("creator-library-pagination");
+    const summary = element("creator-library-page-summary");
+    const buttons = element("creator-library-page-buttons");
+    if (!pagination || !summary || !buttons) return;
+    pagination.hidden = state.total === 0;
+    buttons.replaceChildren();
+    if (!state.total) return;
+
+    const start = (state.page - 1) * state.pageSize + 1;
+    const end = Math.min(start + state.records.length - 1, state.total);
+    summary.textContent = `第 ${start}-${end} 条，共 ${state.total} 位达人`;
+    buttons.appendChild(createPageButton("上一页", state.page - 1, state.page <= 1));
+    const pageNumbers = visiblePageNumbers(state.page, state.pages);
+    pageNumbers.forEach((page, index) => {
+      if (index > 0 && page - pageNumbers[index - 1] > 1) {
+        const gap = document.createElement("span");
+        gap.textContent = "…";
+        buttons.appendChild(gap);
+      }
+      buttons.appendChild(createPageButton(String(page), page, false, page === state.page));
+    });
+    buttons.appendChild(createPageButton("下一页", state.page + 1, state.page >= state.pages));
   }
 
   function createAction(label, action, creatorId, className) {
@@ -502,37 +513,114 @@
     const tableWrap = element("creator-library-table-wrap");
     if (!body || !empty || !cards || !tableWrap) return;
 
-    renderOptions("creator-library-platform", state.records.map(item => item.platform), "全部平台");
-    renderOptions("creator-library-category", state.records.map(item => item.content_category), "全部内容类型");
-    renderOptions("creator-library-country", state.records.map(item => item.country), "全部国家/地区");
-    renderOptions("creator-library-language", state.records.map(item => item.language), "全部语言");
-    renderOptions("creator-library-tag", state.records.flatMap(tagsFor), "全部标签");
-    const records = filteredRecords();
+    const options = state.filterOptions || {};
+    renderOptions("creator-library-category", options.content_category || [], "全部内容类型");
+    renderOptions("creator-library-country", options.country || [], "全部国家/地区");
+    renderOptions("creator-library-language", options.language || [], "全部语言");
+    renderOptions("creator-library-tag", options.tag || [], "全部标签");
+    const records = state.records;
     empty.hidden = records.length > 0;
-    cards.hidden = state.view !== "cards";
-    tableWrap.hidden = state.view !== "table" && records.length > 0;
-    element("creator-library-card-view").classList.toggle("active", state.view === "cards");
-    element("creator-library-table-view").classList.toggle("active", state.view === "table");
-    renderCards(records);
-    renderTable(records);
+    cards.hidden = state.viewMode !== "card" || records.length === 0;
+    tableWrap.hidden = state.viewMode !== "table" || records.length === 0;
+    element("creator-library-card-view").classList.toggle("active", state.viewMode === "card");
+    element("creator-library-table-view").classList.toggle("active", state.viewMode === "table");
+    cards.replaceChildren();
+    body.replaceChildren();
+    if (state.viewMode === "card") renderCards(records);
+    else renderTable(records);
+    renderPagination();
   }
 
   async function loadRecords() {
     const currentLifecycle = lifecycleId;
     listController?.abort();
     listController = pageContext.resources.createAbortController();
-    const includeArchived = valueOf("creator-library-status") === "archived";
-    const url = includeArchived ? "/api/creator-library?include_archived=true" : "/api/creator-library";
+    const state = libraryState();
+    const includeArchived = state.filters.status === "archived";
+    const query = [
+      `page=${state.page}`,
+      `page_size=${state.pageSize}`,
+      `sort=${encodeURIComponent(state.sort)}`,
+      `order=${encodeURIComponent(state.order)}`,
+    ];
+    if (includeArchived) query.push("include_archived=true");
+    Object.entries(state.filters).forEach(([key, value]) => {
+      if (value) query.push(`${encodeURIComponent(key)}=${encodeURIComponent(value)}`);
+    });
+    const url = `/api/creator-library?${query.join("&")}`;
     const data = await pageContext.api.get(url, { signal: listController.signal });
     if (!pageContext || currentLifecycle !== lifecycleId) return;
-    libraryState().records = Array.isArray(data.records) ? data.records : [];
+    state.total = Number(data.total) || 0;
+    state.pages = Number(data.pages) || 0;
+    if (state.pages > 0 && state.page > state.pages) {
+      state.page = state.pages;
+      return loadRecords();
+    }
+    state.page = Number(data.page) || state.page;
+    state.pageSize = Number(data.page_size) || state.pageSize;
+    state.filterOptions = data.filter_options && typeof data.filter_options === "object"
+      ? data.filter_options
+      : {};
+    state.records = Array.isArray(data.creators)
+      ? data.creators
+      : Array.isArray(data.records) ? data.records : [];
     render();
   }
 
-  function setView(view) {
-    libraryState().view = view === "table" ? "table" : "cards";
-    global.localStorage.setItem("kolconnect.creatorLibraryView", libraryState().view);
-    render();
+  async function setViewMode(viewMode) {
+    const state = libraryState();
+    const nextMode = viewMode === "table" ? "table" : "card";
+    if (state.viewMode === nextMode) return;
+    state.viewMode = nextMode;
+    state.page = 1;
+    state.pageSize = DEFAULT_PAGE_SIZE[nextMode];
+    global.localStorage.setItem(VIEW_MODE_STORAGE_KEY, nextMode);
+    renderPageSizeOptions();
+    await loadRecords();
+  }
+
+  async function changeSort() {
+    const match = valueOf("creator-library-sort", "created_at_desc")
+      .match(/^(created_at|updated_at|creator_name|followers|platform)_(asc|desc)$/);
+    const state = libraryState();
+    state.sort = match?.[1] || "created_at";
+    state.order = match?.[2] || "desc";
+    state.page = 1;
+    await loadRecords();
+  }
+
+  async function changePageSize() {
+    const state = libraryState();
+    const requested = Number(valueOf("creator-library-page-size"));
+    state.pageSize = PAGE_SIZES[state.viewMode].includes(requested)
+      ? requested
+      : DEFAULT_PAGE_SIZE[state.viewMode];
+    state.page = 1;
+    await loadRecords();
+  }
+
+  async function changeFilters() {
+    const state = libraryState();
+    state.filters = readFilters();
+    state.page = 1;
+    await loadRecords();
+  }
+
+  function scheduleSearchFilter() {
+    const requestId = ++filterRequestId;
+    pageContext.resources.setTimeout(() => {
+      if (requestId === filterRequestId) changeFilters().catch(showError);
+    }, 250);
+  }
+
+  async function handlePagination(event) {
+    const button = event.target.closest("[data-creator-page]");
+    if (!button || button.disabled) return;
+    const state = libraryState();
+    const page = Number(button.dataset.creatorPage);
+    if (!Number.isInteger(page) || page < 1 || page > state.pages || page === state.page) return;
+    state.page = page;
+    await loadRecords();
   }
 
   async function openCollaborationTask(creatorId) {
@@ -625,8 +713,26 @@
       pageContext = context;
       lifecycleId += 1;
       context.state.creatorLibrary ||= {};
-      context.state.creatorLibrary.records ||= [];
-      context.state.creatorLibrary.view = context.state.creatorLibrary.view === "table" ? "table" : "cards";
+      const state = context.state.creatorLibrary;
+      state.records ||= [];
+      const storedMode = global.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+      state.viewMode = storedMode === "table" || state.viewMode === "table" ? "table" : "card";
+      state.page = Number.isInteger(state.page) && state.page > 0 ? state.page : 1;
+      state.pageSize = PAGE_SIZES[state.viewMode].includes(Number(state.pageSize))
+        ? Number(state.pageSize)
+        : DEFAULT_PAGE_SIZE[state.viewMode];
+      state.sort = ["created_at", "updated_at", "creator_name", "followers", "platform"].includes(state.sort)
+        ? state.sort
+        : "created_at";
+      state.order = state.order === "asc" ? "asc" : "desc";
+      state.total = Number(state.total) || 0;
+      state.pages = Number(state.pages) || 0;
+      state.filters = { ...(state.filters || {}), ...readFilters() };
+      state.filterOptions = state.filterOptions && typeof state.filterOptions === "object"
+        ? state.filterOptions
+        : {};
+      element("creator-library-sort").value = `${state.sort}_${state.order}`;
+      renderPageSizeOptions();
       campaignModal = global.KOLConnectCreatorCampaignModal.create(context);
       await loadRecords();
     },
@@ -634,19 +740,23 @@
     bind() {
       campaignModal.bind();
       listen("creator-library-refresh", "click", () => loadRecords().catch(showError));
-      listen("creator-library-card-view", "click", () => setView("cards"));
-      listen("creator-library-table-view", "click", () => setView("table"));
+      listen("creator-library-card-view", "click", () => setViewMode("card").catch(showError));
+      listen("creator-library-table-view", "click", () => setViewMode("table").catch(showError));
       [
-        "creator-library-platform",
         "creator-library-country",
         "creator-library-language",
         "creator-library-category",
         "creator-library-tag",
         "creator-library-level",
-        "creator-library-sort",
-      ].forEach(id => listen(id, "change", render));
-      listen("creator-library-status", "change", () => loadRecords().catch(showError));
-      listen("creator-library-search", "input", render);
+        "creator-library-status",
+      ].forEach(id => listen(id, "change", () => {
+        filterRequestId += 1;
+        return changeFilters().catch(showError);
+      }));
+      listen("creator-library-sort", "change", () => changeSort().catch(showError));
+      listen("creator-library-page-size", "change", () => changePageSize().catch(showError));
+      listen("creator-library-page-buttons", "click", event => handlePagination(event).catch(showError));
+      listen("creator-library-search", "input", scheduleSearchFilter);
       listen("creator-library-cards", "click", handleAction);
       listen("creator-library-body", "click", handleAction);
       listen("creator-library-body", "change", handleStatusChange);
@@ -654,6 +764,7 @@
 
     unbind() {
       lifecycleId += 1;
+      filterRequestId += 1;
       campaignModal?.destroy();
       pageContext?.resources.cleanup();
       pageContext = null;

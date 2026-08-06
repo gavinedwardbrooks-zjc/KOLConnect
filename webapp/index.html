@@ -234,10 +234,6 @@
               <input id="creator-library-search" type="search" placeholder="达人名称、主页链接或标签">
             </label>
             <label class="field">
-              <span>平台</span>
-              <select id="creator-library-platform"><option value="">全部平台</option></select>
-            </label>
-            <label class="field">
               <span>国家/地区</span>
               <select id="creator-library-country"><option value="">全部国家/地区</option></select>
             </label>
@@ -266,10 +262,24 @@
             <label class="field">
               <span>排序</span>
               <select id="creator-library-sort">
-                <option value="analysis_time_desc">分析时间（最新）</option>
+                <option value="created_at_desc">创建时间（最新添加）</option>
+                <option value="created_at_asc">创建时间（最早添加）</option>
+                <option value="updated_at_desc">更新时间（最近更新）</option>
+                <option value="updated_at_asc">更新时间（最早更新）</option>
+                <option value="creator_name_asc">达人名称（A-Z / 拼音）</option>
+                <option value="creator_name_desc">达人名称（Z-A / 拼音倒序）</option>
                 <option value="followers_desc">粉丝数（高到低）</option>
-                <option value="median_views_desc">中位播放（高到低）</option>
-                <option value="average_views_desc">平均播放（高到低）</option>
+                <option value="followers_asc">粉丝数（低到高）</option>
+                <option value="platform_asc">平台（Instagram → TikTok → YouTube）</option>
+                <option value="platform_desc">平台（YouTube → TikTok → Instagram）</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>每页显示</span>
+              <select id="creator-library-page-size">
+                <option value="12">12</option>
+                <option value="24" selected>24</option>
+                <option value="48">48</option>
               </select>
             </label>
             <label class="field">
@@ -306,7 +316,11 @@
               <tbody id="creator-library-body"></tbody>
             </table>
           </div>
-          <div class="review-empty" id="creator-library-empty" hidden>暂无达人分析数据。请先在插件中导入达人。</div>
+        </div>
+        <div class="section-card review-empty" id="creator-library-empty" hidden>暂无达人分析数据。请先在插件中导入达人。</div>
+        <div class="creator-library-pagination" id="creator-library-pagination" hidden>
+          <span id="creator-library-page-summary">--</span>
+          <div class="creator-library-page-buttons" id="creator-library-page-buttons"></div>
         </div>
       </section>
 
@@ -859,7 +873,10 @@
             <h1 id="campaign-detail-title">Campaign 详情</h1>
             <p id="campaign-detail-subtitle">查看项目信息、参与达人和执行结果。</p>
           </div>
-          <button class="soft-btn" id="campaign-detail-back" type="button">返回 Campaign 列表</button>
+          <div class="action-row">
+            <button class="soft-btn" id="campaign-detail-back" type="button">返回 Campaign 列表</button>
+            <button class="danger-btn" id="campaign-detail-delete" type="button">删除 Campaign</button>
+          </div>
         </div>
 
         <div class="section-card campaign-detail-message" id="campaign-detail-loading">
@@ -885,7 +902,7 @@
               <p id="campaign-detail-goal">--</p>
             </div>
             <div class="campaign-readonly-note" id="campaign-detail-readonly" hidden>
-              此 Campaign 已归档，当前为只读状态。恢复后可继续添加或编辑达人合作记录。
+              此 Campaign 已归档，当前不可新增或编辑合作记录；仍可移除达人关系或删除 Campaign。
             </div>
           </section>
 

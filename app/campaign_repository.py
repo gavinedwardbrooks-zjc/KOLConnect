@@ -279,3 +279,22 @@ class CampaignRepository(ExcelDataRepository):
     def deleteCampaign(self, campaign_id: str) -> None:
         """Backward-compatible name; Campaign records are archived, never deleted."""
         self.archiveCampaign(campaign_id)
+
+    def delete_campaign(self, campaign_id: str) -> dict[str, Any]:
+        """Permanently delete one Campaign and only its relationship rows."""
+        campaign_id = self.require_text(campaign_id, "Campaign ID")
+        with self.workbook(write=True) as workbook:
+            relation_sheet = workbook["CampaignCreators"]
+            relation_headers = [str(cell.value or "") for cell in relation_sheet[1]]
+            campaign_column = relation_headers.index("campaign_id") + 1
+            removed_relations = 0
+            for row_index in range(relation_sheet.max_row, 1, -1):
+                if str(relation_sheet.cell(row_index, campaign_column).value or "") == campaign_id:
+                    relation_sheet.delete_rows(row_index, 1)
+                    removed_relations += 1
+            deleted = self.delete_row(workbook["Campaigns"], "campaign_id", campaign_id)
+        return {
+            "campaign_id": campaign_id,
+            "deleted": deleted,
+            "removed_campaign_creators": removed_relations,
+        }

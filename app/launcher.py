@@ -2,14 +2,20 @@ from __future__ import annotations
 
 """PyInstaller desktop entry point for KOL Connect."""
 
+import errno
 import os
+import shutil
 import socket
 import sys
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
-from urllib.request import urlopen
+from types import ModuleType
+from typing import Any
+from urllib.request import ProxyHandler, build_opener
 
+from app_logging import log_error, log_event
 from runtime_paths import atomic_write_json, get_app_data_dir, get_logs_dir, load_json_with_backup
 
 
@@ -22,6 +28,9 @@ MIN_WINDOW_WIDTH = 1000
 MIN_WINDOW_HEIGHT = 680
 WINDOW_MARGIN_WIDTH = 80
 WINDOW_MARGIN_HEIGHT = 120
+SERVER_START_TIMEOUT_SECONDS = 60
+BACKUP_KEEP_COUNT = 10
+_LOCALHOST_OPENER = build_opener(ProxyHandler({}))
 
 
 def window_state_path() -> Path:
@@ -124,17 +133,78 @@ def server_is_ready() -> bool:
         return False
 
 
-def wait_for_server(timeout_seconds: float = 15) -> bool:
+def wait_for_server(
+    timeout_seconds: float = SERVER_START_TIMEOUT_SECONDS,
+    startup_state: dict[str, Any] | None = None,
+) -> bool:
+    """Wait for the local HTTP service without inheriting system proxy settings."""
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
+        if startup_state and startup_state.get("last_error") is not None:
+            return False
         if server_is_ready():
             try:
-                with urlopen(APP_URL, timeout=1):
+                with _LOCALHOST_OPENER.open(APP_URL, timeout=1):
                     return True
             except OSError:
                 pass
         time.sleep(0.2)
     return False
+
+
+def _startup_error_message(exc: BaseException) -> str:
+    error_number = getattr(exc, "errno", None)
+    windows_error = getattr(exc, "winerror", None)
+    if error_number == errno.EADDRINUSE or windows_error == 10048:
+        return f"端口 {PORT} 被占用。原始错误：{exc}"
+    if error_number == errno.EACCES or windows_error == 10013:
+        return f"权限不足，无法启动本地服务。原始错误：{exc}"
+    return f"服务启动失败：{exc}"
+
+
+def _record_startup_error(server_module: ModuleType, message: str, exc: BaseException) -> None:
+    log_error("Launcher", message, exc)
+    try:
+        server_module._record_last_error(message)
+    except (AttributeError, OSError, RuntimeError, ValueError) as diagnostic_error:
+        log_error("Launcher", "启动错误写入系统诊断失败", diagnostic_error)
+
+
+def _run_server(server_module: ModuleType, startup_state: dict[str, Any]) -> None:
+    try:
+        server_module.run()
+    except BaseException as exc:
+        startup_state["last_error"] = exc
+        message = _startup_error_message(exc)
+        _record_startup_error(server_module, message, exc)
+    else:
+        exc = RuntimeError("本地服务线程在启动期间意外退出。")
+        startup_state["last_error"] = exc
+        _record_startup_error(server_module, str(exc), exc)
+
+
+def backup_creator_library(workbook_path: Path) -> Path | None:
+    """Create a best-effort startup backup and retain only the newest copies."""
+    if not workbook_path.is_file():
+        return None
+    backup_dir = workbook_path.parent / "backups"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    backup_path = backup_dir / f"{workbook_path.stem}_{timestamp}{workbook_path.suffix}"
+    try:
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(workbook_path, backup_path)
+        backups = sorted(
+            backup_dir.glob(f"{workbook_path.stem}_*{workbook_path.suffix}"),
+            key=lambda path: (path.stat().st_mtime_ns, path.name),
+            reverse=True,
+        )
+        for stale_backup in backups[BACKUP_KEEP_COUNT:]:
+            stale_backup.unlink()
+        log_event("Launcher", f"启动备份完成 | path={backup_path}")
+        return backup_path
+    except OSError as exc:
+        log_error("Launcher", f"启动备份失败 | path={workbook_path}", exc)
+        return None
 
 
 def run_scraper_worker() -> None:
@@ -151,13 +221,36 @@ def run_scraper_worker() -> None:
 
 def run_desktop() -> None:
     os.environ["KOLCONNECT_DESKTOP"] = "1"
-    if not server_is_ready():
-        import server
+    import server
 
-        thread = threading.Thread(target=server.run, name="kolconnect-server", daemon=True)
-        thread.start()
-        if not wait_for_server():
-            raise RuntimeError("本地服务启动超时，请查看日志。")
+    if server_is_ready():
+        exc = OSError(errno.EADDRINUSE, f"{HOST}:{PORT}")
+        message = _startup_error_message(exc)
+        _record_startup_error(server, message, exc)
+        raise RuntimeError(message)
+
+    startup_state: dict[str, Any] = {"last_error": None}
+    thread = threading.Thread(
+        target=_run_server,
+        args=(server, startup_state),
+        name="kolconnect-server",
+        daemon=True,
+    )
+    thread.start()
+    if not wait_for_server(startup_state=startup_state):
+        startup_error = startup_state.get("last_error")
+        if isinstance(startup_error, BaseException):
+            raise RuntimeError(_startup_error_message(startup_error)) from startup_error
+        message = f"本地服务启动超时（{SERVER_START_TIMEOUT_SECONDS} 秒），请查看日志。"
+        timeout_error = TimeoutError(message)
+        _record_startup_error(server, message, timeout_error)
+        raise RuntimeError(message)
+
+    workbook_path = Path(
+        server.STATE.get("creator_library", {}).get("workbook_path")
+        or server.DEFAULT_CREATOR_LIBRARY_WORKBOOK
+    )
+    backup_creator_library(workbook_path)
 
     import webview
 
