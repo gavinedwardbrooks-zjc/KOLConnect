@@ -1,0 +1,5 @@
+export const IG_APP_ID = "936619743392459";
+export const INSTAGRAM_CLIPS_PAGE_SIZE = 50;
+export const INSTAGRAM_MAX_REELS = 50;
+export const INSTAGRAM_PAGE_DELAY_MIN_MS = 500;
+export const INSTAGRAM_PAGE_DELAY_MAX_MS = 900;

@@ -149,7 +149,8 @@ export function ensureContentSummaryConsistency(analysis = {}) {
 }
 
 export function finalizeContentAnalysis(rawItems = [], options = {}) {
-  const requestedCount = Math.max(1, Math.min(30, Number(options.limit) || 30));
+  const maximumCount = Math.max(1, Number(options.maximumCount) || 30);
+  const requestedCount = Math.max(1, Math.min(maximumCount, Number(options.limit) || 30));
   const seen = new Set();
   const discovered = [];
   for (const raw of rawItems) {

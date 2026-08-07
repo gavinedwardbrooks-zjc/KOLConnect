@@ -7,11 +7,13 @@ import {
 } from "../core/content_analysis.js";
 import {
   abortPageDetailRequests,
+  applyPublicProfileFields,
   executePageFunction,
   executeProfileCollector,
   hostMatches,
   selectBio
 } from "./common.js";
+import { parseHumanCount } from "../core/normalize.js";
 
 export function matches(url) {
   return hostMatches(url, "youtube.com");
@@ -59,6 +61,8 @@ function collectYouTubePage() {
   let metadata = null;
   let headerName = "";
   let subscribers = "";
+  let country = "";
+  let language = "";
   const queue = [window.ytInitialData, window.ytInitialPlayerResponse].filter(Boolean);
   const seen = new WeakSet();
   let visited = 0;
@@ -86,6 +90,15 @@ function collectYouTubePage() {
     if (!headerName && node.pageHeaderViewModel) {
       headerName = textFrom(node.pageHeaderViewModel.title);
     }
+    if (!country && node.channelAboutFullMetadataRenderer) {
+      country = textFrom(node.channelAboutFullMetadataRenderer.country);
+    }
+    if (!country && node.channelMetadataRenderer?.country) {
+      country = textFrom(node.channelMetadataRenderer.country);
+    }
+    if (!language && node.microformatDataRenderer?.language) {
+      language = textFrom(node.microformatDataRenderer.language);
+    }
     for (const [key, value] of Object.entries(node)) {
       if (!subscribers && /subscriberCountText/i.test(key)) subscribers = textFrom(value);
       if (value && typeof value === "object") queue.push(value);
@@ -109,6 +122,8 @@ function collectYouTubePage() {
   const profileUrl = root.startsWith("@")
     ? `https://www.youtube.com/${root}`
     : `https://www.youtube.com/${root}/${identifier}`;
+  const contactLinks = [...document.querySelectorAll('a[href^="mailto:"], a[href*="wa.me/"], a[href*="api.whatsapp.com/"]')]
+    .map((node) => clean(node.href || node.textContent, 512));
 
   return {
     platform: "YouTube",
@@ -126,6 +141,19 @@ function collectYouTubePage() {
       { source: "profile_dom", value: domDescription },
       { source: "meta", value: metaDescription }
     ],
+    public_profile: {
+      email_candidates: [
+        ...contactLinks.map((value) => ({ source: "profile_dom", value })),
+        { source: "profile_dom", value: domDescription },
+        { source: "meta", value: metaDescription }
+      ],
+      whatsapp_candidates: [
+        ...contactLinks.map((value) => ({ source: "profile_dom", value })),
+        { source: "profile_dom", value: domDescription }
+      ],
+      country_candidates: [{ source: "structured_data", value: country }],
+      language_candidates: [{ source: "structured_data", value: language }]
+    },
     searched_sources: ["ytInitialData", "page_dom", "meta", "url"],
     errors: []
   };
@@ -187,6 +215,16 @@ export async function collectProfile(tabId) {
         missing_reason: ""
       };
     }
+    if (hasText(homeResult?.description)) {
+      result.public_profile?.email_candidates?.push({
+        source: "channel_home_structured_data",
+        value: homeResult.description
+      });
+      result.public_profile?.whatsapp_candidates?.push({
+        source: "channel_home_structured_data",
+        value: homeResult.description
+      });
+    }
   }
   if (!result.fields.followers?.value) {
     result.fields.followers = {
@@ -196,6 +234,7 @@ export async function collectProfile(tabId) {
       missing_reason: "The YouTube channel hides or does not expose its subscriber count."
     };
   }
+  applyPublicProfileFields(result);
   return result;
 }
 
@@ -369,11 +408,23 @@ async function discoverYouTubeContent(targetUrl, contentType) {
       || node.accessibility?.accessibilityData?.label
       || node.thumbnail?.accessibility?.accessibilityData?.label
     );
-    const viewsText = textFrom(
-      node.viewCountText
-      || node.shortViewCountText
-      || node.overlayMetadata?.secondaryText
-    ) || accessibility.match(/[\d.,]+\s*[KMB]?\s+views?/i)?.[0] || "";
+    const hasViewsSemantics = (value) => /\bviews?\b|(?:次)?观看|(?:次)?觀看|播放(?:量|次数|次數)?|visualiza(?:ção|ções)|vistas?/i.test(value);
+    const selectedRenderer = [
+      { value: node.viewCountText, source: "viewCountText" },
+      { value: node.shortViewCountText, source: "shortViewCountText" },
+      { value: node.overlayMetadata?.secondaryText, source: "overlayMetadata.secondaryText" }
+    ].find((candidate) => {
+      const text = textFrom(candidate.value);
+      return /\d/.test(text) && hasViewsSemantics(text);
+    });
+    const selectedRendererText = textFrom(selectedRenderer?.value);
+    const accessibilityViewsCandidate = /\d/.test(accessibility) && hasViewsSemantics(accessibility)
+      ? accessibility
+      : "";
+    const viewsText = selectedRendererText || accessibilityViewsCandidate;
+    const selectedViewsSource = selectedRendererText
+      ? selectedRenderer.source
+      : accessibilityViewsCandidate ? "accessibility" : "missing";
     const publishedText = textFrom(node.publishedTimeText);
     byId.set(videoId, {
       video_id: videoId,
@@ -387,7 +438,8 @@ async function discoverYouTubeContent(targetUrl, contentType) {
       published_at: null,
       published_raw_text: publishedText,
       is_pinned: false,
-      source: `ytInitialData:${rendererType}`
+      source: `ytInitialData:${rendererType}`,
+      views_source_hint: selectedViewsSource
     });
   };
 
@@ -449,6 +501,26 @@ async function fetchYouTubeContentDetail(videoId) {
     return null;
   };
   const missing = "YouTube did not expose this field on the public video page.";
+  const numericTextFrom = (root) => {
+    if (!root || typeof root !== "object") return "";
+    const queue = [root];
+    const seen = new WeakSet();
+    let visited = 0;
+    while (queue.length && visited < 300) {
+      const node = queue.shift();
+      if (!node || typeof node !== "object" || seen.has(node)) continue;
+      seen.add(node);
+      visited += 1;
+      for (const [key, value] of Object.entries(node)) {
+        if (/^(?:title|text|simpleText|content|label|accessibilityText|countText)$/i.test(key)) {
+          const candidate = textFrom(value);
+          if (/\d/.test(candidate)) return candidate;
+        }
+        if (value && typeof value === "object") queue.push(value);
+      }
+    }
+    return "";
+  };
   const registry = globalThis.__KOLCONNECT_DETAIL_CONTROLLERS__
     ||= new Set();
   const controller = new AbortController();
@@ -459,7 +531,9 @@ async function fetchYouTubeContentDetail(videoId) {
       redirect: "follow",
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
     const html = await response.text();
     const player = extractAssignedJson(html, "var ytInitialPlayerResponse =")
       || extractAssignedJson(html, 'window["ytInitialPlayerResponse"] =')
@@ -478,15 +552,23 @@ async function fetchYouTubeContentDetail(videoId) {
       if (!node || typeof node !== "object" || seen.has(node)) continue;
       seen.add(node);
       visited += 1;
+      if (likes == null && node.likeButtonViewModel) {
+        likes = numericTextFrom(node.likeButtonViewModel) || null;
+      }
+      if (likes == null && node.toggleButtonViewModel) {
+        likes = numericTextFrom(node.toggleButtonViewModel) || null;
+      }
       if (likes == null && node.toggleButtonRenderer) {
         const label = textFrom(
           node.toggleButtonRenderer.defaultText
           || node.toggleButtonRenderer.accessibilityData?.accessibilityData?.label
         );
-        if (/like/i.test(label) && /\d/.test(label)) likes = label;
+        if (/like/i.test(label) && /\d/.test(label)) {
+          likes = label;
+        }
       }
-      if (comments == null && node.commentsHeaderRenderer?.countText) {
-        comments = textFrom(node.commentsHeaderRenderer.countText);
+      if (comments == null && node.commentsHeaderRenderer) {
+        comments = numericTextFrom(node.commentsHeaderRenderer) || null;
       }
       for (const child of Array.isArray(node) ? node : Object.values(node)) {
         if (child && typeof child === "object") queue.push(child);
@@ -503,7 +585,10 @@ async function fetchYouTubeContentDetail(videoId) {
       detail_missing_reason: missing
     };
   } catch (error) {
-    return { video_id: videoId, detail_missing_reason: error?.message || missing };
+    return {
+      video_id: videoId,
+      detail_missing_reason: error?.message || missing
+    };
   } finally {
     registry.delete(controller);
   }
@@ -518,16 +603,22 @@ function mergeYouTubeDetail(item, detail) {
   const publishedSource = detail?.published_at
     ? detail.detail_source
     : estimated.value ? item.source : item.published_at != null ? item.source : "";
-  const viewsSource = item.views != null ? item.source : detail?.views != null ? detail.detail_source : "";
-  const likesSource = item.likes != null ? item.source : detail?.likes != null ? detail.detail_source : "";
-  const commentsSource = item.comments != null ? item.source : detail?.comments != null ? detail.detail_source : "";
+  const detailViews = parseHumanCount(detail?.views);
+  const detailLikes = parseHumanCount(detail?.likes);
+  const detailComments = parseHumanCount(detail?.comments);
+  const viewsValue = detailViews ?? item.views ?? null;
+  const likesValue = item.likes ?? detailLikes ?? null;
+  const commentsValue = item.comments ?? detailComments ?? null;
+  const viewsSource = detailViews != null ? detail.detail_source : item.views != null ? item.source : "";
+  const likesSource = item.likes != null ? item.source : detailLikes != null ? detail.detail_source : "";
+  const commentsSource = item.comments != null ? item.source : detailComments != null ? detail.detail_source : "";
   const confidence = (source) => /structured_data|ytInitialData/.test(source || "") ? "high" : "medium";
   return {
     ...item,
     title: detail?.title || item.title,
-    views: item.views ?? detail?.views ?? null,
-    likes: item.likes ?? detail?.likes ?? null,
-    comments: item.comments ?? detail?.comments ?? null,
+    views: viewsValue,
+    likes: likesValue,
+    comments: commentsValue,
     published_at: publishedValue ?? null,
     published_estimated: !detail?.published_at && estimated.is_estimated,
     views_source: viewsSource,
@@ -538,9 +629,9 @@ function mergeYouTubeDetail(item, detail) {
     likes_confidence: confidence(likesSource),
     comments_confidence: confidence(commentsSource),
     published_confidence: estimated.is_estimated ? "low" : confidence(publishedSource),
-    views_missing_reason: item.views == null && detail?.views == null ? missing : "",
-    likes_missing_reason: item.likes == null && detail?.likes == null ? missing : "",
-    comments_missing_reason: item.comments == null && detail?.comments == null ? missing : "",
+    views_missing_reason: viewsValue == null ? missing : "",
+    likes_missing_reason: likesValue == null ? missing : "",
+    comments_missing_reason: commentsValue == null ? missing : "",
     published_missing_reason: publishedValue == null ? missing : ""
   };
 }
@@ -557,6 +648,212 @@ function youtubeContentTarget(analysisUrl) {
     contentType,
     targetUrl: `${url.origin}${rootPath}/${targetSection}`
   };
+}
+
+export function extractYouTubeChannelIdPage() {
+  const validChannelId = (value) => {
+    const candidate = String(value ?? "").trim();
+    return /^UC[A-Za-z0-9_-]{20,}$/.test(candidate) ? candidate : "";
+  };
+  const channelIdFromUrl = (value) => {
+    try {
+      const match = new URL(String(value || ""), location.origin).pathname.match(/\/channel\/(UC[A-Za-z0-9_-]{20,})/);
+      return validChannelId(match?.[1]);
+    } catch (_) {
+      return "";
+    }
+  };
+
+  const metaChannelId = validChannelId(document.querySelector('meta[itemprop="channelId"]')?.content);
+  if (metaChannelId) return { channel_id: metaChannelId, source: "meta_channel_id" };
+
+  const queue = [window.ytInitialData, window.ytInitialPlayerResponse].filter(Boolean);
+  const seen = new WeakSet();
+  let visited = 0;
+  while (queue.length && visited < 15000) {
+    const node = queue.shift();
+    if (!node || typeof node !== "object" || seen.has(node)) continue;
+    seen.add(node);
+    visited += 1;
+    for (const [key, value] of Object.entries(node)) {
+      if (/^(?:channelId|channel_id|browseId|externalId)$/.test(key)) {
+        const channelId = validChannelId(value);
+        if (channelId) return { channel_id: channelId, source: "youtube_structured_data" };
+      }
+      if (value && typeof value === "object") queue.push(value);
+    }
+  }
+
+  const explicitChannelUrls = [
+    ...document.querySelectorAll('link[itemprop="url"], meta[itemprop="url"], meta[property="og:url"]')
+  ];
+  for (const node of explicitChannelUrls) {
+    const channelId = channelIdFromUrl(node.href || node.content);
+    if (channelId) return { channel_id: channelId, source: "page_channel_url" };
+  }
+
+  const canonicalChannelId = channelIdFromUrl(document.querySelector('link[rel="canonical"]')?.href);
+  if (canonicalChannelId) return { channel_id: canonicalChannelId, source: "canonical_channel_url" };
+  return { channel_id: null, source: "missing" };
+}
+
+export async function fetchYouTubeRss(channelId, options = {}) {
+  const normalizedChannelId = String(channelId ?? "").trim();
+  if (!/^UC[A-Za-z0-9_-]{20,}$/.test(normalizedChannelId)) {
+    return { ok: false, reason: "channel_id_unavailable", status: null, xml: "" };
+  }
+  const fetchImpl = options.fetchImpl || globalThis.fetch;
+  try {
+    const response = await fetchImpl(
+      `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(normalizedChannelId)}`,
+      { method: "GET", redirect: "follow", signal: options.signal }
+    );
+    if (!response.ok) {
+      return { ok: false, reason: "http_error", status: response.status, xml: "" };
+    }
+    const xml = await response.text();
+    if (!String(xml || "").trim()) {
+      return { ok: false, reason: "empty_response", status: response.status, xml: "" };
+    }
+    return { ok: true, reason: "", status: response.status, xml };
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    return { ok: false, reason: "network_error", status: null, xml: "" };
+  }
+}
+
+export function parseYouTubeRssXmlPage(xmlText) {
+  const empty = (reason) => ({ ok: false, reason, entry_count: 0, entries: [] });
+  if (!String(xmlText || "").trim()) return empty("empty_response");
+  try {
+    const documentNode = new DOMParser().parseFromString(xmlText, "application/xml");
+    if (documentNode.getElementsByTagName("parsererror").length) return empty("invalid_xml");
+    const nodesByLocalName = (scope, namespace, localName) => {
+      const namespaced = [...scope.getElementsByTagNameNS(namespace, localName)];
+      if (namespaced.length) return namespaced;
+      return [...scope.getElementsByTagNameNS("*", localName)];
+    };
+    const entryNodes = nodesByLocalName(documentNode, "http://www.w3.org/2005/Atom", "entry");
+    const entries = [];
+    for (const entryNode of entryNodes) {
+      const videoIdNode = nodesByLocalName(
+        entryNode,
+        "http://www.youtube.com/xml/schemas/2015",
+        "videoId"
+      )[0];
+      const publishedNode = nodesByLocalName(entryNode, "http://www.w3.org/2005/Atom", "published")[0];
+      const videoId = String(videoIdNode?.textContent || "").trim();
+      const published = String(publishedNode?.textContent || "").trim();
+      const parsedDate = new Date(published);
+      if (!videoId || Number.isNaN(parsedDate.getTime())) continue;
+      entries.push({ video_id: videoId, published_at: parsedDate.toISOString() });
+    }
+    return { ok: true, reason: "", entry_count: entryNodes.length, entries };
+  } catch (_) {
+    return empty("invalid_xml");
+  }
+}
+
+export function applyYouTubeRssPublishedDates(videos = [], rssEntries = []) {
+  const rssByVideoId = new Map();
+  for (const entry of rssEntries) {
+    const videoId = String(entry?.video_id || "").trim();
+    const published = String(entry?.published_at || "").trim();
+    if (!videoId || !published || Number.isNaN(new Date(published).getTime())) continue;
+    rssByVideoId.set(videoId, new Date(published).toISOString());
+  }
+
+  let matchedCount = 0;
+  let supplementedCount = 0;
+  let preservedCount = 0;
+  let uncoveredCount = 0;
+  const enrichedVideos = videos.map((video) => {
+    const rssPublished = rssByVideoId.get(String(video?.video_id || "").trim());
+    const hasPublished = video?.published_at != null && video.published_at !== "";
+    if (hasPublished) preservedCount += 1;
+    if (!rssPublished) {
+      uncoveredCount += 1;
+      return video;
+    }
+    matchedCount += 1;
+    if (hasPublished) return video;
+    supplementedCount += 1;
+    return {
+      ...video,
+      published_at: rssPublished,
+      published_estimated: false,
+      published_source: "youtube_rss",
+      published_confidence: "high",
+      published_missing_reason: ""
+    };
+  });
+
+  return {
+    videos: enrichedVideos,
+    entry_count: rssByVideoId.size,
+    matched_count: matchedCount,
+    supplemented_count: supplementedCount,
+    preserved_count: preservedCount,
+    uncovered_count: uncoveredCount
+  };
+}
+
+async function enrichYouTubePublishedDates(tabId, videos, options = {}) {
+  const existingDateCount = videos.filter(
+    (video) => video?.published_at != null && video.published_at !== ""
+  ).length;
+  const diagnostics = {
+    request_context: "background_service_worker",
+    channel_id_source: "missing",
+    entry_count: 0,
+    matched_count: 0,
+    supplemented_count: 0,
+    preserved_count: existingDateCount,
+    uncovered_count: videos.length,
+    status: "skipped",
+    reason: "channel_id_unavailable"
+  };
+  if (existingDateCount === videos.length) {
+    diagnostics.uncovered_count = 0;
+    diagnostics.reason = "no_missing_dates";
+    return { videos, diagnostics };
+  }
+  try {
+    const channel = await executePageFunction(tabId, extractYouTubeChannelIdPage);
+    diagnostics.channel_id_source = channel?.source || "missing";
+    if (!channel?.channel_id) return { videos, diagnostics };
+
+    const response = await fetchYouTubeRss(channel.channel_id, { signal: options.signal });
+    if (!response.ok) {
+      diagnostics.status = "fallback";
+      diagnostics.reason = response.reason;
+      return { videos, diagnostics };
+    }
+    const parsed = await executePageFunction(tabId, parseYouTubeRssXmlPage, [response.xml]);
+    if (!parsed?.ok) {
+      diagnostics.status = "fallback";
+      diagnostics.reason = parsed?.reason || "invalid_xml";
+      return { videos, diagnostics };
+    }
+
+    const applied = applyYouTubeRssPublishedDates(videos, parsed.entries);
+    const { videos: enrichedVideos, ...counts } = applied;
+    return {
+      videos: enrichedVideos,
+      diagnostics: {
+        ...diagnostics,
+        ...counts,
+        entry_count: parsed.entry_count,
+        status: "success",
+        reason: ""
+      }
+    };
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    diagnostics.status = "fallback";
+    diagnostics.reason = "rss_enrichment_error";
+    return { videos, diagnostics };
+  }
 }
 
 export async function collectRecentContent(tabId, options = {}) {
@@ -594,12 +891,15 @@ export async function collectRecentContent(tabId, options = {}) {
   );
   const completedById = new Map(completed.map((item) => [item.video_id || item.video_url, item]));
   const merged = discovered.map((item) => completedById.get(item.video_id || item.video_url) || item);
+  const enriched = await enrichYouTubePublishedDates(tabId, merged, options);
   options.onProgress?.({ phase: "calculating" });
-  return finalizeContentAnalysis(merged, {
+  const analysis = finalizeContentAnalysis(enriched.videos, {
     limit,
     excludePinned: true,
     contentType: target.contentType
   });
+  analysis.rss_date_enrichment = enriched.diagnostics;
+  return analysis;
 }
 
 export async function cancelRecentContent(tabId) {

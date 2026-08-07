@@ -6,7 +6,15 @@ import {
 } from "../core/content_analysis.js";
 import { parseHumanCount } from "../core/normalize.js";
 import {
+  IG_APP_ID,
+  INSTAGRAM_CLIPS_PAGE_SIZE,
+  INSTAGRAM_MAX_REELS,
+  INSTAGRAM_PAGE_DELAY_MAX_MS,
+  INSTAGRAM_PAGE_DELAY_MIN_MS
+} from "../constants.js";
+import {
   abortPageDetailRequests,
+  applyPublicProfileFields,
   executePageFunction,
   executeProfileCollector,
   hostMatches,
@@ -17,7 +25,361 @@ export function matches(url) {
   return hostMatches(url, "instagram.com");
 }
 
-function collectInstagramPage() {
+function instagramApiField(value, source, missingReason) {
+  const normalized = String(value ?? "").trim();
+  return {
+    value: normalized || null,
+    source: normalized ? source : "",
+    confidence: normalized ? "high" : "missing",
+    missing_reason: normalized ? "" : missingReason
+  };
+}
+
+export function fetchInstagramWebProfilePage(appId) {
+  const clean = (value, limit = 5000) => String(value ?? "").trim().slice(0, limit);
+  const current = new URL(location.href);
+  const username = current.pathname.split("/").filter(Boolean)[0] || "";
+  const reserved = new Set(["accounts", "direct", "explore", "p", "reel", "reels", "stories"]);
+  if (!username || reserved.has(username.toLowerCase())) {
+    return Promise.resolve({
+      ok: false,
+      status: 0,
+      reason: "instagram_profile_url_required"
+    });
+  }
+  return fetch(`/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`, {
+    method: "GET",
+    credentials: "include",
+    headers: { "X-IG-App-ID": appId }
+  }).then(async (response) => {
+    if (!response.ok) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: `web_profile_info_http_${response.status}`
+      };
+    }
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (_) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: "web_profile_info_invalid_json"
+      };
+    }
+    const user = payload?.data?.user || payload?.user;
+    if (!user || typeof user !== "object") {
+      return {
+        ok: false,
+        status: response.status,
+        reason: "web_profile_info_user_missing"
+      };
+    }
+    return {
+      ok: true,
+      status: response.status,
+      requested_username: username,
+      user: {
+        id: clean(user.id, 128),
+        username: clean(user.username, 128),
+        full_name: clean(user.full_name, 256),
+        biography: clean(user.biography),
+        followers: user.edge_followed_by?.count ?? user.follower_count ?? null,
+        followers_source: user.edge_followed_by?.count != null
+          ? "web_profile_info.edge_followed_by.count"
+          : user.follower_count != null ? "web_profile_info.follower_count" : "",
+        is_private: Boolean(user.is_private),
+        business_email: clean(user.business_email || user.public_email, 320),
+        whatsapp: clean(user.whatsapp_number || user.whatsapp, 128),
+        country: clean(user.country || user.country_code, 128),
+        language: clean(user.language, 128)
+      }
+    };
+  }).catch((error) => ({
+    ok: false,
+    status: 0,
+    reason: "web_profile_info_network_error",
+    error: clean(error?.message, 300)
+  }));
+}
+
+export function fetchInstagramClipsPage(targetUserId, maxId, appId, pageSize) {
+  const clean = (value, limit = 3000) => String(value ?? "").trim().slice(0, limit);
+  const body = new URLSearchParams({
+    target_user_id: String(targetUserId),
+    page_size: String(pageSize)
+  });
+  if (maxId) body.set("max_id", String(maxId));
+  let csrfToken = "";
+  try {
+    const csrfCookie = String(document.cookie || "")
+      .split(";")
+      .map((part) => part.trim())
+      .find((part) => part.startsWith("csrftoken="));
+    const encodedToken = csrfCookie ? csrfCookie.slice("csrftoken=".length) : "";
+    try {
+      csrfToken = decodeURIComponent(encodedToken);
+    } catch (_) {
+      csrfToken = encodedToken;
+    }
+  } catch (_) {}
+  if (!csrfToken) {
+    console.warn("[KOLConnect][Instagram] csrf_token_unavailable");
+    return Promise.resolve({
+      ok: false,
+      status: 0,
+      reason: "csrf_token_unavailable"
+    });
+  }
+  return fetch("/api/v1/clips/user/", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "X-IG-App-ID": appId,
+      "X-CSRFToken": csrfToken,
+      "Content-Type": "application/x-www-form-urlencoded"
+    },
+    body: body.toString()
+  }).then(async (response) => {
+    if (!response.ok) {
+      let reason = `clips_user_http_${response.status}`;
+      if (response.status === 403 && typeof response.clone === "function") {
+        try {
+          const errorText = await response.clone().text();
+          let errorMessage = errorText.slice(0, 500);
+          try {
+            const errorPayload = JSON.parse(errorText);
+            errorMessage = String(
+              errorPayload?.message
+              || errorPayload?.error?.message
+              || errorPayload?.error
+              || ""
+            ).slice(0, 500);
+          } catch (_) {}
+          if (/csrf.*(?:missing|incorrect|invalid|failed)/i.test(errorMessage)) {
+            reason = "csrf_rejected";
+          }
+        } catch (_) {}
+      }
+      return {
+        ok: false,
+        status: response.status,
+        reason
+      };
+    }
+    let payload;
+    try {
+      payload = await response.json();
+    } catch (_) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: "clips_user_invalid_json"
+      };
+    }
+    const listCandidates = [
+      payload?.items,
+      payload?.clips,
+      payload?.data?.items,
+      payload?.data?.clips
+    ];
+    const items = listCandidates.find(Array.isArray);
+    if (!items) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: "clips_user_items_missing"
+      };
+    }
+    const paging = payload?.paging_info || payload?.pagingInfo || payload?.data?.paging_info || {};
+    const rawMoreAvailable = payload?.more_available ?? paging?.more_available;
+    const moreAvailable = typeof rawMoreAvailable === "boolean"
+      ? rawMoreAvailable
+      : rawMoreAvailable === 1 ? true : rawMoreAvailable === 0 ? false : null;
+    return {
+      ok: true,
+      status: response.status,
+      items: items.map((item) => {
+        const media = item?.media || item;
+        return {
+          id: clean(media?.id, 128),
+          code: clean(media?.code || media?.shortcode, 128),
+          play_count: media?.play_count ?? media?.video_view_count ?? null,
+          like_count: media?.like_count ?? null,
+          comment_count: media?.comment_count ?? null,
+          caption: { text: clean(media?.caption?.text || media?.caption) },
+          taken_at: media?.taken_at ?? media?.taken_at_timestamp ?? null,
+          is_pinned: Boolean(media?.is_pinned),
+          product_type: clean(media?.product_type, 64),
+          user: { username: clean(media?.user?.username, 128) }
+        };
+      }),
+      more_available: moreAvailable,
+      max_id: clean(paging?.max_id ?? payload?.next_max_id ?? payload?.max_id, 512)
+    };
+  }).catch((error) => ({
+    ok: false,
+    status: 0,
+    reason: "clips_user_network_error",
+    error: clean(error?.message, 300)
+  }));
+}
+
+export function mapInstagramProfileResponse(response = {}) {
+  const user = response.user || {};
+  const username = String(user.username || response.requested_username || "").trim().replace(/^@/, "");
+  const biography = String(user.biography || "").trim();
+  const result = {
+    platform: "Instagram",
+    analysis_url: username ? `https://www.instagram.com/${username}/` : "",
+    supported: Boolean(username),
+    instagram_user_id: String(user.id || "").trim(),
+    is_private: Boolean(user.is_private),
+    fields: {
+      profile_url: instagramApiField(
+        username ? `https://www.instagram.com/${username}/` : "",
+        "web_profile_info",
+        "Creator profile URL was not available."
+      ),
+      username: instagramApiField(username ? `@${username}` : "", "web_profile_info", "Creator username was not available."),
+      creator_name: instagramApiField(
+        username,
+        "web_profile_info",
+        "Creator name was not exposed by Instagram web_profile_info."
+      ),
+      followers: instagramApiField(
+        user.followers,
+        user.followers_source || "web_profile_info",
+        "Follower count was not exposed by Instagram web_profile_info."
+      ),
+      bio: instagramApiField(null, "", "Creator bio was not exposed by Instagram web_profile_info.")
+    },
+    bio_candidates: [{ source: "structured_data", value: biography }],
+    public_profile: {
+      email_candidates: [
+        { source: "structured_data", value: user.business_email || "" },
+        { source: "structured_data", value: biography }
+      ],
+      whatsapp_candidates: [
+        { source: "structured_data", value: user.whatsapp || "" },
+        { source: "structured_data", value: biography }
+      ],
+      country_candidates: [{ source: "structured_data", value: user.country || "" }],
+      language_candidates: [{ source: "structured_data", value: user.language || "" }]
+    },
+    searched_sources: ["web_profile_info"],
+    errors: []
+  };
+  result.fields.bio = selectBio(result.bio_candidates, {
+    platform: "instagram",
+    username: result.fields.username.value,
+    creatorName: result.fields.creator_name.value
+  });
+  applyPublicProfileFields(result);
+  delete result.bio_candidates;
+  return result;
+}
+
+function hasUsableFollowers(value) {
+  if (value === null || value === undefined || String(value).trim() === "") return false;
+  return parseHumanCount(value) != null;
+}
+
+export function mapInstagramMedia(raw = {}) {
+  const media = raw?.media || raw;
+  const videoId = String(media?.id ?? media?.code ?? "").trim();
+  const code = String(media?.code || "").trim();
+  const source = "clips_user_api";
+  return {
+    platform: "Instagram",
+    content_type: "reel",
+    video_id: videoId,
+    video_url: code ? `https://www.instagram.com/reel/${code}/` : "",
+    title: String(media?.caption?.text || media?.caption || "").trim() || null,
+    views: media?.play_count ?? null,
+    likes: media?.like_count ?? null,
+    comments: media?.comment_count ?? null,
+    published_at: media?.taken_at ?? null,
+    is_pinned: Boolean(media?.is_pinned),
+    product_type: String(media?.product_type || "").trim(),
+    creator_username: String(media?.user?.username || "").trim(),
+    views_source: media?.play_count == null ? "" : source,
+    likes_source: media?.like_count == null ? "" : source,
+    comments_source: media?.comment_count == null ? "" : source,
+    published_source: media?.taken_at == null ? "" : source,
+    views_confidence: media?.play_count == null ? "missing" : "high",
+    likes_confidence: media?.like_count == null ? "missing" : "high",
+    comments_confidence: media?.comment_count == null ? "missing" : "high",
+    published_confidence: media?.taken_at == null ? "missing" : "high",
+    views_missing_reason: media?.play_count == null ? "clips_api_play_count_not_exposed" : "",
+    likes_missing_reason: media?.like_count == null ? "clips_api_like_count_not_exposed" : "",
+    comments_missing_reason: media?.comment_count == null ? "clips_api_comment_count_not_exposed" : "",
+    published_missing_reason: media?.taken_at == null ? "clips_api_taken_at_not_exposed" : ""
+  };
+}
+
+export async function paginateInstagramClips({
+  targetUserId,
+  fetchPage,
+  maxReels = INSTAGRAM_MAX_REELS,
+  pageSize = INSTAGRAM_CLIPS_PAGE_SIZE,
+  sleep = (delay) => new Promise((resolve) => setTimeout(resolve, delay)),
+  random = Math.random,
+  warn = console.warn
+} = {}) {
+  if (!targetUserId) throw new Error("instagram_user_id_missing");
+  if (typeof fetchPage !== "function") throw new Error("instagram_clips_fetcher_missing");
+  const unique = new Map();
+  const cursors = new Set();
+  let maxId = "";
+  let pages = 0;
+  let stopReason = "more_available_false";
+
+  while (unique.size < maxReels) {
+    const response = await fetchPage({ targetUserId, maxId, pageSize });
+    pages += 1;
+    if (!response?.ok) {
+      const error = new Error(response?.reason || "clips_user_request_failed");
+      error.status = Number(response?.status) || 0;
+      throw error;
+    }
+    if (!Array.isArray(response.items)) throw new Error("clips_user_items_missing");
+    for (const media of response.items) {
+      const key = String(media?.id ?? media?.code ?? "").trim();
+      if (!key || unique.has(key)) continue;
+      unique.set(key, media);
+      if (unique.size >= maxReels) break;
+    }
+    if (unique.size >= maxReels) {
+      stopReason = "max_reels_reached";
+      break;
+    }
+    if (response.more_available === false) {
+      stopReason = "more_available_false";
+      break;
+    }
+    const nextMaxId = String(response.max_id || "").trim();
+    if (!nextMaxId) throw new Error("clips_user_cursor_missing");
+    if (nextMaxId === maxId || cursors.has(nextMaxId)) {
+      warn("[KOLConnect][Instagram] Repeated clips cursor; pagination stopped.");
+      stopReason = "repeated_cursor";
+      break;
+    }
+    cursors.add(nextMaxId);
+    maxId = nextMaxId;
+    const spread = INSTAGRAM_PAGE_DELAY_MAX_MS - INSTAGRAM_PAGE_DELAY_MIN_MS;
+    await sleep(INSTAGRAM_PAGE_DELAY_MIN_MS + Math.floor(random() * (spread + 1)));
+  }
+  return {
+    items: [...unique.values()].slice(0, maxReels),
+    pages,
+    stop_reason: stopReason
+  };
+}
+
+export function collectInstagramPage() {
   const clean = (value, limit = 3000) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
   const multiline = (value, limit = 5000) => String(value ?? "")
     .replace(/\\r\\n|\\r|\\n/g, "\n")
@@ -69,10 +431,19 @@ function collectInstagramPage() {
       const user = node.user || node.owner || node;
       const username = clean(user.username, 128).replace(/^@/, "");
       if (username && username.toLowerCase() === handle.toLowerCase()) {
+        const edgeFollowers = user.edge_followed_by?.count;
+        const directFollowers = user.follower_count;
         profile = {
           creator_name: clean(user.full_name || user.name, 256),
-          followers: user.follower_count ?? user.edge_followed_by?.count ?? "",
-          bio: multiline(user.biography || user.description)
+          followers: edgeFollowers ?? directFollowers ?? "",
+          followers_source: edgeFollowers != null
+            ? "hydration.edge_followed_by.count"
+            : directFollowers != null ? "hydration.follower_count" : "",
+          bio: multiline(user.biography || user.description),
+          email: clean(user.business_email || user.public_email, 320),
+          whatsapp: clean(user.whatsapp_number || user.whatsapp, 128),
+          country: clean(user.country || user.country_code, 128),
+          language: clean(user.language || user.locale, 128)
         };
         break;
       }
@@ -83,24 +454,140 @@ function collectInstagramPage() {
     if (profile) break;
   }
 
+  if (profile && (profile.followers === "" || profile.followers == null)) {
+    for (const root of states) {
+      const queue = [root];
+      const seen = new WeakSet();
+      let visited = 0;
+      let foundFollowers = false;
+      while (queue.length && visited < 3500 && !foundFollowers) {
+        const node = queue.shift();
+        if (!node || typeof node !== "object" || seen.has(node)) continue;
+        seen.add(node);
+        visited += 1;
+        const user = node.user || node.owner || node;
+        const username = clean(user.username, 128).replace(/^@/, "");
+        if (username && username.toLowerCase() === handle.toLowerCase()) {
+          const edgeFollowers = user.edge_followed_by?.count;
+          const directFollowers = user.follower_count;
+          if (edgeFollowers != null || directFollowers != null) {
+            profile.followers = edgeFollowers ?? directFollowers;
+            profile.followers_source = edgeFollowers != null
+              ? "hydration.edge_followed_by.count"
+              : "hydration.follower_count";
+            foundFollowers = true;
+            break;
+          }
+        }
+        for (const child of Array.isArray(node) ? node : Object.values(node)) {
+          if (child && typeof child === "object") queue.push(child);
+        }
+      }
+      if (foundFollowers) break;
+    }
+  }
+
   const metaTitle = meta('meta[property="og:title"]');
   const metaDescription = meta('meta[property="og:description"]') || meta('meta[name="description"]');
   const metaName = metaTitle.match(/^(.+?)\s*\(@[^)]+\)/)?.[1] || "";
-  const metaFollowers = metaDescription.match(/([\d.,]+\s*[KMB]?)\s+Followers/i)?.[1] || "";
+  const extractFollowerCount = (value, requireLabel = false) => {
+    const raw = clean(value, 256);
+    if (!raw) return "";
+    const labeled = raw.match(
+      /([\d.,]+\s*(?:K|M|B|mio|mil|mi|万|萬)?)\s*(?:位|名)?\s*(?:followers?|seguidores?|粉丝|粉絲)/i
+    );
+    if (labeled) return clean(labeled[1], 64);
+    if (requireLabel) return "";
+    return clean(raw.match(/[\d.,]+\s*(?:K|M|B|mio|mil|mi|万|萬)?/i)?.[0], 64);
+  };
+  const metaFollowers = extractFollowerCount(metaDescription, true);
   const domName = text("header h1") || text("header h2");
-  const domFollowerNode = document.querySelector('header a[href$="/followers/"] span[title], header a[href*="/followers/"] span');
-  const domFollowers = clean(domFollowerNode?.getAttribute("title") || domFollowerNode?.textContent, 64);
-  const explicitBioNodes = [
-    ...document.querySelectorAll(
-      'header [data-testid="user-bio"], header [data-testid*="bio" i], header section span[dir="auto"]'
-    )
+  const semanticFollowerNodes = [
+    ...document.querySelectorAll([
+      'header a[href*="/followers"]',
+      'header [data-testid*="follower" i]',
+      'header [aria-label*="followers" i]',
+      'header [aria-label*="seguidores" i]',
+      'header [aria-label*="粉丝"]',
+      'header [aria-label*="粉絲"]'
+    ].join(","))
   ];
-  const domBio = explicitBioNodes
+  const structuralFollowerNodes = [
+    ...document.querySelectorAll("header ul li, header section li")
+  ];
+  let domFollowers = "";
+  for (const node of semanticFollowerNodes) {
+    for (const value of [
+      node.getAttribute?.("title"),
+      node.getAttribute?.("aria-label"),
+      node.textContent
+    ]) {
+      domFollowers = extractFollowerCount(value, false);
+      if (domFollowers) break;
+    }
+    if (domFollowers) break;
+  }
+  if (!domFollowers) {
+    for (const node of structuralFollowerNodes) {
+      domFollowers = extractFollowerCount(
+        node.getAttribute?.("aria-label") || node.textContent,
+        true
+      );
+      if (domFollowers) break;
+    }
+  }
+  const explicitBioSelector = [
+    'header [data-testid="user-bio"]',
+    'header [data-testid*="bio" i]',
+    'header [itemprop="description"]',
+    'header [aria-label*="biography" i]'
+  ].join(",");
+  const blockedBioAncestorSelector = [
+    "a",
+    "button",
+    '[role="button"]',
+    '[role="link"]',
+    '[role="tab"]',
+    '[role="tablist"]',
+    '[role="navigation"]',
+    "nav",
+    "ul",
+    "ol",
+    "li",
+    '[data-testid*="highlight" i]',
+    '[data-testid*="story" i]',
+    '[aria-label*="highlight" i]',
+    '[aria-label*="story" i]'
+  ].join(",");
+  const bioTextNodes = [
+    ...document.querySelectorAll(`${explicitBioSelector}, header section span[dir="auto"]`)
+  ];
+  const seenBioText = new Set();
+  const domBio = bioTextNodes
+    .filter((node) => {
+      if (node.matches?.(explicitBioSelector) || node.closest?.(explicitBioSelector)) return true;
+      if (!node.closest?.("header section")) return false;
+      return !node.closest?.(blockedBioAncestorSelector);
+    })
     .map((node) => multiline(node.innerText || node.textContent))
-    .filter(Boolean)
+    .filter((value) => {
+      if (!value || seenBioText.has(value)) return false;
+      seenBioText.add(value);
+      return true;
+    })
     .join("\n");
   const creatorName = profile?.creator_name || domName || metaName;
-  const followers = (profile?.followers ?? "") || domFollowers || metaFollowers;
+  const hasFollowerValue = (value) => value !== null
+    && value !== undefined
+    && String(value).trim() !== "";
+  const followers = hasFollowerValue(profile?.followers)
+    ? profile.followers
+    : hasFollowerValue(domFollowers) ? domFollowers : metaFollowers;
+  const followersSource = hasFollowerValue(profile?.followers)
+    ? profile.followers_source || "structured_data"
+    : hasFollowerValue(domFollowers) ? "profile_dom" : metaFollowers ? "meta" : "";
+  const contactLinks = [...document.querySelectorAll('header a[href^="mailto:"], header a[href*="wa.me/"], header a[href*="api.whatsapp.com/"]')]
+    .map((node) => clean(node.href || node.textContent, 512));
 
   return {
     platform: "Instagram",
@@ -110,7 +597,7 @@ function collectInstagramPage() {
       profile_url: field(`https://www.instagram.com/${handle}/`, "url", "high", ""),
       username: field(`@${handle}`, "url", "high", ""),
       creator_name: field(creatorName, profile?.creator_name ? "structured_data" : domName ? "page_dom" : "meta", profile?.creator_name || domName ? "high" : "medium", "Creator name was not exposed by the current public page."),
-      followers: field(followers, profile?.followers !== undefined && profile?.followers !== "" ? "structured_data" : domFollowers ? "page_dom" : "meta", "high", "Follower count was not exposed by the current public page."),
+      followers: field(followers, followersSource, "high", "Follower count was not exposed by the current public page."),
       bio: field(null, "", "missing", "Creator bio was not exposed by the current public page.")
     },
     bio_candidates: [
@@ -118,12 +605,64 @@ function collectInstagramPage() {
       { source: "profile_dom", value: domBio },
       { source: "meta", value: metaDescription }
     ],
+    public_profile: {
+      email_candidates: [
+        { source: "structured_data", value: profile?.email || "" },
+        ...contactLinks.map((value) => ({ source: "profile_dom", value })),
+        { source: "profile_dom", value: domBio }
+      ],
+      whatsapp_candidates: [
+        { source: "structured_data", value: profile?.whatsapp || "" },
+        ...contactLinks.map((value) => ({ source: "profile_dom", value })),
+        { source: "profile_dom", value: domBio }
+      ],
+      country_candidates: [{ source: "structured_data", value: profile?.country || "" }],
+      language_candidates: [{ source: "structured_data", value: profile?.language || "" }]
+    },
     searched_sources: ["structured_data", "page_dom", "meta", "url"],
     errors: []
   };
 }
 
 export async function collectProfile(tabId) {
+  let apiResponse = null;
+  try {
+    apiResponse = await executePageFunction(tabId, fetchInstagramWebProfilePage, [IG_APP_ID]);
+    if (apiResponse?.ok) {
+      const apiResult = mapInstagramProfileResponse(apiResponse);
+      if (!hasUsableFollowers(apiResult.fields.followers?.value)) {
+        try {
+          const fallbackResult = await executeProfileCollector(tabId, collectInstagramPage);
+          const fallbackFollowers = fallbackResult?.fields?.followers;
+          if (hasUsableFollowers(fallbackFollowers?.value)) {
+            apiResult.fields.followers = fallbackFollowers;
+            apiResult.searched_sources = [
+              ...new Set([
+                ...(apiResult.searched_sources || []),
+                ...(fallbackResult.searched_sources || [])
+              ])
+            ];
+            apiResult.followers_fallback_used = true;
+          }
+        } catch (error) {
+          console.warn(
+            "[KOLConnect][Instagram] Followers fallback failed; preserving API profile fields.",
+            error?.message || error
+          );
+        }
+      }
+      return apiResult;
+    }
+    console.warn(
+      "[KOLConnect][Instagram] web_profile_info unavailable; using hydration/DOM fallback.",
+      apiResponse?.reason || "unknown_error"
+    );
+  } catch (error) {
+    console.warn(
+      "[KOLConnect][Instagram] web_profile_info failed; using hydration/DOM fallback.",
+      error?.message || error
+    );
+  }
   const result = await executeProfileCollector(tabId, collectInstagramPage);
   result.fields ||= {};
   result.fields.bio = selectBio(result.bio_candidates, {
@@ -131,6 +670,8 @@ export async function collectProfile(tabId) {
     username: result.fields.username?.value,
     creatorName: result.fields.creator_name?.value
   });
+  applyPublicProfileFields(result);
+  result.api_fallback_reason = apiResponse?.reason || "web_profile_info_unavailable";
   delete result.bio_candidates;
   return result;
 }
@@ -617,7 +1158,7 @@ function mergeInstagramDetail(item, detail) {
   };
 }
 
-export async function collectRecentContent(tabId, options = {}) {
+async function collectInstagramLegacyContent(tabId, options = {}) {
   const limit = Math.max(1, Math.min(30, Number(options.limit) || 30));
   options.onProgress?.({ phase: "discovering" });
   const rawDiscovered = await executePageFunction(tabId, discoverInstagramReels);
@@ -654,6 +1195,119 @@ export async function collectRecentContent(tabId, options = {}) {
     excludePinned: options.excludePinned !== false,
     contentType: "reel"
   });
+}
+
+function logUnavailableFallbacks(diagnostics) {
+  console.warn("[KOLConnect][Instagram] feed fallback unavailable / not verified.");
+  diagnostics.push({ source: "feed_api", status: "skipped", reason: "feed_fallback_not_verified" });
+  console.warn("[KOLConnect][Instagram] GraphQL fallback unavailable: reliable doc_id was not exposed.");
+  diagnostics.push({ source: "graphql", status: "skipped", reason: "graphql_doc_id_not_available" });
+}
+
+export const RECENT_CONTENT_LIMIT = INSTAGRAM_MAX_REELS;
+
+export async function collectRecentContent(tabId, options = {}) {
+  const limit = Math.max(1, Math.min(INSTAGRAM_MAX_REELS, Number(options.limit) || INSTAGRAM_MAX_REELS));
+  const apiDiagnostics = [];
+  options.onProgress?.({ phase: "discovering", source: "clips_user_api" });
+  try {
+    if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const profileResponse = await executePageFunction(tabId, fetchInstagramWebProfilePage, [IG_APP_ID]);
+    if (!profileResponse?.ok) {
+      const error = new Error(profileResponse?.reason || "web_profile_info_failed");
+      error.status = Number(profileResponse?.status) || 0;
+      throw error;
+    }
+    const targetUserId = String(profileResponse.user?.id || "").trim();
+    const expectedUsername = String(
+      profileResponse.user?.username || profileResponse.requested_username || ""
+    ).trim().toLowerCase();
+    const paginated = await paginateInstagramClips({
+      targetUserId,
+      maxReels: INSTAGRAM_MAX_REELS,
+      pageSize: INSTAGRAM_CLIPS_PAGE_SIZE,
+      sleep: typeof options.paginationSleep === "function" ? options.paginationSleep : undefined,
+      fetchPage: async ({ targetUserId: userId, maxId, pageSize }) => {
+        if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+        const response = await executePageFunction(tabId, fetchInstagramClipsPage, [
+          userId,
+          maxId,
+          IG_APP_ID,
+          pageSize
+        ]);
+        if (response?.status === 429) {
+          console.warn("[KOLConnect][Instagram] clips/user rate limited; stopping API pagination.");
+        }
+        return response;
+      }
+    });
+    if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const mapped = paginated.items
+      .filter((media) => {
+        const productType = String(media?.product_type || "").trim().toLowerCase();
+        return !productType || productType === "clips" || productType === "reels";
+      })
+      .map(mapInstagramMedia);
+    const usernameMismatches = mapped.filter((item) => (
+      expectedUsername
+      && item.creator_username
+      && item.creator_username.toLowerCase() !== expectedUsername
+    )).length;
+    apiDiagnostics.push({
+      source: "web_profile_info",
+      status: "success",
+      user_id_available: Boolean(targetUserId)
+    });
+    apiDiagnostics.push({
+      source: "clips_user_api",
+      status: "success",
+      pages: paginated.pages,
+      unique_reels: mapped.length,
+      stop_reason: paginated.stop_reason,
+      username_mismatches: usernameMismatches
+    });
+    options.onProgress?.({
+      phase: "discovered",
+      source: "clips_user_api",
+      discovered: mapped.length,
+      pages: paginated.pages,
+      excludedPinned: 0
+    });
+    options.onProgress?.({ phase: "calculating" });
+    const analysis = finalizeContentAnalysis(mapped, {
+      limit,
+      maximumCount: INSTAGRAM_MAX_REELS,
+      excludePinned: false,
+      contentType: "reel"
+    });
+    analysis.collector_mode = "instagram_internal_api";
+    analysis.data_source = "clips_user_api";
+    analysis.api_diagnostics = apiDiagnostics;
+    return analysis;
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    const reason = error?.message || "instagram_internal_api_failed";
+    console.warn("[KOLConnect][Instagram] clips/user API failed; entering fallback chain.", reason);
+    apiDiagnostics.push({
+      source: "clips_user_api",
+      status: "failed",
+      http_status: Number(error?.status) || 0,
+      reason
+    });
+  }
+
+  logUnavailableFallbacks(apiDiagnostics);
+  const legacy = await collectInstagramLegacyContent(tabId, {
+    ...options,
+    limit: Math.min(limit, 30)
+  });
+  legacy.collector_mode = "legacy_fallback";
+  legacy.data_source = "hydration_dom";
+  legacy.api_diagnostics = [
+    ...apiDiagnostics,
+    { source: "hydration_dom", status: "success", returned: legacy.returned_count }
+  ];
+  return legacy;
 }
 
 export async function cancelRecentContent(tabId) {

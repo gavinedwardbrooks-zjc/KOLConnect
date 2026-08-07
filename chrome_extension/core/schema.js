@@ -12,14 +12,22 @@ export const PROFILE_FIELD_NAMES = Object.freeze([
   "username",
   "creator_name",
   "followers",
-  "bio"
+  "bio",
+  "email",
+  "whatsapp",
+  "country",
+  "language"
 ]);
 const DEFAULT_MISSING_REASONS = Object.freeze({
   profile_url: "Creator profile URL was not available.",
   username: "Creator username was not available in the current URL.",
   creator_name: "Creator name was not exposed by the current public page.",
   followers: "Follower or subscriber count was not exposed by the current public page.",
-  bio: "Creator bio or channel description was not exposed by the current public page."
+  bio: "Creator bio or channel description was not exposed by the current public page.",
+  email: "A public creator email was not exposed by the current page.",
+  whatsapp: "A public WhatsApp contact was not exposed by the current page.",
+  country: "Creator country was not explicitly exposed by the current page.",
+  language: "Creator language was not explicitly exposed by the current page."
 });
 
 export function createField(value, source = "", confidence = "missing", missingReason = "") {
@@ -73,6 +81,11 @@ export function finalizeProfile(raw = {}) {
     creator_name: fields.creator_name.value,
     followers: fields.followers.value,
     bio: fields.bio.value,
+    email: fields.email.value,
+    whatsapp: fields.whatsapp.value,
+    country: fields.country.value,
+    language: fields.language.value,
+    language_source: fields.language.value ? fields.language.source : "",
     fields,
     capture_status: captureStatus,
     searched_sources: Array.isArray(raw.searched_sources)

@@ -37,12 +37,17 @@ export function normalizeFollowerText(value) {
 export function parseHumanCount(value) {
   let raw = normalizeText(value)
     .replace(/\b(followers?|subscribers?|seguidores?|inscritos?|suscriptores?|abonn[ée]s?)\b/gi, "")
+    .replace(/(?:粉丝|粉絲)/g, "")
     .trim()
     .toLowerCase();
   if (!raw) return null;
 
-  const multiplierMatch = raw.match(/(mio|mil|mi|m|k|b|万|億|亿)(?:\b|$)/i);
-  const unit = multiplierMatch?.[1]?.toLowerCase() || "";
+  // Counts commonly include labels after the multiplier, for example
+  // "2.3万次观看" or "23K views".
+  const multiplierMatch = raw.match(
+    /[\d.,]\s*(?:(mio|mil|mi|m|k|b)(?![a-z])|(万|萬|億|亿))/i
+  );
+  const unit = (multiplierMatch?.[1] || multiplierMatch?.[2] || "").toLowerCase();
   raw = raw.replace(/[^\d.,-]/g, "");
   if (!raw || raw === "-") return null;
 
@@ -76,6 +81,7 @@ export function parseHumanCount(value) {
     mio: 1_000_000,
     b: 1_000_000_000,
     万: 10_000,
+    萬: 10_000,
     億: 100_000_000,
     亿: 100_000_000
   };

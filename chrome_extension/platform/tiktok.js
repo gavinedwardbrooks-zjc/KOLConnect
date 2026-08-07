@@ -1,11 +1,11 @@
 import {
-  CONTENT_DETAIL_CONCURRENCY,
   CONTENT_DETAIL_DELAY_MS,
   finalizeContentAnalysis,
-  mapWithConcurrency
+  sleepWithSignal
 } from "../core/content_analysis.js";
 import {
   abortPageDetailRequests,
+  applyPublicProfileFields,
   executePageFunction,
   executeProfileCollector,
   hostMatches,
@@ -74,7 +74,11 @@ function collectTikTokPage() {
           username,
           creator_name: clean(user.nickname || user.fullName, 256),
           followers: stats.followerCount ?? stats.follower_count ?? user.followerCount ?? "",
-          bio: multiline(user.signature || user.bio)
+          bio: multiline(user.signature || user.bio),
+          email: clean(user.businessEmail || user.publicEmail, 320),
+          whatsapp: clean(user.whatsapp || user.whatsApp, 128),
+          country: clean(user.country || user.region, 128),
+          language: clean(user.language || user.lang, 128)
         };
         break;
       }
@@ -97,6 +101,8 @@ function collectTikTokPage() {
   );
   const creatorName = profile?.creator_name || domName;
   const followers = (profile?.followers ?? "") || domFollowers;
+  const contactLinks = [...document.querySelectorAll('a[href^="mailto:"], a[href*="wa.me/"], a[href*="api.whatsapp.com/"]')]
+    .map((node) => clean(node.href || node.textContent, 512));
   return {
     platform: "TikTok",
     analysis_url: current.href,
@@ -113,6 +119,20 @@ function collectTikTokPage() {
       { source: "profile_dom", value: domBio },
       { source: "meta", value: metaBio }
     ],
+    public_profile: {
+      email_candidates: [
+        { source: "structured_data", value: profile?.email || "" },
+        ...contactLinks.map((value) => ({ source: "profile_dom", value })),
+        { source: "profile_dom", value: domBio }
+      ],
+      whatsapp_candidates: [
+        { source: "structured_data", value: profile?.whatsapp || "" },
+        ...contactLinks.map((value) => ({ source: "profile_dom", value })),
+        { source: "profile_dom", value: domBio }
+      ],
+      country_candidates: [{ source: "structured_data", value: profile?.country || "" }],
+      language_candidates: [{ source: "structured_data", value: profile?.language || "" }]
+    },
     searched_sources: ["page_state", "page_dom", "url"],
     errors: []
   };
@@ -126,6 +146,7 @@ export async function collectProfile(tabId) {
     username: result.fields.username?.value,
     creatorName: result.fields.creator_name?.value
   });
+  applyPublicProfileFields(result);
   delete result.bio_candidates;
   return result;
 }
@@ -191,7 +212,7 @@ function discoverTikTokContent() {
         || stats.playCount !== undefined
         || stats.play_count !== undefined
       )) {
-        add({
+        const mapped = {
           video_id: videoId,
           video_url: node.shareInfo?.shareUrl || node.share_url || "",
           title: clean(node.desc || node.title) || null,
@@ -201,7 +222,8 @@ function discoverTikTokContent() {
           published_at: node.createTime ?? node.create_time ?? null,
           is_pinned: Boolean(node.isPinned || node.is_pinned || node.pinned),
           source: "structured_data"
-        });
+        };
+        add(mapped);
       }
       for (const child of Array.isArray(node) ? node : Object.values(node)) {
         if (child && typeof child === "object") queue.push(child);
@@ -247,11 +269,21 @@ async function fetchTikTokContentDetail(videoUrl) {
       redirect: "follow",
       signal: controller.signal
     });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const html = await response.text();
-    if (/\/login|verify|captcha/i.test(response.url) || /captcha|verify to continue/i.test(html.slice(0, 20000))) {
-      return { video_id: videoId, detail_missing_reason: "TikTok required login or verification." };
+    const htmlPrefix = html.slice(0, 30000);
+    const loginDetected = /\/login/i.test(String(response.url || ""))
+      || /login to tiktok|log in to tiktok|<title>\s*log in/i.test(htmlPrefix);
+    const challengeDetected = /\/verify|\/challenge/i.test(String(response.url || ""))
+      || /verify to continue|challenge required|verification required|security verification|please verify/i.test(htmlPrefix);
+    const captchaDetected = /captcha/i.test(String(response.url || "")) || /captcha/i.test(htmlPrefix);
+    if (loginDetected || challengeDetected || captchaDetected) {
+      return {
+        video_id: videoId,
+        detail_fallback_status: "blocked_by_verification",
+        detail_missing_reason: "TikTok limited video detail access; using profile-page data only."
+      };
     }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const parsed = new DOMParser().parseFromString(html, "text/html");
     const states = [];
     for (const id of ["__UNIVERSAL_DATA_FOR_REHYDRATION__", "SIGI_STATE"]) {
@@ -334,37 +366,68 @@ export async function collectRecentContent(tabId, options = {}) {
   options.onProgress?.({ phase: "discovering" });
   const discovered = await executePageFunction(tabId, discoverTikTokContent);
   const eligible = discovered.filter((item) => !options.excludePinned || !item.is_pinned).slice(0, limit);
+  const passiveFields = {
+    likes: eligible.some((item) => item.likes != null),
+    comments: eligible.some((item) => item.comments != null),
+    published_at: eligible.some((item) => item.published_at != null),
+    shares: eligible.some((item) => item.shares != null)
+  };
   options.onProgress?.({
     phase: "discovered",
     discovered: discovered.length,
     excludedPinned: discovered.filter((item) => item.is_pinned).length
   });
-  const completed = await mapWithConcurrency(
-    eligible,
-    async (item) => {
-      if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      if (item.views != null && item.likes != null && item.comments != null && item.published_at != null) {
-        return mergeTikTokDetail(item, null);
+  const completed = [];
+  let detailFallbackStatus = "not_required";
+  let detailRequestCount = 0;
+  for (const [index, item] of eligible.entries()) {
+    if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+    const needsDetail = !(
+      item.views != null && item.likes != null && item.comments != null && item.published_at != null
+    );
+    if (!needsDetail || detailFallbackStatus === "blocked_by_verification") {
+      completed.push(mergeTikTokDetail(item, null));
+    } else {
+      detailFallbackStatus = "available";
+      detailRequestCount += 1;
+      let detail;
+      try {
+        detail = await executePageFunction(tabId, fetchTikTokContentDetail, [item.video_url]);
+      } catch (error) {
+        detail = {
+          video_id: item.video_id,
+          detail_missing_reason: error?.message || "TikTok detail request failed."
+        };
       }
-      const detail = await executePageFunction(tabId, fetchTikTokContentDetail, [item.video_url]);
-      if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      return mergeTikTokDetail(item, detail);
-    },
-    {
-      concurrency: CONTENT_DETAIL_CONCURRENCY,
-      delay: CONTENT_DETAIL_DELAY_MS,
-      signal: options.signal,
-      onProgress: options.onProgress
+      if (detail?.detail_fallback_status === "blocked_by_verification") {
+        detailFallbackStatus = "blocked_by_verification";
+      }
+      completed.push(mergeTikTokDetail(item, detail));
     }
-  );
+    options.onProgress?.({ phase: "details", current: index + 1, total: eligible.length });
+    if (
+      index + 1 < eligible.length
+      && detailFallbackStatus !== "blocked_by_verification"
+      && CONTENT_DETAIL_DELAY_MS > 0
+    ) {
+      await sleepWithSignal(CONTENT_DETAIL_DELAY_MS, options.signal);
+    }
+  }
   const completedById = new Map(completed.map((item) => [item.video_id || item.video_url, item]));
   const merged = discovered.map((item) => completedById.get(item.video_id || item.video_url) || item);
   options.onProgress?.({ phase: "calculating" });
-  return finalizeContentAnalysis(merged, {
+  const analysis = finalizeContentAnalysis(merged, {
     limit,
     excludePinned: options.excludePinned !== false,
     contentType: "video"
   });
+  analysis.detail_fallback_status = detailFallbackStatus;
+  analysis.detail_request_count = detailRequestCount;
+  analysis.current_page_metadata_status = Object.values(passiveFields).some(Boolean)
+    ? "available"
+    : "current_page_metadata_unavailable";
+  analysis.current_page_metadata_fields = passiveFields;
+  return analysis;
 }
 
 export async function cancelRecentContent(tabId) {

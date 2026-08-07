@@ -15,6 +15,7 @@ import {
 import { finalizeProfile } from "../core/schema.js";
 import { buildImportPayload } from "../services/local_api.js";
 import * as Instagram from "../platform/instagram.js";
+import * as TikTok from "../platform/tiktok.js";
 import * as YouTube from "../platform/youtube.js";
 
 const supportContext = vm.createContext({ URL });
@@ -161,6 +162,126 @@ assert.equal(analysis.average_views, 2050);
 assert.equal(analysis.median_views, 2050);
 assert.ok(Math.abs(analysis.weighted_engagement_rate - 11) < 0.000001);
 assert.deepEqual(analysis.summary_validation, calculateViewSummary(analysis.contents));
+
+const savedTikTokGlobals = {
+  chrome: globalThis.chrome,
+  fetch: globalThis.fetch,
+  DOMParser: globalThis.DOMParser
+};
+const captchaItems = [100, 200, 300].map((views, index) => ({
+  video_id: `987654321012345678${index}`,
+  video_url: `https://www.tiktok.com/@fixture_creator/video/987654321012345678${index}`,
+  views,
+  likes: null,
+  comments: null,
+  published_at: null,
+  is_pinned: false,
+  source: "page_dom"
+}));
+let tiktokDetailRequests = 0;
+globalThis.fetch = async () => {
+  tiktokDetailRequests += 1;
+  return {
+    ok: true,
+    status: 200,
+    redirected: false,
+    url: captchaItems[0].video_url,
+    headers: { get: () => "text/html; charset=utf-8" },
+    async text() { return "<html><body>captcha verify to continue</body></html>"; }
+  };
+};
+globalThis.chrome = {
+  scripting: {
+    async executeScript({ func, args = [] }) {
+      if (func.name === "discoverTikTokContent") return [{ result: structuredClone(captchaItems) }];
+      if (func.name === "fetchTikTokContentDetail") return [{ result: await func(...args) }];
+      throw new Error(`Unexpected TikTok function ${func.name}`);
+    }
+  }
+};
+const blockedTikTokAnalysis = await TikTok.collectRecentContent(1, { limit: 3, excludePinned: false });
+assert.equal(tiktokDetailRequests, 1);
+assert.equal(blockedTikTokAnalysis.detail_fallback_status, "blocked_by_verification");
+assert.equal(blockedTikTokAnalysis.detail_request_count, 1);
+assert.equal(blockedTikTokAnalysis.current_page_metadata_status, "current_page_metadata_unavailable");
+assert.equal(blockedTikTokAnalysis.returned_count, 3);
+assert.equal(blockedTikTokAnalysis.valid_views_count, 3);
+for (const [index, item] of blockedTikTokAnalysis.contents.entries()) {
+  assert.equal(item.views.value, (index + 1) * 100);
+  assert.equal(item.likes.value, null);
+  assert.equal(item.comments.value, null);
+  assert.equal(item.published_at.value, null);
+}
+assert.equal("tiktok_live_diagnostic" in blockedTikTokAnalysis, false);
+assert.equal("tiktok_detail_diagnostic" in blockedTikTokAnalysis, false);
+
+const normalVideoId = "9876543210123456789";
+const normalItem = {
+  video_id: normalVideoId,
+  video_url: `https://www.tiktok.com/@fixture_creator/video/${normalVideoId}`,
+  views: 100,
+  likes: null,
+  comments: null,
+  published_at: null,
+  is_pinned: false,
+  source: "page_dom"
+};
+const detailHydration = JSON.stringify({
+  item: {
+    id: normalVideoId,
+    desc: "fixture",
+    stats: { playCount: 100, diggCount: 12, commentCount: 3 },
+    createTime: 1_720_000_000
+  }
+});
+tiktokDetailRequests = 0;
+globalThis.fetch = async () => {
+  tiktokDetailRequests += 1;
+  return {
+    ok: true,
+    status: 200,
+    redirected: false,
+    url: normalItem.video_url,
+    headers: { get: () => "text/html; charset=utf-8" },
+    async text() { return "<html><body>public video page</body></html>"; }
+  };
+};
+globalThis.DOMParser = class {
+  parseFromString() {
+    return {
+      getElementById(id) {
+        return id === "__UNIVERSAL_DATA_FOR_REHYDRATION__"
+          ? { textContent: detailHydration }
+          : null;
+      }
+    };
+  }
+};
+globalThis.chrome.scripting.executeScript = async ({ func, args = [] }) => {
+  if (func.name === "discoverTikTokContent") return [{ result: [structuredClone(normalItem)] }];
+  if (func.name === "fetchTikTokContentDetail") return [{ result: await func(...args) }];
+  throw new Error(`Unexpected TikTok function ${func.name}`);
+};
+const normalTikTokAnalysis = await TikTok.collectRecentContent(1, { limit: 1, excludePinned: false });
+assert.equal(tiktokDetailRequests, 1);
+assert.equal(normalTikTokAnalysis.detail_fallback_status, "available");
+assert.equal(normalTikTokAnalysis.contents[0].views.value, 100);
+assert.equal(normalTikTokAnalysis.contents[0].likes.value, 12);
+assert.equal(normalTikTokAnalysis.contents[0].comments.value, 3);
+assert.ok(normalTikTokAnalysis.contents[0].published_at.value);
+
+const floatingAssistantSource = readFileSync(
+  new URL("../content/floating_assistant.js", import.meta.url),
+  "utf8"
+);
+assert.doesNotMatch(floatingAssistantSource, /TikTok 主页 Raw 临时诊断/);
+assert.doesNotMatch(floatingAssistantSource, /TikTok Detail 临时诊断/);
+assert.match(floatingAssistantSource, /TikTok 限制了视频详情读取，当前仅使用主页可获得的数据。/);
+globalThis.chrome = savedTikTokGlobals.chrome;
+if (savedTikTokGlobals.fetch === undefined) delete globalThis.fetch;
+else globalThis.fetch = savedTikTokGlobals.fetch;
+if (savedTikTokGlobals.DOMParser === undefined) delete globalThis.DOMParser;
+else globalThis.DOMParser = savedTikTokGlobals.DOMParser;
 
 const summaryOdd = calculateViewSummary([
   { views: { value: 100 } },
@@ -346,6 +467,7 @@ const payload = buildImportPayload({
   profile_url: "https://www.tiktok.com/@creator",
   username: "@creator",
   creator_name: "Creator",
+  content_category: "Gaming",
   videos: analysis.contents,
   video_analysis: { average_views: analysis.average_views }
 });
@@ -360,7 +482,8 @@ assert.deepEqual(Object.keys(payload), [
   "video_analysis",
   "creator_insight",
   "content_category",
-  "note"
+  "note",
+  "analysis"
 ]);
 
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));

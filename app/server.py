@@ -1626,31 +1626,35 @@ def _email_recheck_summary(task_id: str) -> dict:
 
 
 def create_email_recheck_task() -> dict:
-    """Create a task only for existing account-table records with no email."""
-    config = get_four_table_feishu_config()
-    required = ("app_id", "app_secret", "app_token", "account_table_id")
-    missing = [key for key in required if not str(config.get(key) or "").strip()]
-    if missing:
-        raise RuntimeError(f"达人账号表飞书配置不完整: {', '.join(missing)}")
-
-    accounts, duplicate_uids = scraper_module.fetch_existing_creator_accounts(config, include_duplicates=True)
+    """Create a task for local Creator Accounts that still have no email."""
+    accounts = get_creator_repository().getCreatorAccounts("")
+    duplicate_uids: set[str] = set()
+    seen_uids: set[str] = set()
     rows: list[dict] = []
     skipped: list[str] = []
     platform_counts = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
-    for account_uid, account in accounts.items():
-        if account_uid in duplicate_uids:
+    for account in accounts:
+        account_uid = str(account.get("account_uid") or "").strip()
+        if not account_uid:
+            skipped.append("missing_uid: 账号唯一ID为空")
+            continue
+        if account_uid in seen_uids:
+            duplicate_uids.add(account_uid)
             skipped.append(f"duplicate_uid: {account_uid}")
             continue
-        fields = account.get("fields") if isinstance(account, dict) else {}
-        fields = fields if isinstance(fields, dict) else {}
-        if not _account_email_is_empty(fields.get(scraper_module.FOUR_TABLE_ACCOUNT_FIELD_EMAIL)):
+        seen_uids.add(account_uid)
+        if not _account_email_is_empty(account.get("account_email")):
             continue
-        platform = str(fields.get(scraper_module.FOUR_TABLE_ACCOUNT_FIELD_PLATFORM) or "").strip()
-        profile_url = _feishu_link_value(fields.get(scraper_module.FOUR_TABLE_ACCOUNT_FIELD_PROFILE_URL))
+        platform = str(account.get("platform") or "").strip()
+        profile_url = str(account.get("profile_url") or "").strip()
+        if platform not in platform_counts or not profile_url:
+            skipped.append(f"{account_uid}: 平台或主页链接不完整")
+            continue
         normalized = scraper_module.normalize_link_record(profile_url)
         result = scraper_module.build_result(
             url=str(normalized.get("normalized_url") or ""),
             platform=platform,
+            name=str(account.get("username") or "").strip(),
             status="待补全",
             data_status="待检查",
         )
@@ -1687,7 +1691,7 @@ def create_email_recheck_task() -> dict:
     task.update(
         {
             "status": "email_recheck_created",
-            "email_recheck_source": "account_table_empty_email",
+            "email_recheck_source": "local_account_empty_email",
             "scan_skipped_count": len(skipped),
         }
     )
@@ -1886,6 +1890,8 @@ def _task_rows_for_creator_library(task: dict, rows: list[dict]) -> list[dict]:
     """Map task CSV rows to the repository contract without changing CSV fields."""
     records: list[dict] = []
     source_contact_id = str(task.get("local_source_contact_id") or "").strip()
+    extension_crm = task.get("extension_crm") if isinstance(task.get("extension_crm"), dict) else {}
+    task_type = str(task.get("task_type") or "scrape").strip()
     for row in rows:
         result = scraper_module.row_to_result(row)
         profile_url = str(result.get("url") or "").strip()
@@ -1904,12 +1910,18 @@ def _task_rows_for_creator_library(task: dict, rows: list[dict]) -> list[dict]:
                 "followers": str(result.get("follower_count") or "").strip(),
                 "email": email,
                 "whatsapp": str(result.get("whatsapp") or "").strip(),
+                "country": str(result.get("country") or extension_crm.get("country") or "").strip(),
+                "language": str(result.get("language") or extension_crm.get("language") or "").strip(),
+                "content_category": str(
+                    result.get("content_category") or extension_crm.get("content_category") or ""
+                ).strip(),
                 "note": str(result.get("note") or ""),
                 "latest_post_date": str(result.get("latest_publish_date") or "").strip(),
                 "last_scrape_time": str(result.get("last_scrape_time") or "").strip(),
                 "data_source": _task_data_source(task),
                 "scrape_status": str(result.get("scrape_status") or "").strip(),
                 "source_contact_id": source_contact_id,
+                "email_recheck": task_type == "email_recheck",
             }
         )
     return records
@@ -1924,7 +1936,11 @@ def import_task_results_to_creator_library(
     task, paths = task_manager.load_task(TASKS_DIR, task_id)
     if not bool(task.get("creator_library_import_eligible")):
         return {"status": "skipped", "reason": "historical_task_requires_manual_import"}
-    if str(task.get("task_type") or "scrape") == "email_recheck":
+    if (
+        str(task.get("task_type") or "scrape") == "email_recheck"
+        and not str(task.get("email_recheck_source") or "").strip()
+    ):
+        # Preserve the boundary for pre-M1 email-recheck metadata that had no local source contract.
         return {"status": "skipped", "reason": "email_recheck_task"}
     allowed_statuses = allowed_task_statuses or {"completed"}
     if str(task.get("status") or "") not in allowed_statuses:
@@ -1990,11 +2006,15 @@ def _extension_analysis_payload(payload: dict, task: dict, account_uid: str) -> 
             "profile_url": str(creator.get("profile_url") or "").strip(),
             "followers": str(creator.get("followers") or "").strip(),
             "bio": str(creator.get("bio") or "").strip(),
-            "country": str(creator.get("country") or "").strip(),
-            "language": str(creator.get("language") or "").strip(),
+            "email": str(creator.get("email") or payload.get("email") or "").strip(),
+            "whatsapp": str(creator.get("whatsapp") or payload.get("whatsapp") or "").strip(),
+            "country": str(creator.get("country") or payload.get("country") or "").strip(),
+            "language": str(creator.get("language") or payload.get("language") or "").strip(),
             "language_source": str(creator.get("language_source") or "").strip(),
         },
-        "content_category": str(payload.get("content_category") or "").strip(),
+        "content_category": str(
+            payload.get("content_category") or creator.get("content_category") or ""
+        ).strip(),
         "video_analysis": video_analysis,
         "videos": videos,
         "creator_insight": creator_insight,
@@ -2012,6 +2032,24 @@ def import_extension_capture(payload: dict) -> dict:
     if not normalized.get("valid"):
         raise ValueError(str(normalized.get("reason") or "主页链接无效。"))
     normalized_url = str(normalized.get("normalized_url") or "").strip()
+    email = str(creator.get("email") or payload.get("email") or "").strip()
+    whatsapp = str(creator.get("whatsapp") or payload.get("whatsapp") or "").strip()
+    country = str(creator.get("country") or payload.get("country") or "").strip()
+    language = str(creator.get("language") or payload.get("language") or "").strip()
+    content_category = str(
+        payload.get("content_category") or creator.get("content_category") or ""
+    ).strip()
+    normalized_payload = {
+        **payload,
+        "creator": {
+            **creator,
+            "email": email,
+            "whatsapp": whatsapp,
+            "country": country,
+            "language": language,
+        },
+        "content_category": content_category,
+    }
     manual_result = create_manual_task(
         {
             "task_name": payload.get("task_name"),
@@ -2019,14 +2057,14 @@ def import_extension_capture(payload: dict) -> dict:
             "platform": creator.get("platform"),
             "profile_url": normalized_url,
             "follower_count": creator.get("followers"),
-            "email": "",
-            "whatsapp": "",
+            "email": email,
+            "whatsapp": whatsapp,
             "note": payload.get("note"),
         },
         defer_library_import=True,
     )
     task = manual_result["task"]
-    analysis = _extension_analysis_payload(payload, task, manual_result["account_uid"])
+    analysis = _extension_analysis_payload(normalized_payload, task, manual_result["account_uid"])
     try:
         saved_analysis = get_creator_repository().saveCreator(analysis)
     except Exception:
@@ -2042,6 +2080,11 @@ def import_extension_capture(payload: dict) -> dict:
         creator_analysis_id=saved_analysis["creator_id"],
         creator_snapshot_id=saved_analysis["snapshot_id"],
         creator_analysis_imported_at=analysis["imported_at"],
+        extension_crm={
+            "country": country,
+            "language": language,
+            "content_category": content_category,
+        },
     )
     return {
         "duplicate": False,

@@ -19,7 +19,8 @@
   const URL_CHECK_INTERVAL_MS = 1500;
   const SessionController = globalThis.KOLConnectAnalysisSessionController;
   const pageSupport = globalThis.KOLConnectPageSupport;
-  if (!SessionController || !pageSupport) return;
+  const contentCategoryOptions = globalThis.KOLConnectConfig?.CONTENT_CATEGORY_OPTIONS || [];
+  if (!SessionController || !pageSupport || !contentCategoryOptions.length) return;
 
   for (const staleId of [ROOT_ID, "kolconnect-next-assistant"]) {
     document.getElementById(staleId)?.remove();
@@ -38,7 +39,8 @@
     analyzedUrl: "",
     analysisTimer: null,
     currentSessionId: "",
-    currentContentSessionId: ""
+    currentContentSessionId: "",
+    preview: null
   };
 
   const create = (tag, className = "", text = "") => {
@@ -83,6 +85,40 @@
     card.append(row);
   }
 
+  const previewSection = create("section", "kol-preview-section");
+  previewSection.append(create("h3", "kol-section-title", "导入预览"));
+  const previewInputs = {};
+  const previewLabels = {
+    email: "Email",
+    whatsapp: "WhatsApp",
+    country: "Country",
+    language: "Language"
+  };
+  for (const [name, label] of Object.entries(previewLabels)) {
+    const field = create("label", "kol-preview-field");
+    field.append(create("span", "kol-label", label));
+    const input = create("input", "kol-preview-input");
+    input.type = "text";
+    input.autocomplete = "off";
+    previewInputs[name] = input;
+    field.append(input);
+    previewSection.append(field);
+  }
+  const categoryField = create("label", "kol-preview-field");
+  categoryField.append(create("span", "kol-label", "Content Category *"));
+  const categorySelect = create("select", "kol-preview-input");
+  const emptyCategory = create("option", "", "请选择");
+  emptyCategory.value = "";
+  categorySelect.append(emptyCategory);
+  for (const category of contentCategoryOptions) {
+    const option = create("option", "", category);
+    option.value = category;
+    categorySelect.append(option);
+  }
+  previewInputs.content_category = categorySelect;
+  categoryField.append(categorySelect);
+  previewSection.append(categoryField);
+
   const contentSection = create("section", "kol-content-section");
   contentSection.append(create("h3", "kol-section-title", "最近内容分析"));
   const contentStatus = create("div", "kol-content-status", "尚未分析。");
@@ -112,7 +148,11 @@
   contentDetails.append(create("summary", "", "查看内容明细"));
   const contentList = create("div", "kol-content-list");
   contentDetails.append(contentList);
-  contentSection.append(contentStatus, contentSummary, contentDetails);
+  contentSection.append(
+    contentStatus,
+    contentSummary,
+    contentDetails
+  );
 
   const diagnostics = create("details", "kol-diagnostics");
   diagnostics.append(create("summary", "", "高级诊断"));
@@ -135,8 +175,9 @@
     button.type = "button";
   }
   cancelContentButton.hidden = true;
+  importButton.disabled = true;
   actions.append(refreshButton, analyzeContentButton, cancelContentButton, copyButton, importButton);
-  body.append(status, card, contentSection, diagnostics, actions);
+  body.append(status, card, previewSection, contentSection, diagnostics, actions);
   panel.append(head, body);
   root.append(panel);
   document.documentElement.append(root);
@@ -165,6 +206,37 @@
     reel: "Reels",
     short: "Shorts"
   }[value] || "—");
+
+  const syncPreviewState = () => {
+    if (!state.preview) return;
+    for (const [name, input] of Object.entries(previewInputs)) {
+      state.preview[name] = String(input.value || "").trim();
+    }
+    importButton.disabled = !state.profile || !state.preview.content_category;
+  };
+
+  const initializePreview = (profile) => {
+    state.preview = profile ? {
+      email: profile.email || "",
+      whatsapp: profile.whatsapp || "",
+      country: profile.country || "",
+      language: profile.language || "",
+      content_category: profile.content_category || ""
+    } : null;
+    for (const [name, input] of Object.entries(previewInputs)) {
+      input.value = state.preview?.[name] || "";
+    }
+    importButton.disabled = !state.profile || !state.preview?.content_category;
+  };
+
+  const profileForImport = () => ({
+    ...state.profile,
+    email: state.preview?.email || "",
+    whatsapp: state.preview?.whatsapp || "",
+    country: state.preview?.country || "",
+    language: state.preview?.language || "",
+    content_category: state.preview?.content_category || ""
+  });
 
   const updateContentDiagnostic = () => {
     if (!state.profile?.diagnostic_report) return;
@@ -236,7 +308,10 @@
     contentSummaryFields.median_views.textContent = formatNumber(analysis.median_views);
     contentSummaryFields.weighted_engagement_rate.textContent = formatPercent(analysis.weighted_engagement_rate);
     contentSummaryFields.capture_status.textContent = analysis.capture_status || "—";
-    contentStatus.textContent = analysis.error === "CONTENT_VIEW_SUMMARY_MISMATCH"
+    contentStatus.textContent = state.profile?.platform === "TikTok"
+      && analysis.detail_fallback_status === "blocked_by_verification"
+      ? "TikTok 限制了视频详情读取，当前仅使用主页可获得的数据。"
+      : analysis.error === "CONTENT_VIEW_SUMMARY_MISMATCH"
       ? "播放统计数据不一致，请重新分析。"
       : analysis.capture_status === "success"
       ? "最近内容分析完成。"
@@ -246,7 +321,6 @@
           ? "当前页面没有公开足够的内容数据。"
           : "内容分析失败。";
     contentDetails.hidden = !analysis.contents?.length;
-
     for (const [index, item] of (analysis.contents || []).entries()) {
       const itemCard = create("article", "kol-content-item");
       const title = create(
@@ -284,6 +358,7 @@
 
   const clearProfile = () => {
     state.profile = null;
+    initializePreview(null);
     renderProfile();
   };
 
@@ -322,6 +397,7 @@
       }
       if (!response?.ok) throw new Error(response?.error || "Profile collection failed.");
       state.profile = response.profile;
+      initializePreview(response.profile);
       state.analyzedUrl = state.lastUrl;
       renderProfile();
       showProfileStatus(response.profile);
@@ -450,13 +526,21 @@
   };
 
   const importCurrent = async () => {
+    syncPreviewState();
+    if (!state.profile || !state.preview?.content_category) {
+      setStatus(
+        state.profile ? "请选择 Content Category 后再导入。" : "请先分析当前达人主页。",
+        "warning"
+      );
+      return;
+    }
     if (!state.profile) {
       setStatus("请先分析当前达人主页。", "warning");
       return;
     }
     setStatus("正在连接 KOLConnect…");
     try {
-      const response = await sendMessage({ type: MESSAGE.IMPORT, profile: state.profile });
+      const response = await sendMessage({ type: MESSAGE.IMPORT, profile: profileForImport() });
       if (!response?.ok) throw new Error(response?.error || "Import failed.");
       setStatus("导入成功，已进入 KOLConnect 审核流程。");
     } catch (error) {
@@ -492,6 +576,10 @@
   cancelContentButton.addEventListener("click", () => cancelContentAnalysis(true));
   copyButton.addEventListener("click", copyDiagnostics);
   importButton.addEventListener("click", importCurrent);
+  for (const input of Object.values(previewInputs)) {
+    input.addEventListener("input", syncPreviewState);
+    input.addEventListener("change", syncPreviewState);
+  }
   closeButton.addEventListener("click", close);
   minimizeButton.addEventListener("click", () => {
     state.minimized = !state.minimized;
@@ -560,7 +648,11 @@
     cancelContentAnalysis,
     handleUrlChange,
     root,
-    state
+    state,
+    previewInputs,
+    importCurrent,
+    initializePreview,
+    profileForImport
   };
 
   if (pageSupport.isSupportedCreatorPage(location.href)) {

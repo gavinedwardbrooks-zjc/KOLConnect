@@ -36,6 +36,7 @@ const partialProfile = finalizeProfile({
   searched_sources: ["page_dom", "url"],
   errors: []
 });
+partialProfile.content_category = "Gaming";
 assert.equal(partialProfile.capture_status, "partial_success");
 assert.equal(partialProfile.creator_name, null);
 assert.equal(partialProfile.fields.creator_name.confidence, "missing");
@@ -69,7 +70,8 @@ assert.deepEqual(Object.keys(payload), [
   "video_analysis",
   "creator_insight",
   "content_category",
-  "note"
+  "note",
+  "analysis"
 ]);
 assert.deepEqual(Object.keys(payload.creator), [
   "creator_name",
@@ -77,6 +79,8 @@ assert.deepEqual(Object.keys(payload.creator), [
   "profile_url",
   "followers",
   "bio",
+  "email",
+  "whatsapp",
   "country",
   "language",
   "language_source"

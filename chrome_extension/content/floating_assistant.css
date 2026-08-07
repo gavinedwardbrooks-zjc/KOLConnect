@@ -87,6 +87,41 @@
   border-radius: 14px;
 }
 
+#kolconnect-next-root .kol-preview-section {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #eee9e1;
+  border-radius: 14px;
+  background: #fffdf9;
+}
+
+#kolconnect-next-root .kol-preview-field {
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+#kolconnect-next-root .kol-preview-input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 9px;
+  border: 1px solid #e9e5dd;
+  border-radius: 9px;
+  outline: none;
+  background: #fff;
+  color: #344038;
+  font: 13px/1.35 "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+#kolconnect-next-root .kol-preview-input:focus {
+  border-color: #8baa8c;
+  box-shadow: 0 0 0 2px rgba(139, 170, 140, 0.16);
+}
+
 #kolconnect-next-root .kol-content-section {
   margin-top: 12px;
   padding: 13px;

@@ -1,4 +1,9 @@
+import "../config.js";
+
 const DEFAULT_API_URL = "http://127.0.0.1:8765";
+export const CONTENT_CATEGORY_OPTIONS = globalThis.KOLConnectConfig.CONTENT_CATEGORY_OPTIONS;
+
+const clean = (value) => String(value ?? "").trim();
 
 export async function loadLocalApiUrl() {
   const stored = await chrome.storage.local.get("localApiUrl");
@@ -22,7 +27,7 @@ function buildVideoImportItem(video = {}, capturedAt = "") {
   };
 }
 
-export function buildImportPayload(profile, now = new Date()) {
+export function buildImportPayload(profile = {}, now = new Date()) {
   const capturedAt = now.toISOString();
   return {
     task_name: `Extension import ${now.toISOString().slice(0, 10)}`,
@@ -32,9 +37,11 @@ export function buildImportPayload(profile, now = new Date()) {
       profile_url: profile.profile_url || "",
       followers: profile.followers || "",
       bio: profile.bio || "",
-      country: "",
-      language: "",
-      language_source: ""
+      email: clean(profile.email),
+      whatsapp: clean(profile.whatsapp),
+      country: clean(profile.country),
+      language: clean(profile.language),
+      language_source: clean(profile.language_source)
     },
     videos: Array.isArray(profile.videos)
       ? profile.videos.map((video) => buildVideoImportItem(video, capturedAt))
@@ -43,8 +50,14 @@ export function buildImportPayload(profile, now = new Date()) {
       ? profile.video_analysis
       : {},
     creator_insight: {},
-    content_category: "",
-    note: ""
+    content_category: clean(profile.content_category),
+    note: profile.note || "",
+    analysis: profile.analysis && typeof profile.analysis === "object"
+      ? profile.analysis
+      : {
+          capture_status: profile.capture_status || "",
+          analysis_url: profile.analysis_url || profile.profile_url || ""
+        }
   };
 }
 
@@ -53,6 +66,14 @@ export function validateImportProfile(profile = {}) {
   if (!profile.platform) missing.push("平台");
   if (!profile.profile_url) missing.push("主页链接");
   if (!profile.username) missing.push("用户名");
+  if (
+    profile.platform
+    && profile.profile_url
+    && profile.username
+    && !CONTENT_CATEGORY_OPTIONS.includes(clean(profile.content_category))
+  ) {
+    missing.push("Content Category");
+  }
   return missing;
 }
 

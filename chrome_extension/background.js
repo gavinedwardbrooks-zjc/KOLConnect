@@ -59,7 +59,7 @@ async function openAssistant(tab) {
     });
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["core/analysis_session.js", "core/page_support.js", "content/floating_assistant.js"]
+      files: ["config.js", "core/analysis_session.js", "core/page_support.js", "content/floating_assistant.js"]
     });
     await sendToTab(tab.id, { type: MESSAGE.OPEN });
   }
@@ -77,6 +77,7 @@ function cancelContentAnalysis(tabId) {
 
 async function analyzeContentForTab(tab, sessionId) {
   const platform = platformForUrl(tab?.url);
+  const contentLimit = Number(platform?.RECENT_CONTENT_LIMIT) || 30;
   if (!tab?.id || !platform) {
     return failedContentAnalysis("The current page is not a supported creator profile.", { limit: 30 });
   }
@@ -89,7 +90,7 @@ async function analyzeContentForTab(tab, sessionId) {
   contentControllers.set(tab.id, { controller, timeoutId, sessionId, platform });
   try {
     const analysis = await platform.collectRecentContent(tab.id, {
-      limit: 30,
+      limit: contentLimit,
       excludePinned: true,
       analysisUrl: tab.url,
       signal: controller.signal,

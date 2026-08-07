@@ -47,8 +47,13 @@ export function cleanMultiline(value, limit = 5000) {
     .trim();
 }
 
-function isStatsLine(line) {
-  return /^(?:[\d.,]+\s*[KMB万億亿]?\s*)?(?:posts?|followers?|following|likes?|videos?|seguidores?|seguindo|publica(?:ç|c)[õo]es|inscritos?)\b/i.test(line);
+export function isStatsLine(line, platform = "") {
+  const normalized = cleanMultiline(line, 256);
+  if (/^(?:[\d.,]+\s*[KMB万萬億亿]?\s*)?(?:posts?|followers?|following|likes?|videos?|seguidores?|seguindo|publica(?:ç|c)[õo]es|inscritos?)\b/i.test(normalized)) {
+    return true;
+  }
+  if (String(platform).toLowerCase() !== "instagram") return false;
+  return /^(?:[\d.,]+\s*[KMB万萬億亿]?\s*)?(?:帖子|貼文|贴文|粉丝|粉絲|关注|關注|追蹤中|追踪中)$/i.test(normalized);
 }
 
 function isUiLine(line) {
@@ -59,7 +64,7 @@ function isOnlyUrl(line) {
   return /^(?:https?:\/\/|www\.)\S+$/i.test(line);
 }
 
-function cleanLines(value, { username = "", creatorName = "", stripStats = true } = {}) {
+function cleanLines(value, { username = "", creatorName = "", stripStats = true, platform = "" } = {}) {
   const aliases = [username, username.replace(/^@/, ""), creatorName]
     .map((item) => cleanMultiline(item).toLowerCase())
     .filter(Boolean);
@@ -69,7 +74,7 @@ function cleanLines(value, { username = "", creatorName = "", stripStats = true 
     .filter(Boolean)
     .filter((line) => !isUiLine(line))
     .filter((line) => !isOnlyUrl(line))
-    .filter((line) => !stripStats || !isStatsLine(line))
+    .filter((line) => !stripStats || !isStatsLine(line, platform))
     .filter((line) => !aliases.includes(line.toLowerCase()));
   return [...new Set(lines)].join("\n").trim();
 }
@@ -118,7 +123,8 @@ export function selectBio(candidates = [], options = {}) {
       const value = cleanLines(raw, {
         username: options.username,
         creatorName: options.creatorName,
-        stripStats: true
+        stripStats: true,
+        platform
       });
       if (!value) continue;
       if (platform === "youtube" && !isMeaningfulYouTubeDescription(value, options.username, options.creatorName)) {
@@ -139,4 +145,50 @@ export function selectBio(candidates = [], options = {}) {
     confidence: "missing",
     missing_reason: missingReason
   };
+}
+
+function publicField(value, source, missingReason) {
+  const normalized = cleanMultiline(value, 512);
+  return {
+    value: normalized || null,
+    source: normalized ? String(source || "page_dom") : "",
+    confidence: normalized ? (source === "structured_data" ? "high" : "medium") : "missing",
+    missing_reason: normalized ? "" : missingReason
+  };
+}
+
+function firstCandidate(candidates, extractor) {
+  for (const candidate of Array.isArray(candidates) ? candidates : []) {
+    const value = extractor(String(candidate?.value ?? ""));
+    if (value) return { value, source: candidate?.source || "page_dom" };
+  }
+  return { value: "", source: "" };
+}
+
+export function extractPublicProfileFields(publicProfile = {}) {
+  const email = firstCandidate(publicProfile.email_candidates, (text) => (
+    text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0] || ""
+  ));
+  const whatsapp = firstCandidate(publicProfile.whatsapp_candidates, (text) => {
+    const waDigits = text.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\/?\?phone=)(\d{7,15})/i)?.[1];
+    if (waDigits) return `+${waDigits}`;
+    const explicit = text.match(/(?:whats\s*app|whatsapp)\D{0,20}(\+?\d[\d\s().-]{6,20}\d)/i)?.[1];
+    return explicit ? explicit.replace(/[^\d+]/g, "") : "";
+  });
+  const country = firstCandidate(publicProfile.country_candidates, (text) => cleanMultiline(text, 128));
+  const language = firstCandidate(publicProfile.language_candidates, (text) => cleanMultiline(text, 128));
+  return {
+    email: publicField(email.value, email.source, "A public creator email was not exposed by the current page."),
+    whatsapp: publicField(whatsapp.value, whatsapp.source, "A public WhatsApp contact was not exposed by the current page."),
+    country: publicField(country.value, country.source, "Creator country was not explicitly exposed by the current page."),
+    language: publicField(language.value, language.source, "Creator language was not explicitly exposed by the current page.")
+  };
+}
+
+export function applyPublicProfileFields(result = {}) {
+  const publicProfile = result.public_profile || {};
+  result.fields ||= {};
+  Object.assign(result.fields, extractPublicProfileFields(publicProfile));
+  delete result.public_profile;
+  return result;
 }

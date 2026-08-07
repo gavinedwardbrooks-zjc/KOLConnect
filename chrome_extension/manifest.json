@@ -38,6 +38,7 @@
         "*://*.youtube.com/*"
       ],
       "js": [
+        "config.js",
         "core/analysis_session.js",
         "core/page_support.js",
         "content/floating_assistant.js"

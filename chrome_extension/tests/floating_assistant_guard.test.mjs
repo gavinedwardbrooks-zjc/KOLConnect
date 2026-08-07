@@ -62,7 +62,9 @@ const context = vm.createContext({
 context.window = context;
 const sessionSource = readFileSync(new URL("../core/analysis_session.js", import.meta.url), "utf8");
 const pageSupportSource = readFileSync(new URL("../core/page_support.js", import.meta.url), "utf8");
+const configSource = readFileSync(new URL("../config.js", import.meta.url), "utf8");
 const source = readFileSync(new URL("../content/floating_assistant.js", import.meta.url), "utf8");
+vm.runInContext(configSource, context);
 vm.runInContext(sessionSource, context);
 vm.runInContext(pageSupportSource, context);
 vm.runInContext(source, context);

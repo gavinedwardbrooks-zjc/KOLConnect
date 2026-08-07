@@ -58,6 +58,7 @@ _CREATORS_HEADERS = [
     "email", "whatsapp", "cooperation_stage", "recent_product", "quote", "owner",
     "last_contact_time", "next_follow_up_time", "note", "agency_id",
     "current_contact_id", "source_contact_id",
+    "bio", "archived_at",
 ]
 _CREATOR_ACCOUNTS_HEADERS = [
     "account_id", "creator_id", "account_uid", "platform", "username", "profile_url",
@@ -148,6 +149,12 @@ class CreatorRepository:
         is_new_creator = not bool(existing)
         status = str(existing.get("status") or "discovered") if existing else "discovered"
         existing_metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
+        existing_analysis = self._decode_analysis(existing_metadata.get("analysis_json"))
+        existing_crm = (
+            existing_analysis.get("_crm")
+            if isinstance(existing_analysis.get("_crm"), dict)
+            else {}
+        )
         status_updated_at = existing_metadata.get("status_updated_at", "")
         creator_values = self._creator_values(analysis, status, creator_id)
         if existing:
@@ -156,10 +163,11 @@ class CreatorRepository:
                 "country", "language", "tags", "email", "whatsapp", "cooperation_stage",
                 "recent_product", "quote", "owner", "last_contact_time",
                 "next_follow_up_time", "note", "agency_id", "current_contact_id",
-                "source_contact_id",
+                "source_contact_id", "bio", "archived_at",
             ):
-                if not creator_values.get(field) and existing.get(field):
-                    creator_values[field] = existing[field]
+                existing_value = existing.get(field) or existing_crm.get(field)
+                if not creator_values.get(field) and existing_value:
+                    creator_values[field] = existing_value
             creator_values["created_at"] = existing.get("created_at") or creator_values["created_at"]
             if not self._account_row_by_uid(workbook["CreatorAccounts"], account_uid):
                 for field in ("platform", "profile_url", "followers"):
@@ -174,8 +182,6 @@ class CreatorRepository:
             self._insight_values(analysis, creator_id),
         )
         stored_analysis = dict(analysis)
-        existing_analysis = self._decode_analysis(existing_metadata.get("analysis_json"))
-        existing_crm = existing_analysis.get("_crm") if isinstance(existing_analysis.get("_crm"), dict) else {}
         if existing_crm:
             stored_analysis["_crm"] = dict(existing_crm)
         self._upsert_row(
@@ -302,8 +308,24 @@ class CreatorRepository:
             if not creator_id or not self._creator_row(workbook["Creators"], creator_id):
                 creator_id = f"creator_{hashlib.sha256(account_uid.encode('utf-8')).hexdigest()[:16]}"
             existing_creator = self._creator_row(workbook["Creators"], creator_id)
+            existing_metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
+            existing_analysis = self._decode_analysis(existing_metadata.get("analysis_json"))
+            existing_analysis_creator = (
+                existing_analysis.get("creator")
+                if isinstance(existing_analysis.get("creator"), dict)
+                else {}
+            )
+            existing_crm = (
+                existing_analysis.get("_crm")
+                if isinstance(existing_analysis.get("_crm"), dict)
+                else {}
+            )
             is_new_creator = not bool(existing_creator)
             creator_name = str(record.get("creator_name") or "").strip()
+            incoming_email = str(record.get("email") or "").strip()
+            creator_email = str(existing_creator.get("email") or incoming_email)
+            if record.get("email_recheck") and incoming_email:
+                creator_email = incoming_email
             creator_values = {
                 "creator_id": creator_id,
                 "name": creator_name or str(existing_creator.get("name") or ""),
@@ -318,7 +340,7 @@ class CreatorRepository:
                 "created_at": str(existing_creator.get("created_at") or imported_at),
                 "tags": str(existing_creator.get("tags") or record.get("tags") or ""),
                 "updated_at": imported_at,
-                "email": str(existing_creator.get("email") or record.get("email") or ""),
+                "email": creator_email,
                 "whatsapp": str(existing_creator.get("whatsapp") or record.get("whatsapp") or ""),
                 "note": str(existing_creator.get("note") or record.get("note") or ""),
                 "agency_id": str(existing_creator.get("agency_id") or ""),
@@ -326,6 +348,18 @@ class CreatorRepository:
                 "source_contact_id": str(
                     existing_creator.get("source_contact_id")
                     or (record.get("source_contact_id") if is_new_creator else "")
+                    or ""
+                ),
+                "bio": str(
+                    existing_creator.get("bio")
+                    or record.get("bio")
+                    or existing_crm.get("bio")
+                    or existing_analysis_creator.get("bio")
+                    or ""
+                ),
+                "archived_at": str(
+                    existing_creator.get("archived_at")
+                    or existing_crm.get("archived_at")
                     or ""
                 ),
             }
@@ -337,6 +371,8 @@ class CreatorRepository:
             if existing_account:
                 account_values["account_id"] = str(existing_account.get("account_id") or account_values["account_id"])
                 account_values["created_at"] = str(existing_account.get("created_at") or account_values["created_at"])
+                if not account_values.get("account_email"):
+                    account_values["account_email"] = str(existing_account.get("account_email") or "")
                 summary["updated_accounts"] += 1
             else:
                 summary["created_accounts"] += 1
@@ -348,7 +384,6 @@ class CreatorRepository:
             )
 
             analysis = self._task_analysis(record, creator_id, task_id, source, imported_at)
-            existing_metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
             keep_existing_analysis = (
                 str(existing_metadata.get("source") or "") == "chrome_extension"
                 and bool(self._decode_analysis(existing_metadata.get("analysis_json")))
@@ -622,6 +657,7 @@ class CreatorRepository:
 
         if "bio" in payload:
             bio = str(payload.get("bio") or "").strip()
+            updated["bio"] = bio
             crm["bio"] = bio
             analysis_creator["bio"] = bio
 
@@ -640,6 +676,9 @@ class CreatorRepository:
                     datetime.fromisoformat(archived_at.replace("Z", "+00:00"))
                 except ValueError as exc:
                     raise ValueError("归档时间必须是有效的 ISO 时间。") from exc
+            # openpyxl's cell(row, column, None) does not clear an existing
+            # value, so restoration is persisted as an explicit empty cell.
+            updated["archived_at"] = archived_at or ""
             crm["archived_at"] = archived_at
 
         updated["updated_at"] = now
@@ -686,11 +725,20 @@ class CreatorRepository:
             "profile_url": str(updated.get("profile_url") or ""),
             "followers": str(updated.get("followers") or ""),
             "content_category": str(updated.get("content_category") or ""),
-            "bio": str(crm.get("bio") or analysis_creator.get("bio") or ""),
+            "bio": str(updated.get("bio") or crm.get("bio") or analysis_creator.get("bio") or ""),
             "agency_id": str(updated.get("agency_id") or ""),
-            "archived_at": crm.get("archived_at"),
+            "archived_at": updated.get("archived_at") or None,
             "updated_at": now,
         }
+
+    @_synchronized
+    def set_creator_archived(self, creator_id: str, archived: bool) -> dict[str, Any]:
+        """Idempotently archive or restore a Creator without changing related data."""
+        creator_id = str(creator_id or "").strip()
+        current = self.getCreatorDetail(creator_id)["record"]
+        current_archived_at = str(current.get("archived_at") or "").strip()
+        archived_at = (current_archived_at or _utc_now()) if archived else None
+        return self.updateCreator(creator_id, {"archived_at": archived_at})
 
     @_synchronized
     def getCreatorTrend(self, creator_id: str) -> dict[str, Any]:
@@ -997,7 +1045,12 @@ class CreatorRepository:
                 "profile_url": str(crm.get("profile_url") or primary_account.get("profile_url") or creator.get("profile_url") or ""),
                 "followers": str(crm.get("followers") if "followers" in crm else creator.get("followers") or primary_account.get("followers") or snapshot.get("followers") or ""),
                 "content_category": str(crm.get("content_category") if "content_category" in crm else creator.get("content_category") or ""),
-                "bio": str(crm.get("bio") if "bio" in crm else analysis_creator.get("bio") or ""),
+                "bio": str(
+                    creator.get("bio")
+                    or crm.get("bio")
+                    or analysis_creator.get("bio")
+                    or ""
+                ),
                 "country": str(creator.get("country") or ""),
                 "language": str(creator.get("language") or ""),
                 "tags": str(creator.get("tags") or ""),
@@ -1018,7 +1071,7 @@ class CreatorRepository:
                 "agency_name": agency_names.get(agency_id, ""),
                 "current_contact_id": str(creator.get("current_contact_id") or ""),
                 "source_contact_id": str(creator.get("source_contact_id") or ""),
-                "archived_at": crm.get("archived_at"),
+                "archived_at": creator.get("archived_at") or crm.get("archived_at"),
             })
         records.sort(key=lambda item: item["analysis_time"], reverse=True)
         return records, {
@@ -1291,7 +1344,9 @@ class CreatorRepository:
 
     def _requires_phase1_migration(self, workbook, schema_version: str) -> bool:
         required = {
-            "Creators": _CREATORS_HEADERS,
+            # M1-C2 columns are appended lazily by _ensure_sheets and must not
+            # retrigger the older Phase 1 entity migration.
+            "Creators": _CREATORS_HEADERS[:-2],
             "CreatorAccounts": _CREATOR_ACCOUNTS_HEADERS,
             "Agencies": _AGENCIES_HEADERS,
             "AgencyContacts": _AGENCY_CONTACTS_HEADERS,
@@ -1846,6 +1901,8 @@ class CreatorRepository:
             "agency_id": str(creator.get("agency_id") or ""),
             "current_contact_id": str(creator.get("current_contact_id") or ""),
             "source_contact_id": str(creator.get("source_contact_id") or ""),
+            "bio": str(creator.get("bio") or ""),
+            "archived_at": str(creator.get("archived_at") or ""),
         }
 
     @staticmethod
@@ -1878,7 +1935,7 @@ class CreatorRepository:
                 "platform": str(creator.get("platform") or ""),
                 "profile_url": str(creator.get("profile_url") or ""),
                 "followers": str(creator.get("followers") or ""),
-                "bio": "",
+                "bio": str(creator.get("bio") or ""),
                 "country": str(creator.get("country") or ""),
                 "language": str(creator.get("language") or ""),
             },
