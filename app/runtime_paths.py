@@ -29,8 +29,14 @@ def get_code_dir() -> Path:
 
 def get_app_data_dir() -> Path:
     """Return the per-user writable directory used by KOLConnect."""
-    roaming = os.environ.get("APPDATA")
-    base = Path(roaming) if roaming else Path.home() / "AppData" / "Roaming"
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        roaming = os.environ.get("APPDATA")
+        base = Path(roaming) if roaming else Path.home() / "AppData" / "Roaming"
+    else:
+        xdg_data_home = os.environ.get("XDG_DATA_HOME")
+        base = Path(xdg_data_home) if xdg_data_home else Path.home() / ".local" / "share"
     path = base / APP_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path

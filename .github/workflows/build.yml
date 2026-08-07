@@ -1,0 +1,126 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packaging/requirements-build.txt
+      - name: Install dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Run extension tests
+        shell: pwsh
+        run: |
+          Get-ChildItem tests -File | Where-Object { $_.Extension -in ".js", ".mjs" } | ForEach-Object {
+            node $_.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+      - name: Build Windows executable
+        shell: pwsh
+        run: ./packaging/build_release.ps1
+      - name: Verify and hash Windows artifact
+        shell: pwsh
+        run: |
+          $path = "release/KOLConnect_v0.2.0.exe"
+          if (-not (Test-Path -LiteralPath $path)) { throw "Missing $path" }
+          $artifact = Get-Item -LiteralPath $path
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
+          Write-Host "SHA-256: $hash"
+          try {
+            @(
+              "## Windows artifact"
+              ""
+              "| File | Size (bytes) | Platform | Architecture | SHA-256 |"
+              "|---|---:|---|---|---|"
+              "| $($artifact.Name) | $($artifact.Length) | Windows | x64 | ``$hash`` |"
+            ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+          } catch {
+            Write-Warning "Unable to write GitHub Step Summary: $($_.Exception.Message)"
+          }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KOLConnect-windows-x64
+          path: release/KOLConnect_v0.2.0.exe
+          if-no-files-found: error
+          retention-days: 30
+
+  build-macos-arm64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packaging/requirements-build.txt
+      - name: Confirm Apple Silicon runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -m
+          python -c "import platform; print(platform.machine())"
+          [[ "$(uname -m)" == "arm64" ]]
+          [[ "$(python -c 'import platform; print(platform.machine())')" == "arm64" ]]
+      - name: Install dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Build macOS application and DMG
+        shell: bash
+        run: bash packaging/build_macos.sh
+      - name: Verify and hash macOS artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d packaging/.pyinstaller-dist-macos/KOLConnect.app
+          path="release/KOLConnect_v0.2.0_mac_arm64.dmg"
+          test -f "${path}"
+          hash="$(shasum -a 256 "${path}" | awk '{print $1}')"
+          size="$(stat -f '%z' "${path}")"
+          echo "SHA-256: ${hash}"
+          {
+            echo "## macOS artifact"
+            echo
+            echo "| File | Size (bytes) | Platform | Architecture | SHA-256 |"
+            echo "|---|---:|---|---|---|"
+            echo "| $(basename "${path}") | ${size} | macOS | arm64 | \`${hash}\` |"
+          } >> "${GITHUB_STEP_SUMMARY}" || echo "Warning: unable to write GitHub Step Summary" >&2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KOLConnect-macos-arm64
+          path: release/KOLConnect_v0.2.0_mac_arm64.dmg
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs:
+      - build-windows
+      - build-macos-arm64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*
+          generate_release_notes: true

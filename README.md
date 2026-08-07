@@ -167,6 +167,18 @@ release/KOLConnect_v0.2.0.exe
 3. 首次运行时，应用会在 `%APPDATA%\KOLConnect` 创建本地配置、日志和数据目录。
 4. 使用 Product、Campaign、Creator Library 等模块前，建议先备份现有 Creator Library 工作簿。
 
+### macOS Apple Silicon
+
+macOS arm64 支持目前处于构建与真人验收阶段。GitHub Actions 可生成 `KOLConnect_v0.2.0_mac_arm64.dmg`，但在完成真实 Apple Silicon 设备验收前，不应视为正式无障碍支持。
+
+- macOS 数据目录：`~/Library/Application Support/KOLConnect/`
+- 本地构建入口：`bash packaging/build_macos.sh`
+- 构建环境：Apple Silicon arm64 Mac、Python 3.12、项目构建依赖
+- 签名方式：ad-hoc signing，不包含 Developer ID 签名或 Apple notarization
+- 首次运行可能需要在 Finder 中右键选择“打开”，或由用户确认后执行 `xattr -cr /Applications/KOLConnect.app`
+
+详细步骤见 [macOS 构建与双平台 CI 说明](docs/macOS构建与双平台CI说明.md)。
+
 ### Chrome Extension
 
 1. 打开 `chrome://extensions`。
@@ -225,6 +237,7 @@ KOLConnect v0.2.0
 ## Documentation
 
 - [飞书集成配置指南](docs/飞书集成配置指南.md)
+- [macOS 构建与双平台 CI 说明](docs/macOS构建与双平台CI说明.md)
 - [Changelog](CHANGELOG.md)
 
 ## License

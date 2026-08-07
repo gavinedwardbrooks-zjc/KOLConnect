@@ -8,12 +8,17 @@ __pycache__/
 # PyInstaller build outputs
 packaging/.pyinstaller-build/
 packaging/.pyinstaller-dist/
+packaging/.pyinstaller-build-macos/
+packaging/.pyinstaller-dist-macos/
+packaging/.macos-dmg-staging/
+packaging/*.iconset/
 /build/
 /dist/
 /release_candidate/
 *.spec.backup
 .pytest_cache/
 *.exe
+*.dmg
 /release/
 
 # JavaScript dependency directories
@@ -56,6 +61,7 @@ cookies/
 # Browser and driver caches
 .wdm/
 release/resources/
+assets/KOLConnect.icns
 
 # Historical private backup data must not enter source control
 archive/private-data-backup/

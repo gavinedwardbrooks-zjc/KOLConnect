@@ -550,14 +550,15 @@ def should_use_direct_profile(user_data_dir: str) -> bool:
 
 
 def find_local_chromedriver() -> Path | None:
-    """Find an existing Windows ChromeDriver before attempting a download."""
+    """Find an existing platform ChromeDriver before attempting a download."""
     resource_dir = get_resource_dir()
     external_resources_dir = get_external_resources_dir()
+    driver_name = "chromedriver.exe" if sys.platform == "win32" else "chromedriver"
     direct_candidates = (
-        external_resources_dir / "ChromeDriver" / "chromedriver.exe",
-        resource_dir / "ChromeDriver" / "chromedriver.exe",
-        resource_dir / "chromedriver.exe",
-        Path.cwd() / "chromedriver.exe",
+        external_resources_dir / "ChromeDriver" / driver_name,
+        resource_dir / "ChromeDriver" / driver_name,
+        resource_dir / driver_name,
+        Path.cwd() / driver_name,
     )
     for candidate in direct_candidates:
         if candidate.is_file():
@@ -567,7 +568,7 @@ def find_local_chromedriver() -> Path | None:
     if not cache_root.is_dir():
         return None
 
-    cached_drivers = [path for path in cache_root.rglob("chromedriver.exe") if path.is_file()]
+    cached_drivers = [path for path in cache_root.rglob(driver_name) if path.is_file()]
     if not cached_drivers:
         return None
 

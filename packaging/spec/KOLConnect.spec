@@ -7,7 +7,11 @@ PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
 APP_DIR = PROJECT_ROOT / "app"
 PACKAGING_DIR = PROJECT_ROOT / "packaging"
 
-datas = [(str(PROJECT_ROOT / "webapp"), "webapp")]
+datas = [
+    (str(PROJECT_ROOT / "webapp"), "webapp"),
+    (str(PROJECT_ROOT / "assets"), "assets"),
+    (str(PROJECT_ROOT / "chrome_extension"), "chrome_extension"),
+]
 binaries = []
 hiddenimports = ['webview.platforms.edgechromium', 'selenium.webdriver', 'selenium.webdriver.chrome', 'selenium.webdriver.chrome.webdriver', 'webdriver_manager', 'webdriver_manager.chrome']
 tmp_ret = collect_all('webview')
