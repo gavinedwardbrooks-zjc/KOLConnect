@@ -96,6 +96,6 @@ assert.equal(assistant.state.profile, null);
 assert.equal(source.includes("分析最近30条"), true);
 assert.equal(source.includes("内容分析超时，请稍后重试。"), true);
 assert.equal(source.includes("内容分析已停止或超时，请重试。"), true);
-assert.equal(source.includes("KOLConnect v0.1.2"), true);
+assert.equal(source.includes("KOLConnect v0.2.0"), true);
 
 console.log("Floating assistant duplicate-injection guard test passed.");

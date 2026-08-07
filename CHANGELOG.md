@@ -2,9 +2,7 @@
 
 KOLConnect 的重要版本变化记录在此文件中。
 
-## v0.2.0-dev.2
-
-> Internal development build. This version is not a stable public release.
+## v0.2.0
 
 ### Added
 

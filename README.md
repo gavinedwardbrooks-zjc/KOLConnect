@@ -1,4 +1,4 @@
-# KOLConnect v0.2.0-dev.2
+# KOLConnect v0.2.0
 
 **KOL Management & Campaign Operations Platform**
 
@@ -154,20 +154,18 @@ Creator
 
 ## Installation
 
-### Windows Internal Test Build
+### Windows Release
 
-当前版本为内部测试版：
+当前正式版本：
 
 ```text
-release/KOLConnect_v0.2.0-dev.2.exe
+release/KOLConnect_v0.2.0.exe
 ```
 
-1. 获取内部测试 EXE。
+1. 获取正式版 EXE。
 2. 双击启动 KOLConnect。
 3. 首次运行时，应用会在 `%APPDATA%\KOLConnect` 创建本地配置、日志和数据目录。
 4. 使用 Product、Campaign、Creator Library 等模块前，建议先备份现有 Creator Library 工作簿。
-
-该测试版本尚未作为正式 GitHub Release 发布。
 
 ### Chrome Extension
 
@@ -192,7 +190,7 @@ Creator、Campaign、Snapshot 和相关运营数据当前保存在 Excel 工作�
 ## Current Version
 
 ```text
-KOLConnect v0.2.0-dev.2
+KOLConnect v0.2.0
 ```
 
 当前阶段已完成：
@@ -208,7 +206,7 @@ KOLConnect v0.2.0-dev.2
 
 ## Development Status
 
-`v0.2.0-dev.2` 是 Product-Campaign 模型的内部开发基线。现有功能仍需通过真实工作簿、长时间运行和完整运营流程进行人工验收。
+`v0.2.0` 是 Product-Campaign 模型的首个正式版本，包含 Creator、Product、Campaign 与本地数据工作流。
 
 当前边界：
 

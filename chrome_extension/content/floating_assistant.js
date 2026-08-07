@@ -55,7 +55,7 @@
   root.style.display = "none";
   const panel = create("section", "kol-panel");
   const head = create("header", "kol-head");
-  const brand = create("span", "kol-brand", "KOLConnect v0.1.2");
+  const brand = create("span", "kol-brand", "KOLConnect v0.2.0");
   const minimizeButton = create("button", "kol-icon-button", "−");
   const closeButton = create("button", "kol-icon-button", "×");
   minimizeButton.type = "button";

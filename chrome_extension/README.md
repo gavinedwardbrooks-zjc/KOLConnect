@@ -1,6 +1,6 @@
 # KOLConnect Chrome Extension
 
-This directory contains the Chrome extension for KOLConnect v0.1.2.
+This directory contains the Chrome extension for KOLConnect v0.2.0.
 
 Current scope:
 

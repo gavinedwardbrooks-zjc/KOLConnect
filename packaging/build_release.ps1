@@ -4,7 +4,7 @@ $packaging = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $packaging
 Set-Location $root
 
-$releaseVersion = "v0.2.0-dev.2"
+$releaseVersion = "v0.2.0"
 $releaseFileName = "KOLConnect_$releaseVersion.exe"
 $workPath = Join-Path $packaging ".pyinstaller-build"
 $distPath = Join-Path $packaging ".pyinstaller-dist"
