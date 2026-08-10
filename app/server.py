@@ -46,6 +46,13 @@ from runtime_paths import (
     load_json_with_backup,
     scraper_worker_command,
 )
+from http_handlers import (
+    campaign_handler,
+    creator_handler,
+    dashboard_handler,
+    settings_handler,
+    task_handler,
+)
 
 
 APP_DIR = get_resource_dir()
@@ -160,6 +167,8 @@ MAIL_PROVIDER_PRESETS = {
         "smtp_port": "465",
     },
 }
+
+HANDLERS = [dashboard_handler, campaign_handler, settings_handler, creator_handler, task_handler]
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
@@ -2683,6 +2692,120 @@ class Handler(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b"{}"
         return json.loads(raw.decode("utf-8"))
 
+    def _request_context(self, parsed, query: dict) -> dict:
+        payload_loaded = False
+        payload = None
+
+        def get_payload() -> dict:
+            nonlocal payload_loaded, payload
+            if not payload_loaded:
+                payload = self._read_json()
+                payload_loaded = True
+            return payload
+
+        return {
+            "method": self.command,
+            "path": parsed.path,
+            "query": query,
+            "payload": None,
+            "get_payload": get_payload,
+        }
+
+    def _handler_context(self) -> dict:
+        def get_state() -> dict:
+            return STATE
+
+        def save_current_state() -> None:
+            save_state(STATE)
+
+        def normalize_and_save_state() -> None:
+            global STATE
+            STATE = normalize_state(STATE)
+            save_state(STATE)
+
+        return {
+            "state": {
+                "get": get_state,
+                "save": save_current_state,
+                "normalize_and_save": normalize_and_save_state,
+            },
+            "scrape_job": SCRAPE_JOB,
+            "repositories": {
+                "creator": get_creator_repository,
+                "product": get_product_repository,
+                "campaign": get_campaign_repository,
+                "campaign_creator": get_campaign_creator_repository,
+            },
+            "services": {
+                "build_accounts_payload": build_accounts_payload,
+                "get_dashboard_data": get_dashboard_data,
+                "get_agency_contact_options": get_agency_contact_options,
+                "get_creator_library": get_creator_library,
+                "get_creator_library_detail": get_creator_library_detail,
+                "get_creator_library_snapshots": get_creator_library_snapshots,
+                "get_creator_library_trend": get_creator_library_trend,
+                "get_four_table_feishu_config": get_four_table_feishu_config,
+                "get_local_agencies": get_local_agencies,
+                "get_local_agency_contacts": get_local_agency_contacts,
+                "get_local_agency_detail": get_local_agency_detail,
+                "get_profiles": get_profiles,
+                "get_system_health": get_system_health,
+                "get_task_creator_analysis": get_task_creator_analysis,
+                "get_task_details": get_task_details,
+                "get_task_list": get_task_list,
+                "get_task_review_results": get_task_review_results,
+                "is_sensitive_mask": is_sensitive_mask,
+                "import_extension_capture": import_extension_capture,
+                "merge_masked_mail_passwords": merge_masked_mail_passwords,
+                "normalize_creator_library_workbook_path": normalize_creator_library_workbook_path,
+                "normalize_mail_account": normalize_mail_account,
+                "normalize_mail_state": normalize_mail_state,
+                "open_chrome_profile": open_chrome_profile,
+                "open_creator_library_collaboration_task": open_creator_library_collaboration_task,
+                "record_diagnostic": _record_diagnostic,
+                "create_email_recheck_task": create_email_recheck_task,
+                "create_manual_task": create_manual_task,
+                "delete_local_task": delete_local_task,
+                "pause_scrape": pause_scrape,
+                "prepare_task_links": prepare_task_links,
+                "rename_task": rename_task,
+                "request_stop_scrape": request_stop_scrape,
+                "resume_scrape": resume_scrape,
+                "resume_task": resume_task,
+                "retry_failed_task_results": retry_failed_task_results,
+                "save_local_agency": save_local_agency,
+                "save_local_agency_contact": save_local_agency_contact,
+                "state_for_client": state_for_client,
+                "test_imap_login": test_imap_login,
+                "test_smtp_login": test_smtp_login,
+                "start_scrape": start_scrape,
+                "stop_task": stop_task,
+                "sync_task_results_to_four_tables": sync_task_results_to_four_tables,
+                "update_task_links": update_task_links,
+                "update_task_review_result": update_task_review_result,
+                "update_creator_library_profile": update_creator_library_profile,
+                "update_creator_library_status": update_creator_library_status,
+                "update_creator_local_relations": update_creator_local_relations,
+                "utc_now": _utc_now,
+            },
+            "task_manager": task_manager,
+            "modules": {"mail_sync": mail_sync_module, "scraper": scraper_module},
+            "paths": {"tasks": TASKS_DIR, "static": STATIC_DIR, "data": DATA_DIR},
+            "config": {
+                "automation_profile_name": AUTOMATION_PROFILE_NAME,
+                "legacy_cooperation_pattern": LEGACY_COOPERATION_PATH_PATTERN,
+                "legacy_cooperation_read_only_message": LEGACY_COOPERATION_READ_ONLY_MESSAGE,
+            },
+            "logging": {"event": log_event, "error": log_error},
+        }
+
+    def _dispatch(self, request: dict) -> bool:
+        context = self._handler_context()
+        for endpoint_handler in HANDLERS:
+            if endpoint_handler.handle(self, request, context):
+                return True
+        return False
+
     def _serve_file(self, file_path: Path) -> None:
         try:
             static_root = STATIC_DIR.resolve()
@@ -2715,194 +2838,8 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
 
-        if parsed.path == "/api/products":
-            include_archived = str((query.get("include_archived") or [""])[0]).lower() == "true"
-            try:
-                products = get_product_repository().getProducts(include_archived=include_archived)
-                return self._json({"ok": True, "products": products})
-            except (RuntimeError, ValueError) as exc:
-                return self._repository_error(exc)
-
-        product_match = re.fullmatch(r"/api/products/([^/]+)", parsed.path)
-        if product_match:
-            try:
-                return self._json({"ok": True, "product": get_product_repository().getProduct(product_match.group(1))})
-            except (RuntimeError, ValueError) as exc:
-                return self._repository_error(exc)
-
-        if parsed.path == "/api/campaigns":
-            try:
-                campaigns = get_campaign_repository().getCampaigns(
-                    product_id=(query.get("product_id") or [""])[0],
-                    status=(query.get("status") or [""])[0],
-                    creator_id=(query.get("creator_id") or [""])[0],
-                    include_archived=str((query.get("include_archived") or [""])[0]).lower() == "true",
-                )
-                return self._json({"ok": True, "campaigns": campaigns if isinstance(campaigns, list) else []})
-            except (RuntimeError, ValueError) as exc:
-                return self._repository_error(exc)
-
-        campaign_creators_match = re.fullmatch(r"/api/campaigns/([^/]+)/creators", parsed.path)
-        if campaign_creators_match:
-            campaign_id = campaign_creators_match.group(1)
-            try:
-                get_campaign_repository().getCampaign(campaign_id)
-                records = get_campaign_creator_repository().getCampaignCreators(
-                    campaign_id=campaign_id,
-                    include_archived=str((query.get("include_archived") or [""])[0]).lower() == "true",
-                )
-                return self._json({"ok": True, "campaign_creators": records})
-            except (RuntimeError, ValueError) as exc:
-                return self._repository_error(exc)
-
-        campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", parsed.path)
-        if campaign_match:
-            try:
-                return self._json(
-                    {"ok": True, "campaign": get_campaign_repository().getCampaign(campaign_match.group(1))}
-                )
-            except (RuntimeError, ValueError) as exc:
-                return self._repository_error(exc)
-
-        if parsed.path == "/api/system/health":
-            return self._json({"ok": True, **get_system_health()})
-
-        if parsed.path == "/api/dashboard":
-            try:
-                return self._json({"ok": True, **get_dashboard_data()})
-            except (OSError, RuntimeError, ValueError) as exc:
-                return self._error(f"无法读取工作台数据：{exc}", status=500)
-
-        if parsed.path == "/api/creator-library":
-            query = parse_qs(parsed.query)
-            include_archived = query.get("include_archived", [""])[0].lower() == "true"
-            try:
-                payload = get_creator_library(
-                    include_archived=include_archived,
-                    page=int(query.get("page", ["1"])[0]),
-                    page_size=int(query.get("page_size", ["24"])[0]),
-                    sort=str(query.get("sort", ["created_at"])[0]),
-                    order=str(query.get("order", ["desc"])[0]).lower(),
-                    filters={
-                        key: query.get(key, [""])[0]
-                        for key in (
-                            "search", "platform", "country", "language", "content_category",
-                            "agency_id", "tag", "insight_level", "status",
-                        )
-                        if query.get(key, [""])[0]
-                    },
-                )
-            except (TypeError, ValueError) as exc:
-                return self._error(str(exc), status=400)
-            return self._json({"ok": True, **payload})
-
-        creator_library_trend_match = re.fullmatch(r"/api/creator-library/([^/]+)/trend", parsed.path)
-        if creator_library_trend_match:
-            try:
-                return self._json({"ok": True, **get_creator_library_trend(creator_library_trend_match.group(1))})
-            except ValueError as exc:
-                return self._error(str(exc), status=404)
-
-        creator_library_snapshots_match = re.fullmatch(r"/api/creator-library/([^/]+)/snapshots", parsed.path)
-        if creator_library_snapshots_match:
-            try:
-                return self._json({"ok": True, **get_creator_library_snapshots(creator_library_snapshots_match.group(1))})
-            except ValueError as exc:
-                return self._error(str(exc), status=404)
-
-        creator_library_match = re.fullmatch(r"/api/creator-library/([^/]+)", parsed.path)
-        if creator_library_match:
-            try:
-                return self._json({"ok": True, **get_creator_library_detail(creator_library_match.group(1))})
-            except ValueError as exc:
-                return self._error(str(exc), status=404)
-
-        if parsed.path == "/api/local/agencies":
-            return self._json({"ok": True, **get_local_agencies()})
-
-        local_agency_match = re.fullmatch(r"/api/local/agencies/([^/]+)", parsed.path)
-        if local_agency_match:
-            try:
-                return self._json({"ok": True, **get_local_agency_detail(local_agency_match.group(1))})
-            except ValueError as exc:
-                return self._error(str(exc), status=404)
-
-        if parsed.path == "/api/local/agency-contacts":
-            return self._json({"ok": True, **get_local_agency_contacts()})
-
-        if parsed.path == "/api/tasks":
-            return self._json({"ok": True, **get_task_list()})
-
-        task_details_match = re.fullmatch(r"/api/tasks/([^/]+)/details", parsed.path)
-        if task_details_match:
-            try:
-                return self._json({"ok": True, **get_task_details(task_details_match.group(1))})
-            except ValueError as exc:
-                return self._error(str(exc), status=404)
-
-        task_results_match = re.fullmatch(r"/api/tasks/([^/]+)/results", parsed.path)
-        if task_results_match:
-            try:
-                return self._json({"ok": True, **get_task_review_results(task_results_match.group(1))})
-            except ValueError as exc:
-                return self._error(str(exc))
-
-        task_analysis_match = re.fullmatch(r"/api/tasks/([^/]+)/creator-analysis", parsed.path)
-        if task_analysis_match:
-            try:
-                return self._json({"ok": True, **get_task_creator_analysis(task_analysis_match.group(1))})
-            except ValueError as exc:
-                return self._error(str(exc), status=404)
-
-        if parsed.path == "/api/agency-contacts":
-            try:
-                return self._ok(**get_agency_contact_options())
-            except RuntimeError as exc:
-                return self._error(str(exc))
-
-        if parsed.path == "/api/state":
-            four_table_config = get_four_table_feishu_config()
-            client_state = state_for_client(STATE)
-            client_feishu = client_state["feishu"]
-            return self._json(
-                {
-                    "ui": client_state["ui"],
-                    "profiles": get_profiles(),
-                    "selectedProfile": client_state["profiles"].get("selected", "Default"),
-                    "accounts": build_accounts_payload(),
-                    "feishu": {
-                        "app_id": client_feishu.get("app_id", ""),
-                        "app_secret": client_feishu.get("app_secret", ""),
-                        "has_app_secret": bool(STATE["feishu"].get("app_secret")),
-                        "app_token": client_feishu.get("app_token", ""),
-                        "has_app_token": bool(four_table_config["app_token"]),
-                        "creator_table_id": four_table_config["creator_table_id"],
-                        "account_table_id": four_table_config["account_table_id"],
-                        "agency_table_id": four_table_config["agency_table_id"],
-                        "contact_table_id": four_table_config["contact_table_id"],
-                    },
-                    "creator_library": client_state.get("creator_library", {}),
-                    "mail": client_state["mail"],
-                }
-            )
-
-        if parsed.path == "/api/scrape/status":
-            return self._json(SCRAPE_JOB.snapshot())
-
-        if parsed.path == "/api/mail/inbox/messages":
-            data = mail_sync_module.load_mail_messages()
-            messages = data.get("messages") if isinstance(data.get("messages"), list) else []
-            summary = {
-                "total": len(messages),
-                "unread": sum(1 for item in messages if isinstance(item, dict) and item.get("is_unread")),
-                "matched": sum(1 for item in messages if isinstance(item, dict) and item.get("reply_status") == "matched"),
-            }
-            return self._ok(
-                updated_at=str(data.get("updated_at") or ""),
-                summary=summary,
-                messages=messages[:50],
-                accounts=data.get("accounts") if isinstance(data.get("accounts"), dict) else {},
-            )
+        if self._dispatch(self._request_context(parsed, query)):
+            return
 
         if parsed.path in {"", "/"}:
             return self._serve_file(STATIC_DIR / "index.html")
@@ -2910,438 +2847,26 @@ class Handler(BaseHTTPRequestHandler):
         return self._serve_file(STATIC_DIR / parsed.path.lstrip("/"))
 
     def do_POST(self) -> None:
-        global STATE
         parsed = urlparse(self.path)
-        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
-            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
+        request = self._request_context(parsed, parse_qs(parsed.query))
         try:
-            payload = self._read_json()
+            if self._dispatch(request):
+                return
+            request["get_payload"]()
+            return self._error("接口不存在。", status=404)
         except json.JSONDecodeError:
             return self._error("请求数据不是有效 JSON。")
-
-        try:
-            if parsed.path == "/api/products":
-                try:
-                    product = get_product_repository().createProduct(payload)
-                    return self._json({"ok": True, "product": product}, status=201)
-                except ValueError as exc:
-                    return self._repository_error(exc)
-
-            if parsed.path == "/api/campaigns":
-                try:
-                    campaign = get_campaign_repository().createCampaign(payload)
-                    return self._json({"ok": True, "campaign": campaign}, status=201)
-                except ValueError as exc:
-                    return self._repository_error(exc)
-
-            campaign_creators_match = re.fullmatch(r"/api/campaigns/([^/]+)/creators", parsed.path)
-            if campaign_creators_match:
-                campaign_id = campaign_creators_match.group(1)
-                supplied_campaign_id = str(payload.get("campaign_id") or "").strip()
-                if supplied_campaign_id and supplied_campaign_id != campaign_id:
-                    return self._error("请求路径与数据中的 Campaign ID 不一致。")
-                try:
-                    record = get_campaign_creator_repository().createCampaignCreator(
-                        {**payload, "campaign_id": campaign_id}
-                    )
-                    return self._json({"ok": True, "campaign_creator": record}, status=201)
-                except ValueError as exc:
-                    return self._repository_error(exc)
-
-            task_links_match = re.fullmatch(r"/api/tasks/([^/]+)/links", parsed.path)
-            if task_links_match:
-                result = update_task_links(
-                    task_links_match.group(1),
-                    action=payload.get("action"),
-                    index=payload.get("index"),
-                    url=payload.get("url"),
-                )
-                return self._ok(**result)
-
-            task_resume_match = re.fullmatch(r"/api/tasks/([^/]+)/resume", parsed.path)
-            if task_resume_match:
-                return self._ok(**resume_task(task_resume_match.group(1)))
-
-            task_stop_match = re.fullmatch(r"/api/tasks/([^/]+)/stop", parsed.path)
-            if task_stop_match:
-                return self._ok(**stop_task(task_stop_match.group(1)))
-
-            task_result_update_match = re.fullmatch(r"/api/tasks/([^/]+)/results/update", parsed.path)
-            if task_result_update_match:
-                try:
-                    result = update_task_review_result(
-                        task_result_update_match.group(1),
-                        payload.get("account_uid"),
-                        payload.get("fields"),
-                    )
-                    return self._ok(**result)
-                except (ValueError, RuntimeError) as exc:
-                    return self._error(str(exc))
-
-            task_retry_match = re.fullmatch(r"/api/tasks/([^/]+)/results/retry-failed", parsed.path)
-            if task_retry_match:
-                try:
-                    selected = payload.get("account_uids")
-                    account_uids = selected if isinstance(selected, list) else []
-                    result = retry_failed_task_results(task_retry_match.group(1), account_uids)
-                    start_scrape(
-                        {
-                            "taskId": task_retry_match.group(1),
-                            "profile": payload.get("profile"),
-                        }
-                    )
-                    return self._ok(**result, started=True)
-                except (ValueError, RuntimeError) as exc:
-                    return self._error(str(exc))
-
-            task_sync_match = re.fullmatch(r"/api/tasks/([^/]+)/sync-four-tables", parsed.path)
-            if task_sync_match:
-                try:
-                    result = sync_task_results_to_four_tables(task_sync_match.group(1))
-                    if result["sync_status"] != "success":
-                        return self._json({"ok": False, "error": "任务四表同步失败。", **result}, status=400)
-                    return self._ok(**result)
-                except (ValueError, RuntimeError) as exc:
-                    return self._error(str(exc))
-
-            task_open_results_match = re.fullmatch(r"/api/tasks/([^/]+)/results/open", parsed.path)
-            if task_open_results_match:
-                try:
-                    _task, task_paths = task_manager.load_task(TASKS_DIR, task_open_results_match.group(1))
-                    if not task_paths["results"].exists():
-                        return self._error("当前任务尚未生成结果文件。")
-                    subprocess.Popen(["explorer.exe", str(task_paths["results"])])
-                    return self._ok()
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            task_rename_match = re.fullmatch(r"/api/tasks/([^/]+)/rename", parsed.path)
-            if task_rename_match:
-                try:
-                    task = rename_task(task_rename_match.group(1), payload.get("name"))
-                    return self._ok(task=task)
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            if parsed.path == "/api/settings/ui":
-                language = (payload.get("language") or "").strip()
-                STATE["ui"]["language"] = "en" if language == "en" else "zh"
-                STATE["ui"]["debug_mode"] = bool(payload.get("debug_mode"))
-                return self._save_state_and_ok()
-
-            if parsed.path == "/api/settings/profiles":
-                STATE["profiles"]["selected"] = (payload.get("selected") or "").strip() or AUTOMATION_PROFILE_NAME
-                return self._save_state_and_ok()
-
-            if parsed.path == "/api/settings/accounts":
-                entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
-                STATE["accounts"]["entries"] = [
-                    {
-                        "profile": str(item.get("profile") or "").strip(),
-                        "alias": str(item.get("alias") or "").strip(),
-                        "usage": str(item.get("usage") or "通用").strip() or "通用",
-                    }
-                    for item in entries
-                    if isinstance(item, dict) and str(item.get("profile") or "").strip()
-                ]
-                return self._save_state_and_ok()
-
-            if parsed.path == "/api/account/open":
-                profile = (payload.get("profile") or "").strip()
-                if not profile:
-                    return self._error("缺少 profile。")
-                open_chrome_profile(profile)
-                return self._ok()
-
-            if parsed.path == "/api/settings/feishu":
-                STATE["feishu"]["app_id"] = str(payload.get("app_id") or "").strip()
-                new_secret = str(payload.get("app_secret") or "").strip()
-                if new_secret and not is_sensitive_mask(new_secret):
-                    STATE["feishu"]["app_secret"] = new_secret
-                for key in (
-                    "app_token",
-                    "creator_table_id",
-                    "account_table_id",
-                    "agency_table_id",
-                    "contact_table_id",
-                ):
-                    if key in payload:
-                        value = str(payload.get(key) or "").strip()
-                        if key == "app_token" and is_sensitive_mask(value):
-                            continue
-                        STATE["feishu"][key] = value
-                return self._normalize_save_state_and_ok()
-
-            if parsed.path == "/api/settings/mail":
-                STATE["mail"] = normalize_mail_state(merge_masked_mail_passwords(payload, STATE.get("mail")))
-                return self._save_state_and_ok()
-
-            if parsed.path == "/api/settings/creator-library":
-                try:
-                    STATE["creator_library"]["workbook_path"] = normalize_creator_library_workbook_path(
-                        payload.get("workbook_path")
-                    )
-                except ValueError as exc:
-                    return self._error(str(exc))
-                return self._save_state_and_ok()
-
-            if parsed.path == "/api/mail/test":
-                raw_account = payload.get("account") if isinstance(payload.get("account"), dict) else payload
-                merged_test_accounts = merge_masked_mail_passwords(
-                    {"accounts": [raw_account]}, STATE.get("mail")
-                ).get("accounts", [])
-                account = normalize_mail_account(merged_test_accounts[0] if merged_test_accounts else None)
-                test_imap_login(account)
-                test_smtp_login(account)
-                return self._ok(imap_ok=True, smtp_ok=True)
-
-            if parsed.path == "/api/mail/inbox/sync":
-                accounts = STATE.get("mail", {}).get("accounts") if isinstance(STATE.get("mail"), dict) else []
-                enabled_accounts = [item for item in accounts if isinstance(item, dict) and item.get("enabled")]
-                if not enabled_accounts:
-                    return self._error("没有启用的邮箱账户。")
-                limit_per_account = payload.get("limit_per_account") or 20
-                four_table_config = get_four_table_feishu_config()
-                required_four_table_keys = ("app_id", "app_secret", "app_token", "creator_table_id", "account_table_id")
-                missing_four_table_keys = [key for key in required_four_table_keys if not four_table_config.get(key)]
-                if missing_four_table_keys:
-                    return self._error(f"四表飞书配置不完整：缺少 {', '.join(missing_four_table_keys)}。")
-                summary = mail_sync_module.sync_enabled_mail_accounts(
-                    enabled_accounts,
-                    {
-                        "limit_per_account": limit_per_account,
-                        "four_table_config": four_table_config,
-                    },
-                )
-                return self._ok(
-                    updated_at=str(summary.get("updated_at") or ""),
-                    accounts_checked=int(summary.get("accounts_checked") or 0),
-                    messages_fetched=int(summary.get("messages_fetched") or 0),
-                    messages_new=int(summary.get("messages_new") or 0),
-                    matched_messages=int(summary.get("matched_messages") or 0),
-                    messages_total=int(summary.get("messages_total") or 0),
-                    errors=summary.get("errors") if isinstance(summary.get("errors"), list) else [],
-                )
-
-            if parsed.path == "/api/mail/inbox/sync-crm-replies":
-                four_table_config = get_four_table_feishu_config()
-                required_four_table_keys = ("app_id", "app_secret", "app_token", "creator_table_id")
-                missing_four_table_keys = [key for key in required_four_table_keys if not four_table_config.get(key)]
-                if missing_four_table_keys:
-                    return self._error(f"达人表飞书配置不完整：缺少 {', '.join(missing_four_table_keys)}。")
-                summary = mail_sync_module.sync_creator_replies(four_table_config)
-                return self._ok(
-                    updated_at=str(summary.get("updated_at") or ""),
-                    updated=int(summary.get("updated") or 0),
-                    time_only=int(summary.get("time_only") or 0),
-                    skipped=int(summary.get("skipped") or 0),
-                    failed=int(summary.get("failed") or 0),
-                    processed_messages=int(summary.get("processed_messages") or 0),
-                    errors=summary.get("errors") if isinstance(summary.get("errors"), list) else [],
-                )
-
-            if parsed.path == "/api/normalize-links":
-                if isinstance(payload.get("links"), list):
-                    raw_links = [str(item or "").strip() for item in payload.get("links", [])]
-                else:
-                    text = str(payload.get("text") or "")
-                    raw_links = [line.strip() for line in text.splitlines() if line.strip()]
-                normalized = scraper_module.build_normalize_payload(raw_links)
-                return self._ok(
-                    normalized_links=normalized.get("normalized_links", []),
-                    invalid_links=normalized.get("invalid_links", []),
-                )
-
-            if parsed.path == "/api/tasks/manual":
-                try:
-                    return self._ok(**create_manual_task(payload))
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            if parsed.path == "/api/extension/import":
-                try:
-                    result = import_extension_capture(payload)
-                    creator = payload.get("creator") if isinstance(payload.get("creator"), dict) else {}
-                    _record_diagnostic(
-                        "last_extension_import",
-                        {
-                            "status": "success",
-                            "time": _utc_now(),
-                            "creator": str(creator.get("creator_name") or "").strip(),
-                            "platform": str(creator.get("platform") or "").strip(),
-                        },
-                    )
-                    log_event("Extension", f"导入成功 | creator={creator.get('creator_name') or '--'} | platform={creator.get('platform') or '--'}")
-                    return self._ok(**result)
-                except (RuntimeError, ValueError) as exc:
-                    _record_diagnostic("last_extension_import", {"status": "failed", "time": _utc_now()})
-                    return self._error(str(exc))
-
-            creator_library_status_match = re.fullmatch(r"/api/creator-library/([^/]+)/status", parsed.path)
-            if creator_library_status_match:
-                try:
-                    return self._ok(**update_creator_library_status(creator_library_status_match.group(1), payload.get("status")))
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            creator_library_relations_match = re.fullmatch(r"/api/creator-library/([^/]+)/relations", parsed.path)
-            if creator_library_relations_match:
-                try:
-                    return self._ok(
-                        **update_creator_local_relations(
-                            creator_library_relations_match.group(1),
-                            payload,
-                        )
-                    )
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            if parsed.path == "/api/local/agencies":
-                try:
-                    return self._ok(**save_local_agency(payload))
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            if parsed.path == "/api/local/agency-contacts":
-                try:
-                    return self._ok(**save_local_agency_contact(payload))
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            creator_library_task_match = re.fullmatch(r"/api/creator-library/([^/]+)/create-task", parsed.path)
-            if creator_library_task_match:
-                try:
-                    return self._ok(**open_creator_library_collaboration_task(creator_library_task_match.group(1)))
-                except ValueError as exc:
-                    return self._error(str(exc))
-
-            if parsed.path == "/api/tasks/email-recheck/scan":
-                try:
-                    return self._ok(**create_email_recheck_task())
-                except (RuntimeError, ValueError) as exc:
-                    return self._error(str(exc))
-
-            if parsed.path == "/api/tasks":
-                text = str(payload.get("text") or "")
-                raw_links = [line.strip() for line in text.splitlines() if line.strip()]
-                if not raw_links:
-                    return self._error("请粘贴至少一个链接。")
-                selected_platforms = payload.get("platforms")
-                if not isinstance(selected_platforms, list):
-                    selected_platforms = payload.get("platform") or payload.get("target_platform")
-                prepared = prepare_task_links(raw_links, selected_platforms)
-                normalized_links = prepared["normalized_links"]
-                if not normalized_links:
-                    return self._error("没有符合目标平台的有效链接。")
-                task = task_manager.create_task(
-                    TASKS_DIR,
-                    normalized_links,
-                    prepared["invalid_links"],
-                    len(raw_links),
-                    name=payload.get("name"),
-                    target_platform=prepared["target_platform"],
-                    platforms=prepared["platforms"],
-                    platform_summary=prepared["platform_summary"],
-                    filtered_links=prepared["filtered_links"],
-                )
-                return self._ok(
-                    task=task,
-                    invalid_links=prepared["invalid_links"],
-                    filtered_links=prepared["filtered_links"],
-                )
-
-            if parsed.path == "/api/scrape/start":
-                try:
-                    return self._ok(**start_scrape(payload))
-                except RuntimeError as exc:
-                    return self._error(str(exc), status=409)
-
-            if parsed.path == "/api/scrape/stop":
-                try:
-                    return self._ok(**request_stop_scrape())
-                except RuntimeError as exc:
-                    return self._error(str(exc), status=409)
-
-            if parsed.path == "/api/scrape/pause":
-                try:
-                    return self._ok(**pause_scrape())
-                except RuntimeError as exc:
-                    return self._error(str(exc), status=409)
-
-            if parsed.path == "/api/scrape/resume":
-                try:
-                    return self._ok(**resume_scrape())
-                except RuntimeError as exc:
-                    return self._error(str(exc), status=409)
-
-            return self._error("接口不存在。", status=404)
         except Exception as exc:
             log_error("API", f"未处理异常: {self.command} {parsed.path}", exc)
             return self._error(_friendly_error_message(exc), status=500)
 
     def do_PATCH(self) -> None:
         parsed = urlparse(self.path)
-        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
-            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
+        request = self._request_context(parsed, parse_qs(parsed.query))
         try:
-            payload = self._read_json()
-
-            product_match = re.fullmatch(r"/api/products/([^/]+)", parsed.path)
-            if product_match:
-                try:
-                    repository = get_product_repository()
-                    if "archived_at" in payload:
-                        product = repository.setProductArchivedAt(
-                            product_match.group(1), payload.get("archived_at")
-                        )
-                    elif payload.get("archived") is True:
-                        product = repository.archiveProduct(product_match.group(1))
-                    else:
-                        product = repository.updateProduct(product_match.group(1), payload)
-                    return self._json({"ok": True, "product": product})
-                except ValueError as exc:
-                    return self._repository_error(exc)
-
-            campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", parsed.path)
-            if campaign_match:
-                try:
-                    repository = get_campaign_repository()
-                    if "archived_at" in payload:
-                        campaign = repository.setCampaignArchivedAt(
-                            campaign_match.group(1), payload.get("archived_at")
-                        )
-                    elif payload.get("archived") is True:
-                        campaign = repository.archiveCampaign(campaign_match.group(1))
-                    else:
-                        campaign = repository.updateCampaign(campaign_match.group(1), payload)
-                    return self._json({"ok": True, "campaign": campaign})
-                except ValueError as exc:
-                    return self._repository_error(exc)
-
-            campaign_creator_match = re.fullmatch(r"/api/campaign-creators/([^/]+)", parsed.path)
-            if campaign_creator_match:
-                try:
-                    repository = get_campaign_creator_repository()
-                    record = (
-                        repository.archiveCampaignCreator(campaign_creator_match.group(1))
-                        if payload.get("archived") is True
-                        else repository.updateCampaignCreator(campaign_creator_match.group(1), payload)
-                    )
-                    return self._json({"ok": True, "campaign_creator": record})
-                except ValueError as exc:
-                    return self._repository_error(exc)
-
-            creator_library_match = re.fullmatch(r"/api/creator-library/([^/]+)", parsed.path)
-            if creator_library_match:
-                try:
-                    return self._json(
-                        {
-                            "ok": True,
-                            **update_creator_library_profile(creator_library_match.group(1), payload),
-                        }
-                    )
-                except ValueError as exc:
-                    return self._repository_error(exc)
+            if self._dispatch(request):
+                return
+            payload = request["get_payload"]()
 
             return self._error("接口不存在。", status=404)
         except json.JSONDecodeError:
@@ -3352,42 +2877,15 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         parsed = urlparse(self.path)
-        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
-            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
+        if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
+            return
         return self._error("接口不存在。", status=404)
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
-        if LEGACY_COOPERATION_PATH_PATTERN.fullmatch(parsed.path):
-            return self._error(LEGACY_COOPERATION_READ_ONLY_MESSAGE, status=403)
-
-        campaign_creator_match = re.fullmatch(r"/api/campaign-creators/([^/]+)", parsed.path)
-        if campaign_creator_match:
-            try:
-                result = get_campaign_creator_repository().remove_creator_from_campaign(
-                    campaign_creator_match.group(1)
-                )
-                return self._ok(**result)
-            except ValueError as exc:
-                return self._repository_error(exc)
-
-        campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", parsed.path)
-        if campaign_match:
-            try:
-                result = get_campaign_repository().delete_campaign(campaign_match.group(1))
-                return self._ok(**result)
-            except ValueError as exc:
-                return self._repository_error(exc)
-
-        task_match = re.fullmatch(r"/api/tasks/([^/]+)", parsed.path)
-        if not task_match:
-            return self._error("接口不存在。", status=404)
-        try:
-            return self._ok(**delete_local_task(task_match.group(1)))
-        except RuntimeError as exc:
-            return self._error(str(exc), status=409)
-        except ValueError as exc:
-            return self._error(str(exc), status=404)
+        if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
+            return
+        return self._error("接口不存在。", status=404)
 
 
 def run() -> None:
