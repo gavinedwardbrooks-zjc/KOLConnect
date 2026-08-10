@@ -86,17 +86,41 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('"chromedriver.exe" if sys.platform == "win32" else "chromedriver"', source)
         self.assertIn("ChromeDriverManager().install()", source)
 
-    def test_workflow_has_manual_tag_and_arm64_guards(self):
-        workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
-        self.assertIn("workflow_dispatch:", workflow)
-        self.assertIn('runs-on: macos-15', workflow)
-        self.assertIn('refs/tags/v', workflow)
-        self.assertIn('uname -m', workflow)
-        self.assertIn('platform.machine()', workflow)
-        self.assertIn('if: startsWith(github.ref', workflow)
-        self.assertIn('./packaging/build_release.ps1', workflow)
-        self.assertEqual(workflow.count('retention-days: 30'), 2)
-        self.assertEqual(workflow.count('GITHUB_STEP_SUMMARY'), 2)
+    def test_workflows_separate_validation_from_packaging(self):
+        workflow_dir = ROOT / ".github" / "workflows"
+        build = (workflow_dir / "build.yml").read_text(encoding="utf-8")
+        ci = (workflow_dir / "ci.yml").read_text(encoding="utf-8")
+
+        self.assertIn("workflow_dispatch:", ci)
+        self.assertIn("push:\n    branches:\n      - main", ci)
+        self.assertIn("pull_request:\n    branches:\n      - main", ci)
+        self.assertIn("runs-on: windows-latest", ci)
+        self.assertIn("runs-on: macos-15", ci)
+        self.assertIn("python -m unittest discover", ci)
+        self.assertEqual(ci.count("node tests/run_extension_tests.js\n"), 2)
+        self.assertEqual(ci.count("node tests/run_extension_tests.js --syntax"), 2)
+        self.assertIn("uname -m", ci)
+        self.assertIn("platform.machine()", ci)
+        self.assertNotIn("PyInstaller", ci)
+        self.assertNotIn("packaging/build_release.ps1", ci)
+        self.assertNotIn("packaging/build_macos.sh", ci)
+        self.assertNotIn("codesign", ci)
+        self.assertNotIn("hdiutil", ci)
+
+        self.assertIn("workflow_dispatch:", build)
+        self.assertIn('runs-on: macos-15', build)
+        self.assertIn('refs/tags/v', build)
+        self.assertNotIn("branches:\n      - main", build)
+        self.assertIn('if: startsWith(github.ref', build)
+        self.assertIn('./packaging/build_release.ps1', build)
+        self.assertIn('bash packaging/build_macos.sh', build)
+        self.assertNotIn("python -m unittest discover", build)
+        self.assertNotIn("node tests/run_extension_tests.js", build)
+        self.assertEqual(build.count('retention-days: 30'), 2)
+        self.assertEqual(build.count('GITHUB_STEP_SUMMARY'), 2)
+
+        runner = (ROOT / "tests" / "run_extension_tests.js").read_text(encoding="utf-8")
+        self.assertIn(r"/^test_.*\.(js|mjs)$/", runner)
 
     def test_generated_mac_artifacts_are_ignored(self):
         ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")

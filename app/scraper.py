@@ -214,6 +214,11 @@ def setup_console_encoding() -> None:
                 pass
 
 
+# Configure the process streams at import time as well as at CLI startup. This
+# keeps direct callers and test runners from falling back to a legacy code page.
+setup_console_encoding()
+
+
 def detect_platform(url: str) -> str:
     host = urlparse(url).netloc.lower()
     host = host[4:] if host.startswith("www.") else host

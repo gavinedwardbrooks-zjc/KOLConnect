@@ -51,10 +51,17 @@ xattr -cr /Applications/KOLConnect.app
 
 ## GitHub Actions
 
-`.github/workflows/build.yml` 支持：
+`.github/workflows/ci.yml` 负责源码验证：
+
+- 推送到 `main`、向 `main` 提交 Pull Request，或手动运行 `workflow_dispatch` 时，在 Windows x64 与 `macos-15` arm64 上执行 Python 全量测试、Extension 自动发现测试和静态检查。
+- CI 不执行打包、签名、DMG 创建或 GitHub Release。
+- Extension 测试由 `tests/run_extension_tests.js` 自动发现 `tests/test_*.js` 与 `tests/test_*.mjs`，新增符合命名规则的测试无需修改 workflow。
+
+`.github/workflows/build.yml` 只负责打包与发布：
 
 - 手动 `workflow_dispatch`：构建 Windows x64 EXE 和 macOS arm64 DMG，仅保存 Actions artifacts，不创建 Release。
 - 推送未来的 `v*` tag：两端构建成功后，Release job 下载两个 artifacts 并上传到对应 tag 的 GitHub Release。
+- 普通 `main` push 不触发 Build。
 
 macOS job 使用 `macos-15` arm64 runner，并同时检查 `uname -m` 与 `platform.machine()`。任一结果不是 `arm64` 时立即失败，禁止把其他架构错误标记为 arm64。
 

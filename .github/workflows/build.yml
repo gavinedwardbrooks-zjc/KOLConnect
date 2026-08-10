@@ -21,15 +21,6 @@ jobs:
           cache-dependency-path: packaging/requirements-build.txt
       - name: Install dependencies
         run: python -m pip install -r packaging/requirements-build.txt
-      - name: Run Python tests
-        run: python -m unittest discover -s tests -p "test_*.py"
-      - name: Run extension tests
-        shell: pwsh
-        run: |
-          Get-ChildItem tests -File | Where-Object { $_.Extension -in ".js", ".mjs" } | ForEach-Object {
-            node $_.FullName
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          }
       - name: Build Windows executable
         shell: pwsh
         run: ./packaging/build_release.ps1
@@ -78,8 +69,6 @@ jobs:
           [[ "$(python -c 'import platform; print(platform.machine())')" == "arm64" ]]
       - name: Install dependencies
         run: python -m pip install -r packaging/requirements-build.txt
-      - name: Run Python tests
-        run: python -m unittest discover -s tests -p "test_*.py"
       - name: Build macOS application and DMG
         shell: bash
         run: bash packaging/build_macos.sh

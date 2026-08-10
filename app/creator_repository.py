@@ -8,7 +8,6 @@ PostgreSQL adapter can keep this contract without changing the HTTP API or UI.
 
 import json
 import hashlib
-import ctypes
 import os
 import re
 import shutil
@@ -948,21 +947,9 @@ class CreatorRepository:
 
     @staticmethod
     def _localized_name_sort_key(value: str) -> bytes:
-        """Use Windows zh-CN collation (phonetic order) without changing stored names."""
+        """Return a deterministic pinyin-oriented key without using system locale."""
         normalized = value.casefold()
-        if os.name != "nt":
-            return normalized.encode("utf-8")
-        try:
-            map_string = ctypes.windll.kernel32.LCMapStringEx
-            flags = 0x00000400 | 0x00000001  # LCMAP_SORTKEY | NORM_IGNORECASE
-            size = map_string("zh-CN", flags, normalized, len(normalized), None, 0, None, None, 0)
-            if size <= 0:
-                raise OSError("LCMapStringEx failed")
-            buffer = (ctypes.c_ubyte * size)()
-            map_string("zh-CN", flags, normalized, len(normalized), buffer, size, None, None, 0)
-            return bytes(buffer)
-        except (AttributeError, OSError):
-            return normalized.encode("utf-8")
+        return normalized.encode("gb18030", errors="replace")
 
     def _creator_records_from_workbook(self, workbook) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Build request-scoped indexes and assemble Creator summaries in linear time."""

@@ -45,7 +45,14 @@ def reload_server():
 class PluginContractAndEmailRecheckTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.env_patch = mock.patch.dict(os.environ, {"APPDATA": self.temp_dir.name})
+        self.env_patch = mock.patch.dict(
+            os.environ,
+            {
+                "APPDATA": self.temp_dir.name,
+                "HOME": self.temp_dir.name,
+                "XDG_DATA_HOME": self.temp_dir.name,
+            },
+        )
         self.env_patch.start()
         self.server = reload_server()
 

@@ -199,6 +199,12 @@ Creator、Campaign、Snapshot 和相关运营数据当前保存在 Excel 工作�
 
 真实工作簿、凭证、日志、Chrome Profile 和用户运行数据不应提交到 Git 仓库。
 
+## Continuous Integration
+
+- 推送到 `main` 或向 `main` 提交 Pull Request 时，`CI` workflow 会在 Windows x64 和 macOS arm64 上运行 Python、Chrome Extension 与静态检查，不生成安装包。
+- 需要测试安装包时，手动运行 `Build` workflow，分别生成 Windows EXE 与 macOS arm64 DMG artifacts。
+- 推送 `v*` tag 时，`Build` workflow 在双平台构建完成后创建对应 GitHub Release；普通 `main` push 不触发打包或 Release。
+
 ## Current Version
 
 ```text

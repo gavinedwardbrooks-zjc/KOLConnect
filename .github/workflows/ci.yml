@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            packaging/requirements.txt
+            packaging/requirements-build.txt
+      - name: Install dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Run Python tests
+        id: python_tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Run extension tests
+        id: extension_tests
+        run: node tests/run_extension_tests.js
+      - name: Check Python syntax
+        run: >-
+          python -c "from pathlib import Path; files=[*Path('app').glob('*.py'), *Path('tests').glob('test_*.py'), *Path('scripts').glob('*.py')]; [compile(p.read_text(encoding='utf-8-sig'), str(p), 'exec') for p in files]; print(f'Python syntax passed: {len(files)} files')"
+      - name: Check extension JavaScript syntax
+        run: node tests/run_extension_tests.js --syntax
+      - name: Validate extension manifest
+        run: python -c "import json; from pathlib import Path; p=Path('chrome_extension/manifest.json'); json.loads(p.read_text(encoding='utf-8')); print('Manifest JSON passed')"
+      - name: Validate specification syntax
+        run: >-
+          python -c "import ast; from pathlib import Path; files=sorted(Path('packaging/spec').glob('*.spec')); [ast.parse(p.read_text(encoding='utf-8')) for p in files]; print(f'Specification syntax passed: {len(files)} files')"
+      - name: Write CI summary
+        if: always()
+        shell: pwsh
+        run: |
+          @(
+            "## Windows CI"
+            ""
+            "| Platform | Architecture | Python tests | Extension tests |"
+            "|---|---|---|---|"
+            "| Windows | ${{ runner.arch }} | ${{ steps.python_tests.outcome }} | ${{ steps.extension_tests.outcome }} |"
+          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
+
+  test-macos-arm64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            packaging/requirements.txt
+            packaging/requirements-build.txt
+      - name: Confirm Apple Silicon runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -m
+          python -c "import platform; print(platform.machine())"
+          [[ "$(uname -m)" == "arm64" ]]
+          [[ "$(python -c 'import platform; print(platform.machine())')" == "arm64" ]]
+      - name: Install dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Run Python tests
+        id: python_tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+      - name: Run extension tests
+        id: extension_tests
+        run: node tests/run_extension_tests.js
+      - name: Check Python syntax
+        run: >-
+          python -c "from pathlib import Path; files=[*Path('app').glob('*.py'), *Path('tests').glob('test_*.py'), *Path('scripts').glob('*.py')]; [compile(p.read_text(encoding='utf-8-sig'), str(p), 'exec') for p in files]; print(f'Python syntax passed: {len(files)} files')"
+      - name: Check extension JavaScript syntax
+        run: node tests/run_extension_tests.js --syntax
+      - name: Validate extension manifest
+        run: python -c "import json; from pathlib import Path; p=Path('chrome_extension/manifest.json'); json.loads(p.read_text(encoding='utf-8')); print('Manifest JSON passed')"
+      - name: Validate specification syntax
+        run: >-
+          python -c "import ast; from pathlib import Path; files=sorted(Path('packaging/spec').glob('*.spec')); [ast.parse(p.read_text(encoding='utf-8')) for p in files]; print(f'Specification syntax passed: {len(files)} files')"
+      - name: Check macOS shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          script="$(find packaging -maxdepth 1 -type f -name 'build_*.sh' -print -quit)"
+          test -n "${script}"
+          bash -n "${script}"
+      - name: Write CI summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## macOS CI"
+            echo
+            echo "| Platform | Architecture | Python tests | Extension tests |"
+            echo "|---|---|---|---|"
+            echo "| macOS | $(uname -m) | ${{ steps.python_tests.outcome }} | ${{ steps.extension_tests.outcome }} |"
+          } >> "${GITHUB_STEP_SUMMARY}"
