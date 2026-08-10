@@ -9,32 +9,28 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
+from excel_workbook_store import ExcelWorkbookStore
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 class ExcelDataRepository:
-    """Reuse CreatorRepository's migration, locking, and atomic-save behavior."""
+    """Shared row helpers backed by an injected Excel workbook store."""
 
-    def __init__(self, workbook_path: Path) -> None:
-        self.workbook_path = Path(workbook_path)
+    def __init__(self, workbook_path: Path | ExcelWorkbookStore) -> None:
+        self.store = (
+            workbook_path
+            if isinstance(workbook_path, ExcelWorkbookStore)
+            else ExcelWorkbookStore(workbook_path)
+        )
+        self.workbook_path = self.store.workbook_path
 
     @contextmanager
     def workbook(self, *, write: bool = False) -> Iterator[Any]:
-        # Imported lazily to avoid a module cycle while CreatorRepository registers
-        # the Product/Campaign sheet headers defined by the specialized repositories.
-        from creator_repository import CreatorRepository, _WORKBOOK_LOCK
-
-        with _WORKBOOK_LOCK:
-            storage = CreatorRepository(self.workbook_path)
-            workbook = storage._load_workbook()
-            try:
-                yield workbook
-                if write:
-                    storage._save_workbook(workbook)
-            finally:
-                workbook.close()
+        with self.store.workbook(write=write) as workbook:
+            yield workbook
 
     @staticmethod
     def rows(sheet) -> list[dict[str, Any]]:

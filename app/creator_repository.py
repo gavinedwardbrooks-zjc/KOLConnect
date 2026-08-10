@@ -8,10 +8,8 @@ PostgreSQL adapter can keep this contract without changing the HTTP API or UI.
 
 import json
 import hashlib
-import os
+import os  # Compatibility patch point for existing atomic-save tests.
 import re
-import shutil
-import threading
 import time
 import uuid
 from functools import wraps
@@ -20,12 +18,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font
 
 from app_logging import log_event
 from campaign_creator_repository import CAMPAIGN_CREATORS_HEADERS
 from campaign_repository import CAMPAIGNS_HEADERS, migrate_legacy_campaign_archives
+from excel_workbook_store import (
+    ExcelWorkbookStore,
+    WORKBOOK_LOCK,
+    WorkbookReadError,
+    WorkbookSaveError,
+)
 from product_repository import PRODUCTS_HEADERS
 from runtime_paths import load_json_with_backup
 
@@ -99,7 +102,24 @@ _FOLLOW_UP_LOGS_HEADERS = [
 # Hidden technical metadata preserves the full snapshot and review-task handoff.
 _ANALYSIS_METADATA_HEADERS = ["creator_id", "task_id", "account_uid", "status_updated_at", "analysis_json", "source"]
 _WORKBOOK_METADATA_HEADERS = ["schema_version", "last_update_time"]
-_WORKBOOK_LOCK = threading.RLock()
+_WORKBOOK_SHEETS = {
+    "Creators": _CREATORS_HEADERS,
+    "CreatorAccounts": _CREATOR_ACCOUNTS_HEADERS,
+    "Videos": _VIDEOS_HEADERS,
+    "Insights": _INSIGHTS_HEADERS,
+    "CreatorSnapshots": _CREATOR_SNAPSHOTS_HEADERS,
+    "VideoSnapshots": _VIDEO_SNAPSHOTS_HEADERS,
+    "Cooperations": _COOPERATIONS_HEADERS,
+    "Agencies": _AGENCIES_HEADERS,
+    "AgencyContacts": _AGENCY_CONTACTS_HEADERS,
+    "FollowUpLogs": _FOLLOW_UP_LOGS_HEADERS,
+    "Products": PRODUCTS_HEADERS,
+    "Campaigns": CAMPAIGNS_HEADERS,
+    "CampaignCreators": CAMPAIGN_CREATORS_HEADERS,
+    "_AnalysisData": _ANALYSIS_METADATA_HEADERS,
+    "_Metadata": _WORKBOOK_METADATA_HEADERS,
+}
+_WORKBOOK_LOCK = WORKBOOK_LOCK
 _CAMPAIGN_LIFECYCLE_LOGGED_PATHS: set[str] = set()
 
 
@@ -121,15 +141,22 @@ class CreatorRepository:
 
     def __init__(
         self,
-        workbook_path: Path,
+        workbook_path: Path | ExcelWorkbookStore,
         legacy_analysis_dir: Path | None = None,
         legacy_library_file: Path | None = None,
     ) -> None:
-        self.workbook_path = workbook_path
+        self.store = (
+            workbook_path
+            if isinstance(workbook_path, ExcelWorkbookStore)
+            else ExcelWorkbookStore(workbook_path)
+        )
+        self.workbook_path = self.store.workbook_path
         self.legacy_analysis_dir = legacy_analysis_dir
         self.legacy_library_file = legacy_library_file
         self.last_migration_report: dict[str, Any] | None = None
         self.last_campaign_lifecycle_report: dict[str, Any] | None = None
+        self.store.register_migration(self._apply_schema_migrations)
+        self.store.register_before_save(self._prepare_workbook_save)
 
     @_synchronized
     def saveCreator(self, analysis: dict[str, Any]) -> dict[str, Any]:
@@ -1170,8 +1197,21 @@ class CreatorRepository:
         return {"analysis_id": creator_id, "status": status_value, "updated_at": _utc_now()}
 
     def _load_workbook(self):
-        if not self.workbook_path.exists():
-            workbook = self._new_workbook()
+        try:
+            return self.store.open()
+        except WorkbookReadError as exc:
+            detail = exc.__cause__ or exc
+            log_event("Excel", f"读取失败: {self.workbook_path} | {detail}")
+            raise RuntimeError(f"无法读取达人库 Excel 文件：{detail}") from exc
+        except WorkbookSaveError as exc:
+            log_event("Excel", f"保存失败，文件可能被占用: {self.workbook_path} | {exc}")
+            raise RuntimeError(
+                "无法保存达人库 Excel 文件。请先关闭 WPS 或 Excel 中打开的该文件。"
+            ) from exc
+
+    def _apply_schema_migrations(self, workbook, created: bool) -> bool:
+        if created:
+            self._initialize_new_workbook(workbook)
             self._migrate_legacy_json(workbook)
             self.last_migration_report = self._migrate_phase1_workbook(
                 workbook,
@@ -1179,14 +1219,9 @@ class CreatorRepository:
                 backup_path="",
                 created_sheets={"CreatorAccounts", "Agencies", "AgencyContacts", "FollowUpLogs"},
             )
-            self._save_workbook(workbook)
             log_event("Excel", f"已创建达人库文件: {self.workbook_path}")
-            return workbook
-        try:
-            workbook = load_workbook(self.workbook_path)
-        except Exception as exc:
-            log_event("Excel", f"读取失败: {self.workbook_path} | {exc}")
-            raise RuntimeError(f"无法读取达人库 Excel 文件：{exc}") from exc
+            return True
+
         log_event("Excel", f"打开成功: {self.workbook_path}")
         from_schema = self._schema_version(workbook)
         existing_sheets = set(workbook.sheetnames)
@@ -1226,18 +1261,20 @@ class CreatorRepository:
                     },
                 )
                 changed = True
-            if changed:
-                self._save_workbook(workbook)
         except Exception as exc:
             log_event(
                 "Migration",
                 f"迁移失败，原工作簿保持不变 | backup={backup_path or '--'} | {exc}",
             )
             raise
-        return workbook
+        return changed
 
     def _new_workbook(self):
-        workbook = Workbook()
+        workbook = self.store.new_workbook()
+        self._initialize_new_workbook(workbook)
+        return workbook
+
+    def _initialize_new_workbook(self, workbook) -> None:
         creators = workbook.active
         creators.title = "Creators"
         self._set_headers(creators, _CREATORS_HEADERS)
@@ -1259,28 +1296,10 @@ class CreatorRepository:
         workbook_metadata = workbook.create_sheet("_Metadata")
         self._set_headers(workbook_metadata, _WORKBOOK_METADATA_HEADERS)
         workbook_metadata.sheet_state = "hidden"
-        return workbook
 
     def _ensure_sheets(self, workbook) -> bool:
-        sheets = {
-            "Creators": _CREATORS_HEADERS,
-            "CreatorAccounts": _CREATOR_ACCOUNTS_HEADERS,
-            "Videos": _VIDEOS_HEADERS,
-            "Insights": _INSIGHTS_HEADERS,
-            "CreatorSnapshots": _CREATOR_SNAPSHOTS_HEADERS,
-            "VideoSnapshots": _VIDEO_SNAPSHOTS_HEADERS,
-            "Cooperations": _COOPERATIONS_HEADERS,
-            "Agencies": _AGENCIES_HEADERS,
-            "AgencyContacts": _AGENCY_CONTACTS_HEADERS,
-            "FollowUpLogs": _FOLLOW_UP_LOGS_HEADERS,
-            "Products": PRODUCTS_HEADERS,
-            "Campaigns": CAMPAIGNS_HEADERS,
-            "CampaignCreators": CAMPAIGN_CREATORS_HEADERS,
-            "_AnalysisData": _ANALYSIS_METADATA_HEADERS,
-            "_Metadata": _WORKBOOK_METADATA_HEADERS,
-        }
         changed = False
-        for name, headers in sheets.items():
+        for name, headers in _WORKBOOK_SHEETS.items():
             if name not in workbook.sheetnames:
                 self._set_headers(workbook.create_sheet(name), headers)
                 changed = True
@@ -1352,10 +1371,7 @@ class CreatorRepository:
 
     def _create_migration_backup(self) -> Path:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-        backup_path = self.workbook_path.with_name(
-            f"{self.workbook_path.stem}.pre_v2_{timestamp}{self.workbook_path.suffix}"
-        )
-        shutil.copy2(self.workbook_path, backup_path)
+        backup_path = self.store.create_backup(f".pre_v2_{timestamp}")
         log_event("Migration", f"迁移前备份已创建: {backup_path}")
         return backup_path
 
@@ -1460,35 +1476,22 @@ class CreatorRepository:
         return report
 
     def _save_workbook(self, workbook) -> None:
-        self.workbook_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = self.workbook_path.with_suffix(".tmp.xlsx")
-        backup_path = self.workbook_path.with_suffix(".xlsx.bak")
         try:
-            self._upsert_row(
-                workbook["_Metadata"],
-                "schema_version",
-                CREATOR_LIBRARY_SCHEMA_VERSION,
-                {"schema_version": CREATOR_LIBRARY_SCHEMA_VERSION, "last_update_time": _utc_now()},
-            )
-            workbook.save(temp_path)
-            load_workbook(temp_path, read_only=True).close()
-            if self.workbook_path.exists():
-                shutil.copy2(self.workbook_path, backup_path)
-            for attempt in range(3):
-                try:
-                    os.replace(temp_path, self.workbook_path)
-                    break
-                except PermissionError:
-                    if attempt == 2:
-                        raise
-                    time.sleep(0.1 * (attempt + 1))
+            self.store.save(workbook)
             log_event("Excel", f"保存成功: {self.workbook_path}")
-        except PermissionError as exc:
+        except WorkbookSaveError as exc:
             log_event("Excel", f"保存失败，文件可能被占用: {self.workbook_path} | {exc}")
-            raise RuntimeError("无法保存达人库 Excel 文件。请先关闭 WPS 或 Excel 中打开的该文件。") from exc
-        finally:
-            if temp_path.exists():
-                temp_path.unlink()
+            raise RuntimeError(
+                "无法保存达人库 Excel 文件。请先关闭 WPS 或 Excel 中打开的该文件。"
+            ) from exc
+
+    def _prepare_workbook_save(self, workbook) -> None:
+        self._upsert_row(
+            workbook["_Metadata"],
+            "schema_version",
+            CREATOR_LIBRARY_SCHEMA_VERSION,
+            {"schema_version": CREATOR_LIBRARY_SCHEMA_VERSION, "last_update_time": _utc_now()},
+        )
 
     @staticmethod
     def _rows(sheet) -> list[dict[str, Any]]:
@@ -2026,3 +2029,32 @@ class CreatorRepository:
             return data if isinstance(data, list) else []
         except json.JSONDecodeError:
             return []
+
+
+def _ensure_default_workbook_schema(workbook, created: bool) -> bool:
+    """Domain-owned schema callback used by path-compatible repositories."""
+    changed = False
+    for name, headers in _WORKBOOK_SHEETS.items():
+        if name not in workbook.sheetnames:
+            if created and name == "Creators" and workbook.sheetnames == ["Sheet"]:
+                sheet = workbook.active
+                sheet.title = name
+            else:
+                sheet = workbook.create_sheet(name)
+            CreatorRepository._set_headers(sheet, headers)
+            changed = True
+        else:
+            changed = CreatorRepository._ensure_headers(workbook[name], headers) or changed
+    workbook["_AnalysisData"].sheet_state = "hidden"
+    workbook["_Metadata"].sheet_state = "hidden"
+    if changed:
+        CreatorRepository._upsert_row(
+            workbook["_Metadata"],
+            "schema_version",
+            CREATOR_LIBRARY_SCHEMA_VERSION,
+            {"schema_version": CREATOR_LIBRARY_SCHEMA_VERSION, "last_update_time": _utc_now()},
+        )
+    return changed
+
+
+ExcelWorkbookStore.register_default_migration(_ensure_default_workbook_schema)

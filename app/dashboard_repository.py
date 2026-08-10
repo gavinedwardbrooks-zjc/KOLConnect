@@ -19,11 +19,15 @@ class DashboardRepository:
         campaign_repository: CampaignRepository | None = None,
     ) -> None:
         self._creator_repository = creator_repository
-        workbook_path = creator_repository.workbook_path
-        self._campaign_creator_repository = (
-            campaign_creator_repository or CampaignCreatorRepository(workbook_path)
+        workbook_source = getattr(
+            creator_repository,
+            "store",
+            creator_repository.workbook_path,
         )
-        self._campaign_repository = campaign_repository or CampaignRepository(workbook_path)
+        self._campaign_creator_repository = (
+            campaign_creator_repository or CampaignCreatorRepository(workbook_source)
+        )
+        self._campaign_repository = campaign_repository or CampaignRepository(workbook_source)
         self._creators: list[dict[str, Any]] | None = None
         self._campaign_creators: list[dict[str, Any]] | None = None
         self._campaigns: list[dict[str, Any]] | None = None

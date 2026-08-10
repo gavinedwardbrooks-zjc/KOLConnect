@@ -35,6 +35,7 @@ from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from product_repository import ProductRepository
+from repository_factory import RepositoryFactory, get_active_repository_factory
 from app_logging import log_error, log_event
 from openpyxl import load_workbook
 from runtime_paths import (
@@ -1875,24 +1876,35 @@ def create_manual_task(payload: dict, *, defer_library_import: bool = False) -> 
 
 def get_creator_repository() -> CreatorRepository:
     """Create the active local adapter; swap this factory for a cloud adapter later."""
-    workbook_path = Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
-    return CreatorRepository(workbook_path, CREATOR_ANALYSIS_DIR, CREATOR_LIBRARY_FILE)
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.creator()
 
 
 def _creator_library_workbook_path() -> Path:
     return Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
 
 
+def _new_repository_factory() -> RepositoryFactory:
+    return RepositoryFactory.for_path(
+        _creator_library_workbook_path(),
+        legacy_analysis_dir=CREATOR_ANALYSIS_DIR,
+        legacy_library_file=CREATOR_LIBRARY_FILE,
+    )
+
+
 def get_product_repository() -> ProductRepository:
-    return ProductRepository(_creator_library_workbook_path())
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.product()
 
 
 def get_campaign_repository() -> CampaignRepository:
-    return CampaignRepository(_creator_library_workbook_path())
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.campaign()
 
 
 def get_campaign_creator_repository() -> CampaignCreatorRepository:
-    return CampaignCreatorRepository(_creator_library_workbook_path())
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.campaign_creator()
 
 
 def _task_rows_for_creator_library(task: dict, rows: list[dict]) -> list[dict]:
@@ -1986,7 +1998,13 @@ def import_task_results_to_creator_library(
 
 def get_dashboard_data() -> dict:
     """Return read-only operational dashboard data from the Creator Repository."""
-    service = DashboardService(DashboardRepository(get_creator_repository()))
+    factory = get_active_repository_factory()
+    repository = (
+        factory.dashboard(get_creator_repository())
+        if factory
+        else DashboardRepository(get_creator_repository())
+    )
+    service = DashboardService(repository)
     return {
         "overview": service.getOverview(),
         "creator_health": service.getCreatorHealth(),
@@ -2799,6 +2817,11 @@ class Handler(BaseHTTPRequestHandler):
             "logging": {"event": log_event, "error": log_error},
         }
 
+    @staticmethod
+    def _repository_request_scope():
+        """Resolve the active workbook path once for this HTTP request."""
+        return _new_repository_factory().request_scope()
+
     def _dispatch(self, request: dict) -> bool:
         context = self._handler_context()
         for endpoint_handler in HANDLERS:
@@ -2838,22 +2861,24 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
 
-        if self._dispatch(self._request_context(parsed, query)):
-            return
+        with self._repository_request_scope():
+            if self._dispatch(self._request_context(parsed, query)):
+                return
 
-        if parsed.path in {"", "/"}:
-            return self._serve_file(STATIC_DIR / "index.html")
+            if parsed.path in {"", "/"}:
+                return self._serve_file(STATIC_DIR / "index.html")
 
-        return self._serve_file(STATIC_DIR / parsed.path.lstrip("/"))
+            return self._serve_file(STATIC_DIR / parsed.path.lstrip("/"))
 
     def do_POST(self) -> None:
         parsed = urlparse(self.path)
         request = self._request_context(parsed, parse_qs(parsed.query))
         try:
-            if self._dispatch(request):
-                return
-            request["get_payload"]()
-            return self._error("接口不存在。", status=404)
+            with self._repository_request_scope():
+                if self._dispatch(request):
+                    return
+                request["get_payload"]()
+                return self._error("接口不存在。", status=404)
         except json.JSONDecodeError:
             return self._error("请求数据不是有效 JSON。")
         except Exception as exc:
@@ -2864,11 +2889,12 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         request = self._request_context(parsed, parse_qs(parsed.query))
         try:
-            if self._dispatch(request):
-                return
-            payload = request["get_payload"]()
+            with self._repository_request_scope():
+                if self._dispatch(request):
+                    return
+                payload = request["get_payload"]()
 
-            return self._error("接口不存在。", status=404)
+                return self._error("接口不存在。", status=404)
         except json.JSONDecodeError:
             return self._error("请求数据不是有效 JSON。")
         except Exception as exc:
@@ -2877,15 +2903,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_PUT(self) -> None:
         parsed = urlparse(self.path)
-        if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
-            return
-        return self._error("接口不存在。", status=404)
+        with self._repository_request_scope():
+            if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
+                return
+            return self._error("接口不存在。", status=404)
 
     def do_DELETE(self) -> None:
         parsed = urlparse(self.path)
-        if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
-            return
-        return self._error("接口不存在。", status=404)
+        with self._repository_request_scope():
+            if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
+                return
+            return self._error("接口不存在。", status=404)
 
 
 def run() -> None:
