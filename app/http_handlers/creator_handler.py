@@ -8,6 +8,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     path = request["path"]
     query = request["query"]
     services = context["services"]
+    creator_service = services["creator_service"]
 
     # POST /api/creator-library/{creator_id}/cooperations → 拒绝新增 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
     # PATCH /api/creator-library/{creator_id}/cooperations → 拒绝修改 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
@@ -23,7 +24,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "GET" and path == "/api/creator-library":
         include_archived = query.get("include_archived", [""])[0].lower() == "true"
         try:
-            payload = services["get_creator_library"](
+            payload = creator_service.get_creator_library(
                 include_archived=include_archived,
                 page=int(query.get("page", ["1"])[0]),
                 page_size=int(query.get("page_size", ["24"])[0]),
@@ -48,7 +49,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     # GET /api/creator-library/{creator_id}/trend → 读取达人趋势；{"ok": true, "creator_id": "...", "snapshots": [...], "latest": {...}, "previous": {...}, "changes": {...}, "freshness": {...}}
     if method == "GET" and trend_match:
         try:
-            handler._json({"ok": True, **services["get_creator_library_trend"](trend_match.group(1))})
+            handler._json({"ok": True, **creator_service.get_creator_trend(trend_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
         return True
@@ -57,7 +58,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     # GET /api/creator-library/{creator_id}/snapshots → 读取达人快照；{"ok": true, "creator_id": "...", "snapshots": [...]}
     if method == "GET" and snapshots_match:
         try:
-            handler._json({"ok": True, **services["get_creator_library_snapshots"](snapshots_match.group(1))})
+            handler._json({"ok": True, **creator_service.get_creator_snapshots(snapshots_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
         return True
@@ -66,28 +67,28 @@ def handle(handler, request: dict, context: dict) -> bool:
     # GET /api/creator-library/{creator_id} → 读取达人详情；{"ok": true, "record": {...}, "analysis": {...}, "accounts": [...], "snapshots": [...], "trend": {...}, "history_analysis_times": [...], "cooperations": [...], "cooperation_statistics": {...}}
     if method == "GET" and creator_match:
         try:
-            handler._json({"ok": True, **services["get_creator_library_detail"](creator_match.group(1))})
+            handler._json({"ok": True, **creator_service.get_creator_detail(creator_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
         return True
 
     # GET /api/local/agencies → 读取本地 Agency；{"ok": true, "agencies": [...]}
     if method == "GET" and path == "/api/local/agencies":
-        handler._json({"ok": True, **services["get_local_agencies"]()})
+        handler._json({"ok": True, **creator_service.get_agencies()})
         return True
 
     agency_match = re.fullmatch(r"/api/local/agencies/([^/]+)", path)
     # GET /api/local/agencies/{agency_id} → 读取 Agency 详情；{"ok": true, "agency": {...}, "contacts": [...], "creators": [...]}
     if method == "GET" and agency_match:
         try:
-            handler._json({"ok": True, **services["get_local_agency_detail"](agency_match.group(1))})
+            handler._json({"ok": True, **creator_service.get_agency_detail(agency_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
         return True
 
     # GET /api/local/agency-contacts → 读取本地 Agency 联系人；{"ok": true, "contacts": [...]}
     if method == "GET" and path == "/api/local/agency-contacts":
-        handler._json({"ok": True, **services["get_local_agency_contacts"]()})
+        handler._json({"ok": True, **creator_service.get_agency_contacts()})
         return True
 
     # GET /api/agency-contacts → 读取可选 Agency 联系人；{"ok": true, "configured": true, "contacts": [...]}
@@ -130,7 +131,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "POST" and status_match:
         payload = request["get_payload"]()
         try:
-            handler._ok(**services["update_creator_library_status"](status_match.group(1), payload.get("status")))
+            handler._ok(**creator_service.update_creator_status(status_match.group(1), payload.get("status")))
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -140,7 +141,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "POST" and relations_match:
         payload = request["get_payload"]()
         try:
-            handler._ok(**services["update_creator_local_relations"](relations_match.group(1), payload))
+            handler._ok(**creator_service.update_creator_relations(relations_match.group(1), payload))
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -148,7 +149,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     # POST /api/local/agencies → 保存本地 Agency；{"ok": true, "agency": {...}}
     if method == "POST" and path == "/api/local/agencies":
         try:
-            handler._ok(**services["save_local_agency"](request["get_payload"]()))
+            handler._ok(**creator_service.save_agency(request["get_payload"]()))
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -156,7 +157,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     # POST /api/local/agency-contacts → 保存本地 Agency 联系人；{"ok": true, "contact": {...}}
     if method == "POST" and path == "/api/local/agency-contacts":
         try:
-            handler._ok(**services["save_local_agency_contact"](request["get_payload"]()))
+            handler._ok(**creator_service.save_agency_contact(request["get_payload"]()))
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -166,7 +167,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "POST" and create_task_match:
         request["get_payload"]()
         try:
-            handler._ok(**services["open_creator_library_collaboration_task"](create_task_match.group(1)))
+            handler._ok(**creator_service.get_creator_task(create_task_match.group(1)))
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -175,7 +176,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "PATCH" and creator_match:
         payload = request["get_payload"]()
         try:
-            handler._json({"ok": True, **services["update_creator_library_profile"](creator_match.group(1), payload)})
+            handler._json({"ok": True, **creator_service.update_creator_profile(creator_match.group(1), payload)})
         except ValueError as exc:
             handler._repository_error(exc)
         return True

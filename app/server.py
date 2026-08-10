@@ -29,13 +29,16 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import scraper as scraper_module
+from adapters.task_manager_adapter import TaskManagerAdapter
 from campaign_creator_repository import CampaignCreatorRepository
 from campaign_repository import CampaignRepository
 from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from product_repository import ProductRepository
+from ports.task_port import CreatorImportLinkage, ManualReviewTaskCommand, TaskPort
 from repository_factory import RepositoryFactory, get_active_repository_factory
+from services.creator_service import CreatorService
 from app_logging import log_error, log_event
 from openpyxl import load_workbook
 from runtime_paths import (
@@ -1725,7 +1728,12 @@ def create_email_recheck_task() -> dict:
     }
 
 
-def create_manual_task(payload: dict, *, defer_library_import: bool = False) -> dict:
+def create_manual_task(
+    payload: dict,
+    *,
+    defer_library_import: bool = False,
+    task_port: TaskPort | None = None,
+) -> dict:
     """Create a one-record task that enters the same review and four-table flow."""
     profile_url = str(payload.get("profile_url") or "").strip()
     if not profile_url:
@@ -1767,16 +1775,32 @@ def create_manual_task(payload: dict, *, defer_library_import: bool = False) -> 
         )
 
     url = str(normalized.get("normalized_url") or "").strip()
-    task = task_manager.create_task(
-        TASKS_DIR,
-        [url],
-        [],
-        1,
-        name=payload.get("task_name"),
-        target_platform=selected_platform,
-        platform_summary={"TikTok": int(selected_platform == "TikTok"), "Instagram": int(selected_platform == "Instagram"), "YouTube": int(selected_platform == "YouTube")},
-        task_type="manual",
-    )
+    platform_summary = {
+        "TikTok": int(selected_platform == "TikTok"),
+        "Instagram": int(selected_platform == "Instagram"),
+        "YouTube": int(selected_platform == "YouTube"),
+    }
+    if task_port is None:
+        task = task_manager.create_task(
+            TASKS_DIR,
+            [url],
+            [],
+            1,
+            name=payload.get("task_name"),
+            target_platform=selected_platform,
+            platform_summary=platform_summary,
+            task_type="manual",
+        )
+    else:
+        task = task_port.create_manual_review_task(
+            ManualReviewTaskCommand(
+                normalized_links=(url,),
+                input_count=1,
+                name=str(payload.get("task_name") or ""),
+                target_platform=selected_platform,
+                platform_summary=platform_summary,
+            )
+        ).task.to_response()
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     result = scraper_module.build_result(
         url=url,
@@ -1878,6 +1902,16 @@ def get_creator_repository() -> CreatorRepository:
     """Create the active local adapter; swap this factory for a cloud adapter later."""
     factory = get_active_repository_factory() or _new_repository_factory()
     return factory.creator()
+
+
+def get_creator_service() -> CreatorService:
+    """Create a stateless facade whose provider resolves the active request repository."""
+    return CreatorService(get_creator_repository, get_task_port)
+
+
+def get_task_port() -> TaskPort:
+    """Build a stateless adapter for one task operation."""
+    return TaskManagerAdapter(lambda: TASKS_DIR)
 
 
 def _creator_library_workbook_path() -> Path:
@@ -2089,30 +2123,25 @@ def import_extension_capture(payload: dict) -> dict:
             "note": payload.get("note"),
         },
         defer_library_import=True,
+        task_port=get_task_port(),
     )
     task = manual_result["task"]
     analysis = _extension_analysis_payload(normalized_payload, task, manual_result["account_uid"])
-    try:
-        saved_analysis = get_creator_repository().saveCreator(analysis)
-    except Exception:
-        # The task only exists to support this import; remove it if its analysis was not persisted.
-        try:
-            task_manager.delete_task(TASKS_DIR, task["id"])
-        except Exception:
-            pass
-        raise
-    task = task_manager.update_task(
-        TASKS_DIR,
-        task["id"],
-        creator_analysis_id=saved_analysis["creator_id"],
-        creator_snapshot_id=saved_analysis["snapshot_id"],
-        creator_analysis_imported_at=analysis["imported_at"],
-        extension_crm={
-            "country": country,
-            "language": language,
-            "content_category": content_category,
-        },
+    saved_analysis = get_creator_service().import_creator_from_extension(
+        analysis,
+        compensation_task_id=task["id"],
     )
+    task = get_task_port().attach_creator_import(
+        task["id"],
+        CreatorImportLinkage(
+            creator_id=saved_analysis["creator_id"],
+            snapshot_id=saved_analysis["snapshot_id"],
+            imported_at=analysis["imported_at"],
+            country=country,
+            language=language,
+            content_category=content_category,
+        ),
+    ).to_response()
     return {
         "duplicate": False,
         "is_new_creator": saved_analysis["is_new_creator"],
@@ -2144,7 +2173,7 @@ def get_creator_library(
     order: str = "desc",
     filters: dict | None = None,
 ) -> dict:
-    result = get_creator_repository().getCreatorsPage(
+    return get_creator_service().get_creator_library(
         include_archived=include_archived,
         page=page,
         page_size=page_size,
@@ -2152,27 +2181,22 @@ def get_creator_library(
         order=order,
         filters=filters,
     )
-    # Keep records for existing clients while exposing the normalized creators field.
-    return {**result, "records": result["creators"]}
 
 
 def get_creator_library_detail(analysis_id: str) -> dict:
-    return get_creator_repository().getCreatorDetail(analysis_id)
+    return get_creator_service().get_creator_detail(analysis_id)
 
 
 def get_creator_library_trend(analysis_id: str) -> dict:
-    return get_creator_repository().getCreatorTrend(analysis_id)
+    return get_creator_service().get_creator_trend(analysis_id)
 
 
 def get_creator_library_snapshots(analysis_id: str) -> dict:
-    return {
-        "creator_id": analysis_id,
-        "snapshots": get_creator_repository().getCreatorSnapshots(analysis_id),
-    }
+    return get_creator_service().get_creator_snapshots(analysis_id)
 
 
 def update_creator_library_status(analysis_id: str, status: object) -> dict:
-    return get_creator_repository().updateCreatorStatus(analysis_id, status)
+    return get_creator_service().update_creator_status(analysis_id, status)
 
 
 def save_creator_library_cooperation(analysis_id: str, payload: dict) -> dict:
@@ -2180,39 +2204,36 @@ def save_creator_library_cooperation(analysis_id: str, payload: dict) -> dict:
 
 
 def get_local_agencies() -> dict:
-    return {"agencies": get_creator_repository().getAgencies()}
+    return get_creator_service().get_agencies()
 
 
 def get_local_agency_detail(agency_id: str) -> dict:
-    return get_creator_repository().getAgencyDetail(agency_id)
+    return get_creator_service().get_agency_detail(agency_id)
 
 
 def get_local_agency_contacts(agency_id: str = "") -> dict:
-    return {"contacts": get_creator_repository().getAgencyContacts(agency_id)}
+    return get_creator_service().get_agency_contacts(agency_id)
 
 
 def save_local_agency(payload: dict) -> dict:
-    return {"agency": get_creator_repository().saveAgency(payload)}
+    return get_creator_service().save_agency(payload)
 
 
 def save_local_agency_contact(payload: dict) -> dict:
-    return {"contact": get_creator_repository().saveAgencyContact(payload)}
+    return get_creator_service().save_agency_contact(payload)
 
 
 def update_creator_local_relations(creator_id: str, payload: dict) -> dict:
-    return get_creator_repository().updateCreatorRelations(creator_id, payload)
+    return get_creator_service().update_creator_relations(creator_id, payload)
 
 
 def update_creator_library_profile(creator_id: str, payload: dict) -> dict:
-    return {"creator": get_creator_repository().updateCreator(creator_id, payload)}
+    return get_creator_service().update_creator_profile(creator_id, payload)
 
 
 def open_creator_library_collaboration_task(analysis_id: str) -> dict:
     """Reuse the analysis import task as the collaboration review entry; never duplicate it."""
-    detail = get_creator_library_detail(analysis_id)
-    task_id = str(detail["record"].get("task_id") or "")
-    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
-    return {"task": task, "created": False, "message": "已打开关联的审核任务。"}
+    return get_creator_service().get_creator_task(analysis_id)
 
 
 def _normalize_follower_count(value: object) -> str:
@@ -2754,7 +2775,9 @@ class Handler(BaseHTTPRequestHandler):
                 "campaign": get_campaign_repository,
                 "campaign_creator": get_campaign_creator_repository,
             },
+            "ports": {"task": get_task_port},
             "services": {
+                "creator_service": get_creator_service(),
                 "build_accounts_payload": build_accounts_payload,
                 "get_dashboard_data": get_dashboard_data,
                 "get_agency_contact_options": get_agency_contact_options,
