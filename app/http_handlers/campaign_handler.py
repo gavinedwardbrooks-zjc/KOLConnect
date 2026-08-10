@@ -9,6 +9,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     query = request["query"]
     repositories = context["repositories"]
 
+    # GET /api/products → {"ok": true, "products": [...]}
     if method == "GET" and path == "/api/products":
         include_archived = str((query.get("include_archived") or [""])[0]).lower() == "true"
         try:
@@ -19,6 +20,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     product_match = re.fullmatch(r"/api/products/([^/]+)", path)
+    # GET /api/products/{product_id} → {"ok": true, "product": {...}}
     if method == "GET" and product_match:
         try:
             handler._json({"ok": True, "product": repositories["product"]().getProduct(product_match.group(1))})
@@ -26,6 +28,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # GET /api/campaigns → {"ok": true, "campaigns": [...]}
     if method == "GET" and path == "/api/campaigns":
         try:
             campaigns = repositories["campaign"]().getCampaigns(
@@ -40,6 +43,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     campaign_creators_match = re.fullmatch(r"/api/campaigns/([^/]+)/creators", path)
+    # GET /api/campaigns/{campaign_id}/creators → {"ok": true, "campaign_creators": [...]}
     if method == "GET" and campaign_creators_match:
         campaign_id = campaign_creators_match.group(1)
         try:
@@ -54,6 +58,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", path)
+    # GET /api/campaigns/{campaign_id} → {"ok": true, "campaign": {...}}
     if method == "GET" and campaign_match:
         try:
             handler._json({"ok": True, "campaign": repositories["campaign"]().getCampaign(campaign_match.group(1))})
@@ -61,6 +66,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # POST /api/products → {"ok": true, "product": {...}}
     if method == "POST" and path == "/api/products":
         payload = request["get_payload"]()
         try:
@@ -70,6 +76,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # POST /api/campaigns → {"ok": true, "campaign": {...}}
     if method == "POST" and path == "/api/campaigns":
         payload = request["get_payload"]()
         try:
@@ -79,6 +86,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # POST /api/campaigns/{campaign_id}/creators → {"ok": true, "campaign_creator": {...}}
     if method == "POST" and campaign_creators_match:
         payload = request["get_payload"]()
         campaign_id = campaign_creators_match.group(1)
@@ -95,6 +103,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # PATCH /api/products/{product_id} → {"ok": true, "product": {...}}
     if method == "PATCH" and product_match:
         payload = request["get_payload"]()
         try:
@@ -110,6 +119,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # PATCH /api/campaigns/{campaign_id} → {"ok": true, "campaign": {...}}
     if method == "PATCH" and campaign_match:
         payload = request["get_payload"]()
         try:
@@ -126,6 +136,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     campaign_creator_match = re.fullmatch(r"/api/campaign-creators/([^/]+)", path)
+    # PATCH /api/campaign-creators/{id} → {"ok": true, "campaign_creator": {...}}
     if method == "PATCH" and campaign_creator_match:
         payload = request["get_payload"]()
         try:
@@ -140,6 +151,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # DELETE /api/campaign-creators/{id} → {"ok": true, "campaign_creator_id": "...", "campaign_id": "...", "creator_id": "...", "deleted": true}
     if method == "DELETE" and campaign_creator_match:
         try:
             result = repositories["campaign_creator"]().remove_creator_from_campaign(
@@ -150,6 +162,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    # DELETE /api/campaigns/{campaign_id} → {"ok": true, "campaign_id": "...", "deleted": true, "removed_campaign_creators": 0}
     if method == "DELETE" and campaign_match:
         try:
             result = repositories["campaign"]().delete_campaign(campaign_match.group(1))

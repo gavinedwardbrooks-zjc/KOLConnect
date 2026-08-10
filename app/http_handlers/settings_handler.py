@@ -8,10 +8,12 @@ def handle(handler, request: dict, context: dict) -> bool:
     services = context["services"]
     modules = context["modules"]
 
+    # GET /api/system/health → 读取系统健康检查；{"ok": true, "status": "ok", "checks": [...], "debug": {...}}
     if method == "GET" and path == "/api/system/health":
         handler._json({"ok": True, **services["get_system_health"]()})
         return True
 
+    # GET /api/state → 读取客户端设置（敏感值已遮罩）；{"ui": {...}, "profiles": [...], "selectedProfile": "...", "accounts": [...], "feishu": {...}, "creator_library": {...}, "mail": {...}}
     if method == "GET" and path == "/api/state":
         state = state_access["get"]()
         four_table_config = services["get_four_table_feishu_config"]()
@@ -40,6 +42,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         )
         return True
 
+    # GET /api/mail/inbox/messages → 读取最近邮件；{"ok": true, "updated_at": "...", "summary": {...}, "messages": [...], "accounts": {...}}
     if method == "GET" and path == "/api/mail/inbox/messages":
         data = modules["mail_sync"].load_mail_messages()
         messages = data.get("messages") if isinstance(data.get("messages"), list) else []
@@ -74,6 +77,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     payload = request["get_payload"]()
     state = state_access["get"]()
 
+    # POST /api/settings/ui → 保存界面设置；{"ok": true}
     if path == "/api/settings/ui":
         language = (payload.get("language") or "").strip()
         state["ui"]["language"] = "en" if language == "en" else "zh"
@@ -82,6 +86,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok()
         return True
 
+    # POST /api/settings/profiles → 保存自动化 Profile；{"ok": true}
     if path == "/api/settings/profiles":
         state["profiles"]["selected"] = (
             (payload.get("selected") or "").strip() or context["config"]["automation_profile_name"]
@@ -90,6 +95,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok()
         return True
 
+    # POST /api/settings/accounts → 保存账号列表；{"ok": true}
     if path == "/api/settings/accounts":
         entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
         state["accounts"]["entries"] = [
@@ -105,6 +111,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok()
         return True
 
+    # POST /api/account/open → 打开指定 Chrome Profile；{"ok": true}
     if path == "/api/account/open":
         profile = (payload.get("profile") or "").strip()
         if not profile:
@@ -114,6 +121,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok()
         return True
 
+    # POST /api/settings/feishu → 保存飞书配置；{"ok": true}
     if path == "/api/settings/feishu":
         state["feishu"]["app_id"] = str(payload.get("app_id") or "").strip()
         new_secret = str(payload.get("app_secret") or "").strip()
@@ -131,6 +139,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok()
         return True
 
+    # POST /api/settings/mail → 保存邮件配置；{"ok": true}
     if path == "/api/settings/mail":
         state["mail"] = services["normalize_mail_state"](
             services["merge_masked_mail_passwords"](payload, state.get("mail"))
@@ -139,6 +148,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok()
         return True
 
+    # POST /api/settings/creator-library → 保存达人库工作簿路径；{"ok": true}
     if path == "/api/settings/creator-library":
         try:
             state["creator_library"]["workbook_path"] = services["normalize_creator_library_workbook_path"](
@@ -151,6 +161,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok()
         return True
 
+    # POST /api/mail/test → 测试邮件账号连接；{"ok": true}
     if path == "/api/mail/test":
         raw_account = payload.get("account") if isinstance(payload.get("account"), dict) else payload
         merged_test_accounts = services["merge_masked_mail_passwords"](
@@ -162,6 +173,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._ok(imap_ok=True, smtp_ok=True)
         return True
 
+    # POST /api/mail/inbox/sync → 同步收件箱；{"ok": true, "updated_at": "...", "accounts_checked": 0, "messages_fetched": 0, "messages_new": 0, "matched_messages": 0, "messages_total": 0, "errors": [...]}
     if path == "/api/mail/inbox/sync":
         accounts = state.get("mail", {}).get("accounts") if isinstance(state.get("mail"), dict) else []
         enabled_accounts = [item for item in accounts if isinstance(item, dict) and item.get("enabled")]
@@ -190,6 +202,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         )
         return True
 
+    # POST /api/mail/inbox/sync-crm-replies → 同步达人邮件回复；{"ok": true, "updated_at": "...", "updated": 0, "time_only": 0, "skipped": 0, "failed": 0, "processed_messages": 0, "errors": [...]}
     four_table_config = services["get_four_table_feishu_config"]()
     required_keys = ("app_id", "app_secret", "app_token", "creator_table_id")
     missing_keys = [key for key in required_keys if not four_table_config.get(key)]

@@ -2,6 +2,7 @@
 
 
 def handle(handler, request: dict, context: dict) -> bool:
+    # GET /api/dashboard → {"ok": true, "overview": {...}, "creator_health": {...}, "cooperation_performance": {...}, "action_items": {...}}
     if request["method"] != "GET" or request["path"] != "/api/dashboard":
         return False
 
