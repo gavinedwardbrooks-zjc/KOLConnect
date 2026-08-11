@@ -11,8 +11,15 @@ from ports.creator_port import (
     CreatorImportItem,
     CreatorImportResult,
     CreatorImportSummary,
+    EmailRecheckCandidate,
+    EmailRecheckCandidateScan,
+    ExternalAgencyContact,
+    ExternalAgencyContactCommand,
     ImportTaskResultsCommand,
+    ManualTaskPreparationCommand,
+    ManualTaskProtectionCommand,
     PreparedTaskResultUpdate,
+    PreparedManualTask,
     TaskResultImportCommand,
     TaskResultUpdateCommand,
 )
@@ -68,6 +75,8 @@ class CreatorRepositoryReader(Protocol):
 
     def getAgencyContacts(self, agency_id: str = "") -> list[dict[str, Any]]: ...
 
+    def getCreatorAccounts(self, creator_id: str = "") -> list[dict[str, Any]]: ...
+
     def updateCreator(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def updateCreatorStatus(self, creator_id: str, status: object) -> dict[str, Any]: ...
@@ -89,11 +98,21 @@ class CreatorRepositoryReader(Protocol):
         imported_at: str,
     ) -> dict[str, Any]: ...
 
+    def upsertExternalAgencyContact(
+        self,
+        external_record_id: str,
+        *,
+        name: str,
+        whatsapp: str = "",
+        source: str = "feishu_compat",
+    ) -> dict[str, Any]: ...
+
 
 RepositoryProvider = Callable[[], CreatorRepositoryReader]
 TaskPortProvider = Callable[[], TaskPort]
 DataProtectionLoader = Callable[[], dict]
 DataProtectionSaver = Callable[[dict], None]
+SourceContactResolver = Callable[[object], dict | None]
 
 
 class CreatorService:
@@ -105,11 +124,128 @@ class CreatorService:
         task_port_provider: TaskPortProvider,
         data_protection_loader: DataProtectionLoader | None = None,
         data_protection_saver: DataProtectionSaver | None = None,
+        source_contact_resolver: SourceContactResolver | None = None,
     ) -> None:
         self._repository_provider = repository_provider
         self._task_port_provider = task_port_provider
         self._data_protection_loader = data_protection_loader or (lambda: {})
         self._data_protection_saver = data_protection_saver or (lambda _data: None)
+        self._source_contact_resolver = source_contact_resolver or (lambda _value: None)
+
+    def prepare_manual_task(
+        self, command: ManualTaskPreparationCommand
+    ) -> PreparedManualTask:
+        payload = dict(command.payload)
+        profile_url = str(payload.get("profile_url") or "").strip()
+        if not profile_url:
+            raise ValueError("主页链接不能为空。")
+
+        normalized = scraper_module.normalize_link_record(profile_url)
+        if not normalized.get("valid"):
+            raise ValueError(str(normalized.get("reason") or "主页链接无效。"))
+        platform_by_key = {
+            "tiktok": "TikTok",
+            "instagram": "Instagram",
+            "youtube": "YouTube",
+        }
+        normalized_platform = platform_by_key.get(
+            str(normalized.get("platform") or "").lower(), ""
+        )
+        selected_platform = str(payload.get("platform") or "").strip()
+        if selected_platform not in {"TikTok", "Instagram", "YouTube"}:
+            raise ValueError("请选择平台。")
+        if selected_platform != normalized_platform:
+            raise ValueError(f"主页链接属于 {normalized_platform}，请确认所选平台。")
+
+        name = str(payload.get("name") or "").strip()
+        email = str(payload.get("email") or "").strip()
+        whatsapp = str(payload.get("whatsapp") or "").strip()
+        note = str(payload.get("note") or "")
+        source_contact = self._source_contact_resolver(
+            payload.get("source_contact_record_id")
+        )
+        raw_followers = str(payload.get("follower_count") or "").strip()
+        follower_count = scraper_module.normalize_follower_count(raw_followers)
+        if raw_followers and not follower_count:
+            raise ValueError("粉丝数格式错误，请填写如 10K、1.2M 或 100000。")
+        if email:
+            self.validate_task_result_updates(
+                {scraper_module.FIELD_NAME: name or "未命名"},
+                {scraper_module.FIELD_EMAIL: email},
+            )
+        if whatsapp:
+            self.validate_task_result_updates(
+                {scraper_module.FIELD_NAME: name or "未命名"},
+                {REVIEW_FIELD_WHATSAPP: whatsapp},
+            )
+        if follower_count:
+            self.validate_task_result_updates(
+                {scraper_module.FIELD_NAME: name or "未命名"},
+                {scraper_module.FIELD_FOLLOWER_COUNT: follower_count},
+            )
+        protected_values = {
+            field: value
+            for field, value in {
+                scraper_module.FIELD_NAME: name,
+                scraper_module.FIELD_EMAIL: email,
+                scraper_module.FIELD_FOLLOWER_COUNT: follower_count,
+                REVIEW_FIELD_WHATSAPP: whatsapp,
+                REVIEW_FIELD_NOTE: note,
+            }.items()
+            if value
+        }
+        return PreparedManualTask(
+            task_name=str(payload.get("task_name") or ""),
+            creator_name=name,
+            platform=selected_platform,
+            profile_url=str(normalized.get("normalized_url") or "").strip(),
+            follower_count=follower_count,
+            email=email,
+            whatsapp=whatsapp,
+            note=note,
+            source_contact_record_id=str(
+                (source_contact or {}).get("record_id") or ""
+            ),
+            source_contact_name=str((source_contact or {}).get("name") or ""),
+            source_contact_whatsapp=str(
+                (source_contact or {}).get("whatsapp") or ""
+            ),
+            protected_values=protected_values,
+        )
+
+    def commit_manual_task_protection(
+        self, command: ManualTaskProtectionCommand
+    ) -> None:
+        protection = self._data_protection_loader()
+        if self.merge_data_protection(
+            protection,
+            command.account_uid,
+            dict(command.values),
+            "人工录入",
+            command.task_id,
+            command.updated_at,
+        ):
+            self._data_protection_saver(protection)
+
+    def upsert_external_agency_contact(
+        self, contact: ExternalAgencyContactCommand
+    ) -> ExternalAgencyContact:
+        saved = self._repository_provider().upsertExternalAgencyContact(
+            contact.external_record_id,
+            name=contact.name,
+            whatsapp=contact.whatsapp,
+            source=contact.source,
+        )
+        return ExternalAgencyContact(
+            contact_id=str(saved.get("contact_id") or ""),
+            external_record_id=str(saved.get("external_record_id") or ""),
+            name=str(saved.get("name") or ""),
+            agency_id=str(saved.get("agency_id") or ""),
+            whatsapp=str(saved.get("whatsapp") or ""),
+            source=str(saved.get("source") or ""),
+            created_at=str(saved.get("created_at") or ""),
+            updated_at=str(saved.get("updated_at") or ""),
+        )
 
     def get_creator_library(
         self,
@@ -199,6 +335,64 @@ class CreatorService:
             "created": False,
             "message": "已打开关联的审核任务。",
         }
+
+    def get_email_recheck_candidates(self) -> EmailRecheckCandidateScan:
+        accounts = self._repository_provider().getCreatorAccounts("")
+        duplicate_uids: set[str] = set()
+        seen_uids: set[str] = set()
+        candidates: list[EmailRecheckCandidate] = []
+        skipped: list[str] = []
+        supported_platforms = {"TikTok", "Instagram", "YouTube"}
+        for account in accounts:
+            account_uid = str(account.get("account_uid") or "").strip()
+            if not account_uid:
+                skipped.append("missing_uid: 账号唯一ID为空")
+                continue
+            if account_uid in seen_uids:
+                duplicate_uids.add(account_uid)
+                skipped.append(f"duplicate_uid: {account_uid}")
+                continue
+            seen_uids.add(account_uid)
+            account_email = str(account.get("account_email") or "").strip()
+            if account_email and account_email != scraper_module.NO_EMAIL:
+                continue
+            platform = str(account.get("platform") or "").strip()
+            profile_url = str(account.get("profile_url") or "").strip()
+            if platform not in supported_platforms or not profile_url:
+                skipped.append(f"{account_uid}: 平台或主页链接不完整")
+                continue
+            normalized = scraper_module.normalize_link_record(profile_url)
+            normalized_url = str(normalized.get("normalized_url") or "")
+            identity_result = scraper_module.build_result(
+                url=normalized_url,
+                platform=platform,
+                name=str(account.get("username") or "").strip(),
+            )
+            if (
+                not normalized.get("valid")
+                or scraper_module.build_creator_uid(identity_result) != account_uid
+            ):
+                skipped.append(
+                    f"{account_uid}: 账号唯一ID、平台或主页链接不完整/不一致"
+                )
+                continue
+            candidates.append(
+                EmailRecheckCandidate(
+                    creator_id=str(account.get("creator_id") or ""),
+                    account_id=str(account.get("account_id") or ""),
+                    account_uid=account_uid,
+                    platform=platform,
+                    profile_url=normalized_url,
+                    username=str(account.get("username") or "").strip(),
+                    account_email=account_email,
+                )
+            )
+        return EmailRecheckCandidateScan(
+            scanned_accounts=len(accounts),
+            candidates=tuple(candidates),
+            skipped=tuple(skipped),
+            duplicate_uids=tuple(sorted(duplicate_uids)),
+        )
 
     def prepare_task_result_update(
         self, command: TaskResultUpdateCommand

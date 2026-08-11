@@ -295,6 +295,24 @@ class TaskRepository:
         metadata_changes: Mapping[str, object],
     ) -> dict:
         """Atomically replace all task files changed by one review operation."""
+        return self.write_task_documents(
+            task_id,
+            results=results,
+            progress=progress,
+            modifications=modifications,
+            metadata_changes=metadata_changes,
+        )
+
+    def write_task_documents(
+        self,
+        task_id: str,
+        *,
+        results: TaskCsvDocument,
+        progress: TaskCsvDocument,
+        modifications: list[Mapping[str, object]],
+        metadata_changes: Mapping[str, object],
+    ) -> dict:
+        """Atomically replace task data documents without exposing their paths."""
         task = self.get_task(task_id)
         task.update(metadata_changes)
         paths = self._paths(task_id)

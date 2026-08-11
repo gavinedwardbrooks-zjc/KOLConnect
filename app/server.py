@@ -40,6 +40,12 @@ from ports.creator_port import (
     CreatorAnalysisSnapshot,
     CreatorImportResult,
     CreatorPort,
+    EmailRecheckCandidateScan,
+    ExternalAgencyContact,
+    ExternalAgencyContactCommand,
+    ManualTaskPreparationCommand,
+    ManualTaskProtectionCommand,
+    PreparedManualTask,
     PreparedTaskResultUpdate,
     TaskResultImportCommand,
     TaskResultUpdateCommand,
@@ -1463,95 +1469,28 @@ def _email_recheck_summary(task_id: str) -> dict:
 
 def create_email_recheck_task() -> dict:
     """Create a task for local Creator Accounts that still have no email."""
-    accounts = get_creator_repository().getCreatorAccounts("")
-    duplicate_uids: set[str] = set()
-    seen_uids: set[str] = set()
-    rows: list[dict] = []
-    skipped: list[str] = []
-    platform_counts = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
-    for account in accounts:
-        account_uid = str(account.get("account_uid") or "").strip()
-        if not account_uid:
-            skipped.append("missing_uid: 账号唯一ID为空")
-            continue
-        if account_uid in seen_uids:
-            duplicate_uids.add(account_uid)
-            skipped.append(f"duplicate_uid: {account_uid}")
-            continue
-        seen_uids.add(account_uid)
-        if not _account_email_is_empty(account.get("account_email")):
-            continue
-        platform = str(account.get("platform") or "").strip()
-        profile_url = str(account.get("profile_url") or "").strip()
-        if platform not in platform_counts or not profile_url:
-            skipped.append(f"{account_uid}: 平台或主页链接不完整")
-            continue
-        normalized = scraper_module.normalize_link_record(profile_url)
-        result = scraper_module.build_result(
-            url=str(normalized.get("normalized_url") or ""),
-            platform=platform,
-            name=str(account.get("username") or "").strip(),
-            status="待补全",
-            data_status="待检查",
-        )
-        if (
-            platform not in platform_counts
-            or not normalized.get("valid")
-            or scraper_module.build_creator_uid(result) != account_uid
-        ):
-            skipped.append(f"{account_uid}: 账号唯一ID、平台或主页链接不完整/不一致")
-            continue
-        rows.append(scraper_module.result_to_row(result))
-        platform_counts[platform] += 1
-
-    if not rows:
-        return {
-            "task": None,
-            "scanned_accounts": len(accounts),
-            "created_count": 0,
-            "skipped_count": len(skipped),
-            "skipped": skipped,
-            "duplicate_uids": sorted(duplicate_uids),
-        }
-
-    task = task_manager.create_task(
-        TASKS_DIR,
-        [str(row.get(scraper_module.FIELD_URL) or "") for row in rows],
-        [],
-        len(rows),
-        name=f"缺失邮箱补全-{time.strftime('%Y%m%d')}",
-        target_platform="全部",
-        platform_summary=platform_counts,
-        task_type="email_recheck",
-    )
-    task.update(
-        {
-            "status": "email_recheck_created",
-            "email_recheck_source": "local_account_empty_email",
-            "scan_skipped_count": len(skipped),
-        }
-    )
-    _task, paths = task_manager.load_task(TASKS_DIR, task["id"])
-    progress_rows = [dict(row, **{scraper_module.FIELD_STATUS: "待补全"}) for row in rows]
-    task_manager.atomic_write_files(
-        {
-            paths["results"]: _csv_content(scraper_module.OUTPUT_FIELDS, rows),
-            paths["progress"]: _csv_content(scraper_module.PROGRESS_FIELDS, progress_rows),
-            paths["modifications"]: b"[]",
-            paths["metadata"]: json.dumps(task, ensure_ascii=False, indent=2).encode("utf-8"),
-        }
-    )
-    return {
-        "task": task,
-        "scanned_accounts": len(accounts),
-        "created_count": len(rows),
-        "skipped_count": len(skipped),
-        "skipped": skipped,
-        "duplicate_uids": sorted(duplicate_uids),
-    }
+    return get_task_service().create_email_recheck_task()
 
 
 def create_manual_task(
+    payload: dict,
+    *,
+    defer_library_import: bool = True,
+    task_port: TaskPort | None = None,
+) -> dict:
+    """Keep legacy callers stable while routing the manual API through TaskService."""
+    if task_port is not None or not defer_library_import:
+        return _create_manual_task_legacy(
+            payload,
+            defer_library_import=defer_library_import,
+            task_port=task_port,
+        )
+    return get_task_service().create_manual_task(
+        payload, defer_library_import=defer_library_import
+    )
+
+
+def _create_manual_task_legacy(
     payload: dict,
     *,
     defer_library_import: bool = False,
@@ -1734,6 +1673,7 @@ def get_creator_service() -> CreatorService:
         get_task_port,
         load_data_protection,
         _save_data_protection,
+        _resolve_source_contact,
     )
 
 
@@ -1755,6 +1695,24 @@ class _CreatorAnalysisPortAdapter:
             creator_id=creator_id,
             analysis=detail["analysis"],
         )
+
+    def get_email_recheck_candidates(self) -> EmailRecheckCandidateScan:
+        return get_creator_service().get_email_recheck_candidates()
+
+    def prepare_manual_task(
+        self, command: ManualTaskPreparationCommand
+    ) -> PreparedManualTask:
+        return get_creator_service().prepare_manual_task(command)
+
+    def commit_manual_task_protection(
+        self, command: ManualTaskProtectionCommand
+    ) -> None:
+        get_creator_service().commit_manual_task_protection(command)
+
+    def upsert_external_agency_contact(
+        self, contact: ExternalAgencyContactCommand
+    ) -> ExternalAgencyContact:
+        return get_creator_service().upsert_external_agency_contact(contact)
 
     def prepare_task_result_update(
         self, command: TaskResultUpdateCommand
@@ -1787,6 +1745,11 @@ def get_task_service() -> TaskService:
         lambda: TaskRepository(TASKS_DIR),
         lambda task_id, exc: log_error(
             "CreatorLibrary", f"审核结果更新达人库失败 | task_id={task_id}", exc
+        ),
+        lambda record_id, exc: log_error(
+            "CreatorLibrary",
+            f"来源联系人本地兼容保存失败 | record_id={record_id}",
+            exc,
         ),
     )
 

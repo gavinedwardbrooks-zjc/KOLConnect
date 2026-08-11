@@ -11,6 +11,10 @@ import scraper as scraper_module
 from ports.task_port import (
     CreatedTask,
     CreatorImportLinkage,
+    EmailRecheckTaskCommand,
+    ManualTaskCreateCommand,
+    ManualTaskCreationResult,
+    ManualTaskInitializationCommand,
     ManualReviewTaskCommand,
     RetryFailedResultsCommand,
     TaskLinksUpdateCommand,
@@ -18,7 +22,7 @@ from ports.task_port import (
     TaskResultImportLinkage,
     TaskSnapshot,
 )
-from repositories.task_repository import TaskRepository
+from repositories.task_repository import TaskCsvDocument, TaskRepository
 
 
 TasksDirectoryProvider = Callable[[], Path]
@@ -62,6 +66,139 @@ class TaskManagerAdapter:
             platforms=list(command.platforms),
             platform_summary=dict(command.platform_summary),
             task_type="manual",
+        )
+        return CreatedTask(task=self._snapshot(task))
+
+    def create_manual_task(self, command: ManualTaskCreateCommand) -> CreatedTask:
+        task = self._repository().create_task(
+            [command.normalized_url],
+            [],
+            1,
+            name=command.task_name,
+            target_platform=command.platform,
+            platform_summary=dict(command.platform_summary),
+            task_type="manual",
+        )
+        return CreatedTask(task=self._snapshot(task))
+
+    def initialize_manual_task(
+        self, task_id: str, command: ManualTaskInitializationCommand
+    ) -> ManualTaskCreationResult:
+        now = self._utc_now()
+        result = scraper_module.build_result(
+            url=command.profile_url,
+            platform=command.platform,
+            name=command.creator_name,
+            emails=(
+                []
+                if not command.email
+                else [item.strip() for item in command.email.split(",") if item.strip()]
+            ),
+            email_source="人工录入" if command.email else "",
+            follower_count=command.follower_count,
+            status="手动录入",
+            whatsapp=command.whatsapp,
+            note=command.note,
+            data_status="待检查",
+            last_modified_at=now,
+        )
+        account_uid = scraper_module.build_creator_uid(result)
+        result_row = scraper_module.result_to_row(result)
+        progress_row = dict(result_row)
+        progress_row[scraper_module.FIELD_STATUS] = "待补充抓取"
+        manual_values = {
+            field: value
+            for field, value in {
+                scraper_module.FIELD_NAME: command.creator_name,
+                scraper_module.FIELD_EMAIL: command.email,
+                scraper_module.FIELD_FOLLOWER_COUNT: command.follower_count,
+                _REVIEW_FIELD_WHATSAPP: command.whatsapp,
+                _REVIEW_FIELD_NOTE: command.note,
+            }.items()
+            if value
+        }
+        modifications = []
+        if manual_values:
+            modifications.append(
+                {
+                    "account_uid": account_uid,
+                    "modified_fields": {
+                        field: {"old": "", "new": value}
+                        for field, value in manual_values.items()
+                    },
+                    "status": "pending_sync",
+                    "time": now,
+                    "source": "manual_task",
+                }
+            )
+        metadata_changes: dict[str, object] = {
+            "status": "manual_created",
+            "completed_count": 0,
+            "modified_count": len(modifications),
+            "last_modified_time": now if manual_values else "",
+            "source_contact_record_id": command.source_contact_record_id,
+            "local_source_contact_id": command.local_source_contact_id,
+        }
+        if command.source_contact_record_id:
+            metadata_changes["source_contact_name"] = command.source_contact_name
+        task = self._repository().write_task_documents(
+            task_id,
+            results=TaskCsvDocument(
+                tuple(scraper_module.OUTPUT_FIELDS), (result_row,)
+            ),
+            progress=TaskCsvDocument(
+                tuple(scraper_module.PROGRESS_FIELDS), (progress_row,)
+            ),
+            modifications=modifications,
+            metadata_changes=metadata_changes,
+        )
+        return ManualTaskCreationResult(
+            task=self._snapshot(task),
+            account_uid=account_uid,
+            modified_at=now,
+        )
+
+    def create_email_recheck_task(
+        self, command: EmailRecheckTaskCommand
+    ) -> CreatedTask:
+        rows: list[dict[str, object]] = []
+        for item in command.items:
+            result = scraper_module.build_result(
+                url=item.profile_url,
+                platform=item.platform,
+                name=item.username,
+                status="待补全",
+                data_status="待检查",
+            )
+            rows.append(scraper_module.result_to_row(result))
+
+        repository = self._repository()
+        task = repository.create_task(
+            [item.profile_url for item in command.items],
+            [],
+            len(command.items),
+            name=command.name,
+            target_platform="全部",
+            platform_summary=dict(command.platform_summary),
+            task_type="email_recheck",
+        )
+        progress_rows = [
+            dict(row, **{scraper_module.FIELD_STATUS: "待补全"}) for row in rows
+        ]
+        task = repository.write_task_documents(
+            task["id"],
+            results=TaskCsvDocument(
+                tuple(scraper_module.OUTPUT_FIELDS), tuple(rows)
+            ),
+            progress=TaskCsvDocument(
+                tuple(scraper_module.PROGRESS_FIELDS), tuple(progress_rows)
+            ),
+            modifications=[],
+            metadata_changes={
+                "status": "email_recheck_created",
+                "email_recheck_source": "local_account_empty_email",
+                "scan_skipped_count": command.skipped_count,
+            },
         )
         return CreatedTask(task=self._snapshot(task))
 

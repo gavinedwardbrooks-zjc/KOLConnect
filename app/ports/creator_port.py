@@ -2,8 +2,37 @@ from __future__ import annotations
 
 """Creator domain capabilities required by future Task workflows."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol
+
+
+@dataclass(frozen=True)
+class ManualTaskPreparationCommand:
+    payload: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class PreparedManualTask:
+    task_name: str
+    creator_name: str
+    platform: str
+    profile_url: str
+    follower_count: str
+    email: str
+    whatsapp: str
+    note: str
+    source_contact_record_id: str = ""
+    source_contact_name: str = ""
+    source_contact_whatsapp: str = ""
+    protected_values: Mapping[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class ManualTaskProtectionCommand:
+    task_id: str
+    account_uid: str
+    values: Mapping[str, str]
+    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -104,6 +133,14 @@ class EmailRecheckCandidate:
 
 
 @dataclass(frozen=True)
+class EmailRecheckCandidateScan:
+    scanned_accounts: int
+    candidates: tuple[EmailRecheckCandidate, ...]
+    skipped: tuple[str, ...] = ()
+    duplicate_uids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class CreatorAnalysisSnapshot:
     creator_id: str
     analysis: Mapping[str, Any]
@@ -130,6 +167,14 @@ class ExternalAgencyContact:
 
 
 class CreatorPort(Protocol):
+    def prepare_manual_task(
+        self, command: ManualTaskPreparationCommand
+    ) -> PreparedManualTask: ...
+
+    def commit_manual_task_protection(
+        self, command: ManualTaskProtectionCommand
+    ) -> None: ...
+
     def import_task_results(
         self, command: ImportTaskResultsCommand | TaskResultImportCommand
     ) -> CreatorImportSummary | CreatorImportResult: ...
@@ -142,7 +187,7 @@ class CreatorPort(Protocol):
         self, task_id: str, update: PreparedTaskResultUpdate
     ) -> None: ...
 
-    def get_email_recheck_candidates(self) -> tuple[EmailRecheckCandidate, ...]: ...
+    def get_email_recheck_candidates(self) -> EmailRecheckCandidateScan: ...
 
     def get_creator_analysis(self, creator_id: str) -> CreatorAnalysisSnapshot: ...
 

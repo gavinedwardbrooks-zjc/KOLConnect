@@ -19,6 +19,36 @@ class ManualReviewTaskCommand:
 
 
 @dataclass(frozen=True)
+class ManualTaskCreateCommand:
+    normalized_url: str
+    task_name: str
+    platform: str
+    platform_summary: Mapping[str, int] = field(default_factory=dict)
+    defer_library_import: bool = True
+
+
+@dataclass(frozen=True)
+class ManualTaskInitializationCommand:
+    creator_name: str
+    platform: str
+    profile_url: str
+    follower_count: str = ""
+    email: str = ""
+    whatsapp: str = ""
+    note: str = ""
+    source_contact_record_id: str = ""
+    source_contact_name: str = ""
+    local_source_contact_id: str = ""
+
+
+@dataclass(frozen=True)
+class ManualTaskCreationResult:
+    task: TaskSnapshot
+    account_uid: str
+    modified_at: str
+
+
+@dataclass(frozen=True)
 class CreatorImportLinkage:
     creator_id: str
     snapshot_id: str
@@ -85,6 +115,22 @@ class RetryFailedResultsCommand:
 
 
 @dataclass(frozen=True)
+class EmailRecheckTaskItem:
+    account_uid: str
+    platform: str
+    profile_url: str
+    username: str = ""
+
+
+@dataclass(frozen=True)
+class EmailRecheckTaskCommand:
+    items: tuple[EmailRecheckTaskItem, ...]
+    name: str
+    platform_summary: Mapping[str, int] = field(default_factory=dict)
+    skipped_count: int = 0
+
+
+@dataclass(frozen=True)
 class TaskResultImportLinkage:
     imported_at: str
     creator_ids: tuple[str, ...]
@@ -93,8 +139,18 @@ class TaskResultImportLinkage:
 
 
 class TaskPort(Protocol):
+    def create_manual_task(self, command: ManualTaskCreateCommand) -> CreatedTask: ...
+
+    def initialize_manual_task(
+        self, task_id: str, command: ManualTaskInitializationCommand
+    ) -> ManualTaskCreationResult: ...
+
     def create_manual_review_task(
         self, command: ManualReviewTaskCommand
+    ) -> CreatedTask: ...
+
+    def create_email_recheck_task(
+        self, command: EmailRecheckTaskCommand
     ) -> CreatedTask: ...
 
     def get_task(self, task_id: str) -> TaskSnapshot: ...

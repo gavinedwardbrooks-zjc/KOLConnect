@@ -9,10 +9,17 @@ from typing import Callable
 from ports.creator_port import (
     CreatorImportResult,
     CreatorPort,
+    ExternalAgencyContactCommand,
+    ManualTaskPreparationCommand,
+    ManualTaskProtectionCommand,
     TaskResultImportCommand,
     TaskResultUpdateCommand,
 )
 from ports.task_port import (
+    EmailRecheckTaskCommand,
+    EmailRecheckTaskItem,
+    ManualTaskCreateCommand,
+    ManualTaskInitializationCommand,
     RetryFailedResultsCommand,
     TaskLinksUpdateCommand,
     TaskPort,
@@ -25,6 +32,7 @@ TaskPortProvider = Callable[[], TaskPort]
 CreatorPortProvider = Callable[[], CreatorPort]
 TaskRepositoryProvider = Callable[[], TaskRepository]
 ImportErrorLogger = Callable[[str, Exception], None]
+ContactErrorLogger = Callable[[str, Exception], None]
 
 
 @dataclass(frozen=True)
@@ -43,11 +51,15 @@ class TaskService:
         get_creator_port: CreatorPortProvider,
         get_task_repository: TaskRepositoryProvider,
         import_error_logger: ImportErrorLogger | None = None,
+        contact_error_logger: ContactErrorLogger | None = None,
     ) -> None:
         self._get_task_port = get_task_port
         self._get_creator_port = get_creator_port
         self._get_task_repository = get_task_repository
         self._import_error_logger = import_error_logger or (lambda _task_id, _exc: None)
+        self._contact_error_logger = contact_error_logger or (
+            lambda _record_id, _exc: None
+        )
 
     def get_tasks(self) -> dict[str, object]:
         return self._get_task_port().get_tasks().to_response()
@@ -73,6 +85,112 @@ class TaskService:
 
     def get_scrape_status(self) -> dict[str, object]:
         return self._get_task_port().get_scrape_status().to_response()
+
+    def create_manual_task(
+        self, payload: dict[str, object], *, defer_library_import: bool = True
+    ) -> dict[str, object]:
+        creator_port = self._get_creator_port()
+        prepared = creator_port.prepare_manual_task(
+            ManualTaskPreparationCommand(payload=payload)
+        )
+        platform_summary = {
+            "TikTok": int(prepared.platform == "TikTok"),
+            "Instagram": int(prepared.platform == "Instagram"),
+            "YouTube": int(prepared.platform == "YouTube"),
+        }
+        task_port = self._get_task_port()
+        created = task_port.create_manual_task(
+            ManualTaskCreateCommand(
+                normalized_url=prepared.profile_url,
+                task_name=prepared.task_name,
+                platform=prepared.platform,
+                platform_summary=platform_summary,
+                defer_library_import=defer_library_import,
+            )
+        )
+        local_source_contact_id = ""
+        if prepared.source_contact_record_id:
+            try:
+                contact = creator_port.upsert_external_agency_contact(
+                    ExternalAgencyContactCommand(
+                        external_record_id=prepared.source_contact_record_id,
+                        name=prepared.source_contact_name,
+                        whatsapp=prepared.source_contact_whatsapp,
+                    )
+                )
+                local_source_contact_id = contact.contact_id
+            except (OSError, RuntimeError, ValueError) as exc:
+                self._contact_error_logger(prepared.source_contact_record_id, exc)
+        initialized = task_port.initialize_manual_task(
+            created.task.task_id,
+            ManualTaskInitializationCommand(
+                creator_name=prepared.creator_name,
+                platform=prepared.platform,
+                profile_url=prepared.profile_url,
+                follower_count=prepared.follower_count,
+                email=prepared.email,
+                whatsapp=prepared.whatsapp,
+                note=prepared.note,
+                source_contact_record_id=prepared.source_contact_record_id,
+                source_contact_name=prepared.source_contact_name,
+                local_source_contact_id=local_source_contact_id,
+            ),
+        )
+        if prepared.protected_values:
+            creator_port.commit_manual_task_protection(
+                ManualTaskProtectionCommand(
+                    task_id=created.task.task_id,
+                    account_uid=initialized.account_uid,
+                    values=prepared.protected_values,
+                    updated_at=initialized.modified_at,
+                )
+            )
+        return {
+            "task": initialized.task.to_response(),
+            "account_uid": initialized.account_uid,
+            "creator_library_import": None,
+        }
+
+    def create_email_recheck_task(self) -> dict[str, object]:
+        scan = self._get_creator_port().get_email_recheck_candidates()
+        if not scan.candidates:
+            return {
+                "task": None,
+                "scanned_accounts": scan.scanned_accounts,
+                "created_count": 0,
+                "skipped_count": len(scan.skipped),
+                "skipped": list(scan.skipped),
+                "duplicate_uids": list(scan.duplicate_uids),
+            }
+
+        platform_counts = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
+        items: list[EmailRecheckTaskItem] = []
+        for candidate in scan.candidates:
+            platform_counts[candidate.platform] += 1
+            items.append(
+                EmailRecheckTaskItem(
+                    account_uid=candidate.account_uid,
+                    platform=candidate.platform,
+                    profile_url=candidate.profile_url,
+                    username=candidate.username,
+                )
+            )
+        created = self._get_task_port().create_email_recheck_task(
+            EmailRecheckTaskCommand(
+                items=tuple(items),
+                name=f"缺失邮箱补全-{datetime.now().strftime('%Y%m%d')}",
+                platform_summary=platform_counts,
+                skipped_count=len(scan.skipped),
+            )
+        )
+        return {
+            "task": created.task.to_response(),
+            "scanned_accounts": scan.scanned_accounts,
+            "created_count": len(items),
+            "skipped_count": len(scan.skipped),
+            "skipped": list(scan.skipped),
+            "duplicate_uids": list(scan.duplicate_uids),
+        }
 
     def delete_task(self, task_id: str) -> dict[str, object]:
         if self._task_is_running(task_id):
