@@ -2,9 +2,53 @@ from __future__ import annotations
 
 """Creator workflows over request-aware repository and port providers."""
 
+import re
+from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
+import scraper as scraper_module
+from ports.creator_port import (
+    CreatorImportItem,
+    CreatorImportResult,
+    CreatorImportSummary,
+    ImportTaskResultsCommand,
+    PreparedTaskResultUpdate,
+    TaskResultImportCommand,
+    TaskResultUpdateCommand,
+)
 from ports.task_port import TaskPort
+
+
+REVIEW_FIELD_WHATSAPP = "WhatsApp"
+REVIEW_FIELD_NOTE = "备注"
+REVIEW_FIELD_DATA_STATUS = "数据状态"
+REVIEW_FIELD_MODIFIED_AT = "最后修改时间"
+REVIEW_CSV_FIELDS = (
+    REVIEW_FIELD_WHATSAPP,
+    REVIEW_FIELD_NOTE,
+    REVIEW_FIELD_DATA_STATUS,
+    REVIEW_FIELD_MODIFIED_AT,
+)
+REVIEW_EDITABLE_FIELDS = {
+    scraper_module.FIELD_NAME,
+    scraper_module.FIELD_EMAIL,
+    scraper_module.FIELD_FOLLOWER_COUNT,
+    REVIEW_FIELD_WHATSAPP,
+    REVIEW_FIELD_NOTE,
+}
+REVIEW_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+REVIEW_WHATSAPP_PATTERN = re.compile(r"^[0-9+()\- ]+$")
+PROTECTED_DATA_FIELDS = REVIEW_EDITABLE_FIELDS
+DATA_PROTECTION_PRIORITY = {
+    "人工维护": 50,
+    "人工录入": 40,
+    "审核修改": 30,
+    "系统补全": 20,
+    "邮箱补全": 20,
+    "人工+系统补充": 20,
+    "人工补充": 20,
+    "系统抓取": 10,
+}
 
 
 class CreatorRepositoryReader(Protocol):
@@ -36,9 +80,20 @@ class CreatorRepositoryReader(Protocol):
 
     def saveAgencyContact(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
+    def importTaskResults(
+        self,
+        task_id: str,
+        records: list[dict[str, Any]],
+        *,
+        source: str,
+        imported_at: str,
+    ) -> dict[str, Any]: ...
+
 
 RepositoryProvider = Callable[[], CreatorRepositoryReader]
 TaskPortProvider = Callable[[], TaskPort]
+DataProtectionLoader = Callable[[], dict]
+DataProtectionSaver = Callable[[dict], None]
 
 
 class CreatorService:
@@ -48,9 +103,13 @@ class CreatorService:
         self,
         repository_provider: RepositoryProvider,
         task_port_provider: TaskPortProvider,
+        data_protection_loader: DataProtectionLoader | None = None,
+        data_protection_saver: DataProtectionSaver | None = None,
     ) -> None:
         self._repository_provider = repository_provider
         self._task_port_provider = task_port_provider
+        self._data_protection_loader = data_protection_loader or (lambda: {})
+        self._data_protection_saver = data_protection_saver or (lambda _data: None)
 
     def get_creator_library(
         self,
@@ -140,3 +199,311 @@ class CreatorService:
             "created": False,
             "message": "已打开关联的审核任务。",
         }
+
+    def prepare_task_result_update(
+        self, command: TaskResultUpdateCommand
+    ) -> PreparedTaskResultUpdate:
+        result_rows = [dict(row) for row in command.result_rows]
+        progress_rows = [dict(row) for row in command.progress_rows]
+        result_matches = [
+            row for row in result_rows if self._account_uid_for_row(row) == command.account_uid
+        ]
+        if len(result_matches) != 1:
+            raise ValueError("未找到唯一的任务结果记录。")
+        if not any(
+            self._account_uid_for_row(row) == command.account_uid
+            for row in progress_rows
+        ):
+            raise ValueError("未找到对应的任务进度记录。")
+
+        target_row = result_matches[0]
+        updates = self.validate_task_result_updates(target_row, command.fields)
+        modified_fields = {
+            field: {"old": str(target_row.get(field) or ""), "new": value}
+            for field, value in updates.items()
+            if str(target_row.get(field) or "") != value
+        }
+        if not modified_fields:
+            raise ValueError("没有检测到需要保存的修改。")
+
+        task_result_fields = (scraper_module.FIELD_FOLLOWER_COUNT, *REVIEW_CSV_FIELDS)
+        for rows in (result_rows, progress_rows):
+            for row in rows:
+                for field in task_result_fields:
+                    row.setdefault(
+                        field, "待检查" if field == REVIEW_FIELD_DATA_STATUS else ""
+                    )
+                if self._account_uid_for_row(row) == command.account_uid:
+                    row.update(updates)
+                    row[REVIEW_FIELD_DATA_STATUS] = "待同步"
+                    row[REVIEW_FIELD_MODIFIED_AT] = command.updated_at
+
+        result_fieldnames = tuple(
+            dict.fromkeys((*command.result_fieldnames, *task_result_fields))
+        )
+        progress_fieldnames = tuple(
+            dict.fromkeys((*command.progress_fieldnames, *task_result_fields))
+        )
+        return PreparedTaskResultUpdate(
+            account_uid=command.account_uid,
+            modified_fields=modified_fields,
+            updated_at=command.updated_at,
+            data_status="待同步",
+            result_fieldnames=result_fieldnames,
+            result_rows=tuple(result_rows),
+            progress_fieldnames=progress_fieldnames,
+            progress_rows=tuple(progress_rows),
+            protection_values=updates,
+            protection_source=(
+                "人工录入" if command.task_type == "manual" else "审核修改"
+            ),
+        )
+
+    def commit_task_result_protection(
+        self, task_id: str, update: PreparedTaskResultUpdate
+    ) -> None:
+        protection = self._data_protection_loader()
+        if self.merge_data_protection(
+            protection,
+            update.account_uid,
+            dict(update.protection_values),
+            update.protection_source,
+            task_id,
+            update.updated_at,
+        ):
+            self._data_protection_saver(protection)
+
+    def import_task_results(
+        self, command: ImportTaskResultsCommand | TaskResultImportCommand
+    ) -> CreatorImportSummary | CreatorImportResult:
+        if isinstance(command, ImportTaskResultsCommand):
+            summary = self._repository_provider().importTaskResults(
+                command.task_id,
+                [self._creator_import_item_record(item) for item in command.items],
+                source=command.source,
+                imported_at=command.imported_at,
+            )
+            return CreatorImportSummary(
+                input_records=int(summary.get("input_records") or 0),
+                created_creators=int(summary.get("created_creators") or 0),
+                created_accounts=int(summary.get("created_accounts") or 0),
+                updated_accounts=int(summary.get("updated_accounts") or 0),
+                duplicate_records=int(summary.get("duplicate_records") or 0),
+                skipped_failed=int(summary.get("skipped_failed") or 0),
+                skipped_invalid=int(summary.get("skipped_invalid") or 0),
+                creator_ids=tuple(str(value) for value in summary.get("creator_ids", [])),
+                account_ids=tuple(str(value) for value in summary.get("account_ids", [])),
+            )
+        task = dict(command.task)
+        if not bool(task.get("creator_library_import_eligible")):
+            return CreatorImportResult(
+                {"status": "skipped", "reason": "historical_task_requires_manual_import"}
+            )
+        if (
+            str(task.get("task_type") or "scrape") == "email_recheck"
+            and not str(task.get("email_recheck_source") or "").strip()
+        ):
+            return CreatorImportResult(
+                {"status": "skipped", "reason": "email_recheck_task"}
+            )
+        if str(task.get("status") or "") not in set(command.allowed_statuses):
+            return CreatorImportResult(
+                {"status": "skipped", "reason": "task_not_completed"}
+            )
+
+        summary = self._repository_provider().importTaskResults(
+            command.task_id,
+            self._task_rows_for_creator_library(task, command.rows),
+            source=self._task_data_source(task),
+            imported_at=str(
+                task.get("finished_at") or task.get("created_at") or self._utc_now()
+            ),
+        )
+        imported_at = self._utc_now()
+        public_summary = {
+            key: value
+            for key, value in summary.items()
+            if key not in {"creator_ids", "account_ids"}
+        }
+        return CreatorImportResult(
+            response={"status": "success", **summary},
+            imported_at=imported_at,
+            creator_ids=tuple(str(value) for value in summary["creator_ids"]),
+            account_ids=tuple(str(value) for value in summary["account_ids"]),
+            summary=public_summary,
+        )
+
+    @staticmethod
+    def _creator_import_item_record(item: CreatorImportItem) -> dict[str, Any]:
+        return {
+            field: getattr(item, field)
+            for field in CreatorImportItem.__dataclass_fields__
+        }
+
+    @staticmethod
+    def validate_task_result_updates(
+        row: dict, fields: Any
+    ) -> dict[str, str]:
+        if not isinstance(fields, dict) or not fields:
+            raise ValueError("缺少可保存的审核字段。")
+        unknown_fields = set(fields) - REVIEW_EDITABLE_FIELDS
+        if unknown_fields:
+            raise ValueError(f"不允许修改字段：{', '.join(sorted(unknown_fields))}")
+
+        final_name = str(
+            fields.get(scraper_module.FIELD_NAME, row.get(scraper_module.FIELD_NAME) or "")
+        ).strip()
+        if not final_name:
+            raise ValueError("达人名称不能为空。")
+        final_email = str(
+            fields.get(scraper_module.FIELD_EMAIL, row.get(scraper_module.FIELD_EMAIL) or "")
+        ).strip()
+        email_for_validation = "" if final_email == scraper_module.NO_EMAIL else final_email
+        if email_for_validation:
+            if any(char.isspace() for char in email_for_validation):
+                raise ValueError("邮箱格式错误：邮箱不能包含空格。")
+            for email in email_for_validation.split(","):
+                if not REVIEW_EMAIL_PATTERN.fullmatch(email):
+                    raise ValueError("邮箱格式错误。")
+        final_whatsapp = str(
+            fields.get(REVIEW_FIELD_WHATSAPP, row.get(REVIEW_FIELD_WHATSAPP) or "")
+        ).strip()
+        if final_whatsapp:
+            if not REVIEW_WHATSAPP_PATTERN.fullmatch(final_whatsapp):
+                raise ValueError("WhatsApp号码格式异常。")
+            digits = re.sub(r"\D", "", final_whatsapp)
+            if not 7 <= len(digits) <= 20:
+                raise ValueError("WhatsApp号码格式异常。")
+        raw_followers = fields.get(
+            scraper_module.FIELD_FOLLOWER_COUNT,
+            row.get(scraper_module.FIELD_FOLLOWER_COUNT) or "",
+        )
+        final_followers = scraper_module.normalize_follower_count(str(raw_followers or "").strip())
+        if str(raw_followers or "").strip() and not final_followers:
+            raise ValueError("粉丝数格式错误，请填写如 10K、1.2M 或 100000。")
+
+        normalized: dict[str, str] = {}
+        for field, value in (
+            (scraper_module.FIELD_NAME, final_name),
+            (scraper_module.FIELD_EMAIL, final_email),
+            (scraper_module.FIELD_FOLLOWER_COUNT, final_followers),
+            (REVIEW_FIELD_WHATSAPP, final_whatsapp),
+            (REVIEW_FIELD_NOTE, str(fields.get(REVIEW_FIELD_NOTE) or "")),
+        ):
+            if field in fields:
+                normalized[field] = value
+        return normalized
+
+    @staticmethod
+    def merge_data_protection(
+        protection: dict,
+        account_uid: str,
+        values: dict[str, str],
+        source: str,
+        task_id: str,
+        updated_at: str,
+    ) -> bool:
+        if not account_uid:
+            return False
+        changed = False
+        account_fields = protection.setdefault(account_uid, {})
+        incoming_priority = DATA_PROTECTION_PRIORITY.get(source, 0)
+        for field, value in values.items():
+            if field not in PROTECTED_DATA_FIELDS or not str(value or "").strip():
+                continue
+            current = account_fields.get(field)
+            current_priority = DATA_PROTECTION_PRIORITY.get(
+                str((current or {}).get("source") or ""), 0
+            )
+            if (
+                isinstance(current, dict)
+                and str(current.get("value") or "").strip()
+                and current_priority > incoming_priority
+            ):
+                continue
+            account_fields[field] = {
+                "value": str(value),
+                "source": source,
+                "task_id": task_id,
+                "updated_at": updated_at,
+            }
+            changed = True
+        return changed
+
+    @staticmethod
+    def _account_uid_for_row(row: dict) -> str:
+        return scraper_module.build_creator_uid(scraper_module.row_to_result(row))
+
+    @classmethod
+    def _task_rows_for_creator_library(
+        cls, task: dict, rows: tuple[Any, ...]
+    ) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        source_contact_id = str(task.get("local_source_contact_id") or "").strip()
+        extension_crm = (
+            task.get("extension_crm")
+            if isinstance(task.get("extension_crm"), dict)
+            else {}
+        )
+        task_type = str(task.get("task_type") or "scrape").strip()
+        for raw_row in rows:
+            row = dict(raw_row)
+            result = scraper_module.row_to_result(row)
+            profile_url = str(result.get("url") or "").strip()
+            normalized = scraper_module.normalize_link_record(profile_url)
+            platform = str(
+                result.get("platform") or normalized.get("platform") or ""
+            ).strip()
+            email = str(result.get("email_display") or "").strip()
+            if email == scraper_module.NO_EMAIL:
+                email = ""
+            records.append(
+                {
+                    "account_uid": scraper_module.build_creator_uid(result),
+                    "platform": platform,
+                    "profile_url": str(normalized.get("normalized_url") or profile_url),
+                    "creator_name": str(result.get("name") or "").strip(),
+                    "followers": str(result.get("follower_count") or "").strip(),
+                    "email": email,
+                    "whatsapp": str(result.get("whatsapp") or "").strip(),
+                    "country": str(
+                        result.get("country") or extension_crm.get("country") or ""
+                    ).strip(),
+                    "language": str(
+                        result.get("language") or extension_crm.get("language") or ""
+                    ).strip(),
+                    "content_category": str(
+                        result.get("content_category")
+                        or extension_crm.get("content_category")
+                        or ""
+                    ).strip(),
+                    "note": str(result.get("note") or ""),
+                    "latest_post_date": str(
+                        result.get("latest_publish_date") or ""
+                    ).strip(),
+                    "last_scrape_time": str(result.get("last_scrape_time") or "").strip(),
+                    "data_source": cls._task_data_source(task),
+                    "scrape_status": str(result.get("scrape_status") or "").strip(),
+                    "source_contact_id": source_contact_id,
+                    "email_recheck": task_type == "email_recheck",
+                }
+            )
+        return records
+
+    @staticmethod
+    def _task_data_source(task: dict) -> str:
+        task_type = str(task.get("task_type") or "scrape")
+        if task_type == "email_recheck":
+            return "系统抓取"
+        if task_type == "manual":
+            return "人工+系统补充" if task.get("has_system_supplement") else "人工录入"
+        return "系统抓取"
+
+    @staticmethod
+    def _utc_now() -> str:
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )

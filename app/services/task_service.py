@@ -3,15 +3,28 @@ from __future__ import annotations
 """Task workflow facade over narrow task and creator ports."""
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Callable
 
-from ports.creator_port import CreatorPort
-from ports.task_port import RetryFailedResultsCommand, TaskLinksUpdateCommand, TaskPort
+from ports.creator_port import (
+    CreatorImportResult,
+    CreatorPort,
+    TaskResultImportCommand,
+    TaskResultUpdateCommand,
+)
+from ports.task_port import (
+    RetryFailedResultsCommand,
+    TaskLinksUpdateCommand,
+    TaskPort,
+    TaskResultImportLinkage,
+)
+from repositories.task_repository import TaskCsvDocument, TaskRepository
 
 
 TaskPortProvider = Callable[[], TaskPort]
 CreatorPortProvider = Callable[[], CreatorPort]
-TaskRepositoryProvider = Callable[[], object]
+TaskRepositoryProvider = Callable[[], TaskRepository]
+ImportErrorLogger = Callable[[str, Exception], None]
 
 
 @dataclass(frozen=True)
@@ -29,10 +42,12 @@ class TaskService:
         get_task_port: TaskPortProvider,
         get_creator_port: CreatorPortProvider,
         get_task_repository: TaskRepositoryProvider,
+        import_error_logger: ImportErrorLogger | None = None,
     ) -> None:
         self._get_task_port = get_task_port
         self._get_creator_port = get_creator_port
         self._get_task_repository = get_task_repository
+        self._import_error_logger = import_error_logger or (lambda _task_id, _exc: None)
 
     def get_tasks(self) -> dict[str, object]:
         return self._get_task_port().get_tasks().to_response()
@@ -143,6 +158,107 @@ class TaskService:
             response={"task_id": task_id, "status": "stopped"}
         )
 
+    def update_task_results(
+        self, task_id: str, account_uid: object, fields: object
+    ) -> dict[str, object]:
+        status = self._get_task_port().get_scrape_status().to_response()
+        if bool(status.get("running")) and status.get("task_id") == task_id:
+            raise RuntimeError("任务正在运行，暂不能审核结果。")
+        normalized_uid = str(account_uid or "").strip()
+        if not normalized_uid:
+            raise ValueError("缺少账号唯一ID。")
+
+        repository = self._get_task_repository()
+        creator_port = self._get_creator_port()
+        now = self._utc_now()
+        with repository.operation_lock():
+            task = repository.get_task(task_id)
+            results = repository.read_results_document(task_id)
+            progress = repository.read_progress_document(task_id)
+            prepared = creator_port.prepare_task_result_update(
+                TaskResultUpdateCommand(
+                    task_id=task_id,
+                    account_uid=normalized_uid,
+                    fields=fields if isinstance(fields, dict) else {},
+                    task_type=str(task.get("task_type") or "scrape"),
+                    updated_at=now,
+                    result_fieldnames=results.fieldnames,
+                    result_rows=results.rows,
+                    progress_fieldnames=progress.fieldnames,
+                    progress_rows=progress.rows,
+                )
+            )
+            modifications = repository.read_modifications(task_id)
+            modifications.append(
+                {
+                    "account_uid": normalized_uid,
+                    "modified_fields": dict(prepared.modified_fields),
+                    "status": "pending_sync",
+                    "time": now,
+                }
+            )
+            task = repository.write_review_update(
+                task_id,
+                results=TaskCsvDocument(
+                    prepared.result_fieldnames, prepared.result_rows
+                ),
+                progress=TaskCsvDocument(
+                    prepared.progress_fieldnames, prepared.progress_rows
+                ),
+                modifications=modifications,
+                metadata_changes={
+                    "modified_count": len(modifications),
+                    "last_modified_time": now,
+                },
+            )
+
+        creator_port.commit_task_result_protection(task_id, prepared)
+        library_import = None
+        if str(task.get("status") or "") in {"completed", "manual_created"}:
+            try:
+                import_result = creator_port.import_task_results(
+                    TaskResultImportCommand(
+                        task_id=task_id,
+                        task=task,
+                        rows=prepared.result_rows,
+                        allowed_statuses=("completed", "manual_created"),
+                    )
+                )
+                if not isinstance(import_result, CreatorImportResult):
+                    raise RuntimeError("Creator 导入结果无效。")
+                if import_result.imported_at:
+                    self._get_task_port().attach_task_result_import(
+                        task_id,
+                        TaskResultImportLinkage(
+                            imported_at=import_result.imported_at,
+                            creator_ids=import_result.creator_ids,
+                            account_ids=import_result.account_ids,
+                            summary=dict(import_result.summary or {}),
+                        ),
+                    )
+                library_import = dict(import_result.response)
+            except (OSError, RuntimeError, ValueError) as exc:
+                self._import_error_logger(task_id, exc)
+                library_import = {"status": "failed", "error": str(exc)}
+
+        return {
+            "task_id": task_id,
+            "account_uid": normalized_uid,
+            "modified_fields": dict(prepared.modified_fields),
+            "data_status": prepared.data_status,
+            "modified_at": now,
+            "creator_library_import": library_import,
+        }
+
     def _task_is_running(self, task_id: str) -> bool:
         status = self._get_task_port().get_scrape_status().to_response()
         return bool(status.get("running")) and status.get("task_id") == task_id
+
+    @staticmethod
+    def _utc_now() -> str:
+        return (
+            datetime.now(timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z")
+        )

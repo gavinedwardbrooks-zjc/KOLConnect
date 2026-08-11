@@ -36,8 +36,16 @@ from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from product_repository import ProductRepository
-from ports.creator_port import CreatorAnalysisSnapshot, CreatorPort
+from ports.creator_port import (
+    CreatorAnalysisSnapshot,
+    CreatorImportResult,
+    CreatorPort,
+    PreparedTaskResultUpdate,
+    TaskResultImportCommand,
+    TaskResultUpdateCommand,
+)
 from ports.task_port import CreatorImportLinkage, ManualReviewTaskCommand, TaskPort
+from repositories.task_repository import TaskRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.creator_service import CreatorService
 from services.task_service import TaskService
@@ -89,13 +97,6 @@ REVIEW_CSV_FIELDS = [
     REVIEW_FIELD_DATA_STATUS,
     REVIEW_FIELD_MODIFIED_AT,
 ]
-REVIEW_EDITABLE_FIELDS = {
-    scraper_module.FIELD_NAME,
-    scraper_module.FIELD_EMAIL,
-    scraper_module.FIELD_FOLLOWER_COUNT,
-    REVIEW_FIELD_WHATSAPP,
-    REVIEW_FIELD_NOTE,
-}
 REVIEW_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 REVIEW_WHATSAPP_PATTERN = re.compile(r"^[0-9+()\- ]+$")
 TASK_PLATFORM_OPTIONS = {"全部", "TikTok", "Instagram", "YouTube"}
@@ -108,24 +109,6 @@ INSTAGRAM_ERROR_STATUSES = {"failed", "login_required", "platform_error"}
 AGENCY_CONTACT_FIELD_NAME = "联系人姓名"
 AGENCY_CONTACT_FIELD_WHATSAPP = "WhatsApp"
 AGENCY_CONTACT_FIELD_AGENCY = "所属 Agency"
-PROTECTED_DATA_FIELDS = {
-    scraper_module.FIELD_EMAIL,
-    scraper_module.FIELD_NAME,
-    scraper_module.FIELD_FOLLOWER_COUNT,
-    REVIEW_FIELD_WHATSAPP,
-    REVIEW_FIELD_NOTE,
-}
-DATA_PROTECTION_PRIORITY = {
-    "人工维护": 50,
-    "人工录入": 40,
-    "审核修改": 30,
-    "系统补全": 20,
-    "邮箱补全": 20,
-    "人工+系统补充": 20,
-    "人工补充": 20,
-    "系统抓取": 10,
-}
-
 CHROME_USER_DATA = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
 KOLCONNECT_CHROME_USER_DATA = DATA_DIR / "ChromeProfile"
 AUTOMATION_PROFILE_NAME = "KOLConnect Automation"
@@ -1448,26 +1431,9 @@ def _save_data_protection(data: dict) -> None:
 def _merge_data_protection(
     protection: dict, account_uid: str, values: dict[str, str], source: str, task_id: str, updated_at: str
 ) -> bool:
-    if not account_uid:
-        return False
-    changed = False
-    account_fields = protection.setdefault(account_uid, {})
-    incoming_priority = DATA_PROTECTION_PRIORITY.get(source, 0)
-    for field, value in values.items():
-        if field not in PROTECTED_DATA_FIELDS or not str(value or "").strip():
-            continue
-        current = account_fields.get(field)
-        current_priority = DATA_PROTECTION_PRIORITY.get(str((current or {}).get("source") or ""), 0)
-        if isinstance(current, dict) and str(current.get("value") or "").strip() and current_priority > incoming_priority:
-            continue
-        account_fields[field] = {
-            "value": str(value),
-            "source": source,
-            "task_id": task_id,
-            "updated_at": updated_at,
-        }
-        changed = True
-    return changed
+    return CreatorService.merge_data_protection(
+        protection, account_uid, values, source, task_id, updated_at
+    )
 
 
 def _task_email_source(task: dict) -> str:
@@ -1763,7 +1729,12 @@ def get_creator_repository() -> CreatorRepository:
 
 def get_creator_service() -> CreatorService:
     """Create a stateless facade whose provider resolves the active request repository."""
-    return CreatorService(get_creator_repository, get_task_port)
+    return CreatorService(
+        get_creator_repository,
+        get_task_port,
+        load_data_protection,
+        _save_data_protection,
+    )
 
 
 def get_task_port() -> TaskPort:
@@ -1785,6 +1756,24 @@ class _CreatorAnalysisPortAdapter:
             analysis=detail["analysis"],
         )
 
+    def prepare_task_result_update(
+        self, command: TaskResultUpdateCommand
+    ) -> PreparedTaskResultUpdate:
+        return get_creator_service().prepare_task_result_update(command)
+
+    def commit_task_result_protection(
+        self, task_id: str, update: PreparedTaskResultUpdate
+    ) -> None:
+        get_creator_service().commit_task_result_protection(task_id, update)
+
+    def import_task_results(
+        self, command: TaskResultImportCommand
+    ) -> CreatorImportResult:
+        result = get_creator_service().import_task_results(command)
+        if not isinstance(result, CreatorImportResult):
+            raise RuntimeError("Creator 导入结果无效。")
+        return result
+
 
 def get_creator_port() -> CreatorPort:
     return _CreatorAnalysisPortAdapter()
@@ -1792,7 +1781,14 @@ def get_creator_port() -> CreatorPort:
 
 def get_task_service() -> TaskService:
     """Create a facade whose dependencies resolve within the active operation."""
-    return TaskService(get_task_port, get_creator_port, lambda: None)
+    return TaskService(
+        get_task_port,
+        get_creator_port,
+        lambda: TaskRepository(TASKS_DIR),
+        lambda task_id, exc: log_error(
+            "CreatorLibrary", f"审核结果更新达人库失败 | task_id={task_id}", exc
+        ),
+    )
 
 
 def _creator_library_workbook_path() -> Path:
@@ -2122,49 +2118,7 @@ def _normalize_follower_count(value: object) -> str:
 
 
 def _validate_review_updates(row: dict, fields: dict) -> dict[str, str]:
-    if not isinstance(fields, dict) or not fields:
-        raise ValueError("缺少可保存的审核字段。")
-    unknown_fields = set(fields) - REVIEW_EDITABLE_FIELDS
-    if unknown_fields:
-        raise ValueError(f"不允许修改字段：{', '.join(sorted(unknown_fields))}")
-
-    final_name = str(fields.get(scraper_module.FIELD_NAME, row.get(scraper_module.FIELD_NAME) or "")).strip()
-    if not final_name:
-        raise ValueError("达人名称不能为空。")
-
-    final_email = str(fields.get(scraper_module.FIELD_EMAIL, row.get(scraper_module.FIELD_EMAIL) or "")).strip()
-    email_for_validation = "" if final_email == scraper_module.NO_EMAIL else final_email
-    if email_for_validation:
-        if any(char.isspace() for char in email_for_validation):
-            raise ValueError("邮箱格式错误：邮箱不能包含空格。")
-        for email in email_for_validation.split(","):
-            if not REVIEW_EMAIL_PATTERN.fullmatch(email):
-                raise ValueError("邮箱格式错误。")
-
-    final_whatsapp = str(fields.get(REVIEW_FIELD_WHATSAPP, row.get(REVIEW_FIELD_WHATSAPP) or "")).strip()
-    if final_whatsapp:
-        if not REVIEW_WHATSAPP_PATTERN.fullmatch(final_whatsapp):
-            raise ValueError("WhatsApp号码格式异常。")
-        digits = re.sub(r"\D", "", final_whatsapp)
-        if not 7 <= len(digits) <= 20:
-            raise ValueError("WhatsApp号码格式异常。")
-
-    final_follower_count = _normalize_follower_count(
-        fields.get(scraper_module.FIELD_FOLLOWER_COUNT, row.get(scraper_module.FIELD_FOLLOWER_COUNT) or "")
-    )
-
-    normalized: dict[str, str] = {}
-    if scraper_module.FIELD_NAME in fields:
-        normalized[scraper_module.FIELD_NAME] = final_name
-    if scraper_module.FIELD_EMAIL in fields:
-        normalized[scraper_module.FIELD_EMAIL] = final_email
-    if scraper_module.FIELD_FOLLOWER_COUNT in fields:
-        normalized[scraper_module.FIELD_FOLLOWER_COUNT] = final_follower_count
-    if REVIEW_FIELD_WHATSAPP in fields:
-        normalized[REVIEW_FIELD_WHATSAPP] = final_whatsapp
-    if REVIEW_FIELD_NOTE in fields:
-        normalized[REVIEW_FIELD_NOTE] = str(fields[REVIEW_FIELD_NOTE] or "")
-    return normalized
+    return get_creator_service().validate_task_result_updates(row, fields)
 
 
 def _csv_content(fieldnames: list[str], rows: list[dict]) -> bytes:
@@ -2176,96 +2130,7 @@ def _csv_content(fieldnames: list[str], rows: list[dict]) -> bytes:
 
 
 def update_task_review_result(task_id: str, account_uid: str, fields: dict) -> dict:
-    if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
-        raise RuntimeError("任务正在运行，暂不能审核结果。")
-    account_uid = str(account_uid or "").strip()
-    if not account_uid:
-        raise ValueError("缺少账号唯一ID。")
-
-    with task_manager.task_lock():
-        task, paths = task_manager.load_task(TASKS_DIR, task_id)
-        result_fieldnames, result_rows = _read_task_csv(paths["results"])
-        progress_fieldnames, progress_rows = _read_task_csv(paths["progress"])
-
-        result_matches = [row for row in result_rows if _account_uid_for_row(row) == account_uid]
-        if len(result_matches) != 1:
-            raise ValueError("未找到唯一的任务结果记录。")
-        progress_matches = [row for row in progress_rows if _account_uid_for_row(row) == account_uid]
-        if not progress_matches:
-            raise ValueError("未找到对应的任务进度记录。")
-
-        target_row = result_matches[0]
-        updates = _validate_review_updates(target_row, fields)
-        modified_fields = {
-            field: {"old": str(target_row.get(field) or ""), "new": value}
-            for field, value in updates.items()
-            if str(target_row.get(field) or "") != value
-        }
-        if not modified_fields:
-            raise ValueError("没有检测到需要保存的修改。")
-
-        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-        task_result_fields = [scraper_module.FIELD_FOLLOWER_COUNT, *REVIEW_CSV_FIELDS]
-        for row in result_rows:
-            for field in task_result_fields:
-                row.setdefault(field, "待检查" if field == REVIEW_FIELD_DATA_STATUS else "")
-            if _account_uid_for_row(row) == account_uid:
-                row.update(updates)
-                row[REVIEW_FIELD_DATA_STATUS] = "待同步"
-                row[REVIEW_FIELD_MODIFIED_AT] = now
-
-        for row in progress_rows:
-            for field in task_result_fields:
-                row.setdefault(field, "待检查" if field == REVIEW_FIELD_DATA_STATUS else "")
-            if _account_uid_for_row(row) == account_uid:
-                row.update(updates)
-                row[REVIEW_FIELD_DATA_STATUS] = "待同步"
-                row[REVIEW_FIELD_MODIFIED_AT] = now
-
-        result_fieldnames = list(dict.fromkeys(result_fieldnames + task_result_fields))
-        progress_fieldnames = list(dict.fromkeys(progress_fieldnames + task_result_fields))
-        modifications = task_manager.load_modifications(TASKS_DIR, task_id)
-        modifications.append(
-            {
-                "account_uid": account_uid,
-                "modified_fields": modified_fields,
-                "status": "pending_sync",
-                "time": now,
-            }
-        )
-        task["modified_count"] = len(modifications)
-        task["last_modified_time"] = now
-
-        task_manager.atomic_write_files(
-            {
-                paths["results"]: _csv_content(result_fieldnames, result_rows),
-                paths["progress"]: _csv_content(progress_fieldnames, progress_rows),
-                paths["modifications"]: json.dumps(modifications, ensure_ascii=False, indent=2).encode("utf-8"),
-                paths["metadata"]: json.dumps(task, ensure_ascii=False, indent=2).encode("utf-8"),
-            }
-        )
-    protection = load_data_protection()
-    protection_source = "人工录入" if task.get("task_type") == "manual" else "审核修改"
-    if _merge_data_protection(protection, account_uid, updates, protection_source, task_id, now):
-        _save_data_protection(protection)
-    library_import = None
-    if str(task.get("status") or "") in {"completed", "manual_created"}:
-        try:
-            library_import = import_task_results_to_creator_library(
-                task_id,
-                allowed_task_statuses={"completed", "manual_created"},
-            )
-        except (OSError, RuntimeError, ValueError) as exc:
-            log_error("CreatorLibrary", f"审核结果更新达人库失败 | task_id={task_id}", exc)
-            library_import = {"status": "failed", "error": str(exc)}
-    return {
-        "task_id": task_id,
-        "account_uid": account_uid,
-        "modified_fields": modified_fields,
-        "data_status": "待同步",
-        "modified_at": now,
-        "creator_library_import": library_import,
-    }
+    return get_task_service().update_task_results(task_id, account_uid, fields)
 
 
 def _validate_task_sync_results(rows: list[dict]) -> tuple[list[dict], list[str]]:

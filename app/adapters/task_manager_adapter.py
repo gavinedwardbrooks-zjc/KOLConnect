@@ -1,15 +1,13 @@
 from __future__ import annotations
 
-"""TaskPort adapter over the existing task_manager module."""
+"""TaskPort adapter over task persistence and existing scrape domain helpers."""
 
-import csv
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Mapping
 
 import scraper as scraper_module
-import task_manager
 from ports.task_port import (
     CreatedTask,
     CreatorImportLinkage,
@@ -17,8 +15,10 @@ from ports.task_port import (
     RetryFailedResultsCommand,
     TaskLinksUpdateCommand,
     TaskReadResult,
+    TaskResultImportLinkage,
     TaskSnapshot,
 )
+from repositories.task_repository import TaskRepository
 
 
 TasksDirectoryProvider = Callable[[], Path]
@@ -53,8 +53,7 @@ class TaskManagerAdapter:
     def create_manual_review_task(
         self, command: ManualReviewTaskCommand
     ) -> CreatedTask:
-        task = task_manager.create_task(
-            self._tasks_directory_provider(),
+        task = self._repository().create_task(
             list(command.normalized_links),
             list(command.invalid_links),
             command.input_count,
@@ -67,12 +66,12 @@ class TaskManagerAdapter:
         return CreatedTask(task=self._snapshot(task))
 
     def get_task(self, task_id: str) -> TaskSnapshot:
-        task, _paths = task_manager.load_task(self._tasks_directory_provider(), task_id)
-        return self._snapshot(task)
+        return self._snapshot(self._repository().get_task(task_id))
 
     def get_tasks(self) -> TaskReadResult:
         items: list[dict[str, object]] = []
-        for task in task_manager.list_tasks(self._tasks_directory_provider()):
+        repository = self._repository()
+        for task in repository.list_tasks():
             task_id = str(task.get("id") or "")
             progress = self._task_progress(task_id, int(task.get("valid_count") or 0))
             task_type = str(task.get("task_type") or "scrape")
@@ -83,7 +82,7 @@ class TaskManagerAdapter:
                 if task_type in {"manual", "email_recheck"}
                 else "scrape",
                 "target_platform": str(task.get("target_platform") or "全部"),
-                "platforms": task_manager.normalize_platforms(
+                "platforms": repository.normalize_platforms(
                     task.get("platforms"),
                     task.get("platform") or task.get("target_platform"),
                 ),
@@ -119,9 +118,10 @@ class TaskManagerAdapter:
         return TaskReadResult({"tasks": items})
 
     def get_task_details(self, task_id: str) -> TaskReadResult:
-        task, paths = task_manager.load_task(self._tasks_directory_provider(), task_id)
-        links = self._read_links(paths["links"])
-        progress_by_url = scraper_module.load_progress(str(paths["progress"]))
+        repository = self._repository()
+        task = repository.get_task(task_id)
+        links = repository.read_links(task_id)
+        progress_by_url = self._completed_progress(repository, task_id)
         current_item = str(task.get("current_item") or "")
         records: list[dict[str, object]] = []
         for index, link in enumerate(links, start=1):
@@ -147,8 +147,9 @@ class TaskManagerAdapter:
         )
 
     def get_task_results(self, task_id: str) -> TaskReadResult:
-        task, paths = task_manager.load_task(self._tasks_directory_provider(), task_id)
-        if not paths["results"].exists():
+        repository = self._repository()
+        task = repository.get_task(task_id)
+        if not repository.results_exist(task_id):
             return TaskReadResult(
                 {
                     "task_id": task_id,
@@ -160,7 +161,7 @@ class TaskManagerAdapter:
                     "records": [],
                 }
             )
-        rows = self._read_csv(paths["results"])
+        rows = repository.read_results(task_id)
         records = [self._review_record(row) for row in rows]
         platform_results = {platform: 0 for platform in _PLATFORMS}
         for record in records:
@@ -170,7 +171,7 @@ class TaskManagerAdapter:
         return TaskReadResult(
             {
                 "task_id": task_id,
-                "platforms": task_manager.normalize_platforms(
+                "platforms": repository.normalize_platforms(
                     task.get("platforms"),
                     task.get("platform") or task.get("target_platform"),
                 ),
@@ -185,14 +186,10 @@ class TaskManagerAdapter:
         return TaskReadResult(response)
 
     def resume_task(self, task_id: str) -> TaskSnapshot:
-        task, _paths = task_manager.load_task(
-            self._tasks_directory_provider(), task_id
-        )
-        return self._snapshot(task)
+        return self._snapshot(self._repository().get_task(task_id))
 
     def stop_task(self, task_id: str) -> TaskSnapshot:
-        task = task_manager.update_task(
-            self._tasks_directory_provider(),
+        task = self._repository().update_task(
             task_id,
             status="stopped",
             pause_requested=False,
@@ -205,19 +202,16 @@ class TaskManagerAdapter:
         return self._snapshot(task)
 
     def rename_task(self, task_id: str, name: str) -> TaskSnapshot:
-        task = task_manager.update_task(
-            self._tasks_directory_provider(), task_id, name=name
-        )
+        task = self._repository().update_task(task_id, name=name)
         return self._snapshot(task)
 
     def update_task_links(
         self, task_id: str, command: TaskLinksUpdateCommand
     ) -> TaskReadResult:
-        task, paths = task_manager.load_task(
-            self._tasks_directory_provider(), task_id
-        )
-        links = self._read_links(paths["links"])
-        done_urls = set(scraper_module.load_progress(str(paths["progress"])))
+        repository = self._repository()
+        task = repository.get_task(task_id)
+        links = repository.read_links(task_id)
+        done_urls = set(self._completed_progress(repository, task_id))
         normalized_url = ""
         if command.action in {"add", "update"}:
             record = scraper_module.normalize_link_record(command.url)
@@ -250,24 +244,22 @@ class TaskManagerAdapter:
             else:
                 raise ValueError("不支持的链接操作。")
 
-        self._write_links(paths["links"], links)
-        task_manager.update_task(
-            self._tasks_directory_provider(),
+        repository.write_links(task_id, links)
+        repository.update_task(
             task_id,
             valid_count=len(links),
             input_count=max(int(task.get("input_count") or 0), len(links)),
             platform_summary=self._platform_summary_from_links(links),
-            current_item=self._next_pending_item(paths),
+            current_item=self._next_pending_item(repository, task_id, links),
         )
         return self.get_task_details(task_id)
 
     def retry_failed_results(
         self, task_id: str, command: RetryFailedResultsCommand
     ) -> TaskReadResult:
-        task, paths = task_manager.load_task(
-            self._tasks_directory_provider(), task_id
-        )
-        rows = self._read_csv(paths["results"])
+        repository = self._repository()
+        task = repository.get_task(task_id)
+        rows = repository.read_results(task_id)
         requested = set(command.account_uids)
         retry_rows: list[dict[str, str]] = []
         for row in rows:
@@ -294,8 +286,7 @@ class TaskManagerAdapter:
             raise ValueError("失败记录缺少有效主页链接。")
 
         next_retry_round = max(0, int(task.get("retry_round") or 0)) + 1
-        retry_task = task_manager.update_task(
-            self._tasks_directory_provider(),
+        retry_task = repository.update_task(
             task_id,
             status="created",
             retry_round=next_retry_round,
@@ -315,8 +306,7 @@ class TaskManagerAdapter:
     def attach_creator_import(
         self, task_id: str, linkage: CreatorImportLinkage
     ) -> TaskSnapshot:
-        task = task_manager.update_task(
-            self._tasks_directory_provider(),
+        task = self._repository().update_task(
             task_id,
             creator_analysis_id=linkage.creator_id,
             creator_snapshot_id=linkage.snapshot_id,
@@ -329,14 +319,26 @@ class TaskManagerAdapter:
         )
         return self._snapshot(task)
 
+    def attach_task_result_import(
+        self, task_id: str, linkage: TaskResultImportLinkage
+    ) -> TaskSnapshot:
+        task = self._repository().update_task(
+            task_id,
+            creator_library_imported_at=linkage.imported_at,
+            creator_library_creator_ids=list(linkage.creator_ids),
+            creator_library_account_ids=list(linkage.account_ids),
+            creator_library_import_summary=dict(linkage.summary),
+            creator_library_import_error="",
+        )
+        return self._snapshot(task)
+
     def delete_task(self, task_id: str) -> None:
-        task_manager.delete_task(self._tasks_directory_provider(), task_id)
+        self._repository().delete_task(task_id)
 
     def _task_progress(self, task_id: str, fallback_total: int = 0) -> dict[str, object]:
+        repository = self._repository()
         try:
-            _task, paths = task_manager.load_task(
-                self._tasks_directory_provider(), task_id
-            )
+            repository.get_task(task_id)
         except ValueError:
             return {
                 "total_links": fallback_total,
@@ -346,25 +348,21 @@ class TaskManagerAdapter:
                 "progress": 0,
             }
         try:
-            links = self._read_links(paths["links"])
+            links = repository.read_links(task_id)
         except (OSError, ValueError):
             links = []
         total_links = len(links) or fallback_total
         task_urls = set(links)
         latest_status_by_url: dict[str, str] = {}
-        if paths["progress"].exists():
-            try:
-                with paths["progress"].open(
-                    encoding="utf-8-sig", newline="", errors="ignore"
-                ) as handle:
-                    for row in csv.DictReader(handle):
-                        url = str(row.get(scraper_module.FIELD_URL) or "").strip()
-                        if url and (not task_urls or url in task_urls):
-                            latest_status_by_url[url] = str(
-                                row.get(scraper_module.FIELD_STATUS) or ""
-                            ).strip()
-            except OSError:
-                pass
+        try:
+            for row in repository.read_progress(task_id):
+                url = str(row.get(scraper_module.FIELD_URL) or "").strip()
+                if url and (not task_urls or url in task_urls):
+                    latest_status_by_url[url] = str(
+                        row.get(scraper_module.FIELD_STATUS) or ""
+                    ).strip()
+        except OSError:
+            pass
         completed = sum(
             1 for status in latest_status_by_url.values() if status == "完成"
         )
@@ -388,13 +386,12 @@ class TaskManagerAdapter:
         }
 
     def _email_recheck_summary(self, task_id: str) -> dict[str, int]:
+        repository = self._repository()
         try:
-            _task, paths = task_manager.load_task(
-                self._tasks_directory_provider(), task_id
-            )
-            if not paths["results"].exists():
+            repository.get_task(task_id)
+            if not repository.results_exist(task_id):
                 return {"email_found_count": 0, "email_failed_count": 0}
-            rows = self._read_csv(paths["results"])
+            rows = repository.read_results(task_id)
         except (OSError, ValueError):
             return {"email_found_count": 0, "email_failed_count": 0}
         found = sum(
@@ -409,27 +406,6 @@ class TaskManagerAdapter:
         }
 
     @staticmethod
-    def _read_links(path: Path) -> list[str]:
-        if not path.exists():
-            raise ValueError("未找到任务链接文件。")
-        return [
-            line.strip()
-            for line in path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        ]
-
-    @staticmethod
-    def _write_links(path: Path, links: list[str]) -> None:
-        temp_path = path.with_suffix(f"{path.suffix}.tmp")
-        try:
-            temp_path.write_text(
-                "\n".join(links) + ("\n" if links else ""), encoding="utf-8"
-            )
-            temp_path.replace(path)
-        finally:
-            temp_path.unlink(missing_ok=True)
-
-    @staticmethod
     def _platform_summary_from_links(links: list[str]) -> dict[str, int]:
         summary = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
         for link in links:
@@ -441,13 +417,24 @@ class TaskManagerAdapter:
         return summary
 
     @classmethod
-    def _next_pending_item(cls, paths: Mapping[str, Path]) -> str:
-        try:
-            links = cls._read_links(paths["links"])
-        except (OSError, ValueError):
-            return ""
-        completed = set(scraper_module.load_progress(str(paths["progress"])))
+    def _next_pending_item(
+        cls, repository: TaskRepository, task_id: str, links: list[str]
+    ) -> str:
+        completed = set(cls._completed_progress(repository, task_id))
         return next((url for url in links if url not in completed), "")
+
+    @staticmethod
+    def _completed_progress(
+        repository: TaskRepository, task_id: str
+    ) -> dict[str, dict]:
+        done: dict[str, dict] = {}
+        for row in repository.read_progress(task_id):
+            if row.get(scraper_module.FIELD_STATUS) != "完成":
+                continue
+            result = scraper_module.row_to_result(row)
+            if result["url"]:
+                done[result["url"]] = result
+        return done
 
     @staticmethod
     def _utc_now() -> str:
@@ -458,15 +445,8 @@ class TaskManagerAdapter:
             .replace("+00:00", "Z")
         )
 
-    @staticmethod
-    def _read_csv(path: Path) -> list[dict[str, str]]:
-        if not path.exists():
-            raise ValueError(f"未找到任务文件：{path.name}")
-        with path.open(encoding="utf-8-sig", newline="") as handle:
-            reader = csv.DictReader(handle)
-            if not reader.fieldnames:
-                raise ValueError(f"任务文件格式无效：{path.name}")
-            return [dict(row) for row in reader]
+    def _repository(self) -> TaskRepository:
+        return TaskRepository(self._tasks_directory_provider())
 
     @staticmethod
     def _review_value(row: Mapping[str, object], field: str) -> str:

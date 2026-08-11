@@ -49,6 +49,50 @@ class CreatorImportSummary:
 
 
 @dataclass(frozen=True)
+class TaskResultUpdateCommand:
+    task_id: str
+    account_uid: str
+    fields: Mapping[str, object]
+    task_type: str
+    updated_at: str
+    result_fieldnames: tuple[str, ...]
+    result_rows: tuple[Mapping[str, object], ...]
+    progress_fieldnames: tuple[str, ...]
+    progress_rows: tuple[Mapping[str, object], ...]
+
+
+@dataclass(frozen=True)
+class PreparedTaskResultUpdate:
+    account_uid: str
+    modified_fields: Mapping[str, Mapping[str, str]]
+    updated_at: str
+    data_status: str
+    result_fieldnames: tuple[str, ...]
+    result_rows: tuple[Mapping[str, object], ...]
+    progress_fieldnames: tuple[str, ...]
+    progress_rows: tuple[Mapping[str, object], ...]
+    protection_values: Mapping[str, str]
+    protection_source: str
+
+
+@dataclass(frozen=True)
+class TaskResultImportCommand:
+    task_id: str
+    task: Mapping[str, object]
+    rows: tuple[Mapping[str, object], ...]
+    allowed_statuses: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CreatorImportResult:
+    response: Mapping[str, object]
+    imported_at: str = ""
+    creator_ids: tuple[str, ...] = ()
+    account_ids: tuple[str, ...] = ()
+    summary: Mapping[str, object] | None = None
+
+
+@dataclass(frozen=True)
 class EmailRecheckCandidate:
     creator_id: str
     account_id: str
@@ -87,8 +131,16 @@ class ExternalAgencyContact:
 
 class CreatorPort(Protocol):
     def import_task_results(
-        self, command: ImportTaskResultsCommand
-    ) -> CreatorImportSummary: ...
+        self, command: ImportTaskResultsCommand | TaskResultImportCommand
+    ) -> CreatorImportSummary | CreatorImportResult: ...
+
+    def prepare_task_result_update(
+        self, command: TaskResultUpdateCommand
+    ) -> PreparedTaskResultUpdate: ...
+
+    def commit_task_result_protection(
+        self, task_id: str, update: PreparedTaskResultUpdate
+    ) -> None: ...
 
     def get_email_recheck_candidates(self) -> tuple[EmailRecheckCandidate, ...]: ...
 

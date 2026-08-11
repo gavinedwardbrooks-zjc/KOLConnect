@@ -84,6 +84,14 @@ class RetryFailedResultsCommand:
     account_uids: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class TaskResultImportLinkage:
+    imported_at: str
+    creator_ids: tuple[str, ...]
+    account_ids: tuple[str, ...]
+    summary: Mapping[str, object] = field(default_factory=dict)
+
+
 class TaskPort(Protocol):
     def create_manual_review_task(
         self, command: ManualReviewTaskCommand
@@ -115,6 +123,10 @@ class TaskPort(Protocol):
 
     def attach_creator_import(
         self, task_id: str, linkage: CreatorImportLinkage
+    ) -> TaskSnapshot: ...
+
+    def attach_task_result_import(
+        self, task_id: str, linkage: TaskResultImportLinkage
     ) -> TaskSnapshot: ...
 
     def delete_task(self, task_id: str) -> None: ...
