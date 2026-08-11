@@ -22,6 +22,7 @@ import task_manager
 import threading
 import time
 import webbrowser
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -39,13 +40,18 @@ from product_repository import ProductRepository
 from ports.creator_port import (
     CreatorAnalysisSnapshot,
     CreatorImportResult,
+    CreatorImportSummary,
     CreatorPort,
     EmailRecheckCandidateScan,
     ExternalAgencyContact,
     ExternalAgencyContactCommand,
+    FourTableSyncCommand,
+    FourTableSyncResult,
+    ImportTaskResultsCommand,
     ManualTaskPreparationCommand,
     ManualTaskProtectionCommand,
     PreparedManualTask,
+    PreparedFourTableSync,
     PreparedTaskResultUpdate,
     TaskResultImportCommand,
     TaskResultUpdateCommand,
@@ -54,6 +60,7 @@ from ports.task_port import CreatorImportLinkage, ManualReviewTaskCommand, TaskP
 from repositories.task_repository import TaskRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.creator_service import CreatorService
+from services.task_result_mapper import map_task_rows_for_creator_library
 from services.task_service import TaskService
 from app_logging import log_error, log_event
 from openpyxl import load_workbook
@@ -1034,6 +1041,7 @@ def start_scrape(payload: dict) -> dict:
                     status = "finalizing"
                     sync_status = "not_requested"
 
+                final_state_persisted = False
                 if status == "finalizing":
                     task_manager.update_task(
                         TASKS_DIR,
@@ -1045,7 +1053,7 @@ def start_scrape(payload: dict) -> dict:
                         **common_changes,
                     )
                     try:
-                        import_task_results_to_creator_library(
+                        finalization = import_task_results_to_creator_library(
                             task_id,
                             allowed_task_statuses={"finalizing"},
                         )
@@ -1064,17 +1072,34 @@ def start_scrape(payload: dict) -> dict:
                             creator_library_import_error=str(library_error),
                         )
                     else:
-                        status = "completed"
+                        if finalization.get("status") == "failed":
+                            status = "failed"
+                            sync_status = str(
+                                finalization.get("sync_status") or "not_started"
+                            )
+                            last_error = str(finalization.get("last_error") or "")
+                        else:
+                            status = "completed"
+                        try:
+                            persisted_task, _ = task_manager.load_task(
+                                TASKS_DIR, task_id
+                            )
+                            final_state_persisted = (
+                                str(persisted_task.get("status") or "") == status
+                            )
+                        except ValueError:
+                            final_state_persisted = False
 
-                task_manager.update_task(
-                    TASKS_DIR,
-                    task_id,
-                    status=status,
-                    finished_at=_utc_now(),
-                    last_error=last_error,
-                    sync_status=sync_status,
-                    **common_changes,
-                )
+                if not final_state_persisted:
+                    task_manager.update_task(
+                        TASKS_DIR,
+                        task_id,
+                        status=status,
+                        finished_at=_utc_now(),
+                        last_error=last_error,
+                        sync_status=sync_status,
+                        **common_changes,
+                    )
                 if status == "completed":
                     SCRAPE_JOB.append("任务完成。\n")
                 elif status == "failed":
@@ -1442,13 +1467,6 @@ def _merge_data_protection(
     )
 
 
-def _task_email_source(task: dict) -> str:
-    task_type = str(task.get("task_type") or "scrape")
-    if task_type == "email_recheck":
-        return "邮箱补全"
-    if task_type == "manual":
-        return "人工+系统补充" if task.get("has_system_supplement") else "人工录入"
-    return "系统抓取"
 
 
 def _email_recheck_summary(task_id: str) -> dict:
@@ -1674,6 +1692,7 @@ def get_creator_service() -> CreatorService:
         load_data_protection,
         _save_data_protection,
         _resolve_source_contact,
+        get_four_table_feishu_config,
     )
 
 
@@ -1689,46 +1708,62 @@ def get_task_port() -> TaskPort:
 class _CreatorAnalysisPortAdapter:
     """Expose the read-only Creator capability required by TaskService."""
 
+    def __init__(self, creator_service_provider=None) -> None:
+        self._creator_service_provider = creator_service_provider or get_creator_service
+
+    def _service(self) -> CreatorService:
+        return self._creator_service_provider()
+
     def get_creator_analysis(self, creator_id: str) -> CreatorAnalysisSnapshot:
-        detail = get_creator_repository().getCreatorDetail(creator_id)
+        detail = self._service().get_creator_detail(creator_id)
         return CreatorAnalysisSnapshot(
             creator_id=creator_id,
             analysis=detail["analysis"],
         )
 
     def get_email_recheck_candidates(self) -> EmailRecheckCandidateScan:
-        return get_creator_service().get_email_recheck_candidates()
+        return self._service().get_email_recheck_candidates()
+
+    def prepare_four_table_sync(
+        self, command: FourTableSyncCommand
+    ) -> PreparedFourTableSync:
+        return self._service().prepare_four_table_sync(command)
+
+    def execute_four_table_sync(
+        self, prepared: PreparedFourTableSync
+    ) -> FourTableSyncResult:
+        return self._service().execute_four_table_sync(prepared)
 
     def prepare_manual_task(
         self, command: ManualTaskPreparationCommand
     ) -> PreparedManualTask:
-        return get_creator_service().prepare_manual_task(command)
+        return self._service().prepare_manual_task(command)
 
     def commit_manual_task_protection(
         self, command: ManualTaskProtectionCommand
     ) -> None:
-        get_creator_service().commit_manual_task_protection(command)
+        self._service().commit_manual_task_protection(command)
 
     def upsert_external_agency_contact(
         self, contact: ExternalAgencyContactCommand
     ) -> ExternalAgencyContact:
-        return get_creator_service().upsert_external_agency_contact(contact)
+        return self._service().upsert_external_agency_contact(contact)
 
     def prepare_task_result_update(
         self, command: TaskResultUpdateCommand
     ) -> PreparedTaskResultUpdate:
-        return get_creator_service().prepare_task_result_update(command)
+        return self._service().prepare_task_result_update(command)
 
     def commit_task_result_protection(
         self, task_id: str, update: PreparedTaskResultUpdate
     ) -> None:
-        get_creator_service().commit_task_result_protection(task_id, update)
+        self._service().commit_task_result_protection(task_id, update)
 
     def import_task_results(
-        self, command: TaskResultImportCommand
-    ) -> CreatorImportResult:
-        result = get_creator_service().import_task_results(command)
-        if not isinstance(result, CreatorImportResult):
+        self, command: ImportTaskResultsCommand | TaskResultImportCommand
+    ) -> CreatorImportSummary | CreatorImportResult:
+        result = self._service().import_task_results(command)
+        if not isinstance(result, (CreatorImportSummary, CreatorImportResult)):
             raise RuntimeError("Creator 导入结果无效。")
         return result
 
@@ -1751,7 +1786,54 @@ def get_task_service() -> TaskService:
             f"来源联系人本地兼容保存失败 | record_id={record_id}",
             exc,
         ),
+        lambda task_id, exc: log_error(
+            "CreatorLibrary",
+            f"任务完成后导入达人库失败 | task_id={task_id}",
+            exc,
+        ),
+        lambda task_id, exc: log_error(
+            "Feishu", f"同步失败 | task_id={task_id}", exc
+        ),
     )
+
+
+@contextmanager
+def background_task_service_scope():
+    """Create and close repositories for one non-HTTP finalizing operation."""
+    factory = _new_repository_factory()
+    with factory.store.scope(defer_writes=False):
+        creator_service = CreatorService(
+            factory.creator,
+            get_task_port,
+            load_data_protection,
+            _save_data_protection,
+            _resolve_source_contact,
+            get_four_table_feishu_config,
+        )
+        creator_port = _CreatorAnalysisPortAdapter(lambda: creator_service)
+        yield TaskService(
+            get_task_port,
+            lambda: creator_port,
+            lambda: TaskRepository(TASKS_DIR),
+            lambda task_id, exc: log_error(
+                "CreatorLibrary",
+                f"审核结果更新达人库失败 | task_id={task_id}",
+                exc,
+            ),
+            lambda record_id, exc: log_error(
+                "CreatorLibrary",
+                f"来源联系人本地兼容保存失败 | record_id={record_id}",
+                exc,
+            ),
+            lambda task_id, exc: log_error(
+                "CreatorLibrary",
+                f"任务完成后导入达人库失败 | task_id={task_id}",
+                exc,
+            ),
+            lambda task_id, exc: log_error(
+                "Feishu", f"同步失败 | task_id={task_id}", exc
+            ),
+        )
 
 
 def _creator_library_workbook_path() -> Path:
@@ -1782,44 +1864,14 @@ def get_campaign_creator_repository() -> CampaignCreatorRepository:
 
 
 def _task_rows_for_creator_library(task: dict, rows: list[dict]) -> list[dict]:
-    """Map task CSV rows to the repository contract without changing CSV fields."""
-    records: list[dict] = []
-    source_contact_id = str(task.get("local_source_contact_id") or "").strip()
-    extension_crm = task.get("extension_crm") if isinstance(task.get("extension_crm"), dict) else {}
-    task_type = str(task.get("task_type") or "scrape").strip()
-    for row in rows:
-        result = scraper_module.row_to_result(row)
-        profile_url = str(result.get("url") or "").strip()
-        normalized = scraper_module.normalize_link_record(profile_url)
-        platform = str(result.get("platform") or normalized.get("platform") or "").strip()
-        account_uid = scraper_module.build_creator_uid(result)
-        email = str(result.get("email_display") or "").strip()
-        if email == scraper_module.NO_EMAIL:
-            email = ""
-        records.append(
-            {
-                "account_uid": account_uid,
-                "platform": platform,
-                "profile_url": str(normalized.get("normalized_url") or profile_url),
-                "creator_name": str(result.get("name") or "").strip(),
-                "followers": str(result.get("follower_count") or "").strip(),
-                "email": email,
-                "whatsapp": str(result.get("whatsapp") or "").strip(),
-                "country": str(result.get("country") or extension_crm.get("country") or "").strip(),
-                "language": str(result.get("language") or extension_crm.get("language") or "").strip(),
-                "content_category": str(
-                    result.get("content_category") or extension_crm.get("content_category") or ""
-                ).strip(),
-                "note": str(result.get("note") or ""),
-                "latest_post_date": str(result.get("latest_publish_date") or "").strip(),
-                "last_scrape_time": str(result.get("last_scrape_time") or "").strip(),
-                "data_source": _task_data_source(task),
-                "scrape_status": str(result.get("scrape_status") or "").strip(),
-                "source_contact_id": source_contact_id,
-                "email_recheck": task_type == "email_recheck",
-            }
-        )
-    return records
+    """Compatibility view over the TaskService row-mapping boundary."""
+    return [
+        {
+            field: getattr(item, field)
+            for field in item.__dataclass_fields__
+        }
+        for item in map_task_rows_for_creator_library(task, tuple(rows))
+    ]
 
 
 def import_task_results_to_creator_library(
@@ -1827,47 +1879,30 @@ def import_task_results_to_creator_library(
     *,
     allowed_task_statuses: set[str] | None = None,
 ) -> dict:
-    """Persist eligible task results locally and record a traceable import summary."""
-    task, paths = task_manager.load_task(TASKS_DIR, task_id)
-    if not bool(task.get("creator_library_import_eligible")):
-        return {"status": "skipped", "reason": "historical_task_requires_manual_import"}
-    if (
-        str(task.get("task_type") or "scrape") == "email_recheck"
-        and not str(task.get("email_recheck_source") or "").strip()
-    ):
-        # Preserve the boundary for pre-M1 email-recheck metadata that had no local source contract.
-        return {"status": "skipped", "reason": "email_recheck_task"}
+    """Compatibility entry for scoped task-result imports and finalizing."""
     allowed_statuses = allowed_task_statuses or {"completed"}
-    if str(task.get("status") or "") not in allowed_statuses:
-        return {"status": "skipped", "reason": "task_not_completed"}
-    if not paths["results"].exists():
-        return {"status": "skipped", "reason": "results_missing"}
-    _fieldnames, rows = _read_task_csv(paths["results"])
-    summary = get_creator_repository().importTaskResults(
-        task_id,
-        _task_rows_for_creator_library(task, rows),
-        source=_task_data_source(task),
-        imported_at=str(task.get("finished_at") or task.get("created_at") or _utc_now()),
-    )
-    imported_at = _utc_now()
-    task_manager.update_task(
-        TASKS_DIR,
-        task_id,
-        creator_library_imported_at=imported_at,
-        creator_library_creator_ids=summary["creator_ids"],
-        creator_library_account_ids=summary["account_ids"],
-        creator_library_import_summary={
-            key: value
-            for key, value in summary.items()
-            if key not in {"creator_ids", "account_ids"}
-        },
-        creator_library_import_error="",
-    )
-    log_event(
-        "CreatorLibrary",
-        f"任务结果已导入 | task_id={task_id} | creators={len(summary['creator_ids'])} | accounts={len(summary['account_ids'])}",
-    )
-    return {"status": "success", **summary}
+    with background_task_service_scope() as service:
+        if allowed_statuses == {"finalizing"}:
+            finalized = service.finalize_background_task(task_id)
+            if finalized.import_result.get("status") == "success":
+                log_event(
+                    "CreatorLibrary",
+                    f"任务结果已导入 | task_id={task_id} | creators={len(finalized.import_result.get('creator_ids', []))} | accounts={len(finalized.import_result.get('account_ids', []))}",
+                )
+            return {
+                "status": finalized.status,
+                "sync_status": finalized.sync_status,
+                "last_error": finalized.last_error,
+            }
+        result = service.import_task_results_to_creator_library(
+            task_id, allowed_task_statuses=allowed_statuses
+        )
+    if result.get("status") == "success":
+        log_event(
+            "CreatorLibrary",
+            f"任务结果已导入 | task_id={task_id} | creators={len(result.get('creator_ids', []))} | accounts={len(result.get('account_ids', []))}",
+        )
+    return result
 
 
 def get_dashboard_data() -> dict:
@@ -2096,52 +2131,8 @@ def update_task_review_result(task_id: str, account_uid: str, fields: dict) -> d
     return get_task_service().update_task_results(task_id, account_uid, fields)
 
 
-def _validate_task_sync_results(rows: list[dict]) -> tuple[list[dict], list[str]]:
-    results: list[dict] = []
-    errors: list[str] = []
-    for index, row in enumerate(rows, start=1):
-        result = scraper_module.row_to_result(row)
-        account_uid = scraper_module.build_creator_uid(result)
-        reference = account_uid or f"第 {index} 条"
-        scrape_status = str(result.get("scrape_status") or "success").strip()
-        if scrape_status in BLOCKING_SCRAPE_STATUSES:
-            errors.append(f"{reference}：抓取状态为 {scrape_status}，请重新抓取后再同步。")
-        name = str(result.get("name") or "").strip()
-        if not name:
-            errors.append(f"{reference}：达人名称不能为空。")
-
-        # Validate the stored review value before row_to_result() cleans candidates.
-        email_display = str(row.get(scraper_module.FIELD_EMAIL) or "").strip()
-        if email_display and email_display != scraper_module.NO_EMAIL:
-            if any(char.isspace() for char in email_display):
-                errors.append(f"{reference}：邮箱格式错误，邮箱不能包含空格。")
-            else:
-                for email in email_display.split(","):
-                    if not REVIEW_EMAIL_PATTERN.fullmatch(email.strip()):
-                        errors.append(f"{reference}：邮箱格式错误：{email.strip() or email_display}")
-
-        whatsapp = str(row.get(REVIEW_FIELD_WHATSAPP) or "").strip()
-        if whatsapp:
-            digits = re.sub(r"\D", "", whatsapp)
-            if not REVIEW_WHATSAPP_PATTERN.fullmatch(whatsapp) or not 7 <= len(digits) <= 20:
-                errors.append(f"{reference}：WhatsApp号码格式异常。")
-
-        try:
-            _normalize_follower_count(row.get(scraper_module.FIELD_FOLLOWER_COUNT) or "")
-        except ValueError as exc:
-            errors.append(f"{reference}：{exc}")
-        results.append(result)
-    return results, errors
 
 
-def _partial_scrape_warnings(rows: list[dict]) -> list[str]:
-    warnings: list[str] = []
-    for index, row in enumerate(rows, start=1):
-        if str(scraper_module.row_to_result(row).get("scrape_status") or "success").strip() != "partial_success":
-            continue
-        account_uid = _account_uid_for_row(row)
-        warnings.append(f"{account_uid or f'第 {index} 条'}：部分抓取成功，请确认数据后继续管理。")
-    return warnings
 
 
 def retry_failed_task_results(task_id: str, account_uids: list[object] | None = None) -> dict:
@@ -2151,13 +2142,6 @@ def retry_failed_task_results(task_id: str, account_uids: list[object] | None = 
     return get_task_service().retry_failed_results(task_id, account_uids)
 
 
-def _task_data_source(task: dict) -> str:
-    task_type = str(task.get("task_type") or "scrape")
-    if task_type == "email_recheck":
-        return "系统抓取"
-    if task_type == "manual":
-        return "人工+系统补充" if task.get("has_system_supplement") else "人工录入"
-    return "系统抓取"
 
 
 def _assert_task_sync_lifecycle(task: dict) -> None:
@@ -2169,186 +2153,15 @@ def _assert_task_sync_lifecycle(task: dict) -> None:
 
 
 def sync_task_results_to_four_tables(task_id: str) -> dict:
-    """Sync one task's reviewed CSV through the existing four-table sync implementation."""
-    task, paths = task_manager.load_task(TASKS_DIR, task_id)
-    _assert_task_sync_lifecycle(task)
+    """Compatibility wrapper for the TaskService four-table sync workflow."""
     log_event("Feishu", f"同步开始 | task_id={task_id}")
-    data_source = _task_data_source(task)
-    email_source = _task_email_source(task)
-    data_protection = load_data_protection()
-    source_contact_record_id = (
-        str(task.get("source_contact_record_id") or "").strip()
-        if task.get("task_type") == "manual"
-        else ""
-    )
-    _fieldnames, rows = _read_task_csv(paths["results"])
-    email_recheck_only = task.get("task_type") == "email_recheck"
-    results: list[dict] = []
-    validation_errors: list[str] = []
-    skipped_records: list[str] = []
-    synced_success_count = 0
-    synced_partial_count = 0
-    skipped_abnormal_count = 0
-    for index, row in enumerate(rows, start=1):
-        result = scraper_module.row_to_result(row)
-        account_uid = scraper_module.build_creator_uid(result) or f"第 {index} 条"
-        scrape_status = str(result.get("scrape_status") or "success").strip()
-        if scrape_status not in {"success", "partial_success"}:
-            skipped_abnormal_count += 1
-            skipped_records.append(f"{account_uid}：抓取状态为 {scrape_status}，已跳过。")
-            continue
-        row_results, row_errors = _validate_task_sync_results([row])
-        if email_recheck_only:
-            row_errors = [error for error in row_errors if "抓取状态为" in error]
-        if row_errors:
-            validation_errors.extend(row_errors)
-            skipped_records.extend(row_errors)
-            continue
-        results.extend(row_results)
-        if scrape_status == "partial_success":
-            synced_partial_count += 1
-        else:
-            synced_success_count += 1
-    sync_warnings = _partial_scrape_warnings(rows)
-    now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-    empty_summary = {
-        "created_creators": 0,
-        "created_accounts": 0,
-        "updated_accounts": 0,
-        "updated_creators": 0,
-        "skipped": 0,
-        "errors": 0,
-    }
-
-    if not rows:
-        validation_errors.append("当前任务没有可同步的抓取结果。")
-    if not results and not validation_errors:
-        sync_summary = {
-            **empty_summary,
-            "success_records": synced_success_count,
-            "partial_records": synced_partial_count,
-            "skipped_abnormal": skipped_abnormal_count,
-            "skipped_invalid": 0,
-        }
-        task_manager.update_task(
-            TASKS_DIR,
-            task_id,
-            sync_status="success",
-            sync_time=now,
-            sync_summary=sync_summary,
-            sync_errors=[],
-            sync_warnings=sync_warnings,
-            sync_skipped=skipped_records,
+    result = get_task_service().sync_four_tables(task_id)
+    if result["sync_status"] in {"success", "failed"}:
+        log_event(
+            "Feishu",
+            f"同步{result['sync_status']} | task_id={task_id} | errors={len(result['sync_errors'])}",
         )
-        return {
-            "task_id": task_id,
-            "record_count": len(rows),
-            "sync_status": "success",
-            "sync_summary": sync_summary,
-            "sync_errors": [],
-            "sync_warnings": sync_warnings,
-            "sync_skipped": skipped_records,
-        }
-    if validation_errors and not results:
-        task_manager.update_task(
-            TASKS_DIR,
-            task_id,
-            sync_status="failed",
-            sync_time=now,
-            sync_summary=empty_summary,
-            sync_errors=validation_errors,
-            sync_warnings=sync_warnings,
-            sync_skipped=skipped_records,
-        )
-        return {
-            "task_id": task_id,
-            "record_count": len(rows),
-            "sync_status": "failed",
-            "sync_summary": empty_summary,
-            "sync_errors": validation_errors,
-            "sync_warnings": sync_warnings,
-            "sync_skipped": skipped_records,
-        }
-
-    try:
-        summary = scraper_module.push_to_feishu_four_tables(
-            results,
-            get_four_table_feishu_config(),
-            email_recheck_only=email_recheck_only,
-            data_source=data_source,
-            email_source=email_source,
-            data_protection=data_protection,
-            source_contact_record_id=source_contact_record_id,
-        )
-        sync_errors = [str(item) for item in summary.get("errors", [])]
-        sync_summary = {
-            "created_creators": int(summary.get("created_creators") or 0),
-            "created_accounts": int(summary.get("created_accounts") or 0),
-            "updated_accounts": int(summary.get("updated_accounts") or 0),
-            "updated_creators": int(summary.get("updated_creators") or 0),
-            "skipped": int(summary.get("skipped") or 0),
-            "errors": len(sync_errors),
-            "success_records": synced_success_count,
-            "partial_records": synced_partial_count,
-            "skipped_abnormal": skipped_abnormal_count,
-            "skipped_invalid": len(validation_errors),
-        }
-        sync_status = "success" if not sync_errors else "failed"
-        log_event("Feishu", f"同步{sync_status} | task_id={task_id} | errors={len(sync_errors)}")
-    except Exception as exc:
-        log_error("Feishu", f"同步失败 | task_id={task_id}", exc)
-        sync_errors = [str(exc)]
-        sync_summary = dict(empty_summary)
-        sync_summary["errors"] = 1
-        sync_summary.update(
-            success_records=synced_success_count,
-            partial_records=synced_partial_count,
-            skipped_abnormal=skipped_abnormal_count,
-            skipped_invalid=len(validation_errors),
-        )
-        sync_status = "failed"
-
-    task_manager.update_task(
-        TASKS_DIR,
-        task_id,
-        sync_status=sync_status,
-        sync_time=now,
-        last_sync_source=data_source,
-        sync_summary=sync_summary,
-        sync_errors=sync_errors,
-        sync_warnings=sync_warnings,
-        sync_skipped=skipped_records,
-        sync_log=summary.get("sync_logs", []) if "summary" in locals() else [],
-    )
-    if "summary" in locals():
-        result_by_uid = {
-            scraper_module.build_creator_uid(result): result
-            for result in results
-            if scraper_module.build_creator_uid(result)
-        }
-        protection_changed = False
-        for entry in summary.get("sync_logs", []):
-            if not isinstance(entry, dict) or scraper_module.FOUR_TABLE_ACCOUNT_FIELD_EMAIL not in entry.get("updated_fields", []):
-                continue
-            account_uid = str(entry.get("account_uid") or "")
-            result = result_by_uid.get(account_uid) or {}
-            email = str(result.get("email_display") or "")
-            if email and email != scraper_module.NO_EMAIL:
-                protection_changed = _merge_data_protection(
-                    data_protection, account_uid, {scraper_module.FIELD_EMAIL: email}, data_source, task_id,
-                    str(entry.get("updated_at") or now),
-                ) or protection_changed
-        if protection_changed:
-            _save_data_protection(data_protection)
-    return {
-        "task_id": task_id,
-        "record_count": len(rows),
-        "sync_status": sync_status,
-        "sync_summary": sync_summary,
-        "sync_errors": sync_errors,
-        "sync_warnings": sync_warnings,
-        "sync_skipped": skipped_records,
-    }
+    return result
 
 
 class Handler(BaseHTTPRequestHandler):

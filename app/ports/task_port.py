@@ -138,6 +138,18 @@ class TaskResultImportLinkage:
     summary: Mapping[str, object] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class TaskSyncStatusUpdate:
+    status: str
+    synced_at: str
+    data_source: str
+    summary: Mapping[str, object]
+    errors: tuple[str, ...] = ()
+    warnings: tuple[str, ...] = ()
+    skipped: tuple[str, ...] = ()
+    sync_log: tuple[Mapping[str, object], ...] | None = None
+
+
 class TaskPort(Protocol):
     def create_manual_task(self, command: ManualTaskCreateCommand) -> CreatedTask: ...
 
@@ -183,6 +195,10 @@ class TaskPort(Protocol):
 
     def attach_task_result_import(
         self, task_id: str, linkage: TaskResultImportLinkage
+    ) -> TaskSnapshot: ...
+
+    def update_sync_status(
+        self, task_id: str, update: TaskSyncStatusUpdate
     ) -> TaskSnapshot: ...
 
     def delete_task(self, task_id: str) -> None: ...

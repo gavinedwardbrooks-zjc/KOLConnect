@@ -8,10 +8,15 @@ from typing import Callable
 
 from ports.creator_port import (
     CreatorImportResult,
+    CreatorImportSummary,
     CreatorPort,
     ExternalAgencyContactCommand,
+    FourTableSyncCommand,
+    FourTableSyncResult,
     ManualTaskPreparationCommand,
     ManualTaskProtectionCommand,
+    ImportTaskResultsCommand,
+    PreparedFourTableSync,
     TaskResultImportCommand,
     TaskResultUpdateCommand,
 )
@@ -24,8 +29,13 @@ from ports.task_port import (
     TaskLinksUpdateCommand,
     TaskPort,
     TaskResultImportLinkage,
+    TaskSyncStatusUpdate,
 )
 from repositories.task_repository import TaskCsvDocument, TaskRepository
+from services.task_result_mapper import (
+    map_task_rows_for_creator_library,
+    task_data_source,
+)
 
 
 TaskPortProvider = Callable[[], TaskPort]
@@ -33,6 +43,8 @@ CreatorPortProvider = Callable[[], CreatorPort]
 TaskRepositoryProvider = Callable[[], TaskRepository]
 ImportErrorLogger = Callable[[str, Exception], None]
 ContactErrorLogger = Callable[[str, Exception], None]
+FinalizationErrorLogger = Callable[[str, Exception], None]
+SyncErrorLogger = Callable[[str, Exception], None]
 
 
 @dataclass(frozen=True)
@@ -40,6 +52,14 @@ class TaskLifecyclePlan:
     runtime_action: str = ""
     profile: str = ""
     response: dict[str, object] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class BackgroundFinalizationResult:
+    status: str
+    sync_status: str
+    last_error: str = ""
+    import_result: dict[str, object] = field(default_factory=dict)
 
 
 class TaskService:
@@ -52,6 +72,8 @@ class TaskService:
         get_task_repository: TaskRepositoryProvider,
         import_error_logger: ImportErrorLogger | None = None,
         contact_error_logger: ContactErrorLogger | None = None,
+        finalization_error_logger: FinalizationErrorLogger | None = None,
+        sync_error_logger: SyncErrorLogger | None = None,
     ) -> None:
         self._get_task_port = get_task_port
         self._get_creator_port = get_creator_port
@@ -60,6 +82,10 @@ class TaskService:
         self._contact_error_logger = contact_error_logger or (
             lambda _record_id, _exc: None
         )
+        self._finalization_error_logger = finalization_error_logger or (
+            lambda _task_id, _exc: None
+        )
+        self._sync_error_logger = sync_error_logger or (lambda _task_id, _exc: None)
 
     def get_tasks(self) -> dict[str, object]:
         return self._get_task_port().get_tasks().to_response()
@@ -367,6 +393,240 @@ class TaskService:
             "modified_at": now,
             "creator_library_import": library_import,
         }
+
+    def sync_four_tables(self, task_id: str) -> dict[str, object]:
+        repository = self._get_task_repository()
+        task = repository.get_task(task_id)
+        task_status = str(task.get("status") or "").strip()
+        if task_status == "running":
+            raise RuntimeError("任务抓取中，请稍候")
+        if task_status == "finalizing":
+            raise RuntimeError("任务入库收尾中，请稍候")
+        rows = repository.read_results_document(task_id).rows
+        creator_port = self._get_creator_port()
+        prepared = creator_port.prepare_four_table_sync(
+            FourTableSyncCommand(task_id=task_id, task=task, rows=rows)
+        )
+        empty_summary = {
+            "created_creators": 0,
+            "created_accounts": 0,
+            "updated_accounts": 0,
+            "updated_creators": 0,
+            "skipped": 0,
+            "errors": 0,
+        }
+        synced_at = self._utc_now()
+        if not prepared.results and not prepared.validation_errors:
+            sync_summary = {
+                **empty_summary,
+                "success_records": prepared.success_records,
+                "partial_records": prepared.partial_records,
+                "skipped_abnormal": prepared.skipped_abnormal,
+                "skipped_invalid": 0,
+            }
+            return self._persist_sync_result(
+                task_id,
+                prepared,
+                status="success",
+                synced_at=synced_at,
+                summary=sync_summary,
+                errors=(),
+                sync_log=None,
+            )
+        if prepared.validation_errors and not prepared.results:
+            return self._persist_sync_result(
+                task_id,
+                prepared,
+                status="failed",
+                synced_at=synced_at,
+                summary=empty_summary,
+                errors=prepared.validation_errors,
+                sync_log=None,
+            )
+
+        sync_log: tuple[dict[str, object], ...] = ()
+        try:
+            result = creator_port.execute_four_table_sync(prepared)
+            if not isinstance(result, FourTableSyncResult):
+                raise RuntimeError("Creator 四表同步结果无效。")
+            sync_errors = result.errors
+            sync_summary = {
+                "created_creators": result.created_creators,
+                "created_accounts": result.created_accounts,
+                "updated_accounts": result.updated_accounts,
+                "updated_creators": result.updated_creators,
+                "skipped": result.skipped,
+                "errors": len(sync_errors),
+                "success_records": prepared.success_records,
+                "partial_records": prepared.partial_records,
+                "skipped_abnormal": prepared.skipped_abnormal,
+                "skipped_invalid": len(prepared.validation_errors),
+            }
+            sync_status = "success" if not sync_errors else "failed"
+            sync_log = tuple(dict(item) for item in result.sync_logs)
+        except Exception as exc:
+            self._sync_error_logger(task_id, exc)
+            sync_errors = (str(exc),)
+            sync_summary = {
+                **empty_summary,
+                "errors": 1,
+                "success_records": prepared.success_records,
+                "partial_records": prepared.partial_records,
+                "skipped_abnormal": prepared.skipped_abnormal,
+                "skipped_invalid": len(prepared.validation_errors),
+            }
+            sync_status = "failed"
+        return self._persist_sync_result(
+            task_id,
+            prepared,
+            status=sync_status,
+            synced_at=synced_at,
+            summary=sync_summary,
+            errors=sync_errors,
+            sync_log=sync_log,
+        )
+
+    def _persist_sync_result(
+        self,
+        task_id: str,
+        prepared: PreparedFourTableSync,
+        *,
+        status: str,
+        synced_at: str,
+        summary: dict[str, object],
+        errors: tuple[str, ...],
+        sync_log: tuple[dict[str, object], ...] | None,
+    ) -> dict[str, object]:
+        self._get_task_port().update_sync_status(
+            task_id,
+            TaskSyncStatusUpdate(
+                status=status,
+                synced_at=synced_at,
+                data_source=prepared.data_source if sync_log is not None else "",
+                summary=summary,
+                errors=errors,
+                warnings=prepared.warnings,
+                skipped=prepared.skipped,
+                sync_log=sync_log,
+            ),
+        )
+        return {
+            "task_id": task_id,
+            "record_count": prepared.record_count,
+            "sync_status": status,
+            "sync_summary": summary,
+            "sync_errors": list(errors),
+            "sync_warnings": list(prepared.warnings),
+            "sync_skipped": list(prepared.skipped),
+        }
+
+    def import_task_results_to_creator_library(
+        self,
+        task_id: str,
+        *,
+        allowed_task_statuses: set[str] | None = None,
+    ) -> dict[str, object]:
+        repository = self._get_task_repository()
+        task = repository.get_task(task_id)
+        if not bool(task.get("creator_library_import_eligible")):
+            return {
+                "status": "skipped",
+                "reason": "historical_task_requires_manual_import",
+            }
+        if (
+            str(task.get("task_type") or "scrape") == "email_recheck"
+            and not str(task.get("email_recheck_source") or "").strip()
+        ):
+            return {"status": "skipped", "reason": "email_recheck_task"}
+        allowed_statuses = allowed_task_statuses or {"completed"}
+        if str(task.get("status") or "") not in allowed_statuses:
+            return {"status": "skipped", "reason": "task_not_completed"}
+        if not repository.results_exist(task_id):
+            return {"status": "skipped", "reason": "results_missing"}
+        rows = repository.read_results_document(task_id).rows
+        items = map_task_rows_for_creator_library(task, rows)
+        summary = self._get_creator_port().import_task_results(
+            ImportTaskResultsCommand(
+                task_id=task_id,
+                items=items,
+                source=task_data_source(task),
+                imported_at=str(
+                    task.get("finished_at")
+                    or task.get("created_at")
+                    or self._utc_now()
+                ),
+            )
+        )
+        if not isinstance(summary, CreatorImportSummary):
+            raise RuntimeError("Creator 导入结果无效。")
+        imported_at = self._utc_now()
+        public_summary = {
+            "input_records": summary.input_records,
+            "created_creators": summary.created_creators,
+            "created_accounts": summary.created_accounts,
+            "updated_accounts": summary.updated_accounts,
+            "duplicate_records": summary.duplicate_records,
+            "skipped_failed": summary.skipped_failed,
+            "skipped_invalid": summary.skipped_invalid,
+        }
+        self._get_task_port().attach_task_result_import(
+            task_id,
+            TaskResultImportLinkage(
+                imported_at=imported_at,
+                creator_ids=summary.creator_ids,
+                account_ids=summary.account_ids,
+                summary=public_summary,
+            ),
+        )
+        return {
+            "status": "success",
+            **public_summary,
+            "creator_ids": list(summary.creator_ids),
+            "account_ids": list(summary.account_ids),
+        }
+
+    def finalize_background_task(
+        self, task_id: str
+    ) -> BackgroundFinalizationResult:
+        repository = self._get_task_repository()
+        task = repository.get_task(task_id)
+        if str(task.get("status") or "") == "completed":
+            return BackgroundFinalizationResult(
+                status="completed",
+                sync_status=str(task.get("sync_status") or "not_requested"),
+            )
+        try:
+            import_result = self.import_task_results_to_creator_library(
+                task_id, allowed_task_statuses={"finalizing"}
+            )
+        except Exception as exc:
+            self._finalization_error_logger(task_id, exc)
+            last_error = f"Creator Library 入库失败：{exc}"
+            repository.update_task(
+                task_id,
+                creator_library_import_error=str(exc),
+                status="failed",
+                finished_at=self._utc_now(),
+                last_error=last_error,
+                sync_status="not_started",
+            )
+            return BackgroundFinalizationResult(
+                status="failed",
+                sync_status="not_started",
+                last_error=last_error,
+            )
+        repository.update_task(
+            task_id,
+            status="completed",
+            finished_at=self._utc_now(),
+            last_error="",
+            sync_status="not_requested",
+        )
+        return BackgroundFinalizationResult(
+            status="completed",
+            sync_status="not_requested",
+            import_result=import_result,
+        )
 
     def _task_is_running(self, task_id: str) -> bool:
         status = self._get_task_port().get_scrape_status().to_response()

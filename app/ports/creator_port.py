@@ -147,6 +147,41 @@ class CreatorAnalysisSnapshot:
 
 
 @dataclass(frozen=True)
+class FourTableSyncCommand:
+    task_id: str
+    task: Mapping[str, object]
+    rows: tuple[Mapping[str, object], ...]
+
+
+@dataclass(frozen=True)
+class PreparedFourTableSync:
+    task_id: str
+    record_count: int
+    results: tuple[Mapping[str, object], ...]
+    validation_errors: tuple[str, ...]
+    warnings: tuple[str, ...]
+    skipped: tuple[str, ...]
+    success_records: int
+    partial_records: int
+    skipped_abnormal: int
+    email_recheck_only: bool
+    data_source: str
+    email_source: str
+    source_contact_record_id: str
+
+
+@dataclass(frozen=True)
+class FourTableSyncResult:
+    created_creators: int
+    created_accounts: int
+    updated_accounts: int
+    updated_creators: int
+    skipped: int
+    errors: tuple[str, ...]
+    sync_logs: tuple[Mapping[str, object], ...] = ()
+
+
+@dataclass(frozen=True)
 class ExternalAgencyContactCommand:
     external_record_id: str
     name: str
@@ -167,6 +202,14 @@ class ExternalAgencyContact:
 
 
 class CreatorPort(Protocol):
+    def prepare_four_table_sync(
+        self, command: FourTableSyncCommand
+    ) -> PreparedFourTableSync: ...
+
+    def execute_four_table_sync(
+        self, prepared: PreparedFourTableSync
+    ) -> FourTableSyncResult: ...
+
     def prepare_manual_task(
         self, command: ManualTaskPreparationCommand
     ) -> PreparedManualTask: ...

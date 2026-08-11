@@ -20,6 +20,7 @@ from ports.task_port import (
     TaskLinksUpdateCommand,
     TaskReadResult,
     TaskResultImportLinkage,
+    TaskSyncStatusUpdate,
     TaskSnapshot,
 )
 from repositories.task_repository import TaskCsvDocument, TaskRepository
@@ -467,6 +468,24 @@ class TaskManagerAdapter:
             creator_library_import_summary=dict(linkage.summary),
             creator_library_import_error="",
         )
+        return self._snapshot(task)
+
+    def update_sync_status(
+        self, task_id: str, update: TaskSyncStatusUpdate
+    ) -> TaskSnapshot:
+        changes: dict[str, object] = {
+            "sync_status": update.status,
+            "sync_time": update.synced_at,
+            "sync_summary": dict(update.summary),
+            "sync_errors": list(update.errors),
+            "sync_warnings": list(update.warnings),
+            "sync_skipped": list(update.skipped),
+        }
+        if update.data_source:
+            changes["last_sync_source"] = update.data_source
+        if update.sync_log is not None:
+            changes["sync_log"] = [dict(item) for item in update.sync_log]
+        task = self._repository().update_task(task_id, **changes)
         return self._snapshot(task)
 
     def delete_task(self, task_id: str) -> None:

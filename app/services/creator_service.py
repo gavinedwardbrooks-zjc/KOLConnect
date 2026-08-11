@@ -6,7 +6,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
-import scraper as scraper_module
+import creator_data_compat as scraper_module
 from ports.creator_port import (
     CreatorImportItem,
     CreatorImportResult,
@@ -15,9 +15,12 @@ from ports.creator_port import (
     EmailRecheckCandidateScan,
     ExternalAgencyContact,
     ExternalAgencyContactCommand,
+    FourTableSyncCommand,
+    FourTableSyncResult,
     ImportTaskResultsCommand,
     ManualTaskPreparationCommand,
     ManualTaskProtectionCommand,
+    PreparedFourTableSync,
     PreparedTaskResultUpdate,
     PreparedManualTask,
     TaskResultImportCommand,
@@ -55,6 +58,12 @@ DATA_PROTECTION_PRIORITY = {
     "人工+系统补充": 20,
     "人工补充": 20,
     "系统抓取": 10,
+}
+BLOCKING_SCRAPE_STATUSES = {
+    "missing_data",
+    "failed",
+    "login_required",
+    "platform_error",
 }
 
 
@@ -113,6 +122,7 @@ TaskPortProvider = Callable[[], TaskPort]
 DataProtectionLoader = Callable[[], dict]
 DataProtectionSaver = Callable[[dict], None]
 SourceContactResolver = Callable[[object], dict | None]
+FourTableConfigProvider = Callable[[], dict]
 
 
 class CreatorService:
@@ -125,12 +135,129 @@ class CreatorService:
         data_protection_loader: DataProtectionLoader | None = None,
         data_protection_saver: DataProtectionSaver | None = None,
         source_contact_resolver: SourceContactResolver | None = None,
+        four_table_config_provider: FourTableConfigProvider | None = None,
     ) -> None:
         self._repository_provider = repository_provider
         self._task_port_provider = task_port_provider
         self._data_protection_loader = data_protection_loader or (lambda: {})
         self._data_protection_saver = data_protection_saver or (lambda _data: None)
         self._source_contact_resolver = source_contact_resolver or (lambda _value: None)
+        self._four_table_config_provider = four_table_config_provider or (lambda: {})
+
+    def prepare_four_table_sync(
+        self, command: FourTableSyncCommand
+    ) -> PreparedFourTableSync:
+        task = dict(command.task)
+        rows = [dict(row) for row in command.rows]
+        email_recheck_only = task.get("task_type") == "email_recheck"
+        results: list[dict[str, Any]] = []
+        validation_errors: list[str] = []
+        skipped_records: list[str] = []
+        success_records = 0
+        partial_records = 0
+        skipped_abnormal = 0
+        for index, row in enumerate(rows, start=1):
+            result = scraper_module.row_to_result(row)
+            account_uid = scraper_module.build_creator_uid(result) or f"第 {index} 条"
+            scrape_status = str(result.get("scrape_status") or "success").strip()
+            if scrape_status not in {"success", "partial_success"}:
+                skipped_abnormal += 1
+                skipped_records.append(
+                    f"{account_uid}：抓取状态为 {scrape_status}，已跳过。"
+                )
+                continue
+            row_results, row_errors = self._validate_four_table_sync_rows([row])
+            if email_recheck_only:
+                row_errors = [
+                    error for error in row_errors if "抓取状态为" in error
+                ]
+            if row_errors:
+                validation_errors.extend(row_errors)
+                skipped_records.extend(row_errors)
+                continue
+            results.extend(row_results)
+            if scrape_status == "partial_success":
+                partial_records += 1
+            else:
+                success_records += 1
+        warnings = self._partial_scrape_warnings(rows)
+        if not rows:
+            validation_errors.append("当前任务没有可同步的抓取结果。")
+        return PreparedFourTableSync(
+            task_id=command.task_id,
+            record_count=len(rows),
+            results=tuple(results),
+            validation_errors=tuple(validation_errors),
+            warnings=tuple(warnings),
+            skipped=tuple(skipped_records),
+            success_records=success_records,
+            partial_records=partial_records,
+            skipped_abnormal=skipped_abnormal,
+            email_recheck_only=email_recheck_only,
+            data_source=self._task_data_source(task),
+            email_source=self._task_email_source(task),
+            source_contact_record_id=(
+                str(task.get("source_contact_record_id") or "").strip()
+                if task.get("task_type") == "manual"
+                else ""
+            ),
+        )
+
+    def execute_four_table_sync(
+        self, prepared: PreparedFourTableSync
+    ) -> FourTableSyncResult:
+        data_protection = self._data_protection_loader()
+        results = [dict(result) for result in prepared.results]
+        summary = scraper_module.push_to_feishu_four_tables(
+            results,
+            self._four_table_config_provider(),
+            email_recheck_only=prepared.email_recheck_only,
+            data_source=prepared.data_source,
+            email_source=prepared.email_source,
+            data_protection=data_protection,
+            source_contact_record_id=prepared.source_contact_record_id,
+        )
+        sync_logs = tuple(
+            dict(item)
+            for item in summary.get("sync_logs", [])
+            if isinstance(item, dict)
+        )
+        result_by_uid = {
+            scraper_module.build_creator_uid(result): result
+            for result in results
+            if scraper_module.build_creator_uid(result)
+        }
+        protection_changed = False
+        now = self._utc_now()
+        for entry in sync_logs:
+            if (
+                scraper_module.FOUR_TABLE_ACCOUNT_FIELD_EMAIL
+                not in entry.get("updated_fields", [])
+            ):
+                continue
+            account_uid = str(entry.get("account_uid") or "")
+            result = result_by_uid.get(account_uid) or {}
+            email = str(result.get("email_display") or "")
+            if email and email != scraper_module.NO_EMAIL:
+                protection_changed = self.merge_data_protection(
+                    data_protection,
+                    account_uid,
+                    {scraper_module.FIELD_EMAIL: email},
+                    prepared.data_source,
+                    prepared.task_id,
+                    str(entry.get("updated_at") or now),
+                ) or protection_changed
+        if protection_changed:
+            self._data_protection_saver(data_protection)
+        return FourTableSyncResult(
+            created_creators=int(summary.get("created_creators") or 0),
+            created_accounts=int(summary.get("created_accounts") or 0),
+            updated_accounts=int(summary.get("updated_accounts") or 0),
+            updated_creators=int(summary.get("updated_creators") or 0),
+            skipped=int(summary.get("skipped") or 0),
+            errors=tuple(str(item) for item in summary.get("errors", [])),
+            sync_logs=sync_logs,
+        )
 
     def prepare_manual_task(
         self, command: ManualTaskPreparationCommand
@@ -692,6 +819,76 @@ class CreatorService:
         if task_type == "manual":
             return "人工+系统补充" if task.get("has_system_supplement") else "人工录入"
         return "系统抓取"
+
+    @staticmethod
+    def _task_email_source(task: dict) -> str:
+        task_type = str(task.get("task_type") or "scrape")
+        if task_type == "email_recheck":
+            return "邮箱补全"
+        if task_type == "manual":
+            return "人工+系统补充" if task.get("has_system_supplement") else "人工录入"
+        return "系统抓取"
+
+    @staticmethod
+    def _validate_four_table_sync_rows(
+        rows: list[dict]
+    ) -> tuple[list[dict], list[str]]:
+        results: list[dict] = []
+        errors: list[str] = []
+        for index, row in enumerate(rows, start=1):
+            result = scraper_module.row_to_result(row)
+            account_uid = scraper_module.build_creator_uid(result)
+            reference = account_uid or f"第 {index} 条"
+            scrape_status = str(result.get("scrape_status") or "success").strip()
+            if scrape_status in BLOCKING_SCRAPE_STATUSES:
+                errors.append(
+                    f"{reference}：抓取状态为 {scrape_status}，请重新抓取后再同步。"
+                )
+            name = str(result.get("name") or "").strip()
+            if not name:
+                errors.append(f"{reference}：达人名称不能为空。")
+            email_display = str(row.get(scraper_module.FIELD_EMAIL) or "").strip()
+            if email_display and email_display != scraper_module.NO_EMAIL:
+                if any(char.isspace() for char in email_display):
+                    errors.append(f"{reference}：邮箱格式错误，邮箱不能包含空格。")
+                else:
+                    for email in email_display.split(","):
+                        if not REVIEW_EMAIL_PATTERN.fullmatch(email.strip()):
+                            errors.append(
+                                f"{reference}：邮箱格式错误：{email.strip() or email_display}"
+                            )
+            whatsapp = str(row.get(REVIEW_FIELD_WHATSAPP) or "").strip()
+            if whatsapp:
+                digits = re.sub(r"\D", "", whatsapp)
+                if (
+                    not REVIEW_WHATSAPP_PATTERN.fullmatch(whatsapp)
+                    or not 7 <= len(digits) <= 20
+                ):
+                    errors.append(f"{reference}：WhatsApp号码格式异常。")
+            raw_followers = str(
+                row.get(scraper_module.FIELD_FOLLOWER_COUNT) or ""
+            ).strip()
+            if raw_followers and not scraper_module.normalize_follower_count(
+                raw_followers
+            ):
+                errors.append(
+                    f"{reference}：粉丝数格式错误，请填写如 10K、1.2M 或 100000。"
+                )
+            results.append(result)
+        return results, errors
+
+    @staticmethod
+    def _partial_scrape_warnings(rows: list[dict]) -> list[str]:
+        warnings: list[str] = []
+        for index, row in enumerate(rows, start=1):
+            result = scraper_module.row_to_result(row)
+            if str(result.get("scrape_status") or "success").strip() != "partial_success":
+                continue
+            account_uid = scraper_module.build_creator_uid(result)
+            warnings.append(
+                f"{account_uid or f'第 {index} 条'}：部分抓取成功，请确认数据后继续管理。"
+            )
+        return warnings
 
     @staticmethod
     def _utc_now() -> str:
