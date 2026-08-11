@@ -48,6 +48,7 @@ class TaskSnapshot:
     extension_country: str = ""
     extension_language: str = ""
     extension_content_category: str = ""
+    profile: str = ""
     _response: Mapping[str, object] = field(
         default_factory=dict, repr=False, compare=False
     )
@@ -62,12 +63,55 @@ class CreatedTask:
     task: TaskSnapshot
 
 
+@dataclass(frozen=True)
+class TaskReadResult:
+    _response: Mapping[str, object] = field(repr=False)
+
+    def to_response(self) -> dict[str, object]:
+        """Return a detached read model without exposing task file locations."""
+        return deepcopy(dict(self._response))
+
+
+@dataclass(frozen=True)
+class TaskLinksUpdateCommand:
+    action: str
+    index: object = None
+    url: str = ""
+
+
+@dataclass(frozen=True)
+class RetryFailedResultsCommand:
+    account_uids: tuple[str, ...] = ()
+
+
 class TaskPort(Protocol):
     def create_manual_review_task(
         self, command: ManualReviewTaskCommand
     ) -> CreatedTask: ...
 
     def get_task(self, task_id: str) -> TaskSnapshot: ...
+
+    def get_tasks(self) -> TaskReadResult: ...
+
+    def get_task_details(self, task_id: str) -> TaskReadResult: ...
+
+    def get_task_results(self, task_id: str) -> TaskReadResult: ...
+
+    def get_scrape_status(self) -> TaskReadResult: ...
+
+    def resume_task(self, task_id: str) -> TaskSnapshot: ...
+
+    def stop_task(self, task_id: str) -> TaskSnapshot: ...
+
+    def rename_task(self, task_id: str, name: str) -> TaskSnapshot: ...
+
+    def update_task_links(
+        self, task_id: str, command: TaskLinksUpdateCommand
+    ) -> TaskReadResult: ...
+
+    def retry_failed_results(
+        self, task_id: str, command: RetryFailedResultsCommand
+    ) -> TaskReadResult: ...
 
     def attach_creator_import(
         self, task_id: str, linkage: CreatorImportLinkage

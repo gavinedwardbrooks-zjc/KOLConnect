@@ -36,9 +36,11 @@ from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from product_repository import ProductRepository
+from ports.creator_port import CreatorAnalysisSnapshot, CreatorPort
 from ports.task_port import CreatorImportLinkage, ManualReviewTaskCommand, TaskPort
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.creator_service import CreatorService
+from services.task_service import TaskService
 from app_logging import log_error, log_event
 from openpyxl import load_workbook
 from runtime_paths import (
@@ -1195,14 +1197,14 @@ def request_stop_scrape() -> dict:
 
 def resume_task(task_id: str) -> dict:
     """Resume an in-memory pause or relaunch a persisted paused/interrupted task."""
-    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
-    if SCRAPE_JOB.running:
-        if SCRAPE_JOB.task_id != task_id:
-            raise RuntimeError("已有任务正在运行。")
+    plan = get_task_service().resume_task(
+        task_id,
+        runtime_running=SCRAPE_JOB.running,
+        runtime_task_id=SCRAPE_JOB.task_id,
+    )
+    if plan.runtime_action == "resume":
         return resume_scrape()
-    if str(task.get("status") or "") not in {"paused", "interrupted", "stopped", "created", "failed"}:
-        raise RuntimeError("当前任务不需要恢复。")
-    profile = str(task.get("profile") or "")
+    profile = plan.profile
     user_data_dir, profile_directory = resolve_chrome_launch_config(profile)
     if profile and profile != AUTOMATION_PROFILE_NAME and not (user_data_dir / profile_directory).is_dir():
         raise RuntimeError("无法恢复任务：原 Chrome Profile 不存在，请在账号管理中选择有效 Profile 后重新开始任务。")
@@ -1212,25 +1214,13 @@ def resume_task(task_id: str) -> dict:
 
 def stop_task(task_id: str) -> dict:
     """Stop active work gracefully; persist stopped state when no worker remains."""
-    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
-    if str(task.get("status") or "") == "finalizing":
-        raise RuntimeError("任务已经完成抓取，正在处理中。")
-    if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
-        return request_stop_scrape()
-    if str(task.get("status") or "") not in {"paused", "interrupted", "running", "stopping"}:
-        raise RuntimeError("当前任务无需停止。")
-    task_manager.update_task(
-        TASKS_DIR,
+    plan = get_task_service().stop_task(
         task_id,
-        status="stopped",
-        pause_requested=False,
-        stop_requested=False,
-        browser_status="closed",
-        worker_status="stopped",
-        current_item="",
-        finished_at=_utc_now(),
+        runtime_active=SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id,
     )
-    return {"task_id": task_id, "status": "stopped"}
+    if plan.runtime_action == "stop":
+        return request_stop_scrape()
+    return dict(plan.response)
 
 
 def _read_task_csv(path: Path) -> tuple[list[str], list[dict]]:
@@ -1279,32 +1269,7 @@ def _review_record(row: dict) -> dict:
 
 
 def get_task_review_results(task_id: str) -> dict:
-    task, paths = task_manager.load_task(TASKS_DIR, task_id)
-    if not paths["results"].exists():
-        return {
-            "task_id": task_id,
-            "platforms": task.get("platforms", []),
-            "platform_results": {},
-            "creator_analysis_available": bool(task.get("creator_analysis_id")),
-            "records": [],
-        }
-    _fieldnames, rows = _read_task_csv(paths["results"])
-    records = [_review_record(row) for row in rows]
-    platform_results = {platform: 0 for platform in ("TikTok", "Instagram", "YouTube")}
-    for record in records:
-        platform = str(record.get(scraper_module.FIELD_PLATFORM) or "").strip()
-        if platform in platform_results:
-            platform_results[platform] += 1
-    return {
-        "task_id": task_id,
-        "platforms": task_manager.normalize_platforms(
-            task.get("platforms"),
-            task.get("platform") or task.get("target_platform"),
-        ),
-        "platform_results": platform_results,
-        "creator_analysis_available": bool(task.get("creator_analysis_id")),
-        "records": records,
-    }
+    return get_task_service().get_task_results(task_id)
 
 
 def _task_progress(task_id: str, fallback_total: int = 0) -> dict:
@@ -1347,44 +1312,7 @@ def _task_progress(task_id: str, fallback_total: int = 0) -> dict:
 
 
 def get_task_list() -> dict:
-    items: list[dict] = []
-    for task in task_manager.list_tasks(TASKS_DIR):
-        task_id = str(task.get("id") or "")
-        progress = _task_progress(task_id, int(task.get("valid_count") or 0))
-        task_type = str(task.get("task_type") or "scrape")
-        item = {
-                "id": task_id,
-                "name": str(task.get("name") or "未命名任务"),
-                "task_type": task_type if task_type in {"manual", "email_recheck"} else "scrape",
-                "target_platform": str(task.get("target_platform") or "全部"),
-                "platforms": task_manager.normalize_platforms(
-                    task.get("platforms"),
-                    task.get("platform") or task.get("target_platform"),
-                ),
-                "status": str(task.get("status") or "created"),
-                "heartbeat_time": str(task.get("heartbeat_time") or ""),
-                "heartbeat_interval": int(task.get("heartbeat_interval") or TASK_HEARTBEAT_SECONDS),
-                "last_progress_time": str(task.get("last_progress_time") or ""),
-                "current_item": str(task.get("current_item") or ""),
-                "last_successful_index": int(task.get("last_successful_index") or 0),
-                "browser_status": str(task.get("browser_status") or "closed"),
-                "worker_status": str(task.get("worker_status") or "idle"),
-                "interrupted_time": str(task.get("interrupted_time") or ""),
-                "interrupted_reason": str(task.get("interrupted_reason") or ""),
-                "instagram_error_count": int(task.get("instagram_error_count") or 0),
-                "instagram_status": str(task.get("instagram_status") or ""),
-                "instagram_message": str(task.get("instagram_message") or ""),
-                "retry_round": int(task.get("retry_round") or 0),
-                "retry_history": task.get("retry_history") if isinstance(task.get("retry_history"), list) else [],
-                "created_at": str(task.get("created_at") or ""),
-                "platform_summary": task.get("platform_summary") if isinstance(task.get("platform_summary"), dict) else {},
-                "filtered_count": int(task.get("filtered_count") or 0),
-                **progress,
-            }
-        if task_type == "email_recheck":
-            item.update(_email_recheck_summary(task_id))
-        items.append(item)
-    return {"tasks": items}
+    return get_task_service().get_tasks()
 
 
 def _read_task_links(path: Path) -> list[str]:
@@ -1412,90 +1340,19 @@ def _task_platform_summary_from_links(links: list[str]) -> dict[str, int]:
 
 
 def get_task_details(task_id: str) -> dict:
-    task, paths = task_manager.load_task(TASKS_DIR, task_id)
-    links = _read_task_links(paths["links"])
-    progress_by_url = scraper_module.load_progress(str(paths["progress"]))
-    current_item = str(task.get("current_item") or "")
-    records: list[dict] = []
-    for index, link in enumerate(links, start=1):
-        progress = progress_by_url.get(link)
-        if progress:
-            status = "已完成"
-        elif link == current_item and str(task.get("status") or "") in {"running", "stopping"}:
-            status = "处理中"
-        else:
-            status = "等待"
-        platform = str(scraper_module.normalize_link_record(link).get("platform") or "")
-        records.append({"index": index, "url": link, "platform": platform, "status": status})
-    progress = _task_progress(task_id, len(links))
-    return {"task": {**task, **progress, "total_links": len(links)}, "links": records}
+    return get_task_service().get_task_details(task_id)
 
 
 def update_task_links(task_id: str, action: str, index: object = None, url: object = None) -> dict:
-    if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
-        raise RuntimeError("任务正在运行，不能修改链接。")
-    task, paths = task_manager.load_task(TASKS_DIR, task_id)
-    links = _read_task_links(paths["links"])
-    done_urls = set(scraper_module.load_progress(str(paths["progress"])))
-    normalized_action = str(action or "").strip()
-    normalized_url = ""
-    if normalized_action in {"add", "update"}:
-        record = scraper_module.normalize_link_record(str(url or "").strip())
-        if not record.get("valid"):
-            raise ValueError(str(record.get("reason") or "链接无效。"))
-        normalized_url = str(record.get("normalized_url") or "")
-        if not normalized_url:
-            raise ValueError("链接无效。")
-
-    if normalized_action == "add":
-        if normalized_url in links:
-            raise ValueError("该链接已在任务中。")
-        links.append(normalized_url)
-    else:
-        try:
-            position = int(index) - 1
-        except (TypeError, ValueError) as exc:
-            raise ValueError("链接编号无效。") from exc
-        if position < 0 or position >= len(links):
-            raise ValueError("链接编号不存在。")
-        old_url = links[position]
-        if old_url in done_urls:
-            raise RuntimeError("已完成的链接不能修改或删除。")
-        if normalized_action == "delete":
-            links.pop(position)
-        elif normalized_action == "update":
-            if normalized_url != old_url and normalized_url in links:
-                raise ValueError("该链接已在任务中。")
-            links[position] = normalized_url
-        else:
-            raise ValueError("不支持的链接操作。")
-
-    _write_task_links(paths["links"], links)
-    task_manager.update_task(
-        TASKS_DIR,
-        task_id,
-        valid_count=len(links),
-        input_count=max(int(task.get("input_count") or 0), len(links)),
-        platform_summary=_task_platform_summary_from_links(links),
-        current_item=_task_next_pending_item(paths),
-    )
-    return get_task_details(task_id)
+    return get_task_service().update_task_links(task_id, action, index, url)
 
 
 def rename_task(task_id: str, name: str) -> dict:
-    name = str(name or "").strip()
-    if not name:
-        raise ValueError("任务名称不能为空。")
-    if len(name) > 100:
-        raise ValueError("任务名称不能超过100个字符。")
-    return task_manager.update_task(TASKS_DIR, task_id, name=name)
+    return get_task_service().rename_task(task_id, name)
 
 
 def delete_local_task(task_id: str) -> dict:
-    if SCRAPE_JOB.running and SCRAPE_JOB.task_id == task_id:
-        raise RuntimeError("任务正在运行，不能删除。")
-    task_manager.delete_task(TASKS_DIR, task_id)
-    return {"task_id": task_id, "deleted": True}
+    return get_task_service().delete_task(task_id)
 
 
 def _platform_display(platforms: list[str]) -> str:
@@ -1911,7 +1768,31 @@ def get_creator_service() -> CreatorService:
 
 def get_task_port() -> TaskPort:
     """Build a stateless adapter for one task operation."""
-    return TaskManagerAdapter(lambda: TASKS_DIR)
+    return TaskManagerAdapter(
+        lambda: TASKS_DIR,
+        scrape_status_provider=SCRAPE_JOB.snapshot,
+        heartbeat_interval=TASK_HEARTBEAT_SECONDS,
+    )
+
+
+class _CreatorAnalysisPortAdapter:
+    """Expose the read-only Creator capability required by TaskService."""
+
+    def get_creator_analysis(self, creator_id: str) -> CreatorAnalysisSnapshot:
+        detail = get_creator_repository().getCreatorDetail(creator_id)
+        return CreatorAnalysisSnapshot(
+            creator_id=creator_id,
+            analysis=detail["analysis"],
+        )
+
+
+def get_creator_port() -> CreatorPort:
+    return _CreatorAnalysisPortAdapter()
+
+
+def get_task_service() -> TaskService:
+    """Create a facade whose dependencies resolve within the active operation."""
+    return TaskService(get_task_port, get_creator_port, lambda: None)
 
 
 def _creator_library_workbook_path() -> Path:
@@ -2154,15 +2035,11 @@ def import_extension_capture(payload: dict) -> dict:
 
 
 def get_task_creator_analysis(task_id: str) -> dict:
-    task, _paths = task_manager.load_task(TASKS_DIR, task_id)
-    if not task.get("creator_analysis_id"):
-        return {"available": False}
-    detail = get_creator_repository().getCreatorDetail(str(task["creator_analysis_id"]))
-    return {
-        "available": True,
-        "analysis": detail["analysis"],
-        "recovered_from_backup": False,
-    }
+    return get_task_service().get_task_creator_analysis(task_id)
+
+
+def get_scrape_status() -> dict:
+    return get_task_service().get_scrape_status()
 
 
 def get_creator_library(
@@ -2443,39 +2320,7 @@ def retry_failed_task_results(task_id: str, account_uids: list[object] | None = 
     """Queue retryable records inside the existing task without duplicating task files."""
     if SCRAPE_JOB.running:
         raise RuntimeError("已有任务正在运行，暂不能重新抓取。")
-    task, paths = task_manager.load_task(TASKS_DIR, task_id)
-    _fieldnames, rows = _read_task_csv(paths["results"])
-    requested = {str(value or "").strip() for value in (account_uids or []) if str(value or "").strip()}
-    retry_rows: list[dict] = []
-    for row in rows:
-        scrape_status = str(scraper_module.row_to_result(row).get("scrape_status") or "success").strip()
-        if scrape_status not in RETRYABLE_SCRAPE_STATUSES:
-            continue
-        account_uid = _account_uid_for_row(row)
-        if requested and account_uid not in requested:
-            continue
-        retry_rows.append(row)
-
-    if not retry_rows:
-        raise ValueError("没有可重新抓取的失败记录。")
-
-    links = [str(row.get(scraper_module.FIELD_URL) or "").strip() for row in retry_rows]
-    links = list(dict.fromkeys(link for link in links if link))
-    if not links:
-        raise ValueError("失败记录缺少有效主页链接。")
-
-    next_retry_round = max(0, int(task.get("retry_round") or 0)) + 1
-    retry_task = task_manager.update_task(
-        TASKS_DIR,
-        task_id,
-        status="created",
-        retry_round=next_retry_round,
-        retry_requested_urls=links,
-        retry_requested_at=_utc_now(),
-        retry_reason="抓取状态异常",
-        last_error="",
-    )
-    return {"task": retry_task, "retried_count": len(links), "retry_round": next_retry_round}
+    return get_task_service().retry_failed_results(task_id, account_uids)
 
 
 def _task_data_source(task: dict) -> str:
@@ -2795,6 +2640,7 @@ class Handler(BaseHTTPRequestHandler):
                 "get_task_details": get_task_details,
                 "get_task_list": get_task_list,
                 "get_task_review_results": get_task_review_results,
+                "get_scrape_status": get_scrape_status,
                 "is_sensitive_mask": is_sensitive_mask,
                 "import_extension_capture": import_extension_capture,
                 "merge_masked_mail_passwords": merge_masked_mail_passwords,

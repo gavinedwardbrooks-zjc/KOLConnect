@@ -43,7 +43,7 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     # GET /api/scrape/status → 读取当前抓取状态；{"running": false, "status": "idle", "pause_requested": false, "stop_requested": false, "logs": "", "has_results": false, "task_id": ""}
     if method == "GET" and path == "/api/scrape/status":
-        handler._json(context["scrape_job"].snapshot())
+        handler._json(services["get_scrape_status"]())
         return True
 
     task_match = re.fullmatch(r"/api/tasks/([^/]+)", path)
