@@ -65,3 +65,6 @@ assets/KOLConnect.icns
 
 # Historical private backup data must not enter source control
 archive/private-data-backup/
+
+# Local Chrome Extension package output
+/chrome_extension.zip

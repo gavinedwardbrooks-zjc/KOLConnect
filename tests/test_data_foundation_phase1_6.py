@@ -309,7 +309,7 @@ class HistoricalTaskBoundaryTests(unittest.TestCase):
 
             workbook_before = workbook_path.read_bytes()
             task_before = paths["metadata"].read_bytes()
-            library = server.get_creator_library()
+            library = server.get_creator_service().get_creator_library()
             dashboard = server.get_dashboard_data()
 
             self.assertEqual(2, len(library["records"]))

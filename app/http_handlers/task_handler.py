@@ -8,17 +8,18 @@ def handle(handler, request: dict, context: dict) -> bool:
     method = request["method"]
     path = request["path"]
     services = context["services"]
+    task_service = services["task"]
 
     # GET /api/tasks → 读取任务列表；{"ok": true, "tasks": [...]}
     if method == "GET" and path == "/api/tasks":
-        handler._json({"ok": True, **services["get_task_list"]()})
+        handler._json({"ok": True, **task_service.get_tasks()})
         return True
 
     task_details_match = re.fullmatch(r"/api/tasks/([^/]+)/details", path)
     # GET /api/tasks/{task_id}/details → 读取任务详情；{"ok": true, "task": {...}, "links": [...]}
     if method == "GET" and task_details_match:
         try:
-            handler._json({"ok": True, **services["get_task_details"](task_details_match.group(1))})
+            handler._json({"ok": True, **task_service.get_task_details(task_details_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
         return True
@@ -27,7 +28,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     # GET /api/tasks/{task_id}/results → 读取任务审核结果；{"ok": true, "task_id": "...", "platforms": [...], "platform_results": {...}, "creator_analysis_available": false, "records": [...]}
     if method == "GET" and task_results_match:
         try:
-            handler._json({"ok": True, **services["get_task_review_results"](task_results_match.group(1))})
+            handler._json({"ok": True, **task_service.get_task_results(task_results_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -36,21 +37,21 @@ def handle(handler, request: dict, context: dict) -> bool:
     # GET /api/tasks/{task_id}/creator-analysis → 读取任务达人分析；{"ok": true, "available": false}
     if method == "GET" and task_analysis_match:
         try:
-            handler._json({"ok": True, **services["get_task_creator_analysis"](task_analysis_match.group(1))})
+            handler._json({"ok": True, **task_service.get_task_creator_analysis(task_analysis_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
         return True
 
     # GET /api/scrape/status → 读取当前抓取状态；{"running": false, "status": "idle", "pause_requested": false, "stop_requested": false, "logs": "", "has_results": false, "task_id": ""}
     if method == "GET" and path == "/api/scrape/status":
-        handler._json(services["get_scrape_status"]())
+        handler._json(task_service.get_scrape_status())
         return True
 
     task_match = re.fullmatch(r"/api/tasks/([^/]+)", path)
     # DELETE /api/tasks/{task_id} → 删除本地任务；{"ok": true, "task_id": "...", "deleted": true}
     if method == "DELETE" and task_match:
         try:
-            handler._ok(**services["delete_local_task"](task_match.group(1)))
+            handler._ok(**task_service.delete_task(task_match.group(1)))
         except RuntimeError as exc:
             handler._error(str(exc), status=409)
         except ValueError as exc:
@@ -64,7 +65,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     # POST /api/tasks/{task_id}/links → 修改任务链接；{"ok": true, "task": {...}, "links": [...]}
     if task_links_match:
         payload = request["get_payload"]()
-        result = services["update_task_links"](
+        result = task_service.update_task_links(
             task_links_match.group(1),
             action=payload.get("action"),
             index=payload.get("index"),
@@ -92,7 +93,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if task_result_update_match:
         payload = request["get_payload"]()
         try:
-            result = services["update_task_review_result"](
+            result = task_service.update_task_results(
                 task_result_update_match.group(1), payload.get("account_uid"), payload.get("fields")
             )
             handler._ok(**result)
@@ -152,7 +153,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if task_rename_match:
         payload = request["get_payload"]()
         try:
-            handler._ok(task=services["rename_task"](task_rename_match.group(1), payload.get("name")))
+            handler._ok(task=task_service.rename_task(task_rename_match.group(1), payload.get("name")))
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -185,7 +186,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if path == "/api/tasks/email-recheck/scan":
         request["get_payload"]()
         try:
-            handler._ok(**services["create_email_recheck_task"]())
+            handler._ok(**task_service.create_email_recheck_task())
         except (RuntimeError, ValueError) as exc:
             handler._error(str(exc))
         return True

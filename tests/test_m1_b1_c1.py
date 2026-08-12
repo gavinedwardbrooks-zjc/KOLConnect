@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import asdict
 from pathlib import Path
 from unittest import mock
 
@@ -13,6 +14,8 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+
+from services.task_result_mapper import map_task_rows_for_creator_library
 
 
 def close_app_logger() -> None:
@@ -112,7 +115,7 @@ class PluginContractAndEmailRecheckTests(unittest.TestCase):
                 creator_id=first["creator_id"],
             )
         )
-        scan = self.server.create_email_recheck_task()
+        scan = self.server.get_task_service().create_email_recheck_task()
         self.assertEqual(1, scan["created_count"])
         return repository, scan["task"], first["creator_id"], first["account_uid"]
 
@@ -176,10 +179,36 @@ class PluginContractAndEmailRecheckTests(unittest.TestCase):
             task["extension_crm"],
         )
         _fields, rows = self.server._read_task_csv(paths["results"])
-        mapped = self.server._task_rows_for_creator_library(task, rows)[0]
+        mapped_items = map_task_rows_for_creator_library(task, tuple(rows))
+        self.assertEqual(len(rows), len(mapped_items))
+        mapped = asdict(mapped_items[0])
+        self.assertEqual(result["account_uid"], mapped["account_uid"])
+        self.assertEqual("https://www.tiktok.com/@maria", mapped["profile_url"])
         self.assertEqual("Brazil", mapped["country"])
         self.assertEqual("Portuguese", mapped["language"])
         self.assertEqual("Lifestyle", mapped["content_category"])
+        self.assertEqual(
+            {
+                "account_uid",
+                "platform",
+                "profile_url",
+                "creator_name",
+                "followers",
+                "email",
+                "whatsapp",
+                "country",
+                "language",
+                "content_category",
+                "note",
+                "latest_post_date",
+                "last_scrape_time",
+                "data_source",
+                "scrape_status",
+                "source_contact_id",
+                "email_recheck",
+            },
+            set(mapped),
+        )
 
         repository = self.server.get_creator_repository()
         creator = self._creator_row(repository, result["analysis_id"])

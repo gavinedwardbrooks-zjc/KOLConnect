@@ -60,7 +60,6 @@ from ports.task_port import CreatorImportLinkage, ManualReviewTaskCommand, TaskP
 from repositories.task_repository import TaskRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.creator_service import CreatorService
-from services.task_result_mapper import map_task_rows_for_creator_library
 from services.task_service import TaskService
 from app_logging import log_error, log_event
 from openpyxl import load_workbook
@@ -1282,10 +1281,6 @@ def _review_record(row: dict) -> dict:
     }
 
 
-def get_task_review_results(task_id: str) -> dict:
-    return get_task_service().get_task_results(task_id)
-
-
 def _task_progress(task_id: str, fallback_total: int = 0) -> dict:
     """Calculate task-local progress from its own input and latest progress rows."""
     try:
@@ -1325,10 +1320,6 @@ def _task_progress(task_id: str, fallback_total: int = 0) -> dict:
     }
 
 
-def get_task_list() -> dict:
-    return get_task_service().get_tasks()
-
-
 def _read_task_links(path: Path) -> list[str]:
     if not path.exists():
         raise ValueError("未找到任务链接文件。")
@@ -1351,22 +1342,6 @@ def _task_platform_summary_from_links(links: list[str]) -> dict[str, int]:
         if platform in summary:
             summary[platform] += 1
     return summary
-
-
-def get_task_details(task_id: str) -> dict:
-    return get_task_service().get_task_details(task_id)
-
-
-def update_task_links(task_id: str, action: str, index: object = None, url: object = None) -> dict:
-    return get_task_service().update_task_links(task_id, action, index, url)
-
-
-def rename_task(task_id: str, name: str) -> dict:
-    return get_task_service().rename_task(task_id, name)
-
-
-def delete_local_task(task_id: str) -> dict:
-    return get_task_service().delete_task(task_id)
 
 
 def _platform_display(platforms: list[str]) -> str:
@@ -1483,11 +1458,6 @@ def _email_recheck_summary(task_id: str) -> dict:
         if not _account_email_is_empty(row.get(scraper_module.FIELD_EMAIL))
     )
     return {"email_found_count": found, "email_failed_count": max(0, len(rows) - found)}
-
-
-def create_email_recheck_task() -> dict:
-    """Create a task for local Creator Accounts that still have no email."""
-    return get_task_service().create_email_recheck_task()
 
 
 def create_manual_task(
@@ -1863,17 +1833,6 @@ def get_campaign_creator_repository() -> CampaignCreatorRepository:
     return factory.campaign_creator()
 
 
-def _task_rows_for_creator_library(task: dict, rows: list[dict]) -> list[dict]:
-    """Compatibility view over the TaskService row-mapping boundary."""
-    return [
-        {
-            field: getattr(item, field)
-            for field in item.__dataclass_fields__
-        }
-        for item in map_task_rows_for_creator_library(task, tuple(rows))
-    ]
-
-
 def import_task_results_to_creator_library(
     task_id: str,
     *,
@@ -2028,83 +1987,8 @@ def import_extension_capture(payload: dict) -> dict:
     }
 
 
-def get_task_creator_analysis(task_id: str) -> dict:
-    return get_task_service().get_task_creator_analysis(task_id)
-
-
-def get_scrape_status() -> dict:
-    return get_task_service().get_scrape_status()
-
-
-def get_creator_library(
-    include_archived: bool = False,
-    page: int = 1,
-    page_size: int = 24,
-    sort: str = "created_at",
-    order: str = "desc",
-    filters: dict | None = None,
-) -> dict:
-    return get_creator_service().get_creator_library(
-        include_archived=include_archived,
-        page=page,
-        page_size=page_size,
-        sort=sort,
-        order=order,
-        filters=filters,
-    )
-
-
-def get_creator_library_detail(analysis_id: str) -> dict:
-    return get_creator_service().get_creator_detail(analysis_id)
-
-
-def get_creator_library_trend(analysis_id: str) -> dict:
-    return get_creator_service().get_creator_trend(analysis_id)
-
-
-def get_creator_library_snapshots(analysis_id: str) -> dict:
-    return get_creator_service().get_creator_snapshots(analysis_id)
-
-
-def update_creator_library_status(analysis_id: str, status: object) -> dict:
-    return get_creator_service().update_creator_status(analysis_id, status)
-
-
 def save_creator_library_cooperation(analysis_id: str, payload: dict) -> dict:
     return get_creator_repository().saveCooperation(analysis_id, payload)
-
-
-def get_local_agencies() -> dict:
-    return get_creator_service().get_agencies()
-
-
-def get_local_agency_detail(agency_id: str) -> dict:
-    return get_creator_service().get_agency_detail(agency_id)
-
-
-def get_local_agency_contacts(agency_id: str = "") -> dict:
-    return get_creator_service().get_agency_contacts(agency_id)
-
-
-def save_local_agency(payload: dict) -> dict:
-    return get_creator_service().save_agency(payload)
-
-
-def save_local_agency_contact(payload: dict) -> dict:
-    return get_creator_service().save_agency_contact(payload)
-
-
-def update_creator_local_relations(creator_id: str, payload: dict) -> dict:
-    return get_creator_service().update_creator_relations(creator_id, payload)
-
-
-def update_creator_library_profile(creator_id: str, payload: dict) -> dict:
-    return get_creator_service().update_creator_profile(creator_id, payload)
-
-
-def open_creator_library_collaboration_task(analysis_id: str) -> dict:
-    """Reuse the analysis import task as the collaboration review entry; never duplicate it."""
-    return get_creator_service().get_creator_task(analysis_id)
 
 
 def _normalize_follower_count(value: object) -> str:
@@ -2125,14 +2009,6 @@ def _csv_content(fieldnames: list[str], rows: list[dict]) -> bytes:
     writer.writeheader()
     writer.writerows(rows)
     return output.getvalue().encode("utf-8-sig")
-
-
-def update_task_review_result(task_id: str, account_uid: str, fields: dict) -> dict:
-    return get_task_service().update_task_results(task_id, account_uid, fields)
-
-
-
-
 
 
 def retry_failed_task_results(task_id: str, account_uids: list[object] | None = None) -> dict:
@@ -2263,25 +2139,14 @@ class Handler(BaseHTTPRequestHandler):
             },
             "ports": {"task": get_task_port},
             "services": {
-                "creator_service": get_creator_service(),
+                "creator": get_creator_service(),
+                "task": get_task_service(),
                 "build_accounts_payload": build_accounts_payload,
                 "get_dashboard_data": get_dashboard_data,
                 "get_agency_contact_options": get_agency_contact_options,
-                "get_creator_library": get_creator_library,
-                "get_creator_library_detail": get_creator_library_detail,
-                "get_creator_library_snapshots": get_creator_library_snapshots,
-                "get_creator_library_trend": get_creator_library_trend,
                 "get_four_table_feishu_config": get_four_table_feishu_config,
-                "get_local_agencies": get_local_agencies,
-                "get_local_agency_contacts": get_local_agency_contacts,
-                "get_local_agency_detail": get_local_agency_detail,
                 "get_profiles": get_profiles,
                 "get_system_health": get_system_health,
-                "get_task_creator_analysis": get_task_creator_analysis,
-                "get_task_details": get_task_details,
-                "get_task_list": get_task_list,
-                "get_task_review_results": get_task_review_results,
-                "get_scrape_status": get_scrape_status,
                 "is_sensitive_mask": is_sensitive_mask,
                 "import_extension_capture": import_extension_capture,
                 "merge_masked_mail_passwords": merge_masked_mail_passwords,
@@ -2289,31 +2154,20 @@ class Handler(BaseHTTPRequestHandler):
                 "normalize_mail_account": normalize_mail_account,
                 "normalize_mail_state": normalize_mail_state,
                 "open_chrome_profile": open_chrome_profile,
-                "open_creator_library_collaboration_task": open_creator_library_collaboration_task,
                 "record_diagnostic": _record_diagnostic,
-                "create_email_recheck_task": create_email_recheck_task,
                 "create_manual_task": create_manual_task,
-                "delete_local_task": delete_local_task,
                 "pause_scrape": pause_scrape,
                 "prepare_task_links": prepare_task_links,
-                "rename_task": rename_task,
                 "request_stop_scrape": request_stop_scrape,
                 "resume_scrape": resume_scrape,
                 "resume_task": resume_task,
                 "retry_failed_task_results": retry_failed_task_results,
-                "save_local_agency": save_local_agency,
-                "save_local_agency_contact": save_local_agency_contact,
                 "state_for_client": state_for_client,
                 "test_imap_login": test_imap_login,
                 "test_smtp_login": test_smtp_login,
                 "start_scrape": start_scrape,
                 "stop_task": stop_task,
                 "sync_task_results_to_four_tables": sync_task_results_to_four_tables,
-                "update_task_links": update_task_links,
-                "update_task_review_result": update_task_review_result,
-                "update_creator_library_profile": update_creator_library_profile,
-                "update_creator_library_status": update_creator_library_status,
-                "update_creator_local_relations": update_creator_local_relations,
                 "utc_now": _utc_now,
             },
             "task_manager": task_manager,

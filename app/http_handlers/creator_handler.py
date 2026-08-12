@@ -8,7 +8,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     path = request["path"]
     query = request["query"]
     services = context["services"]
-    creator_service = services["creator_service"]
+    creator_service = services["creator"]
 
     # POST /api/creator-library/{creator_id}/cooperations → 拒绝新增 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
     # PATCH /api/creator-library/{creator_id}/cooperations → 拒绝修改 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
