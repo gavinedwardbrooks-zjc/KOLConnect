@@ -27,7 +27,7 @@ jobs:
       - name: Verify and hash Windows artifact
         shell: pwsh
         run: |
-          $path = "release/KOLConnect_v0.2.0.exe"
+          $path = "release/KOLConnect_v0.2.3.exe"
           if (-not (Test-Path -LiteralPath $path)) { throw "Missing $path" }
           $artifact = Get-Item -LiteralPath $path
           $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
@@ -46,7 +46,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KOLConnect-windows-x64
-          path: release/KOLConnect_v0.2.0.exe
+          path: release/KOLConnect_v0.2.3.exe
           if-no-files-found: error
           retention-days: 30
 
@@ -77,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           test -d packaging/.pyinstaller-dist-macos/KOLConnect.app
-          path="release/KOLConnect_v0.2.0_mac_arm64.dmg"
+          path="release/KOLConnect_v0.2.3_mac_arm64.dmg"
           test -f "${path}"
           hash="$(shasum -a 256 "${path}" | awk '{print $1}')"
           size="$(stat -f '%z' "${path}")"
@@ -92,7 +92,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KOLConnect-macos-arm64
-          path: release/KOLConnect_v0.2.0_mac_arm64.dmg
+          path: release/KOLConnect_v0.2.3_mac_arm64.dmg
           if-no-files-found: error
           retention-days: 30
 
@@ -123,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           test -d dist/pyinstaller-macos-intel/KOLConnect.app
-          path="release/KOLConnect_v0.2.0_mac_intel.dmg"
+          path="release/KOLConnect_v0.2.3_mac_intel.dmg"
           test -f "${path}"
           hash="$(shasum -a 256 "${path}" | awk '{print $1}')"
           size="$(stat -f '%z' "${path}")"
@@ -138,7 +138,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KOLConnect-macos-intel
-          path: release/KOLConnect_v0.2.0_mac_intel.dmg
+          path: release/KOLConnect_v0.2.3_mac_intel.dmg
           if-no-files-found: error
           retention-days: 30
 

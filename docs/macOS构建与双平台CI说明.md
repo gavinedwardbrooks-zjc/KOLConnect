@@ -1,4 +1,4 @@
-# KOLConnect v0.2.0 macOS 构建与双平台 CI 说明
+# KOLConnect v0.2.3 macOS 构建与双平台 CI 说明
 
 ## 支持边界
 
@@ -34,7 +34,7 @@ bash packaging/build_macos.sh
 3. 使用 `sips` 和 `iconutil` 临时生成 `assets/KOLConnect.icns`。
 4. 使用 `packaging/spec/KOLConnect_mac.spec` 生成 `KOLConnect.app`。
 5. 对 APP 执行 ad-hoc signing 并严格验证签名。
-6. 使用 `hdiutil` 生成 `release/KOLConnect_v0.2.0_mac_arm64.dmg`。
+6. 使用 `hdiutil` 生成 `release/KOLConnect_v0.2.3_mac_arm64.dmg`。
 7. 输出 APP 路径、DMG 路径、实际 CPU 架构和 SHA-256。
 
 不要直接在缺少 `assets/KOLConnect.icns` 时运行 Mac spec；应始终通过 `packaging/build_macos.sh` 先生成图标。
@@ -69,8 +69,9 @@ macOS job 使用 `macos-15` arm64 runner，并同时检查 `uname -m` 与 `platf
 
 首次验证只应从 GitHub Actions 手动运行 `Build` workflow，不创建 tag。成功后确认 artifacts 包含：
 
-- `KOLConnect_v0.2.0.exe`
-- `KOLConnect_v0.2.0_mac_arm64.dmg`
+- `KOLConnect_v0.2.3.exe`
+- `KOLConnect_v0.2.3_mac_arm64.dmg`
+- `KOLConnect_v0.2.3_mac_intel.dmg`
 
 然后在真实 Apple Silicon Mac 上检查：
 

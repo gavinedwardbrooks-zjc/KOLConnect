@@ -6,7 +6,7 @@ import {
   safeAnalysisUrl
 } from "./normalize.js";
 
-export const EXTENSION_VERSION = "v0.1.2";
+export const EXTENSION_VERSION = "v0.2.3";
 export const PROFILE_FIELD_NAMES = Object.freeze([
   "profile_url",
   "username",

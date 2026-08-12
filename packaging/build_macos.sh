@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-VERSION="v0.2.0"
+VERSION="v0.2.3"
 SOURCE_ICON="${PROJECT_ROOT}/assets/KOLConnect.png"
 GENERATED_ICON="${PROJECT_ROOT}/assets/KOLConnect.icns"
 ICONSET_DIR="${SCRIPT_DIR}/KOLConnect.iconset"

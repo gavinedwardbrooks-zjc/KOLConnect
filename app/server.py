@@ -72,6 +72,7 @@ from runtime_paths import (
     load_json_with_backup,
     scraper_worker_command,
 )
+from version import APP_DISPLAY_VERSION
 from http_handlers import (
     campaign_handler,
     creator_handler,
@@ -552,7 +553,7 @@ def get_system_health() -> dict:
         "status": overall,
         "checks": checks,
         "debug": {
-            "version": "KOLConnect v0.2.0",
+            "version": APP_DISPLAY_VERSION,
             "api_status": "正常",
             "excel_path": str(workbook_path),
             "excel_status": excel_status,
@@ -2285,7 +2286,7 @@ def run() -> None:
     workbook_path = STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK
     log_event(
         "KOLConnect Start",
-        f"version=KOLConnect v0.2.0 | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
+        f"version={APP_DISPLAY_VERSION} | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
     )
     if os.environ.get("KOLCONNECT_DESKTOP") != "1":
         webbrowser.open(f"http://{HOST}:{PORT}/?v={int(time.time())}")

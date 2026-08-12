@@ -17,6 +17,7 @@ from urllib.request import ProxyHandler, build_opener
 
 from app_logging import log_error, log_event
 from runtime_paths import atomic_write_json, get_app_data_dir, get_logs_dir, load_json_with_backup
+from version import APP_DISPLAY_VERSION
 
 
 HOST = "127.0.0.1"
@@ -256,7 +257,7 @@ def run_desktop() -> None:
 
     width, height = load_window_size()
     window = webview.create_window(
-        "KOLConnect v0.2.0",
+        APP_DISPLAY_VERSION,
         APP_URL,
         width=width,
         height=height,

@@ -1,4 +1,4 @@
-# KOLConnect v0.2.0
+# KOLConnect v0.2.3
 
 **KOL Management & Campaign Operations Platform**
 
@@ -159,7 +159,7 @@ Creator
 当前正式版本：
 
 ```text
-release/KOLConnect_v0.2.0.exe
+release/KOLConnect_v0.2.3.exe
 ```
 
 1. 获取正式版 EXE。
@@ -169,7 +169,7 @@ release/KOLConnect_v0.2.0.exe
 
 ### macOS Apple Silicon
 
-macOS arm64 支持目前处于构建与真人验收阶段。GitHub Actions 可生成 `KOLConnect_v0.2.0_mac_arm64.dmg`，但在完成真实 Apple Silicon 设备验收前，不应视为正式无障碍支持。
+macOS arm64 支持目前处于构建与真人验收阶段。GitHub Actions 可生成 `KOLConnect_v0.2.3_mac_arm64.dmg`，但在完成真实 Apple Silicon 设备验收前，不应视为正式无障碍支持。
 
 - macOS 数据目录：`~/Library/Application Support/KOLConnect/`
 - 本地构建入口：`bash packaging/build_macos.sh`
@@ -208,7 +208,7 @@ Creator、Campaign、Snapshot 和相关运营数据当前保存在 Excel 工作�
 ## Current Version
 
 ```text
-KOLConnect v0.2.0
+KOLConnect v0.2.3
 ```
 
 当前阶段已完成：
