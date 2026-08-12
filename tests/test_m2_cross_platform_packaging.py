@@ -81,10 +81,12 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("KOLConnect.icns", mac_spec)
         self.assertNotIn("windows_version_info.txt", mac_spec)
 
-    def test_chromedriver_name_is_platform_specific(self):
-        source = (APP_DIR / "scraper.py").read_text(encoding="utf-8")
-        self.assertIn('"chromedriver.exe" if sys.platform == "win32" else "chromedriver"', source)
-        self.assertIn("ChromeDriverManager().install()", source)
+    def test_chromedriver_resolution_is_centralized_and_automatic(self):
+        scraper_source = (APP_DIR / "scraper.py").read_text(encoding="utf-8")
+        resolver_source = (APP_DIR / "chromedriver_resolver.py").read_text(encoding="utf-8")
+        self.assertIn("resolve_chromedriver()", scraper_source)
+        self.assertIn("ChromeDriverManager().install()", resolver_source)
+        self.assertNotIn("find_local_chromedriver", scraper_source)
 
     def test_workflows_separate_validation_from_packaging(self):
         workflow_dir = ROOT / ".github" / "workflows"

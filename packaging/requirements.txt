@@ -1,7 +1,7 @@
 requests
 beautifulsoup4
 selenium
-webdriver-manager
+webdriver-manager>=4.1.2,<5
 pandas
 openpyxl
 pywebview

@@ -30,7 +30,7 @@ from urllib.parse import unquote, urljoin, urlparse
 
 import requests
 from bs4 import BeautifulSoup
-from runtime_paths import get_external_resources_dir, get_resource_dir
+from chromedriver_resolver import ChromeDriverResolutionError, resolve_chromedriver
 
 try:
     import pandas as pd
@@ -46,12 +46,6 @@ try:
     SELENIUM_AVAILABLE = True
 except ImportError:
     SELENIUM_AVAILABLE = False
-
-try:
-    from webdriver_manager.chrome import ChromeDriverManager
-    WDM_AVAILABLE = True
-except ImportError:
-    WDM_AVAILABLE = False
 
 SUCCESS_LEVEL = 25
 logging.addLevelName(SUCCESS_LEVEL, "SUCCESS")
@@ -554,32 +548,6 @@ def should_use_direct_profile(user_data_dir: str) -> bool:
     return candidate_dir != chrome_default_dir
 
 
-def find_local_chromedriver() -> Path | None:
-    """Find an existing platform ChromeDriver before attempting a download."""
-    resource_dir = get_resource_dir()
-    external_resources_dir = get_external_resources_dir()
-    driver_name = "chromedriver.exe" if sys.platform == "win32" else "chromedriver"
-    direct_candidates = (
-        external_resources_dir / "ChromeDriver" / driver_name,
-        resource_dir / "ChromeDriver" / driver_name,
-        resource_dir / driver_name,
-        Path.cwd() / driver_name,
-    )
-    for candidate in direct_candidates:
-        if candidate.is_file():
-            return candidate
-
-    cache_root = Path.home() / ".wdm" / "drivers" / "chromedriver"
-    if not cache_root.is_dir():
-        return None
-
-    cached_drivers = [path for path in cache_root.rglob(driver_name) if path.is_file()]
-    if not cached_drivers:
-        return None
-
-    return max(cached_drivers, key=lambda path: path.stat().st_mtime)
-
-
 def make_chrome_driver(user_data_dir: str | None = None, profile: str = "Default"):
     if not SELENIUM_AVAILABLE:
         raise BrowserStartError("selenium 未安装")
@@ -610,18 +578,24 @@ def make_chrome_driver(user_data_dir: str | None = None, profile: str = "Default
     options.add_argument(f"--user-agent={random.choice(USER_AGENTS)}")
 
     try:
-        local_driver = find_local_chromedriver()
-        if local_driver:
-            log.warning("使用本机 ChromeDriver: %s", local_driver)
-            service = Service(str(local_driver))
-            driver = webdriver.Chrome(service=service, options=options)
-        elif WDM_AVAILABLE:
-            log.warning("未找到本机 ChromeDriver，正在下载匹配版本。")
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
-        else:
-            driver = webdriver.Chrome(options=options)
+        driver_path = resolve_chromedriver()
+        log.warning("使用自动匹配的 ChromeDriver: %s", driver_path)
+        service = Service(str(driver_path))
+        driver = webdriver.Chrome(service=service, options=options)
+    except ChromeDriverResolutionError as exc:
+        raise BrowserStartError(str(exc)) from exc
     except WebDriverException as exc:
+        error_text = str(exc).lower()
+        if "only supports chrome version" in error_text or "version of chromedriver" in error_text:
+            raise BrowserStartError(
+                "ChromeDriver 与当前 Chrome 版本不兼容。请重新启动 Chrome 后重试自动匹配。"
+                f" 原始错误: {exc}"
+            ) from exc
+        if "permission denied" in error_text or "access is denied" in error_text:
+            raise BrowserStartError(
+                "ChromeDriver 启动失败：Driver 文件没有执行权限。"
+                f" 原始错误: {exc}"
+            ) from exc
         raise BrowserStartError(
             "Chrome 启动失败，可能是 profile 正被其它 Chrome 窗口占用。请先关闭正在使用同一用户目录的 Chrome 窗口后再运行。"
             f" 原始错误: {exc}"
