@@ -96,11 +96,58 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  build-macos-intel:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: packaging/requirements-build.txt
+      - name: Confirm Intel runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -m
+          python -c "import platform; print(platform.machine())"
+          [[ "$(uname -m)" == "x86_64" ]]
+          [[ "$(python -c 'import platform; print(platform.machine())')" == "x86_64" ]]
+      - name: Install dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Build macOS Intel application and DMG
+        shell: bash
+        run: bash packaging/build_macos.sh x86_64
+      - name: Verify and hash macOS Intel artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d dist/pyinstaller-macos-intel/KOLConnect.app
+          path="release/KOLConnect_v0.2.0_mac_intel.dmg"
+          test -f "${path}"
+          hash="$(shasum -a 256 "${path}" | awk '{print $1}')"
+          size="$(stat -f '%z' "${path}")"
+          echo "SHA-256: ${hash}"
+          {
+            echo "## macOS Intel artifact"
+            echo
+            echo "| File | Size (bytes) | Platform | Architecture | SHA-256 |"
+            echo "|---|---:|---|---|---|"
+            echo "| $(basename "${path}") | ${size} | macOS | x86_64 | \`${hash}\` |"
+          } >> "${GITHUB_STEP_SUMMARY}" || echo "Warning: unable to write GitHub Step Summary" >&2
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KOLConnect-macos-intel
+          path: release/KOLConnect_v0.2.0_mac_intel.dmg
+          if-no-files-found: error
+          retention-days: 30
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
     needs:
       - build-windows
       - build-macos-arm64
+      - build-macos-intel
     runs-on: ubuntu-latest
     permissions:
       contents: write

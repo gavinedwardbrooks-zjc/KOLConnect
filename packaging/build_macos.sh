@@ -7,13 +7,38 @@ VERSION="v0.2.0"
 SOURCE_ICON="${PROJECT_ROOT}/assets/KOLConnect.png"
 GENERATED_ICON="${PROJECT_ROOT}/assets/KOLConnect.icns"
 ICONSET_DIR="${SCRIPT_DIR}/KOLConnect.iconset"
-WORK_DIR="${SCRIPT_DIR}/.pyinstaller-build-macos"
-DIST_DIR="${SCRIPT_DIR}/.pyinstaller-dist-macos"
-DMG_STAGE="${SCRIPT_DIR}/.macos-dmg-staging"
-SPEC_FILE="${SCRIPT_DIR}/spec/KOLConnect_mac.spec"
-APP_PATH="${DIST_DIR}/KOLConnect.app"
+TARGET_ARCH="${1:-arm64}"
 RELEASE_DIR="${PROJECT_ROOT}/release"
-DMG_PATH="${RELEASE_DIR}/KOLConnect_${VERSION}_mac_arm64.dmg"
+
+if (( $# > 1 )); then
+  echo "Usage: $0 [arm64|x86_64]" >&2
+  exit 1
+fi
+
+case "${TARGET_ARCH}" in
+  arm64)
+    WORK_DIR="${SCRIPT_DIR}/.pyinstaller-build-macos"
+    DIST_DIR="${SCRIPT_DIR}/.pyinstaller-dist-macos"
+    DMG_STAGE="${SCRIPT_DIR}/.macos-dmg-staging"
+    SPEC_FILE="${SCRIPT_DIR}/spec/KOLConnect_mac.spec"
+    DMG_PATH="${RELEASE_DIR}/KOLConnect_${VERSION}_mac_arm64.dmg"
+    ;;
+  x86_64)
+    WORK_DIR="${PROJECT_ROOT}/build/pyinstaller-macos-intel"
+    DIST_DIR="${PROJECT_ROOT}/dist/pyinstaller-macos-intel"
+    DMG_STAGE="${PROJECT_ROOT}/build/macos-dmg-staging-intel"
+    SPEC_FILE="${SCRIPT_DIR}/spec/KOLConnect_mac_intel.spec"
+    DMG_PATH="${RELEASE_DIR}/KOLConnect_${VERSION}_mac_intel.dmg"
+    ;;
+  *)
+    echo "Unsupported macOS architecture: ${TARGET_ARCH}. Use arm64 or x86_64." >&2
+    exit 1
+    ;;
+esac
+
+APP_PATH="${DIST_DIR}/KOLConnect.app"
+APP_BINARY="${APP_PATH}/Contents/MacOS/KOLConnect"
+export MACOSX_DEPLOYMENT_TARGET=12.0
 
 cleanup() {
   rm -rf "${ICONSET_DIR}" "${DMG_STAGE}"
@@ -29,8 +54,8 @@ ARCH="$(uname -m)"
 PYTHON_ARCH="$(python -c 'import platform; print(platform.machine())')"
 echo "uname -m: ${ARCH}"
 echo "platform.machine(): ${PYTHON_ARCH}"
-if [[ "${ARCH}" != "arm64" || "${PYTHON_ARCH}" != "arm64" ]]; then
-  echo "macOS arm64 build requires an arm64 OS and Python runtime." >&2
+if [[ "${ARCH}" != "${TARGET_ARCH}" || "${PYTHON_ARCH}" != "${TARGET_ARCH}" ]]; then
+  echo "macOS ${TARGET_ARCH} build requires matching OS and Python runtimes." >&2
   exit 1
 fi
 
@@ -79,6 +104,19 @@ if [[ ! -d "${APP_PATH}" ]]; then
   exit 1
 fi
 
+if [[ ! -x "${APP_BINARY}" ]]; then
+  echo "Application binary is missing or not executable: ${APP_BINARY}" >&2
+  exit 1
+fi
+BINARY_FILE_INFO="$(file "${APP_BINARY}")"
+BINARY_ARCHES="$(lipo -archs "${APP_BINARY}")"
+echo "Application binary: ${BINARY_FILE_INFO}"
+echo "Application architectures: ${BINARY_ARCHES}"
+if [[ "${BINARY_ARCHES}" != "${TARGET_ARCH}" ]]; then
+  echo "Architecture mismatch: expected ${TARGET_ARCH}, found ${BINARY_ARCHES}." >&2
+  exit 1
+fi
+
 codesign --force --deep --sign - "${APP_PATH}"
 codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
 
@@ -100,5 +138,6 @@ fi
 
 echo "APP path: ${APP_PATH}"
 echo "DMG path: ${DMG_PATH}"
-echo "CPU architecture: ${ARCH}"
+echo "CPU architecture: ${TARGET_ARCH}"
+echo "Deployment target: ${MACOSX_DEPLOYMENT_TARGET}"
 shasum -a 256 "${DMG_PATH}"
