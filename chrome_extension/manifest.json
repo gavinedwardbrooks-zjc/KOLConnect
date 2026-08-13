@@ -33,6 +33,31 @@
   "content_scripts": [
     {
       "matches": [
+        "https://tiktok.com/*",
+        "https://www.tiktok.com/*",
+        "https://m.tiktok.com/*"
+      ],
+      "js": [
+        "capture/passive_capture_protocol.js",
+        "content/passive_capture_bridge.js"
+      ],
+      "run_at": "document_start"
+    },
+    {
+      "matches": [
+        "https://tiktok.com/*",
+        "https://www.tiktok.com/*",
+        "https://m.tiktok.com/*"
+      ],
+      "js": [
+        "capture/passive_capture_protocol.js",
+        "capture/passive_capture_main.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
         "*://*.tiktok.com/*",
         "*://*.instagram.com/*",
         "*://*.youtube.com/*"
