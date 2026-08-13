@@ -279,14 +279,14 @@ class CreatorLibraryPerformanceTests(unittest.TestCase):
 class HistoricalTaskBoundaryTests(unittest.TestCase):
     def test_page_reads_do_not_backfill_large_historical_task(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            data_dir = Path(temp_dir) / "KOLConnect"
-            workbook_path = data_dir / "Creator_Library.xlsx"
+            server = reload_server(temp_dir)
+            workbook_path = server.get_creator_repository().workbook_path
+            self.assertEqual(server.DEFAULT_CREATOR_LIBRARY_WORKBOOK, workbook_path)
             create_schema2_workbook(
                 workbook_path,
                 creator_count=2,
                 snapshots_per_creator=1,
             )
-            server = reload_server(temp_dir)
             task = server.task_manager.create_task(
                 server.TASKS_DIR,
                 ["https://www.tiktok.com/@historical"],
