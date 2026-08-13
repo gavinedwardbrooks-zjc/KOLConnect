@@ -83,6 +83,9 @@ export function contentItem(raw = {}) {
   const comments = raw.comments?.value !== undefined
     ? raw.comments
     : metric(raw.comments, raw.comments_source, raw.comments_confidence || "medium", raw.comments_missing_reason);
+  const shares = raw.shares?.value !== undefined
+    ? raw.shares
+    : metric(raw.shares, raw.shares_source, raw.shares_confidence || "medium", raw.shares_missing_reason);
   const published = raw.published_at?.value !== undefined
     ? raw.published_at
     : publishedAt(
@@ -103,6 +106,7 @@ export function contentItem(raw = {}) {
     views,
     likes,
     comments,
+    shares,
     published_at: published,
     engagement_rate: engagementRate(views, likes, comments)
   };

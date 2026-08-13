@@ -39,6 +39,7 @@
       ],
       "js": [
         "capture/passive_capture_protocol.js",
+        "platform/tiktok_network.js",
         "content/passive_capture_bridge.js"
       ],
       "run_at": "document_start"

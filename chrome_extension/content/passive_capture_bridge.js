@@ -3,7 +3,11 @@
   if (typeof module === "object" && module.exports) {
     module.exports = api;
   } else {
-    api.installIsolatedBridge(root, root.KOLConnectPassiveCaptureProtocol);
+    api.installIsolatedBridge(
+      root,
+      root.KOLConnectPassiveCaptureProtocol,
+      root.KOLConnectTikTokNetwork,
+    );
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function createBridgeApi() {
   "use strict";
@@ -11,12 +15,13 @@
   const INSTALL_MARKER = "__kolconnectPassiveCaptureBridgeV1__";
   const PUBLIC_BRIDGE = "KOLConnectPassiveCaptureBridge";
 
-  function installIsolatedBridge(target, protocol) {
+  function installIsolatedBridge(target, protocol, tiktokNetwork) {
     if (!target || !protocol) return null;
     if (target[INSTALL_MARKER]) return target[PUBLIC_BRIDGE] || null;
 
     let bridgeToken = null;
     const listeners = new Set();
+    const itemListListeners = new Set();
     const expectedOrigin = target.location?.origin;
 
     function onMessage(event) {
@@ -28,6 +33,23 @@
           return;
         }
         if (!protocol.isValidCaptureEnvelope(message, bridgeToken)) return;
+        if (
+          message.endpointKind === "tiktok_item_list"
+          && typeof tiktokNetwork?.parseTikTokItemListResponse === "function"
+        ) {
+          try {
+            const parsed = tiktokNetwork.parseTikTokItemListResponse(message.payload);
+            for (const listener of Array.from(itemListListeners)) {
+              try {
+                listener(parsed, message);
+              } catch (_error) {
+                // Parsed-result consumers are isolated from the transport receiver.
+              }
+            }
+          } catch (_error) {
+            // Parser failures do not block the validated transport event.
+          }
+        }
         for (const listener of Array.from(listeners)) {
           try {
             listener(message);
@@ -45,6 +67,11 @@
         if (typeof listener !== "function") return () => {};
         listeners.add(listener);
         return () => listeners.delete(listener);
+      },
+      subscribeItemList(listener) {
+        if (typeof listener !== "function") return () => {};
+        itemListListeners.add(listener);
+        return () => itemListListeners.delete(listener);
       },
     });
 

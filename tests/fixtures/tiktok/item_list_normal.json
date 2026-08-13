@@ -1,0 +1,48 @@
+{
+  "cursor": "30",
+  "hasMore": true,
+  "itemList": [
+    {
+      "id": "7381234567890123456",
+      "createTime": 1700000000,
+      "desc": "Fixture video one",
+      "textLanguage": "pt",
+      "stats": {
+        "collectCount": 123,
+        "commentCount": 45,
+        "diggCount": 678,
+        "playCount": 9000,
+        "shareCount": 12
+      },
+      "statsV2": {
+        "collectCount": "123",
+        "commentCount": "45",
+        "diggCount": "678",
+        "playCount": "9000",
+        "repostCount": "0",
+        "shareCount": "12"
+      }
+    },
+    {
+      "id": "7381234567890123457",
+      "createTime": 1700003600,
+      "desc": "Fixture video two",
+      "textLanguage": "en",
+      "stats": {
+        "collectCount": 0,
+        "commentCount": 0,
+        "diggCount": 0,
+        "playCount": 0,
+        "shareCount": 0
+      },
+      "statsV2": {
+        "collectCount": "0",
+        "commentCount": "0",
+        "diggCount": "0",
+        "playCount": "0",
+        "repostCount": "0",
+        "shareCount": "0"
+      }
+    }
+  ]
+}
