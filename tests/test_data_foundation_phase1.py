@@ -33,6 +33,14 @@ def close_app_logger() -> None:
     app_logging._CONFIGURED = False
 
 
+def runtime_data_environment(temp_root: str) -> dict[str, str]:
+    return {
+        "APPDATA": temp_root,
+        "HOME": temp_root,
+        "XDG_DATA_HOME": temp_root,
+    }
+
+
 OLD_CREATORS_HEADERS = [
     "creator_id", "name", "platform", "profile_url", "country", "language",
     "content_category", "followers", "insight_level", "status", "created_at",
@@ -432,7 +440,7 @@ class Phase1ServerCompatibilityTests(unittest.TestCase):
     def test_unconfigured_feishu_and_basic_apis_work(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
             os.environ,
-            {"APPDATA": temp_dir},
+            runtime_data_environment(temp_dir),
         ):
             for module_name in (
                 "server", "runtime_paths", "mail_sync", "task_manager",
@@ -466,7 +474,7 @@ class Phase1ServerCompatibilityTests(unittest.TestCase):
     def test_feishu_sync_failure_does_not_change_local_workbook(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir, mock.patch.dict(
             os.environ,
-            {"APPDATA": temp_dir},
+            runtime_data_environment(temp_dir),
         ):
             for module_name in (
                 "server", "runtime_paths", "mail_sync", "task_manager",

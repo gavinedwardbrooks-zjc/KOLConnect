@@ -38,6 +38,14 @@ def close_app_logger() -> None:
     app_logging._CONFIGURED = False
 
 
+def runtime_data_environment(temp_root: str) -> dict[str, str]:
+    return {
+        "APPDATA": temp_root,
+        "HOME": temp_root,
+        "XDG_DATA_HOME": temp_root,
+    }
+
+
 def append_mapping(sheet, headers: list[str], values: dict) -> None:
     sheet.append([values.get(header, "") for header in headers])
 
@@ -182,7 +190,7 @@ def reload_server(temp_appdata: str):
         "app_logging",
     ):
         sys.modules.pop(module_name, None)
-    with mock.patch.dict(os.environ, {"APPDATA": temp_appdata}):
+    with mock.patch.dict(os.environ, runtime_data_environment(temp_appdata)):
         return importlib.import_module("server")
 
 
@@ -357,6 +365,13 @@ class HistoricalTaskBoundaryTests(unittest.TestCase):
             )
 
             first = server.import_task_results_to_creator_library(task["id"])
+            first_repository = server.get_creator_repository()
+            first_creators = first_repository.getCreators()
+            first_accounts = first_repository.getCreatorAccounts()
+            self.assertEqual(1, len(first_creators))
+            self.assertEqual(1, len(first_accounts))
+            self.assertEqual(task["id"], first_accounts[0]["source_task_id"])
+
             server = reload_server(temp_dir)
             second = server.import_task_results_to_creator_library(task["id"])
             repository = server.get_creator_repository()
@@ -367,6 +382,8 @@ class HistoricalTaskBoundaryTests(unittest.TestCase):
             self.assertEqual("success", second["status"])
             self.assertEqual(1, len(creators))
             self.assertEqual(1, len(accounts))
+            self.assertEqual(first_creators[0]["creator_id"], creators[0]["creator_id"])
+            self.assertEqual(first_accounts[0]["account_uid"], accounts[0]["account_uid"])
             self.assertEqual(task["id"], accounts[0]["source_task_id"])
             self.assertEqual(1, len(repository.getCreatorSnapshots(creators[0]["creator_id"])))
             close_app_logger()
