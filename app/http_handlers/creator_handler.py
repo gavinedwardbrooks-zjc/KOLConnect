@@ -10,6 +10,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     services = context["services"]
     creator_service = services["creator"]
     agency_service = services["agency"]
+    delete_impact_service = services["creator_delete_impact"]
 
     # POST /api/creator-library/{creator_id}/cooperations → 拒绝新增 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
     # PATCH /api/creator-library/{creator_id}/cooperations → 拒绝修改 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
@@ -62,6 +63,26 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._json({"ok": True, **creator_service.get_creator_snapshots(snapshots_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
+        return True
+
+    delete_impact_match = re.fullmatch(
+        r"/api/creator-library/([^/]+)/delete-impact", path
+    )
+    # GET /api/creator-library/{creator_id}/delete-impact → 只读预览未来硬删除影响；{"ok": true, "creator": {...}, "impact": {...}, "retained": {...}, "unresolved": [...], "warnings": [...], "blockers": [...], "can_delete": false, "preview_fingerprint": "..."}
+    if method == "GET" and delete_impact_match:
+        try:
+            handler._json(
+                {
+                    "ok": True,
+                    **delete_impact_service.get_delete_impact(
+                        delete_impact_match.group(1)
+                    ),
+                }
+            )
+        except ValueError as exc:
+            handler._error(str(exc), status=404)
+        except RuntimeError as exc:
+            handler._error(str(exc), status=500)
         return True
 
     creator_match = re.fullmatch(r"/api/creator-library/([^/]+)", path)

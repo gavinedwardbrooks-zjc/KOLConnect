@@ -74,6 +74,25 @@ class ExcelWorkbookStore:
             return self._scoped_workbook
         return self._open_now()
 
+    @contextmanager
+    def read_only_workbook(self) -> Iterator[Any]:
+        """Load an existing workbook without migrations, creation, or save hooks."""
+        with WORKBOOK_LOCK:
+            if not self.workbook_path.is_file():
+                raise WorkbookReadError("达人库 Excel 文件不存在。")
+            try:
+                workbook = load_workbook(
+                    self.workbook_path,
+                    read_only=True,
+                    data_only=True,
+                )
+            except Exception as exc:
+                raise WorkbookReadError(f"无法读取 Excel 文件：{exc}") from exc
+            try:
+                yield workbook
+            finally:
+                workbook.close()
+
     def _open_now(self):
         created = not self.workbook_path.exists()
         if created:

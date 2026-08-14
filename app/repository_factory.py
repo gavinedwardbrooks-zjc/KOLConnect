@@ -14,6 +14,7 @@ from dashboard_repository import DashboardRepository
 from excel_workbook_store import ExcelWorkbookStore
 from product_repository import ProductRepository
 from repositories.agency_repository import AgencyRepository
+from repositories.creator_delete_impact_repository import CreatorDeleteImpactRepository
 
 
 _ACTIVE_FACTORY: ContextVar[RepositoryFactory | None] = ContextVar(
@@ -31,12 +32,17 @@ class RepositoryFactory:
         *,
         legacy_analysis_dir: Path | None = None,
         legacy_library_file: Path | None = None,
+        tasks_dir: Path | None = None,
+        data_protection_file: Path | None = None,
     ) -> None:
         self.store = store
         self.legacy_analysis_dir = legacy_analysis_dir
         self.legacy_library_file = legacy_library_file
+        self.tasks_dir = tasks_dir
+        self.data_protection_file = data_protection_file
         self._creator: CreatorRepository | None = None
         self._agency: AgencyRepository | None = None
+        self._creator_delete_impact: CreatorDeleteImpactRepository | None = None
         self._product: ProductRepository | None = None
         self._campaign: CampaignRepository | None = None
         self._campaign_creator: CampaignCreatorRepository | None = None
@@ -49,11 +55,15 @@ class RepositoryFactory:
         *,
         legacy_analysis_dir: Path | None = None,
         legacy_library_file: Path | None = None,
+        tasks_dir: Path | None = None,
+        data_protection_file: Path | None = None,
     ) -> RepositoryFactory:
         return cls(
             ExcelWorkbookStore(workbook_path),
             legacy_analysis_dir=legacy_analysis_dir,
             legacy_library_file=legacy_library_file,
+            tasks_dir=tasks_dir,
+            data_protection_file=data_protection_file,
         )
 
     def creator(self) -> CreatorRepository:
@@ -69,6 +79,17 @@ class RepositoryFactory:
         if self._agency is None:
             self._agency = AgencyRepository(self.store)
         return self._agency
+
+    def creator_delete_impact(self) -> CreatorDeleteImpactRepository:
+        if self._creator_delete_impact is None:
+            self._creator_delete_impact = CreatorDeleteImpactRepository(
+                self.store,
+                tasks_dir=self.tasks_dir,
+                data_protection_file=self.data_protection_file,
+                legacy_analysis_dir=self.legacy_analysis_dir,
+                legacy_library_file=self.legacy_library_file,
+            )
+        return self._creator_delete_impact
 
     def product(self) -> ProductRepository:
         if self._product is None:

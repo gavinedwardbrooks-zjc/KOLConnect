@@ -38,6 +38,7 @@ from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from product_repository import ProductRepository
 from ports.agency_port import AgencyPort
+from ports.creator_delete_impact_port import CreatorDeleteImpactPort
 from ports.creator_port import (
     CreatorAnalysisSnapshot,
     CreatorImportResult,
@@ -62,6 +63,7 @@ from repositories.task_repository import TaskRepository
 from repositories.agency_repository import AgencyRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.agency_service import AgencyService
+from services.creator_delete_impact_service import CreatorDeleteImpactService
 from services.creator_service import CreatorService
 from services.task_service import TaskService
 from app_logging import log_error, log_event
@@ -1671,6 +1673,15 @@ def get_agency_service() -> AgencyService:
     return AgencyService(get_agency_port, get_creator_repository)
 
 
+def get_creator_delete_impact_port() -> CreatorDeleteImpactPort:
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.creator_delete_impact()
+
+
+def get_creator_delete_impact_service() -> CreatorDeleteImpactService:
+    return CreatorDeleteImpactService(get_creator_delete_impact_port)
+
+
 def get_creator_service() -> CreatorService:
     """Create a stateless facade whose provider resolves the active request repository."""
     return CreatorService(
@@ -1834,6 +1845,8 @@ def _new_repository_factory() -> RepositoryFactory:
         _creator_library_workbook_path(),
         legacy_analysis_dir=CREATOR_ANALYSIS_DIR,
         legacy_library_file=CREATOR_LIBRARY_FILE,
+        tasks_dir=TASKS_DIR,
+        data_protection_file=DATA_PROTECTION_FILE,
     )
 
 
@@ -2161,6 +2174,7 @@ class Handler(BaseHTTPRequestHandler):
             "services": {
                 "agency": get_agency_service(),
                 "creator": get_creator_service(),
+                "creator_delete_impact": get_creator_delete_impact_service(),
                 "task": get_task_service(),
                 "build_accounts_payload": build_accounts_payload,
                 "get_dashboard_data": get_dashboard_data,
