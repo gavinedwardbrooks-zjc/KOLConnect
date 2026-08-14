@@ -1,9 +1,21 @@
 (function initializePassiveCaptureProtocol(root, factory) {
-  const api = factory();
-  if (typeof module === "object" && module.exports) {
-    module.exports = api;
-  } else {
-    root.KOLConnectPassiveCaptureProtocol = api;
+  const isCommonJs = typeof module === "object"
+    && module.exports
+    && typeof window === "undefined";
+  if (!isCommonJs) root.__kolconnectPassiveCaptureProtocolScriptV1__ = "executing";
+  try {
+    const api = factory();
+    if (isCommonJs) {
+      module.exports = api;
+    } else {
+      root.KOLConnectPassiveCaptureProtocol = api;
+      root.__kolconnectPassiveCaptureProtocolScriptV1__ = "exposed";
+      root.__kolconnectPassiveCaptureProtocolErrorV1__ = "";
+    }
+  } catch (error) {
+    if (isCommonJs) throw error;
+    root.__kolconnectPassiveCaptureProtocolScriptV1__ = "failed";
+    root.__kolconnectPassiveCaptureProtocolErrorV1__ = String(error?.name || "Error");
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function createProtocol() {
   "use strict";

@@ -3,6 +3,7 @@
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
+const vm = require("vm");
 
 const Protocol = require("../chrome_extension/capture/passive_capture_protocol.js");
 const MainCapture = require("../chrome_extension/capture/passive_capture_main.js");
@@ -347,6 +348,76 @@ async function testManifestWiring() {
   assert.equal(manifest.permissions.includes("webRequest"), false);
 }
 
+async function testMainWorldBootIgnoresPageModuleGlobal() {
+  const target = createWindow({ module: { exports: {} } });
+  target.window = target;
+  target.globalThis = target;
+  vm.createContext(target);
+
+  const protocolSource = fs.readFileSync(
+    path.join(__dirname, "..", "chrome_extension", "capture", "passive_capture_protocol.js"),
+    "utf8",
+  );
+  const mainSource = fs.readFileSync(
+    path.join(__dirname, "..", "chrome_extension", "capture", "passive_capture_main.js"),
+    "utf8",
+  );
+  vm.runInContext(protocolSource, target);
+  assert.equal(target.__kolconnectPassiveCaptureProtocolScriptV1__, "exposed");
+  assert.equal(target.__kolconnectPassiveCaptureProtocolErrorV1__, "");
+  vm.runInContext(mainSource, target);
+
+  assert.equal(typeof target.KOLConnectPassiveCaptureProtocol, "object");
+  assert.equal(target.__kolconnectPassiveCaptureMainV1__, true);
+  assert.equal(target.__kolconnectPassiveCaptureMainScriptV1__, "installed");
+  assert.equal(target.__kolconnectPassiveCaptureMainErrorV1__, "");
+
+  const failedTarget = createWindow({ crypto: null, module: { exports: {} } });
+  failedTarget.window = failedTarget;
+  failedTarget.globalThis = failedTarget;
+  vm.createContext(failedTarget);
+  vm.runInContext(protocolSource, failedTarget);
+  assert.doesNotThrow(() => vm.runInContext(mainSource, failedTarget));
+  assert.equal(failedTarget.__kolconnectPassiveCaptureMainV1__, undefined);
+  assert.equal(failedTarget.__kolconnectPassiveCaptureMainScriptV1__, "failed");
+  assert.equal(failedTarget.__kolconnectPassiveCaptureMainErrorV1__, "Error");
+
+  const protocolFailureTarget = createWindow({ module: { exports: {} } });
+  protocolFailureTarget.window = protocolFailureTarget;
+  protocolFailureTarget.globalThis = protocolFailureTarget;
+  Object.defineProperty(protocolFailureTarget, "KOLConnectPassiveCaptureProtocol", {
+    configurable: true,
+    set() {
+      throw new TypeError("sensitive runtime details must not be exposed");
+    },
+  });
+  vm.createContext(protocolFailureTarget);
+  assert.doesNotThrow(() => vm.runInContext(protocolSource, protocolFailureTarget));
+  assert.equal(protocolFailureTarget.__kolconnectPassiveCaptureProtocolScriptV1__, "failed");
+  assert.equal(protocolFailureTarget.__kolconnectPassiveCaptureProtocolErrorV1__, "TypeError");
+  assert.equal(
+    protocolFailureTarget.__kolconnectPassiveCaptureProtocolErrorV1__.includes("sensitive"),
+    false,
+  );
+
+  const missingProtocolTarget = createWindow({ module: { exports: {} } });
+  missingProtocolTarget.window = missingProtocolTarget;
+  missingProtocolTarget.globalThis = missingProtocolTarget;
+  vm.createContext(missingProtocolTarget);
+  vm.runInContext(mainSource, missingProtocolTarget);
+  assert.equal(
+    missingProtocolTarget.__kolconnectPassiveCaptureMainScriptV1__,
+    "skipped_protocol_unavailable",
+  );
+  assert.equal(missingProtocolTarget.__kolconnectPassiveCaptureMainV1__, undefined);
+
+  vm.runInContext(mainSource, target);
+  assert.equal(target.__kolconnectPassiveCaptureMainScriptV1__, "skipped_already_installed");
+  assert.equal(target.__kolconnectPassiveCaptureMainV1__, true);
+
+  assert.equal(MainCapture.installMainWorldCapture(null, Protocol), false);
+}
+
 async function run() {
   await testMatcher();
   await testFetchCapture();
@@ -354,6 +425,7 @@ async function run() {
   await testXhrCapture();
   await testBridgeValidationAndTokens();
   await testManifestWiring();
+  await testMainWorldBootIgnoresPageModuleGlobal();
   console.log("M3.1 MAIN-world passive capture and bridge foundation: OK");
 }
 

@@ -1,9 +1,27 @@
 (function initializePassiveCaptureMain(root, factory) {
   const api = factory();
-  if (typeof module === "object" && module.exports) {
+  if (typeof module === "object" && module.exports && typeof window === "undefined") {
     module.exports = api;
   } else {
-    api.installMainWorldCapture(root, root.KOLConnectPassiveCaptureProtocol);
+    root.__kolconnectPassiveCaptureMainScriptV1__ = "executing";
+    try {
+      const protocol = root.KOLConnectPassiveCaptureProtocol;
+      const alreadyInstalled = Boolean(root[api.INSTALL_MARKER]);
+      const installed = api.installMainWorldCapture(root, protocol);
+      root.__kolconnectPassiveCaptureMainScriptV1__ = installed
+        ? "installed"
+        : !root
+          ? "skipped_target_unavailable"
+          : !protocol
+            ? "skipped_protocol_unavailable"
+            : alreadyInstalled
+              ? "skipped_already_installed"
+              : "skipped";
+      root.__kolconnectPassiveCaptureMainErrorV1__ = "";
+    } catch (error) {
+      root.__kolconnectPassiveCaptureMainScriptV1__ = "failed";
+      root.__kolconnectPassiveCaptureMainErrorV1__ = String(error?.name || "Error");
+    }
   }
 })(typeof globalThis !== "undefined" ? globalThis : this, function createMainCaptureApi() {
   "use strict";
