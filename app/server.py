@@ -37,6 +37,7 @@ from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from product_repository import ProductRepository
+from ports.agency_port import AgencyPort
 from ports.creator_port import (
     CreatorAnalysisSnapshot,
     CreatorImportResult,
@@ -58,7 +59,9 @@ from ports.creator_port import (
 )
 from ports.task_port import CreatorImportLinkage, ManualReviewTaskCommand, TaskPort
 from repositories.task_repository import TaskRepository
+from repositories.agency_repository import AgencyRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
+from services.agency_service import AgencyService
 from services.creator_service import CreatorService
 from services.task_service import TaskService
 from app_logging import log_error, log_event
@@ -1598,7 +1601,7 @@ def _create_manual_task_legacy(
     local_source_contact_id = ""
     if source_contact:
         try:
-            local_contact = get_creator_repository().upsertExternalAgencyContact(
+            local_contact = get_agency_service().upsert_external_contact(
                 source_contact["record_id"],
                 name=source_contact["name"],
                 whatsapp=source_contact["whatsapp"],
@@ -1655,6 +1658,19 @@ def get_creator_repository() -> CreatorRepository:
     return factory.creator()
 
 
+def get_agency_repository() -> AgencyRepository:
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.agency()
+
+
+def get_agency_port() -> AgencyPort:
+    return get_agency_repository()
+
+
+def get_agency_service() -> AgencyService:
+    return AgencyService(get_agency_port, get_creator_repository)
+
+
 def get_creator_service() -> CreatorService:
     """Create a stateless facade whose provider resolves the active request repository."""
     return CreatorService(
@@ -1664,6 +1680,7 @@ def get_creator_service() -> CreatorService:
         _save_data_protection,
         _resolve_source_contact,
         get_four_table_feishu_config,
+        get_agency_port,
     )
 
 
@@ -1780,6 +1797,7 @@ def background_task_service_scope():
             _save_data_protection,
             _resolve_source_contact,
             get_four_table_feishu_config,
+            factory.agency,
         )
         creator_port = _CreatorAnalysisPortAdapter(lambda: creator_service)
         yield TaskService(
@@ -2133,13 +2151,15 @@ class Handler(BaseHTTPRequestHandler):
             },
             "scrape_job": SCRAPE_JOB,
             "repositories": {
+                "agency": get_agency_repository,
                 "creator": get_creator_repository,
                 "product": get_product_repository,
                 "campaign": get_campaign_repository,
                 "campaign_creator": get_campaign_creator_repository,
             },
-            "ports": {"task": get_task_port},
+            "ports": {"agency": get_agency_port, "task": get_task_port},
             "services": {
+                "agency": get_agency_service(),
                 "creator": get_creator_service(),
                 "task": get_task_service(),
                 "build_accounts_payload": build_accounts_payload,

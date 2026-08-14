@@ -18,6 +18,7 @@ sys.path.insert(0, str(APP_DIR))
 
 import creator_repository
 import server
+from repositories.agency_repository import AgencyRepository
 
 
 class CreatorLibraryCrmTests(unittest.TestCase):
@@ -144,6 +145,11 @@ class CreatorLibraryCrmTests(unittest.TestCase):
     def test_creator_patch_and_archived_query_api(self) -> None:
         patchers = [
             mock.patch.object(server, "get_creator_repository", return_value=self.repository),
+            mock.patch.object(
+                server,
+                "get_agency_port",
+                return_value=AgencyRepository(self.repository.store),
+            ),
             mock.patch.object(server, "log_event"),
             mock.patch.object(server, "log_error"),
             mock.patch.object(server, "_record_last_error"),

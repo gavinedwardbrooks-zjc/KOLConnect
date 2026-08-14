@@ -13,6 +13,7 @@ from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from excel_workbook_store import ExcelWorkbookStore
 from product_repository import ProductRepository
+from repositories.agency_repository import AgencyRepository
 
 
 _ACTIVE_FACTORY: ContextVar[RepositoryFactory | None] = ContextVar(
@@ -35,6 +36,7 @@ class RepositoryFactory:
         self.legacy_analysis_dir = legacy_analysis_dir
         self.legacy_library_file = legacy_library_file
         self._creator: CreatorRepository | None = None
+        self._agency: AgencyRepository | None = None
         self._product: ProductRepository | None = None
         self._campaign: CampaignRepository | None = None
         self._campaign_creator: CampaignCreatorRepository | None = None
@@ -62,6 +64,11 @@ class RepositoryFactory:
                 self.legacy_library_file,
             )
         return self._creator
+
+    def agency(self) -> AgencyRepository:
+        if self._agency is None:
+            self._agency = AgencyRepository(self.store)
+        return self._agency
 
     def product(self) -> ProductRepository:
         if self._product is None:

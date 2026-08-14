@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
 import creator_data_compat as scraper_module
+from ports.agency_port import AgencyPort
 from ports.creator_port import (
     CreatorImportItem,
     CreatorImportResult,
@@ -78,25 +79,25 @@ class CreatorRepositoryReader(Protocol):
 
     def getCreatorSnapshots(self, creator_id: str) -> list[dict[str, Any]]: ...
 
-    def getAgencies(self) -> list[dict[str, Any]]: ...
-
-    def getAgencyDetail(self, agency_id: str) -> dict[str, Any]: ...
-
-    def getAgencyContacts(self, agency_id: str = "") -> list[dict[str, Any]]: ...
-
     def getCreatorAccounts(self, creator_id: str = "") -> list[dict[str, Any]]: ...
 
-    def updateCreator(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]: ...
+    def updateCreator(
+        self,
+        creator_id: str,
+        payload: dict[str, Any],
+        *,
+        agency_port: AgencyPort | None = None,
+    ) -> dict[str, Any]: ...
 
     def updateCreatorStatus(self, creator_id: str, status: object) -> dict[str, Any]: ...
 
     def updateCreatorRelations(
-        self, creator_id: str, payload: dict[str, Any]
+        self,
+        creator_id: str,
+        payload: dict[str, Any],
+        *,
+        agency_port: AgencyPort | None = None,
     ) -> dict[str, Any]: ...
-
-    def saveAgency(self, payload: dict[str, Any]) -> dict[str, Any]: ...
-
-    def saveAgencyContact(self, payload: dict[str, Any]) -> dict[str, Any]: ...
 
     def importTaskResults(
         self,
@@ -119,6 +120,7 @@ class CreatorRepositoryReader(Protocol):
 
 RepositoryProvider = Callable[[], CreatorRepositoryReader]
 TaskPortProvider = Callable[[], TaskPort]
+AgencyPortProvider = Callable[[], AgencyPort]
 DataProtectionLoader = Callable[[], dict]
 DataProtectionSaver = Callable[[dict], None]
 SourceContactResolver = Callable[[object], dict | None]
@@ -136,6 +138,7 @@ class CreatorService:
         data_protection_saver: DataProtectionSaver | None = None,
         source_contact_resolver: SourceContactResolver | None = None,
         four_table_config_provider: FourTableConfigProvider | None = None,
+        agency_port_provider: AgencyPortProvider | None = None,
     ) -> None:
         self._repository_provider = repository_provider
         self._task_port_provider = task_port_provider
@@ -143,6 +146,7 @@ class CreatorService:
         self._data_protection_saver = data_protection_saver or (lambda _data: None)
         self._source_contact_resolver = source_contact_resolver or (lambda _value: None)
         self._four_table_config_provider = four_table_config_provider or (lambda: {})
+        self._agency_port_provider = agency_port_provider
 
     def prepare_four_table_sync(
         self, command: FourTableSyncCommand
@@ -357,12 +361,21 @@ class CreatorService:
     def upsert_external_agency_contact(
         self, contact: ExternalAgencyContactCommand
     ) -> ExternalAgencyContact:
-        saved = self._repository_provider().upsertExternalAgencyContact(
-            contact.external_record_id,
-            name=contact.name,
-            whatsapp=contact.whatsapp,
-            source=contact.source,
-        )
+        if self._agency_port_provider is None:
+            # Compatibility for existing injected CreatorRepository test doubles.
+            saved = self._repository_provider().upsertExternalAgencyContact(
+                contact.external_record_id,
+                name=contact.name,
+                whatsapp=contact.whatsapp,
+                source=contact.source,
+            )
+        else:
+            saved = self._agency_port_provider().upsert_external_contact(
+                contact.external_record_id,
+                name=contact.name,
+                whatsapp=contact.whatsapp,
+                source=contact.source,
+            )
         return ExternalAgencyContact(
             contact_id=str(saved.get("contact_id") or ""),
             external_record_id=str(saved.get("external_record_id") or ""),
@@ -407,19 +420,24 @@ class CreatorService:
             "snapshots": self._repository_provider().getCreatorSnapshots(creator_id),
         }
 
-    def get_agencies(self) -> dict[str, Any]:
-        return {"agencies": self._repository_provider().getAgencies()}
-
-    def get_agency_detail(self, agency_id: str) -> dict[str, Any]:
-        return self._repository_provider().getAgencyDetail(agency_id)
-
-    def get_agency_contacts(self, agency_id: str = "") -> dict[str, Any]:
-        return {"contacts": self._repository_provider().getAgencyContacts(agency_id)}
-
     def update_creator_profile(
         self, creator_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        return {"creator": self._repository_provider().updateCreator(creator_id, payload)}
+        agency_port = (
+            self._agency_port_provider()
+            if self._agency_port_provider is not None and "agency_id" in payload
+            else None
+        )
+        repository = self._repository_provider()
+        return {
+            "creator": (
+                repository.updateCreator(creator_id, payload)
+                if agency_port is None
+                else repository.updateCreator(
+                    creator_id, payload, agency_port=agency_port
+                )
+            )
+        }
 
     def update_creator_status(self, creator_id: str, status: object) -> dict[str, Any]:
         return self._repository_provider().updateCreatorStatus(creator_id, status)
@@ -427,13 +445,19 @@ class CreatorService:
     def update_creator_relations(
         self, creator_id: str, payload: dict[str, Any]
     ) -> dict[str, Any]:
-        return self._repository_provider().updateCreatorRelations(creator_id, payload)
-
-    def save_agency(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"agency": self._repository_provider().saveAgency(payload)}
-
-    def save_agency_contact(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"contact": self._repository_provider().saveAgencyContact(payload)}
+        agency_port = (
+            self._agency_port_provider()
+            if self._agency_port_provider is not None
+            else None
+        )
+        repository = self._repository_provider()
+        return (
+            repository.updateCreatorRelations(creator_id, payload)
+            if agency_port is None
+            else repository.updateCreatorRelations(
+                creator_id, payload, agency_port=agency_port
+            )
+        )
 
     def import_creator_from_extension(
         self,

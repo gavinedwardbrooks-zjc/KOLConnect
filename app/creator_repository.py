@@ -23,6 +23,8 @@ from openpyxl.styles import Font
 from app_logging import log_event
 from campaign_creator_repository import CAMPAIGN_CREATORS_HEADERS
 from campaign_repository import CAMPAIGNS_HEADERS, migrate_legacy_campaign_archives
+from ports.agency_port import AgencyPort
+from repositories.agency_repository import AGENCIES_HEADERS, AGENCY_CONTACTS_HEADERS
 from excel_workbook_store import (
     ExcelWorkbookStore,
     WORKBOOK_LOCK,
@@ -84,16 +86,8 @@ _COOPERATIONS_HEADERS = [
 ]
 # Legacy cooperation records remain read/write compatible until the UI and
 # Dashboard move to CampaignCreators. Phase 1 does not migrate or delete them.
-_AGENCIES_HEADERS = [
-    "agency_id", "name", "country", "website", "public_email", "whatsapp",
-    "cooperation_stage", "tags", "last_contact_time", "next_follow_up_time",
-    "owner", "note", "resource_files", "created_at", "updated_at",
-]
-_AGENCY_CONTACTS_HEADERS = [
-    "contact_id", "name", "agency_id", "position", "email", "whatsapp", "language",
-    "status", "last_contact_time", "next_follow_up_time", "owner", "note",
-    "external_record_id", "source", "created_at", "updated_at",
-]
+_AGENCIES_HEADERS = AGENCIES_HEADERS
+_AGENCY_CONTACTS_HEADERS = AGENCY_CONTACTS_HEADERS
 _FOLLOW_UP_LOGS_HEADERS = [
     "follow_up_id", "object_type", "object_id", "contact_method", "content",
     "stage_before", "stage_after", "contacted_at", "next_follow_up_time", "owner",
@@ -283,6 +277,26 @@ class CreatorRepository:
         return accounts
 
     @_synchronized
+    def getCreatorsByAgency(self, agency_id: str) -> list[dict[str, Any]]:
+        workbook = self._load_workbook()
+        agency_id = str(agency_id or "").strip()
+        return [
+            row
+            for row in self._rows(workbook["Creators"])
+            if str(row.get("agency_id") or "") == agency_id
+        ]
+
+    @_synchronized
+    def getCreatorCountsByAgency(self) -> dict[str, int]:
+        workbook = self._load_workbook()
+        counts: dict[str, int] = {}
+        for creator in self._rows(workbook["Creators"]):
+            agency_id = str(creator.get("agency_id") or "")
+            if agency_id:
+                counts[agency_id] = counts.get(agency_id, 0) + 1
+        return counts
+
+    @_synchronized
     def importTaskResults(
         self,
         task_id: str,
@@ -449,153 +463,13 @@ class CreatorRepository:
         }
 
     @_synchronized
-    def getAgencies(self) -> list[dict[str, Any]]:
-        workbook = self._load_workbook()
-        creators = self._rows(workbook["Creators"])
-        contacts = self._rows(workbook["AgencyContacts"])
-        agencies = []
-        for agency in self._rows(workbook["Agencies"]):
-            agency_id = str(agency.get("agency_id") or "")
-            agencies.append({
-                **agency,
-                "creator_count": sum(1 for row in creators if str(row.get("agency_id") or "") == agency_id),
-                "contact_count": sum(1 for row in contacts if str(row.get("agency_id") or "") == agency_id),
-            })
-        agencies.sort(key=lambda row: str(row.get("name") or "").casefold())
-        return agencies
-
-    @_synchronized
-    def getAgencyDetail(self, agency_id: str) -> dict[str, Any]:
-        workbook = self._load_workbook()
-        agency_id = str(agency_id or "").strip()
-        agency = self._row_by_key(workbook["Agencies"], "agency_id", agency_id)
-        if not agency:
-            raise ValueError("未找到 Agency。")
-        contacts = [
-            row for row in self._rows(workbook["AgencyContacts"])
-            if str(row.get("agency_id") or "") == agency_id
-        ]
-        creators = [
-            row for row in self._rows(workbook["Creators"])
-            if str(row.get("agency_id") or "") == agency_id
-        ]
-        return {"agency": agency, "contacts": contacts, "creators": creators}
-
-    @_synchronized
-    def saveAgency(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise ValueError("Agency 数据无效。")
-        workbook = self._load_workbook()
-        agency_id = str(payload.get("agency_id") or "").strip()
-        existing = self._row_by_key(workbook["Agencies"], "agency_id", agency_id) if agency_id else {}
-        if agency_id and not existing:
-            raise ValueError("未找到 Agency。")
-        agency_id = agency_id or f"agency_{uuid.uuid4().hex[:16]}"
-        name = str(payload.get("name") if "name" in payload else existing.get("name") or "").strip()
-        if not name:
-            raise ValueError("Agency 名称不能为空。")
-        now = _utc_now()
-        values = {
-            **existing,
-            "agency_id": agency_id,
-            "name": name,
-            "created_at": str(existing.get("created_at") or now),
-            "updated_at": now,
-        }
-        for field in _AGENCIES_HEADERS:
-            if field in {"agency_id", "created_at", "updated_at"}:
-                continue
-            if field in payload:
-                values[field] = str(payload.get(field) or "").strip()
-        self._upsert_row(workbook["Agencies"], "agency_id", agency_id, values)
-        self._save_workbook(workbook)
-        return values
-
-    @_synchronized
-    def getAgencyContacts(self, agency_id: str = "") -> list[dict[str, Any]]:
-        workbook = self._load_workbook()
-        agency_id = str(agency_id or "").strip()
-        contacts = self._rows(workbook["AgencyContacts"])
-        if agency_id:
-            contacts = [row for row in contacts if str(row.get("agency_id") or "") == agency_id]
-        contacts.sort(key=lambda row: str(row.get("name") or "").casefold())
-        return contacts
-
-    @_synchronized
-    def saveAgencyContact(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if not isinstance(payload, dict):
-            raise ValueError("联系人数据无效。")
-        workbook = self._load_workbook()
-        contact_id = str(payload.get("contact_id") or "").strip()
-        existing = self._row_by_key(workbook["AgencyContacts"], "contact_id", contact_id) if contact_id else {}
-        if contact_id and not existing:
-            raise ValueError("未找到 Agency 联系人。")
-        agency_id = str(payload.get("agency_id") if "agency_id" in payload else existing.get("agency_id") or "").strip()
-        if agency_id and not self._row_by_key(workbook["Agencies"], "agency_id", agency_id):
-            raise ValueError("联系人关联的 Agency 不存在。")
-        name = str(payload.get("name") if "name" in payload else existing.get("name") or "").strip()
-        if not name:
-            raise ValueError("联系人姓名不能为空。")
-        contact_id = contact_id or f"contact_{uuid.uuid4().hex[:16]}"
-        now = _utc_now()
-        values = {
-            **existing,
-            "contact_id": contact_id,
-            "name": name,
-            "agency_id": agency_id,
-            "created_at": str(existing.get("created_at") or now),
-            "updated_at": now,
-        }
-        for field in _AGENCY_CONTACTS_HEADERS:
-            if field in {"contact_id", "name", "agency_id", "created_at", "updated_at"}:
-                continue
-            if field in payload:
-                values[field] = str(payload.get(field) or "").strip()
-        self._upsert_row(workbook["AgencyContacts"], "contact_id", contact_id, values)
-        self._save_workbook(workbook)
-        return values
-
-    @_synchronized
-    def upsertExternalAgencyContact(
+    def updateCreatorRelations(
         self,
-        external_record_id: str,
+        creator_id: str,
+        payload: dict[str, Any],
         *,
-        name: str,
-        whatsapp: str = "",
-        source: str = "feishu_compat",
+        agency_port: AgencyPort | None = None,
     ) -> dict[str, Any]:
-        """Preserve a legacy external contact locally without inferring an Agency."""
-        external_record_id = str(external_record_id or "").strip()
-        if not external_record_id:
-            raise ValueError("外部联系人标识不能为空。")
-        workbook = self._load_workbook()
-        existing = self._row_by_key(
-            workbook["AgencyContacts"],
-            "external_record_id",
-            external_record_id,
-        )
-        contact_id = str(
-            existing.get("contact_id")
-            or f"contact_{hashlib.sha256(external_record_id.encode('utf-8')).hexdigest()[:16]}"
-        )
-        now = _utc_now()
-        values = {
-            **existing,
-            "contact_id": contact_id,
-            "name": str(name or existing.get("name") or "").strip(),
-            "agency_id": str(existing.get("agency_id") or ""),
-            "whatsapp": str(whatsapp or existing.get("whatsapp") or "").strip(),
-            "external_record_id": external_record_id,
-            "source": str(source or "feishu_compat"),
-            "created_at": str(existing.get("created_at") or now),
-            "updated_at": now,
-        }
-        self._upsert_row(workbook["AgencyContacts"], "contact_id", contact_id, values)
-        self._save_workbook(workbook)
-        return values
-
-    @_synchronized
-    def updateCreatorRelations(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(payload, dict):
             raise ValueError("达人关系数据无效。")
         allowed = {"agency_id", "current_contact_id", "source_contact_id"}
@@ -608,13 +482,29 @@ class CreatorRepository:
         if not creator:
             raise ValueError("未找到达人分析记录。")
         agency_id = str(payload.get("agency_id") if "agency_id" in payload else creator.get("agency_id") or "").strip()
-        if agency_id and not self._row_by_key(workbook["Agencies"], "agency_id", agency_id):
-            raise ValueError("关联的 Agency 不存在。")
+        if agency_id:
+            try:
+                if agency_port is None:
+                    if not self._row_by_key(workbook["Agencies"], "agency_id", agency_id):
+                        raise ValueError
+                else:
+                    agency_port.get_agency(agency_id)
+            except ValueError as exc:
+                raise ValueError("关联的 Agency 不存在。") from exc
         relations = {"agency_id": agency_id}
         for field in ("current_contact_id", "source_contact_id"):
             contact_id = str(payload.get(field) if field in payload else creator.get(field) or "").strip()
-            if contact_id and not self._row_by_key(workbook["AgencyContacts"], "contact_id", contact_id):
-                raise ValueError("关联的 Agency 联系人不存在。")
+            if contact_id:
+                try:
+                    if agency_port is None:
+                        if not self._row_by_key(
+                            workbook["AgencyContacts"], "contact_id", contact_id
+                        ):
+                            raise ValueError
+                    else:
+                        agency_port.get_contact(contact_id)
+                except ValueError as exc:
+                    raise ValueError("关联的 Agency 联系人不存在。") from exc
             relations[field] = contact_id
         updated = {**creator, **relations, "updated_at": _utc_now()}
         self._upsert_row(workbook["Creators"], "creator_id", creator_id, updated)
@@ -622,7 +512,13 @@ class CreatorRepository:
         return {"creator_id": creator_id, **relations}
 
     @_synchronized
-    def updateCreator(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def updateCreator(
+        self,
+        creator_id: str,
+        payload: dict[str, Any],
+        *,
+        agency_port: AgencyPort | None = None,
+    ) -> dict[str, Any]:
         """Update CRM-maintained Creator fields without changing identity or schema."""
         if not isinstance(payload, dict) or not payload:
             raise ValueError("缺少可更新的达人资料。")
@@ -689,8 +585,17 @@ class CreatorRepository:
 
         if "agency_id" in payload:
             agency_id = str(payload.get("agency_id") or "").strip()
-            if agency_id and not self._row_by_key(workbook["Agencies"], "agency_id", agency_id):
-                raise ValueError("关联的 Agency 不存在。")
+            if agency_id:
+                try:
+                    if agency_port is None:
+                        if not self._row_by_key(
+                            workbook["Agencies"], "agency_id", agency_id
+                        ):
+                            raise ValueError
+                    else:
+                        agency_port.get_agency(agency_id)
+                except ValueError as exc:
+                    raise ValueError("关联的 Agency 不存在。") from exc
             updated["agency_id"] = agency_id
             crm["agency_id"] = agency_id
 

@@ -20,6 +20,8 @@ APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
 
 import creator_repository
+from repositories.agency_repository import AgencyRepository
+from services.agency_service import AgencyService
 
 
 def close_app_logger() -> None:
@@ -352,6 +354,11 @@ class Phase1IdentityAndRelationshipTests(unittest.TestCase):
             creator_repository, "log_event"
         ):
             repository = self.repository(temp_dir)
+            agency_repository = AgencyRepository(repository.store)
+            agency_service = AgencyService(
+                lambda: agency_repository,
+                lambda: repository,
+            )
             creator_one = repository.saveCreator(
                 analysis(
                     "task_20260731T160000Z_aaaaaaaa",
@@ -367,11 +374,11 @@ class Phase1IdentityAndRelationshipTests(unittest.TestCase):
                     platform="YouTube",
                 )
             )
-            agency = repository.saveAgency({"name": "Example Agency"})
-            source_contact = repository.saveAgencyContact({"name": "Maria"})
-            current_contact = repository.saveAgencyContact(
+            agency = agency_service.save_agency({"name": "Example Agency"})["agency"]
+            source_contact = agency_service.save_agency_contact({"name": "Maria"})["contact"]
+            current_contact = agency_service.save_agency_contact(
                 {"name": "John", "agency_id": agency["agency_id"]}
-            )
+            )["contact"]
             repository.updateCreatorRelations(
                 creator_one["creator_id"],
                 {
@@ -384,7 +391,7 @@ class Phase1IdentityAndRelationshipTests(unittest.TestCase):
                 creator_two["creator_id"],
                 {"agency_id": agency["agency_id"]},
             )
-            detail = repository.getAgencyDetail(agency["agency_id"])
+            detail = agency_service.get_agency_detail(agency["agency_id"])
             creator_detail = repository.getCreatorDetail(creator_one["creator_id"])
 
             self.assertEqual("", source_contact["agency_id"])
