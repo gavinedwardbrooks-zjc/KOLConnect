@@ -29,6 +29,7 @@
         <button class="nav-btn nav-sub" data-page="discover" data-primary="scrape" data-i18n="navDiscover">链接清洗</button>
         <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">账号管理</button>
         <button class="nav-btn nav-sub" data-page="products" data-primary="mail">产品管理</button>
+        <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail">Agency 管理</button>
         <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign 管理</button>
         <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件与联系</button>
         <button class="nav-btn nav-sub" data-page="logs" data-primary="settings" data-i18n="navLogs">系统日志</button>
@@ -728,6 +729,108 @@
         </div>
       </section>
 
+      <section class="page" data-page="agencies">
+        <div class="page-header agency-page-heading">
+          <div>
+            <p class="eyebrow">PARTNER NETWORK</p>
+            <h1>Agency 管理</h1>
+            <p>查看合作机构、联系人覆盖和已关联的达人资源。</p>
+          </div>
+          <button class="soft-btn" id="agency-list-refresh" type="button">刷新列表</button>
+        </div>
+
+        <div class="agency-overview" aria-label="Agency 概览">
+          <div class="agency-overview-card"><span>Agency</span><strong id="agency-overview-total">--</strong></div>
+          <div class="agency-overview-card"><span>已关联达人</span><strong id="agency-overview-creators">--</strong></div>
+          <div class="agency-overview-card"><span>联系人</span><strong id="agency-overview-contacts">--</strong></div>
+        </div>
+
+        <div class="section-card agency-list-card">
+          <div class="agency-list-heading">
+            <div class="section-title">Agency 列表</div>
+            <span class="agency-list-count" id="agency-list-count">--</span>
+          </div>
+          <div class="agency-list-message" id="agency-list-loading">正在加载 Agency...</div>
+          <div class="agency-list-message agency-list-error" id="agency-list-error" hidden>
+            <span id="agency-list-error-message">Agency 列表加载失败。</span>
+            <button class="soft-btn" id="agency-list-retry" type="button">重新加载</button>
+          </div>
+          <div class="empty-note agency-list-empty" id="agency-list-empty" hidden>
+            暂无 Agency。可以在现有 Agency 数据入口建立第一条记录。
+          </div>
+          <div class="review-table-wrap" id="agency-list-table-wrap" hidden>
+            <table class="review-table agency-table">
+              <thead><tr><th>Agency</th><th>国家/地区</th><th>联系人</th><th>关联达人</th><th>更新时间</th><th></th></tr></thead>
+              <tbody id="agency-list-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" data-page="agency-detail">
+        <div class="page-header agency-detail-heading">
+          <div>
+            <p class="eyebrow">AGENCY PROFILE</p>
+            <h1 id="agency-detail-title">Agency 详情</h1>
+            <p id="agency-detail-subtitle">机构资料、联系人、达人和 Campaign 关系。</p>
+          </div>
+          <button class="soft-btn" id="agency-detail-back" type="button">返回 Agency 列表</button>
+        </div>
+
+        <div class="agency-detail-message" id="agency-detail-loading">正在加载 Agency 详情...</div>
+        <div class="agency-detail-message agency-list-error" id="agency-detail-error" hidden>
+          <span id="agency-detail-error-message">Agency 详情加载失败。</span>
+          <button class="soft-btn" id="agency-detail-retry" type="button">重新加载</button>
+        </div>
+
+        <div class="agency-detail-content" id="agency-detail-content" hidden>
+          <section class="section-card agency-profile-card">
+            <div class="agency-detail-section-heading">
+              <div>
+                <p class="eyebrow">BASIC INFO</p>
+                <h2>机构资料</h2>
+              </div>
+              <span class="status-pill" data-status="active">Read only</span>
+            </div>
+            <dl class="agency-profile-grid">
+              <div><dt>名称</dt><dd id="agency-detail-name">--</dd></div>
+              <div><dt>国家/地区</dt><dd id="agency-detail-country">--</dd></div>
+              <div><dt>网站</dt><dd id="agency-detail-website">--</dd></div>
+              <div><dt>公开邮箱</dt><dd id="agency-detail-email">--</dd></div>
+              <div><dt>合作阶段</dt><dd id="agency-detail-stage">--</dd></div>
+              <div><dt>负责人</dt><dd id="agency-detail-owner">--</dd></div>
+              <div class="agency-profile-wide"><dt>备注</dt><dd id="agency-detail-note">--</dd></div>
+            </dl>
+          </section>
+
+          <section class="section-card agency-related-card">
+            <div class="agency-detail-section-heading"><h2>联系人</h2><span id="agency-contact-count">0 位</span></div>
+            <div class="empty-note" id="agency-contacts-empty" hidden>暂无联系人。</div>
+            <div class="review-table-wrap" id="agency-contacts-table-wrap" hidden>
+              <table class="review-table"><thead><tr><th>姓名</th><th>职位</th><th>邮箱</th><th>WhatsApp</th><th>状态</th></tr></thead><tbody id="agency-contacts-body"></tbody></table>
+            </div>
+          </section>
+
+          <section class="section-card agency-related-card">
+            <div class="agency-detail-section-heading"><h2>关联达人</h2><span id="agency-creator-count">0 位</span></div>
+            <div class="empty-note" id="agency-creators-empty" hidden>暂无关联达人。</div>
+            <div class="review-table-wrap" id="agency-creators-table-wrap" hidden>
+              <table class="review-table"><thead><tr><th>达人</th><th>平台</th><th>国家/地区</th><th>状态</th><th></th></tr></thead><tbody id="agency-creators-body"></tbody></table>
+            </div>
+          </section>
+
+          <section class="section-card agency-related-card">
+            <div class="agency-detail-section-heading"><h2>相关 Campaign</h2><span id="agency-campaign-count">--</span></div>
+            <p class="agency-campaign-note">通过已关联达人和现有 Campaign 查询只读汇总。</p>
+            <div class="agency-inline-warning" id="agency-campaigns-unavailable" hidden>Campaign 数据当前不可用，Agency 和达人资料不受影响。</div>
+            <div class="empty-note" id="agency-campaigns-empty" hidden>关联达人暂未参与 Campaign。</div>
+            <div class="review-table-wrap" id="agency-campaigns-table-wrap" hidden>
+              <table class="review-table"><thead><tr><th>Campaign</th><th>Product</th><th>状态</th><th>达人数</th><th></th></tr></thead><tbody id="agency-campaigns-body"></tbody></table>
+            </div>
+          </section>
+        </div>
+      </section>
+
       <section class="page" data-page="campaigns">
         <div class="page-header campaign-page-heading">
           <div>
@@ -1181,6 +1284,7 @@
   <script src="pages/creator-library.js"></script>
   <script src="pages/creator-library-detail.js"></script>
   <script src="pages/products.js"></script>
+  <script src="pages/agencies.js"></script>
   <script src="pages/campaigns.js"></script>
   <script src="pages/campaign-detail.js"></script>
   <script src="pages/settings.js"></script>

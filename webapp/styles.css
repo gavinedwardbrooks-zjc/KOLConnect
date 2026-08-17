@@ -418,6 +418,158 @@ body {
   background: rgba(199, 125, 114, 0.08);
 }
 
+.agency-page-heading,
+.agency-detail-heading,
+.agency-list-heading,
+.agency-detail-section-heading,
+.agency-list-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.agency-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.agency-overview-card {
+  position: relative;
+  overflow: hidden;
+  padding: 20px 22px;
+  border: 1px solid rgba(139, 170, 140, 0.34);
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(255, 253, 246, 0.96), rgba(236, 244, 233, 0.9));
+  box-shadow: 0 16px 36px rgba(78, 105, 83, 0.08);
+}
+
+.agency-overview-card::after {
+  content: "";
+  position: absolute;
+  right: -24px;
+  bottom: -38px;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: rgba(182, 145, 88, 0.1);
+}
+
+.agency-overview-card span,
+.agency-detail-section-heading span,
+.agency-list-count {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agency-overview-card strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 28px;
+}
+
+.agency-list-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.agency-list-heading {
+  padding: 22px 24px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agency-list-heading .section-title,
+.agency-detail-section-heading h2 {
+  margin: 0;
+}
+
+.agency-list-message,
+.agency-list-empty,
+.agency-detail-message {
+  padding: 28px 24px;
+}
+
+.agency-list-error {
+  color: var(--danger-dark);
+  background: rgba(199, 125, 114, 0.08);
+}
+
+.agency-table {
+  min-width: 920px;
+}
+
+.agency-name-cell {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.agency-detail-content {
+  display: grid;
+  gap: 20px;
+}
+
+.agency-profile-card {
+  border-top: 4px solid var(--accent);
+}
+
+.agency-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px 24px;
+  margin: 22px 0 0;
+}
+
+.agency-profile-grid div {
+  min-width: 0;
+}
+
+.agency-profile-grid dt {
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agency-profile-grid dd {
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+
+.agency-profile-grid .agency-profile-wide {
+  grid-column: 1 / -1;
+}
+
+.agency-related-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.agency-related-card .agency-detail-section-heading {
+  padding: 20px 24px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.agency-related-card .empty-note,
+.agency-inline-warning,
+.agency-campaign-note {
+  margin: 0;
+  padding: 20px 24px;
+}
+
+.agency-campaign-note {
+  padding-bottom: 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.agency-inline-warning {
+  color: #7b5626;
+  background: rgba(206, 168, 105, 0.12);
+}
+
 .product-table {
   min-width: 980px;
 }
@@ -1627,6 +1779,22 @@ button {
   .campaign-creator-heading-actions {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .agency-page-heading,
+  .agency-detail-heading,
+  .agency-detail-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .agency-overview,
+  .agency-profile-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .agency-profile-grid .agency-profile-wide {
+    grid-column: auto;
   }
 
   .campaign-filter-grid {
