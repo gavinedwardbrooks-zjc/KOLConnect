@@ -4,18 +4,22 @@ from __future__ import annotations
 
 import os
 import shutil
-import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any, Callable, Iterator
 
 from openpyxl import Workbook, load_workbook
+from local_storage_lock import (
+    LOCAL_STORAGE_MUTATION_LOCK,
+    shared_storage_lock,
+    shared_storage_lock_held,
+)
 
 
 MigrationCallback = Callable[[Any, bool], bool | None]
 BeforeSaveCallback = Callable[[Any], None]
-WORKBOOK_LOCK = threading.RLock()
+WORKBOOK_LOCK = LOCAL_STORAGE_MUTATION_LOCK
 
 
 class WorkbookReadError(RuntimeError):
@@ -41,6 +45,7 @@ class ExcelWorkbookStore:
         self._scope_failed = False
         self._scope_defer_writes = False
         self._scope_lock_held = False
+        self._scope_shared_lock_context = None
 
     def register_migration(self, callback: MigrationCallback) -> None:
         if callback not in self._migration_callbacks:
@@ -63,16 +68,23 @@ class ExcelWorkbookStore:
     def open(self):
         if self._scope_depth > 0:
             if self._scoped_workbook is None:
-                WORKBOOK_LOCK.acquire()
-                self._scope_lock_held = True
-                try:
-                    self._scoped_workbook = self._open_now()
-                except Exception:
-                    self._scope_lock_held = False
-                    WORKBOOK_LOCK.release()
-                    raise
+                lock_context = (
+                    nullcontext()
+                    if shared_storage_lock_held()
+                    else shared_storage_lock()
+                )
+                with lock_context:
+                    WORKBOOK_LOCK.acquire()
+                    self._scope_lock_held = True
+                    try:
+                        self._scoped_workbook = self._open_now()
+                    except Exception:
+                        self._scope_lock_held = False
+                        WORKBOOK_LOCK.release()
+                        raise
             return self._scoped_workbook
-        return self._open_now()
+        with shared_storage_lock():
+            return self._open_now()
 
     @contextmanager
     def read_only_workbook(self) -> Iterator[Any]:
@@ -119,8 +131,9 @@ class ExcelWorkbookStore:
         if workbook is self._scoped_workbook and self._scope_defer_writes:
             self._scope_write_requested = True
             return
-        with WORKBOOK_LOCK:
-            self._save_now(workbook)
+        with shared_storage_lock():
+            with WORKBOOK_LOCK:
+                self._save_now(workbook)
 
     def _save_now(self, workbook) -> None:
         self.workbook_path.parent.mkdir(parents=True, exist_ok=True)
@@ -152,9 +165,46 @@ class ExcelWorkbookStore:
         backup_path = self.workbook_path.with_name(
             f"{self.workbook_path.stem}{suffix}{self.workbook_path.suffix}"
         )
-        with WORKBOOK_LOCK:
-            shutil.copy2(self.workbook_path, backup_path)
+        with shared_storage_lock():
+            with WORKBOOK_LOCK:
+                shutil.copy2(self.workbook_path, backup_path)
         return backup_path
+
+    def create_transaction_backup(self, backup_path: Path) -> Path:
+        """Create and validate one exact backup for a recoverable local transaction."""
+        backup_path = Path(backup_path)
+        with shared_storage_lock(), WORKBOOK_LOCK:
+            if not self.workbook_path.is_file():
+                raise WorkbookReadError("达人库 Excel 文件不存在。")
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self.workbook_path, backup_path)
+            try:
+                load_workbook(backup_path, read_only=True).close()
+            except Exception as exc:
+                backup_path.unlink(missing_ok=True)
+                raise WorkbookReadError("事务工作簿备份验证失败。") from exc
+        return backup_path
+
+    def restore_transaction_backup(self, backup_path: Path) -> None:
+        """Validate and atomically restore an explicitly selected transaction backup."""
+        backup_path = Path(backup_path)
+        with shared_storage_lock(), WORKBOOK_LOCK:
+            if not backup_path.is_file():
+                raise WorkbookReadError("事务工作簿备份不存在。")
+            try:
+                load_workbook(backup_path, read_only=True).close()
+            except Exception as exc:
+                raise WorkbookReadError("事务工作簿备份无效。") from exc
+            self.workbook_path.parent.mkdir(parents=True, exist_ok=True)
+            restore_path = self.workbook_path.with_suffix(".restore.tmp.xlsx")
+            try:
+                shutil.copy2(backup_path, restore_path)
+                load_workbook(restore_path, read_only=True).close()
+                os.replace(restore_path, self.workbook_path)
+            except Exception as exc:
+                raise WorkbookSaveError("事务工作簿恢复失败。") from exc
+            finally:
+                restore_path.unlink(missing_ok=True)
 
     @contextmanager
     def workbook(self, *, write: bool = False) -> Iterator[Any]:
@@ -170,14 +220,28 @@ class ExcelWorkbookStore:
                 raise
             return
 
-        with WORKBOOK_LOCK:
-            workbook = self.open()
-            try:
-                yield workbook
-                if write:
+        if write:
+            with shared_storage_lock(), WORKBOOK_LOCK:
+                workbook = self.open()
+                try:
+                    yield workbook
                     self.save(workbook)
-            finally:
-                workbook.close()
+                finally:
+                    workbook.close()
+            return
+
+        with shared_storage_lock():
+            WORKBOOK_LOCK.acquire()
+            try:
+                workbook = self.open()
+            except Exception:
+                WORKBOOK_LOCK.release()
+                raise
+        try:
+            yield workbook
+        finally:
+            workbook.close()
+            WORKBOOK_LOCK.release()
 
     @contextmanager
     def scope(
@@ -191,6 +255,9 @@ class ExcelWorkbookStore:
             self._scope_write_requested = write
             self._scope_failed = False
             self._scope_defer_writes = defer_writes
+            if defer_writes:
+                self._scope_shared_lock_context = shared_storage_lock()
+                self._scope_shared_lock_context.__enter__()
         else:
             self._scope_write_requested = self._scope_write_requested or write
             self._scope_defer_writes = self._scope_defer_writes or defer_writes
@@ -222,3 +289,7 @@ class ExcelWorkbookStore:
                     if self._scope_lock_held:
                         self._scope_lock_held = False
                         WORKBOOK_LOCK.release()
+                    if self._scope_shared_lock_context is not None:
+                        context = self._scope_shared_lock_context
+                        self._scope_shared_lock_context = None
+                        context.__exit__(None, None, None)

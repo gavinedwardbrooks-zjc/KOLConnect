@@ -33,6 +33,7 @@ from excel_workbook_store import (
 )
 from product_repository import PRODUCTS_HEADERS
 from runtime_paths import load_json_with_backup
+from local_storage_lock import shared_storage_lock
 
 
 CREATOR_LIBRARY_STATUSES = {
@@ -130,6 +131,15 @@ def _synchronized(method):
     return wrapped
 
 
+def _mutation_synchronized(method):
+    """Serialize one workbook mutation across threads and app processes."""
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with shared_storage_lock(), _WORKBOOK_LOCK:
+            return method(self, *args, **kwargs)
+    return wrapped
+
+
 class CreatorRepository:
     """Excel adapter for Creator Library data, suitable for WPS/OneDrive cloud folders."""
 
@@ -152,7 +162,7 @@ class CreatorRepository:
         self.store.register_migration(self._apply_schema_migrations)
         self.store.register_before_save(self._prepare_workbook_save)
 
-    @_synchronized
+    @_mutation_synchronized
     def saveCreator(self, analysis: dict[str, Any]) -> dict[str, Any]:
         """Save the latest creator view and append an immutable analysis snapshot."""
         self._validate_analysis(analysis)
@@ -227,7 +237,7 @@ class CreatorRepository:
             "is_new_creator": is_new_creator,
         }
 
-    @_synchronized
+    @_mutation_synchronized
     def createSnapshot(self, analysis: dict[str, Any], creator_id: str, workbook=None) -> dict[str, Any]:
         """Append one time-stamped analysis without replacing earlier snapshots."""
         should_save = workbook is None
@@ -295,7 +305,7 @@ class CreatorRepository:
             and str(row.get("creator_id") or "") in creator_ids
         }
 
-    @_synchronized
+    @_mutation_synchronized
     def createCreatorsBatch(self, records: list[dict[str, Any]]) -> dict[str, int]:
         """Create normalized Creator rows in one workbook save without overwrites."""
         if not records:
@@ -390,7 +400,7 @@ class CreatorRepository:
                 counts[agency_id] = counts.get(agency_id, 0) + 1
         return counts
 
-    @_synchronized
+    @_mutation_synchronized
     def importTaskResults(
         self,
         task_id: str,
@@ -556,7 +566,7 @@ class CreatorRepository:
             "account_ids": list(dict.fromkeys(account_ids)),
         }
 
-    @_synchronized
+    @_mutation_synchronized
     def updateCreatorRelations(
         self,
         creator_id: str,
@@ -605,7 +615,7 @@ class CreatorRepository:
         self._save_workbook(workbook)
         return {"creator_id": creator_id, **relations}
 
-    @_synchronized
+    @_mutation_synchronized
     def updateCreator(
         self,
         creator_id: str,
@@ -756,7 +766,7 @@ class CreatorRepository:
             "updated_at": now,
         }
 
-    @_synchronized
+    @_mutation_synchronized
     def set_creator_archived(self, creator_id: str, archived: bool) -> dict[str, Any]:
         """Idempotently archive or restore a Creator without changing related data."""
         creator_id = str(creator_id or "").strip()
@@ -1165,12 +1175,12 @@ class CreatorRepository:
         )
         return rows
 
-    @_synchronized
+    @_mutation_synchronized
     def saveCooperation(self, creator_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         """Reject writes to the preserved, read-only Legacy Cooperation store."""
         raise PermissionError("请使用 Campaign 创建新的合作。")
 
-    @_synchronized
+    @_mutation_synchronized
     def updateCreatorStatus(self, analysis_id: str, status: object) -> dict[str, str]:
         """Update only the local Creator Library status in the Excel workbook."""
         creator_id = str(analysis_id or "").strip()

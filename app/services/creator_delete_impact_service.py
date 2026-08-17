@@ -7,10 +7,15 @@ import json
 from typing import Any, Callable
 
 from ports.creator_delete_impact_port import CreatorDeleteImpactPort
+from services.creator_delete_plan import POLICY_VERSION, build_creator_delete_plan
 
 
-POLICY_VERSION = "m4.2-delete-impact-v1"
-
+PUBLIC_POLICY_SOURCES = frozenset({
+    "creator_snapshots", "video_snapshots", "cooperations",
+    "campaign_creators", "follow_up_logs", "task_artifacts",
+    "unmapped_task_artifacts", "data_protection", "legacy_sources",
+    "embedded_analysis_references",
+})
 
 class CreatorDeleteImpactService:
     def __init__(
@@ -23,8 +28,12 @@ class CreatorDeleteImpactService:
         snapshot = self._impact_port_provider().scan_creator_delete_impact(creator_id)
         impact = snapshot["impact"]
         retained = snapshot["retained"]
-        unresolved = self._unresolved(impact)
-        blockers = self._blockers(snapshot, unresolved)
+        plan = build_creator_delete_plan(snapshot)
+        unresolved = [
+            item for item in plan["decisions"]
+            if item["source"] in PUBLIC_POLICY_SOURCES
+        ]
+        blockers = self._blockers(snapshot, plan)
         warnings = [
             {
                 "code": "READ_ONLY_PREVIEW",
@@ -39,7 +48,11 @@ class CreatorDeleteImpactService:
             "impact": impact,
             "retained": retained,
             "unresolved": [
-                {"source": item["source"], "count": item["count"]}
+                {
+                    "source": item["source"],
+                    "count": item["count"],
+                    "classification": item["classification"],
+                }
                 for item in unresolved
             ],
             "blockers": [item["code"] for item in blockers],
@@ -61,7 +74,10 @@ class CreatorDeleteImpactService:
             },
             "impact": impact,
             "retained": retained,
-            "unresolved": unresolved,
+            "unresolved": [
+                {"source": item["source"], "count": item["count"]}
+                for item in unresolved
+            ],
             "warnings": warnings,
             "blockers": blockers,
             "can_delete": not blockers,
@@ -69,28 +85,8 @@ class CreatorDeleteImpactService:
         }
 
     @staticmethod
-    def _unresolved(impact: dict[str, Any]) -> list[dict[str, Any]]:
-        candidates = (
-            ("creator_snapshots", impact["creator_snapshots"]),
-            ("video_snapshots", impact["video_snapshots"]["total"]),
-            ("cooperations", impact["cooperations"]),
-            ("campaign_creators", impact["campaign_creators"]["total"]),
-            ("follow_up_logs", impact["follow_up_logs"]),
-            ("task_artifacts", impact["task_artifacts"]),
-            ("unmapped_task_artifacts", impact["unmapped_task_artifacts"]),
-            ("data_protection", impact["data_protection"]),
-            ("legacy_sources", impact["legacy_sources"]),
-            ("embedded_analysis_references", impact["embedded_analysis_references"]),
-        )
-        return [
-            {"source": source, "count": count, "classification": "UNRESOLVED"}
-            for source, count in candidates
-            if count
-        ]
-
-    @staticmethod
     def _blockers(
-        snapshot: dict[str, Any], unresolved: list[dict[str, Any]]
+        snapshot: dict[str, Any], plan: dict[str, Any]
     ) -> list[dict[str, Any]]:
         blockers: list[dict[str, Any]] = []
 
@@ -106,22 +102,34 @@ class CreatorDeleteImpactService:
         if active:
             add("ACTIVE_CAMPAIGN_RELATION", "存在未归档的 Campaign Creator 关系。", active)
         source_codes = {
-            "creator_snapshots": "UNRESOLVED_SNAPSHOT_RETENTION",
-            "video_snapshots": "UNRESOLVED_SNAPSHOT_RETENTION",
-            "cooperations": "UNRESOLVED_COOPERATION_RETENTION",
-            "campaign_creators": "UNRESOLVED_CAMPAIGN_RELATION_RETENTION",
-            "follow_up_logs": "UNRESOLVED_FOLLOWUP_RETENTION",
-            "task_artifacts": "UNRESOLVED_TASK_ARTIFACT",
-            "unmapped_task_artifacts": "UNRESOLVED_TASK_ARTIFACT",
-            "data_protection": "UNRESOLVED_DATA_PROTECTION",
-            "legacy_sources": "UNRESOLVED_LEGACY_SOURCE",
-            "embedded_analysis_references": "UNRESOLVED_EMBEDDED_REFERENCE",
+            "creators": "CREATOR_LOCATOR_CONFLICT",
+            "creator_accounts": "CREATOR_ACCOUNT_LOCATOR_CONFLICT",
+            "videos": "VIDEO_LOCATOR_CONFLICT",
+            "insights": "INSIGHT_LOCATOR_CONFLICT",
+            "analysis_data": "ANALYSIS_DATA_LOCATOR_CONFLICT",
+            "creator_snapshots": "CREATOR_SNAPSHOT_LOCATOR_CONFLICT",
+            "video_snapshots": "VIDEO_SNAPSHOT_OWNERSHIP_CONFLICT",
+            "cooperations": "COOPERATION_RETENTION_ANONYMIZATION_GAP",
+            "campaign_creators": "CAMPAIGN_RELATION_DELETE_BLOCKED",
+            "follow_up_logs": "FOLLOWUP_DELETE_BLOCKED",
+            "task_artifacts": "UNSAFE_TASK_ARTIFACT",
+            "unmapped_task_artifacts": "UNRESOLVED_TASK_OWNERSHIP",
+            "data_protection": "SHARED_DATA_PROTECTION_UID",
+            "legacy_sources": "UNRELIABLE_LEGACY_IDENTITY",
+            "embedded_analysis_references": "EMBEDDED_ANALYSIS_REFERENCE",
         }
         seen_codes: set[str] = set()
-        for item in unresolved:
+        for item in plan["decisions"]:
+            if item["classification"] != "BLOCK":
+                continue
             code = source_codes[item["source"]]
             if code not in seen_codes:
-                add(code, f"{item['source']} 的保留策略尚未冻结。", item["count"])
+                add(code, f"{item['source']} 无法安全纳入硬删除计划。", item["count"])
+                seen_codes.add(code)
+        for item in snapshot.get("safety_blocks", []):
+            code = str(item.get("code") or "DELETE_SAFETY_BLOCK")
+            if code not in seen_codes:
+                add(code, f"{item.get('source') or 'resource'} 的定位或所有权不安全。")
                 seen_codes.add(code)
         unknown_followups = snapshot["unknown_followup_reference_count"]
         if unknown_followups:

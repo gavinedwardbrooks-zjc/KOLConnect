@@ -8,13 +8,14 @@ import json
 import os
 import re
 import shutil
-import threading
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Mapping
+
+from local_storage_lock import LOCAL_STORAGE_MUTATION_LOCK, shared_storage_lock
 
 
 TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
@@ -27,7 +28,8 @@ PLATFORM_KEY_ALIASES = {
     "全部": "all",
     "all": "all",
 }
-_TASK_LOCK = threading.RLock()
+TASK_STORAGE_LOCK = LOCAL_STORAGE_MUTATION_LOCK
+_TASK_LOCK = TASK_STORAGE_LOCK
 
 
 @dataclass(frozen=True)
@@ -45,8 +47,9 @@ class TaskRepository:
     @contextmanager
     def operation_lock(self):
         """Keep compatible multi-file task updates within one storage transaction."""
-        with _TASK_LOCK:
-            yield
+        with shared_storage_lock():
+            with _TASK_LOCK:
+                yield
 
     @staticmethod
     def normalize_platforms(value: object, legacy_platform: object = "") -> list[str]:
@@ -83,7 +86,7 @@ class TaskRepository:
         if not normalized_links:
             raise ValueError("没有可创建任务的有效链接。")
 
-        with _TASK_LOCK:
+        with shared_storage_lock(), _TASK_LOCK:
             task_id = self._new_task_id()
             paths = self._paths(task_id)
             paths["root"].mkdir(parents=True, exist_ok=False)
@@ -160,7 +163,7 @@ class TaskRepository:
         if not self._tasks_dir.exists():
             return []
         tasks: list[dict] = []
-        with _TASK_LOCK:
+        with shared_storage_lock(), _TASK_LOCK:
             for root in self._tasks_dir.iterdir():
                 if not root.is_dir() or not TASK_ID_PATTERN.fullmatch(root.name):
                     continue
@@ -178,7 +181,7 @@ class TaskRepository:
         )
 
     def update_task(self, task_id: str, **changes: object) -> dict:
-        with _TASK_LOCK:
+        with shared_storage_lock(), _TASK_LOCK:
             task = self.get_task(task_id)
             task.update(changes)
             self._atomic_write_json(self._paths(task_id)["metadata"], task)
@@ -186,7 +189,7 @@ class TaskRepository:
 
     def delete_task(self, task_id: str) -> None:
         task_id = self._validate_task_id(task_id)
-        with _TASK_LOCK:
+        with shared_storage_lock(), _TASK_LOCK:
             root = (self._tasks_dir / task_id).resolve()
             tasks_root = self._tasks_dir.resolve()
             if root.parent != tasks_root or not root.exists() or not root.is_dir():
@@ -204,15 +207,16 @@ class TaskRepository:
         ]
 
     def write_links(self, task_id: str, links: list[str]) -> None:
-        path = self._paths(task_id)["links"]
-        temp_path = path.with_suffix(f"{path.suffix}.tmp")
-        try:
-            temp_path.write_text(
-                "\n".join(links) + ("\n" if links else ""), encoding="utf-8"
-            )
-            temp_path.replace(path)
-        finally:
-            temp_path.unlink(missing_ok=True)
+        with shared_storage_lock(), _TASK_LOCK:
+            path = self._paths(task_id)["links"]
+            temp_path = path.with_suffix(f"{path.suffix}.tmp")
+            try:
+                temp_path.write_text(
+                    "\n".join(links) + ("\n" if links else ""), encoding="utf-8"
+                )
+                temp_path.replace(path)
+            finally:
+                temp_path.unlink(missing_ok=True)
 
     def results_exist(self, task_id: str) -> bool:
         return self._paths(task_id)["results"].exists()
@@ -391,7 +395,7 @@ class TaskRepository:
         temp_paths: dict[Path, Path] = {}
         backup_paths: dict[Path, Path] = {}
         replaced: list[Path] = []
-        with _TASK_LOCK:
+        with shared_storage_lock(), _TASK_LOCK:
             try:
                 for path, content in contents.items():
                     temp_path = path.with_name(f".{path.name}.review.tmp")
@@ -426,12 +430,13 @@ class TaskRepository:
 
     @staticmethod
     def _atomic_write_bytes(path: Path, data: bytes) -> None:
-        temp_path = path.with_suffix(f"{path.suffix}.tmp")
-        try:
-            temp_path.write_bytes(data)
-            temp_path.replace(path)
-        finally:
-            temp_path.unlink(missing_ok=True)
+        with shared_storage_lock():
+            temp_path = path.with_suffix(f"{path.suffix}.tmp")
+            try:
+                temp_path.write_bytes(data)
+                temp_path.replace(path)
+            finally:
+                temp_path.unlink(missing_ok=True)
 
     def _paths(self, task_id: str) -> dict[str, Path]:
         task_id = self._validate_task_id(task_id)

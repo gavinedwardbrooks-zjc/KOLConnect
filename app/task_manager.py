@@ -6,15 +6,16 @@ import json
 import os
 import re
 import shutil
-import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from local_storage_lock import LOCAL_STORAGE_MUTATION_LOCK, shared_storage_lock
+
 
 TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
-_TASK_LOCK = threading.RLock()
+_TASK_LOCK = LOCAL_STORAGE_MUTATION_LOCK
 DEFAULT_HEARTBEAT_INTERVAL = 240
 PLATFORM_KEYS = ("tiktok", "instagram", "youtube")
 PLATFORM_KEY_ALIASES = {
@@ -97,14 +98,15 @@ def _default_task_name() -> str:
 
 
 def _atomic_write_json(path: Path, data: dict) -> None:
-    temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-    temp_path.replace(path)
+    with shared_storage_lock():
+        temp_path = path.with_suffix(f"{path.suffix}.tmp")
+        temp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path.replace(path)
 
 
 @contextmanager
 def task_lock():
-    with _TASK_LOCK:
+    with shared_storage_lock(), _TASK_LOCK:
         yield
 
 
@@ -113,7 +115,7 @@ def atomic_write_files(contents: dict[Path, bytes]) -> None:
     temp_paths: dict[Path, Path] = {}
     backup_paths: dict[Path, Path] = {}
     replaced: list[Path] = []
-    with _TASK_LOCK:
+    with shared_storage_lock(), _TASK_LOCK:
         try:
             for path, content in contents.items():
                 temp_path = path.with_name(f".{path.name}.review.tmp")
@@ -181,7 +183,7 @@ def create_task(
     if not normalized_links:
         raise ValueError("没有可创建任务的有效链接。")
 
-    with _TASK_LOCK:
+    with shared_storage_lock(), _TASK_LOCK:
         task_id = _task_id()
         paths = task_paths(tasks_dir, task_id)
         paths["root"].mkdir(parents=True, exist_ok=False)
@@ -260,7 +262,7 @@ def list_tasks(tasks_dir: Path) -> list[dict]:
         return []
 
     tasks: list[dict] = []
-    with _TASK_LOCK:
+    with shared_storage_lock(), _TASK_LOCK:
         for root in tasks_dir.iterdir():
             if not root.is_dir() or not TASK_ID_PATTERN.fullmatch(root.name):
                 continue
@@ -277,7 +279,7 @@ def list_tasks(tasks_dir: Path) -> list[dict]:
 
 
 def update_task(tasks_dir: Path, task_id: str, **changes) -> dict:
-    with _TASK_LOCK:
+    with shared_storage_lock(), _TASK_LOCK:
         task, paths = load_task(tasks_dir, task_id)
         task.update(changes)
         _atomic_write_json(paths["metadata"], task)
@@ -287,7 +289,7 @@ def update_task(tasks_dir: Path, task_id: str, **changes) -> dict:
 def delete_task(tasks_dir: Path, task_id: str) -> None:
     """Delete only one validated local task directory."""
     task_id = _validate_task_id(task_id)
-    with _TASK_LOCK:
+    with shared_storage_lock(), _TASK_LOCK:
         root = (tasks_dir / task_id).resolve()
         tasks_root = tasks_dir.resolve()
         if root.parent != tasks_root or not root.exists() or not root.is_dir():

@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import scraper
+from local_storage_lock import shared_storage_lock
 
 
 STATUS_FIELDS = {scraper.FIELD_SCRAPE_STATUS, scraper.FIELD_STATUS_REASON}
@@ -85,17 +86,18 @@ def reclassify_rows(
 
 
 def _write_csv_atomic(path: Path, fieldnames: list[str], rows: list[dict[str, str]]) -> None:
-    temp_path = path.with_suffix(f"{path.suffix}.phase4_1.tmp")
-    try:
-        with temp_path.open("w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
-            writer.writeheader()
-            writer.writerows(rows)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-    finally:
-        temp_path.unlink(missing_ok=True)
+    with shared_storage_lock():
+        temp_path = path.with_suffix(f"{path.suffix}.phase4_1.tmp")
+        try:
+            with temp_path.open("w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(rows)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def migrate_task(task_dir: Path, *, apply: bool = False) -> dict:
@@ -116,19 +118,20 @@ def migrate_task(task_dir: Path, *, apply: bool = False) -> dict:
         staged.append((path, updated_fieldnames, updated_rows))
 
     if apply:
-        backup_dir.mkdir(parents=False, exist_ok=False)
-        for path, _fieldnames, _rows in staged:
-            shutil.copy2(path, backup_dir / path.name)
-        report["backup_dir"] = str(backup_dir)
-        try:
-            for path, fieldnames, rows in staged:
-                _write_csv_atomic(path, fieldnames, rows)
-        except Exception:
+        with shared_storage_lock():
+            backup_dir.mkdir(parents=False, exist_ok=False)
             for path, _fieldnames, _rows in staged:
-                backup_path = backup_dir / path.name
-                if backup_path.is_file():
-                    shutil.copy2(backup_path, path)
-            raise
+                shutil.copy2(path, backup_dir / path.name)
+            report["backup_dir"] = str(backup_dir)
+            try:
+                for path, fieldnames, rows in staged:
+                    _write_csv_atomic(path, fieldnames, rows)
+            except Exception:
+                for path, _fieldnames, _rows in staged:
+                    backup_path = backup_dir / path.name
+                    if backup_path.is_file():
+                        shutil.copy2(backup_path, path)
+                raise
 
     return report
 

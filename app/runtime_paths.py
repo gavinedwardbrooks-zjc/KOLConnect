@@ -9,6 +9,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from local_storage_lock import shared_storage_lock
+
 
 APP_NAME = "KOLConnect"
 
@@ -73,24 +75,25 @@ def load_json_with_backup(path: Path) -> tuple[Any | None, Path | None]:
 
 def atomic_write_json(path: Path, data: Any) -> None:
     """Validate a temporary JSON file, retain a valid backup, then replace it."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    backup_path = json_backup_path(path)
-    serialized = json.dumps(data, ensure_ascii=False, indent=2)
-    try:
-        temp_path.write_text(serialized, encoding="utf-8")
-        json.loads(temp_path.read_text(encoding="utf-8"))
-        if path.is_file():
-            try:
-                json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                pass
-            else:
-                shutil.copy2(path, backup_path)
-        temp_path.replace(path)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+    with shared_storage_lock():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = path.with_suffix(f"{path.suffix}.tmp")
+        backup_path = json_backup_path(path)
+        serialized = json.dumps(data, ensure_ascii=False, indent=2)
+        try:
+            temp_path.write_text(serialized, encoding="utf-8")
+            json.loads(temp_path.read_text(encoding="utf-8"))
+            if path.is_file():
+                try:
+                    json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    pass
+                else:
+                    shutil.copy2(path, backup_path)
+            temp_path.replace(path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 def is_frozen() -> bool:

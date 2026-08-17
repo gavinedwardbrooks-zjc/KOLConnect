@@ -77,6 +77,7 @@ from runtime_paths import (
     load_json_with_backup,
     scraper_worker_command,
 )
+from local_storage_lock import shared_storage_lock
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
     campaign_handler,
@@ -452,12 +453,12 @@ DIAGNOSTICS_LOCK = threading.Lock()
 
 
 def _save_diagnostics() -> None:
-    with DIAGNOSTICS_LOCK:
+    with shared_storage_lock(), DIAGNOSTICS_LOCK:
         atomic_write_json(DIAGNOSTICS_FILE, DIAGNOSTICS)
 
 
 def _record_diagnostic(key: str, value: dict) -> None:
-    with DIAGNOSTICS_LOCK:
+    with shared_storage_lock(), DIAGNOSTICS_LOCK:
         DIAGNOSTICS[key] = value
         atomic_write_json(DIAGNOSTICS_FILE, DIAGNOSTICS)
 
@@ -1333,12 +1334,13 @@ def _read_task_links(path: Path) -> list[str]:
 
 
 def _write_task_links(path: Path, links: list[str]) -> None:
-    temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    try:
-        temp_path.write_text("\n".join(links) + ("\n" if links else ""), encoding="utf-8")
-        temp_path.replace(path)
-    finally:
-        temp_path.unlink(missing_ok=True)
+    with shared_storage_lock():
+        temp_path = path.with_suffix(f"{path.suffix}.tmp")
+        try:
+            temp_path.write_text("\n".join(links) + ("\n" if links else ""), encoding="utf-8")
+            temp_path.replace(path)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
 
 def _task_platform_summary_from_links(links: list[str]) -> dict[str, int]:
@@ -1637,9 +1639,10 @@ def _create_manual_task_legacy(
         }
     )
     if manual_values:
-        protection = load_data_protection()
-        if _merge_data_protection(protection, account_uid, manual_values, "人工录入", task["id"], now):
-            _save_data_protection(protection)
+        with shared_storage_lock():
+            protection = load_data_protection()
+            if _merge_data_protection(protection, account_uid, manual_values, "人工录入", task["id"], now):
+                _save_data_protection(protection)
     library_import = None
     if not defer_library_import:
         try:

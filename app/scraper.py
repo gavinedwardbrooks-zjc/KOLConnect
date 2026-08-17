@@ -31,6 +31,7 @@ from urllib.parse import unquote, urljoin, urlparse
 import requests
 from bs4 import BeautifulSoup
 from chromedriver_resolver import ChromeDriverResolutionError, resolve_chromedriver
+from local_storage_lock import shared_storage_lock
 
 try:
     import pandas as pd
@@ -1314,54 +1315,56 @@ def load_progress(progress_file: str) -> dict:
 
 def ensure_progress_review_fields(progress_file: str) -> None:
     """Add audit columns to legacy task progress files without dropping existing data."""
-    path = Path(progress_file)
-    if not path.exists():
-        return
-
-    with open(path, encoding="utf-8-sig", newline="", errors="ignore") as handle:
-        reader = csv.DictReader(handle)
-        existing_fields = reader.fieldnames or []
-        if all(field in existing_fields for field in PROGRESS_FIELDS):
+    with shared_storage_lock():
+        path = Path(progress_file)
+        if not path.exists():
             return
-        rows = list(reader)
 
-    temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    with open(temp_path, "w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=PROGRESS_FIELDS, extrasaction="ignore")
-        writer.writeheader()
-        for row in rows:
-            row.setdefault(FIELD_WHATSAPP, "")
-            row.setdefault(FIELD_NOTE, "")
-            row.setdefault(FIELD_FOLLOWER_COUNT, "")
-            row.setdefault(FIELD_SCRAPE_STATUS, "success")
-            row.setdefault(FIELD_STATUS_REASON, "")
-            row.setdefault(FIELD_LAST_SCRAPE_TIME, "")
-            row.setdefault(FIELD_RETRY_COUNT, "0")
-            row.setdefault(FIELD_DATA_STATUS, "待检查")
-            row.setdefault(FIELD_LAST_MODIFIED_AT, "")
-            writer.writerow(row)
-    os.replace(temp_path, path)
+        with open(path, encoding="utf-8-sig", newline="", errors="ignore") as handle:
+            reader = csv.DictReader(handle)
+            existing_fields = reader.fieldnames or []
+            if all(field in existing_fields for field in PROGRESS_FIELDS):
+                return
+            rows = list(reader)
+
+        temp_path = path.with_suffix(f"{path.suffix}.tmp")
+        with open(temp_path, "w", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=PROGRESS_FIELDS, extrasaction="ignore")
+            writer.writeheader()
+            for row in rows:
+                row.setdefault(FIELD_WHATSAPP, "")
+                row.setdefault(FIELD_NOTE, "")
+                row.setdefault(FIELD_FOLLOWER_COUNT, "")
+                row.setdefault(FIELD_SCRAPE_STATUS, "success")
+                row.setdefault(FIELD_STATUS_REASON, "")
+                row.setdefault(FIELD_LAST_SCRAPE_TIME, "")
+                row.setdefault(FIELD_RETRY_COUNT, "0")
+                row.setdefault(FIELD_DATA_STATUS, "待检查")
+                row.setdefault(FIELD_LAST_MODIFIED_AT, "")
+                writer.writerow(row)
+        os.replace(temp_path, path)
 
 
 def ensure_progress_file(progress_file: str) -> None:
     """Create an empty, valid progress file before browser work begins."""
-    path = Path(progress_file)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        ensure_progress_review_fields(progress_file)
-        return
+    with shared_storage_lock():
+        path = Path(progress_file)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.exists():
+            ensure_progress_review_fields(progress_file)
+            return
 
-    temp_path = path.with_suffix(f"{path.suffix}.tmp")
-    try:
-        with open(temp_path, "w", encoding="utf-8-sig", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=PROGRESS_FIELDS)
-            writer.writeheader()
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+        temp_path = path.with_suffix(f"{path.suffix}.tmp")
+        try:
+            with open(temp_path, "w", encoding="utf-8-sig", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=PROGRESS_FIELDS)
+                writer.writeheader()
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_path, path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 def load_existing_progress_by_uid(progress_file: str) -> dict[str, dict]:
@@ -1448,16 +1451,17 @@ def merge_scrape_result_with_review(existing: dict | None, fresh: dict, manual_f
 
 
 def save_progress(result: dict, progress_file: str) -> None:
-    path = Path(progress_file)
-    ensure_progress_review_fields(progress_file)
-    file_exists = path.exists()
-    with open(path, "a", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=PROGRESS_FIELDS)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerow(result_to_row(result))
-        handle.flush()
-        os.fsync(handle.fileno())
+    with shared_storage_lock():
+        path = Path(progress_file)
+        ensure_progress_review_fields(progress_file)
+        file_exists = path.exists()
+        with open(path, "a", encoding="utf-8-sig", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=PROGRESS_FIELDS)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow(result_to_row(result))
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 def _read_task_control(task_file: str | None) -> dict:
@@ -2114,43 +2118,45 @@ def build_output_rows(results: list[dict]) -> list[dict]:
 
 def write_results_file(results: list[dict], output_file: str) -> None:
     """Atomically replace results.csv so an interrupted write keeps the old file intact."""
-    output_path = Path(output_file)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = output_path.with_suffix(f"{output_path.suffix}.tmp")
-    rows = build_output_rows(results)
-    try:
-        if PANDAS_AVAILABLE:
-            pd.DataFrame(rows, columns=OUTPUT_FIELDS).to_csv(
-                temp_path,
-                index=False,
-                encoding="utf-8-sig",
-            )
-        else:
-            with open(temp_path, "w", newline="", encoding="utf-8-sig") as handle:
-                writer = csv.DictWriter(handle, fieldnames=OUTPUT_FIELDS)
-                writer.writeheader()
-                writer.writerows(rows)
-                handle.flush()
-                os.fsync(handle.fileno())
-        os.replace(temp_path, output_path)
-    finally:
-        if temp_path.exists():
-            temp_path.unlink()
+    with shared_storage_lock():
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = output_path.with_suffix(f"{output_path.suffix}.tmp")
+        rows = build_output_rows(results)
+        try:
+            if PANDAS_AVAILABLE:
+                pd.DataFrame(rows, columns=OUTPUT_FIELDS).to_csv(
+                    temp_path,
+                    index=False,
+                    encoding="utf-8-sig",
+                )
+            else:
+                with open(temp_path, "w", newline="", encoding="utf-8-sig") as handle:
+                    writer = csv.DictWriter(handle, fieldnames=OUTPUT_FIELDS)
+                    writer.writeheader()
+                    writer.writerows(rows)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            os.replace(temp_path, output_path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
 
 
 def write_sync_result(path: str | None, sync_status: str, summary: dict | None = None, sync_errors: list[str] | None = None) -> None:
     """Write a task-only handoff file without changing the sync implementation."""
     if not path:
         return
-    result_path = Path(path)
-    payload = {
-        "sync_status": sync_status,
-        "sync_summary": summary or {},
-        "sync_errors": sync_errors or [],
-    }
-    temp_path = result_path.with_suffix(f"{result_path.suffix}.tmp")
-    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    temp_path.replace(result_path)
+    with shared_storage_lock():
+        result_path = Path(path)
+        payload = {
+            "sync_status": sync_status,
+            "sync_summary": summary or {},
+            "sync_errors": sync_errors or [],
+        }
+        temp_path = result_path.with_suffix(f"{result_path.suffix}.tmp")
+        temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        temp_path.replace(result_path)
 
 
 def main() -> None:
@@ -2193,7 +2199,8 @@ def main() -> None:
         sys.exit("没有可处理的链接")
 
     if args.reset and Path(args.progress_file).exists():
-        Path(args.progress_file).unlink()
+        with shared_storage_lock():
+            Path(args.progress_file).unlink()
 
     ensure_progress_file(args.progress_file)
     driver = None

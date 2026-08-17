@@ -158,7 +158,7 @@ class CreatorDeleteImpactHttpTests(unittest.TestCase):
         self.assertEqual("删除影响扫描未完成。", body["error"])
         self.assertNotIn("can_delete", body)
 
-    def test_active_campaign_and_unresolved_retention_are_http_blockers(self) -> None:
+    def test_active_campaign_remains_an_http_blocker(self) -> None:
         workbook = load_workbook(self.workbook_path)
         append_row(
             workbook,
@@ -201,7 +201,7 @@ class CreatorDeleteImpactHttpTests(unittest.TestCase):
         self.assertFalse(body["can_delete"])
         codes = {item["code"] for item in body["blockers"]}
         self.assertIn("ACTIVE_CAMPAIGN_RELATION", codes)
-        self.assertIn("UNRESOLVED_SNAPSHOT_RETENTION", codes)
+        self.assertNotIn("UNRESOLVED_SNAPSHOT_RETENTION", codes)
         self.assertEqual(1, body["impact"]["campaign_creators"]["active"])
 
 
@@ -408,8 +408,10 @@ class CreatorDeleteImpactRepositoryTests(unittest.TestCase):
         self.assertEqual(1, result["retained"]["products"])
         codes = {item["code"] for item in result["blockers"]}
         self.assertIn("ACTIVE_CAMPAIGN_RELATION", codes)
-        self.assertIn("UNRESOLVED_SNAPSHOT_RETENTION", codes)
-        self.assertIn("UNRESOLVED_TASK_ARTIFACT", codes)
+        self.assertIn("COOPERATION_RETENTION_ANONYMIZATION_GAP", codes)
+        self.assertIn("EMBEDDED_ANALYSIS_REFERENCE", codes)
+        self.assertNotIn("UNRESOLVED_SNAPSHOT_RETENTION", codes)
+        self.assertNotIn("UNRESOLVED_TASK_ARTIFACT", codes)
         self.assertFalse(result["can_delete"])
         self.assertEqual(before_workbook, self.workbook_path.read_bytes())
         for path, (contents, mtime) in before_files.items():
@@ -508,7 +510,7 @@ class CreatorDeleteImpactRepositoryTests(unittest.TestCase):
         self.assertEqual(0, result["impact"]["task_artifacts"])
         self.assertEqual(1, result["impact"]["unmapped_task_artifacts"])
         self.assertIn(
-            "UNRESOLVED_TASK_ARTIFACT",
+            "UNRESOLVED_TASK_OWNERSHIP",
             {item["code"] for item in result["blockers"]},
         )
         self.assertFalse(result["can_delete"])

@@ -17,6 +17,7 @@ from urllib.request import ProxyHandler, build_opener
 
 from app_logging import log_error, log_event
 from runtime_paths import atomic_write_json, get_app_data_dir, get_logs_dir, load_json_with_backup
+from local_storage_lock import SharedStorageLockTimeout, shared_storage_lock
 from version import APP_DISPLAY_VERSION
 
 
@@ -192,18 +193,19 @@ def backup_creator_library(workbook_path: Path) -> Path | None:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     backup_path = backup_dir / f"{workbook_path.stem}_{timestamp}{workbook_path.suffix}"
     try:
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(workbook_path, backup_path)
-        backups = sorted(
-            backup_dir.glob(f"{workbook_path.stem}_*{workbook_path.suffix}"),
-            key=lambda path: (path.stat().st_mtime_ns, path.name),
-            reverse=True,
-        )
-        for stale_backup in backups[BACKUP_KEEP_COUNT:]:
-            stale_backup.unlink()
-        log_event("Launcher", f"启动备份完成 | path={backup_path}")
-        return backup_path
-    except OSError as exc:
+        with shared_storage_lock():
+            backup_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(workbook_path, backup_path)
+            backups = sorted(
+                backup_dir.glob(f"{workbook_path.stem}_*{workbook_path.suffix}"),
+                key=lambda path: (path.stat().st_mtime_ns, path.name),
+                reverse=True,
+            )
+            for stale_backup in backups[BACKUP_KEEP_COUNT:]:
+                stale_backup.unlink()
+            log_event("Launcher", f"启动备份完成 | path={backup_path}")
+            return backup_path
+    except (OSError, SharedStorageLockTimeout) as exc:
         log_error("Launcher", f"启动备份失败 | path={workbook_path}", exc)
         return None
 

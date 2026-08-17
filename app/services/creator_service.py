@@ -33,6 +33,7 @@ from ports.creator_port import (
     TaskResultUpdateCommand,
 )
 from ports.task_port import TaskPort
+from local_storage_lock import shared_storage_lock
 
 
 REVIEW_FIELD_WHATSAPP = "WhatsApp"
@@ -240,28 +241,30 @@ class CreatorService:
             for result in results
             if scraper_module.build_creator_uid(result)
         }
-        protection_changed = False
-        now = self._utc_now()
-        for entry in sync_logs:
-            if (
-                scraper_module.FOUR_TABLE_ACCOUNT_FIELD_EMAIL
-                not in entry.get("updated_fields", [])
-            ):
-                continue
-            account_uid = str(entry.get("account_uid") or "")
-            result = result_by_uid.get(account_uid) or {}
-            email = str(result.get("email_display") or "")
-            if email and email != scraper_module.NO_EMAIL:
-                protection_changed = self.merge_data_protection(
-                    data_protection,
-                    account_uid,
-                    {scraper_module.FIELD_EMAIL: email},
-                    prepared.data_source,
-                    prepared.task_id,
-                    str(entry.get("updated_at") or now),
-                ) or protection_changed
-        if protection_changed:
-            self._data_protection_saver(data_protection)
+        with shared_storage_lock():
+            current_protection = self._data_protection_loader()
+            protection_changed = False
+            now = self._utc_now()
+            for entry in sync_logs:
+                if (
+                    scraper_module.FOUR_TABLE_ACCOUNT_FIELD_EMAIL
+                    not in entry.get("updated_fields", [])
+                ):
+                    continue
+                account_uid = str(entry.get("account_uid") or "")
+                result = result_by_uid.get(account_uid) or {}
+                email = str(result.get("email_display") or "")
+                if email and email != scraper_module.NO_EMAIL:
+                    protection_changed = self.merge_data_protection(
+                        current_protection,
+                        account_uid,
+                        {scraper_module.FIELD_EMAIL: email},
+                        prepared.data_source,
+                        prepared.task_id,
+                        str(entry.get("updated_at") or now),
+                    ) or protection_changed
+            if protection_changed:
+                self._data_protection_saver(current_protection)
         return FourTableSyncResult(
             created_creators=int(summary.get("created_creators") or 0),
             created_accounts=int(summary.get("created_accounts") or 0),
@@ -356,16 +359,17 @@ class CreatorService:
     def commit_manual_task_protection(
         self, command: ManualTaskProtectionCommand
     ) -> None:
-        protection = self._data_protection_loader()
-        if self.merge_data_protection(
-            protection,
-            command.account_uid,
-            dict(command.values),
-            "人工录入",
-            command.task_id,
-            command.updated_at,
-        ):
-            self._data_protection_saver(protection)
+        with shared_storage_lock():
+            protection = self._data_protection_loader()
+            if self.merge_data_protection(
+                protection,
+                command.account_uid,
+                dict(command.values),
+                "人工录入",
+                command.task_id,
+                command.updated_at,
+            ):
+                self._data_protection_saver(protection)
 
     def upsert_external_agency_contact(
         self, contact: ExternalAgencyContactCommand
@@ -758,16 +762,17 @@ class CreatorService:
     def commit_task_result_protection(
         self, task_id: str, update: PreparedTaskResultUpdate
     ) -> None:
-        protection = self._data_protection_loader()
-        if self.merge_data_protection(
-            protection,
-            update.account_uid,
-            dict(update.protection_values),
-            update.protection_source,
-            task_id,
-            update.updated_at,
-        ):
-            self._data_protection_saver(protection)
+        with shared_storage_lock():
+            protection = self._data_protection_loader()
+            if self.merge_data_protection(
+                protection,
+                update.account_uid,
+                dict(update.protection_values),
+                update.protection_source,
+                task_id,
+                update.updated_at,
+            ):
+                self._data_protection_saver(protection)
 
     def import_task_results(
         self, command: ImportTaskResultsCommand | TaskResultImportCommand
