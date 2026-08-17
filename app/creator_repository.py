@@ -277,6 +277,100 @@ class CreatorRepository:
         return accounts
 
     @_synchronized
+    def getExistingCreatorAccountUids(self, account_uids: set[str]) -> set[str]:
+        """Return only requested identities that already belong to a Creator."""
+        requested = {str(value or "").strip() for value in account_uids if str(value or "").strip()}
+        if not requested:
+            return set()
+        workbook = self._load_workbook()
+        creator_ids = {
+            str(row.get("creator_id") or "")
+            for row in self._rows(workbook["Creators"])
+            if str(row.get("creator_id") or "")
+        }
+        return {
+            str(row.get("account_uid") or "")
+            for row in self._rows(workbook["CreatorAccounts"])
+            if str(row.get("account_uid") or "") in requested
+            and str(row.get("creator_id") or "") in creator_ids
+        }
+
+    @_synchronized
+    def createCreatorsBatch(self, records: list[dict[str, Any]]) -> dict[str, int]:
+        """Create normalized Creator rows in one workbook save without overwrites."""
+        if not records:
+            return {"created": 0, "skipped_existing": 0}
+        workbook = self._load_workbook()
+        now = _utc_now()
+        created = 0
+        skipped_existing = 0
+        for record in records:
+            account_uid = str(record.get("account_uid") or "").strip()
+            if not account_uid:
+                raise ValueError("Creator account identity is required.")
+            existing_account = self._account_row_by_uid(workbook["CreatorAccounts"], account_uid)
+            if existing_account and self._creator_row(
+                workbook["Creators"], str(existing_account.get("creator_id") or "")
+            ):
+                skipped_existing += 1
+                continue
+
+            creator_id = f"creator_{hashlib.sha256(account_uid.encode('utf-8')).hexdigest()[:16]}"
+            if self._creator_row(workbook["Creators"], creator_id):
+                skipped_existing += 1
+                continue
+            creator_values = {
+                "creator_id": creator_id,
+                "name": str(record.get("name") or ""),
+                "platform": str(record.get("platform") or ""),
+                "profile_url": str(record.get("profile_url") or ""),
+                "country": str(record.get("country") or ""),
+                "language": str(record.get("language") or ""),
+                "content_category": str(record.get("content_category") or ""),
+                "followers": "",
+                "insight_level": "insufficient",
+                "status": "discovered",
+                "created_at": now,
+                "tags": "",
+                "updated_at": now,
+                "email": str(record.get("email") or ""),
+                "whatsapp": str(record.get("whatsapp") or ""),
+                "agency_id": str(record.get("agency_id") or ""),
+                "bio": str(record.get("bio") or ""),
+                "archived_at": "",
+            }
+            self._upsert_row(workbook["Creators"], "creator_id", creator_id, creator_values)
+            account_values = {
+                "account_id": self._account_id(account_uid),
+                "creator_id": creator_id,
+                "account_uid": account_uid,
+                "platform": str(record.get("platform") or ""),
+                "username": self._username_from_profile_url(
+                    str(record.get("platform") or ""), str(record.get("profile_url") or "")
+                ),
+                "profile_url": str(record.get("profile_url") or ""),
+                "followers": "",
+                "account_email": str(record.get("email") or ""),
+                "latest_post_date": "",
+                "last_scrape_time": "",
+                "data_source": "excel_batch_import",
+                "scrape_status": "",
+                "platform_account_id": "",
+                "attribution_status": "confirmed",
+                "note": "",
+                "source_task_id": "",
+                "created_at": now,
+                "updated_at": now,
+            }
+            self._upsert_row(
+                workbook["CreatorAccounts"], "account_uid", account_uid, account_values
+            )
+            created += 1
+        if created:
+            self._save_workbook(workbook)
+        return {"created": created, "skipped_existing": skipped_existing}
+
+    @_synchronized
     def getCreatorsByAgency(self, agency_id: str) -> list[dict[str, Any]]:
         workbook = self._load_workbook()
         agency_id = str(agency_id or "").strip()

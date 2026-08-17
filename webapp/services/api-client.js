@@ -16,6 +16,8 @@
     if (Object.prototype.hasOwnProperty.call(options, "payload")) {
       headers["Content-Type"] = headers["Content-Type"] || "application/json";
       init.body = JSON.stringify(options.payload);
+    } else if (Object.prototype.hasOwnProperty.call(options, "body")) {
+      init.body = options.body;
     }
 
     let response;
@@ -49,6 +51,9 @@
     },
     post(url, payload, options = {}) {
       return request("POST", url, { ...options, payload });
+    },
+    postRaw(url, body, options = {}) {
+      return request("POST", url, { ...options, body });
     },
     patch(url, payload, options = {}) {
       return request("PATCH", url, { ...options, payload });

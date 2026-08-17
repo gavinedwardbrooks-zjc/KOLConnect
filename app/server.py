@@ -2089,6 +2089,15 @@ class Handler(BaseHTTPRequestHandler):
             detail = str(data.get("error") or "") if isinstance(data, dict) else ""
             log_event("API", f"{self.command} {urlparse(self.path).path} | {outcome} | status={status}{f' | {detail}' if detail else ''}")
 
+    def _binary(self, data: bytes, content_type: str, filename: str) -> None:
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def _ok(self, **extra) -> None:
         data = {"ok": True}
         data.update(extra)
@@ -2120,21 +2129,38 @@ class Handler(BaseHTTPRequestHandler):
         save_state(STATE)
         self._ok()
 
-    def _read_json(self) -> dict:
+    def _read_body(self) -> bytes:
         length = int(self.headers.get("Content-Length", "0"))
-        raw = self.rfile.read(length) if length else b"{}"
-        return json.loads(raw.decode("utf-8"))
+        return self.rfile.read(length) if length else b""
+
+    def _read_json(self) -> dict:
+        raw = self._read_body()
+        return json.loads((raw or b"{}").decode("utf-8"))
 
     def _request_context(self, parsed, query: dict) -> dict:
-        payload_loaded = False
+        body_mode = None
+        body_loaded = False
+        body = b""
         payload = None
 
+        def read_body(mode: str) -> bytes:
+            nonlocal body_mode, body_loaded, body
+            if body_mode is not None and body_mode != mode:
+                raise RuntimeError("请求正文不能同时按 JSON 和原始数据读取。")
+            body_mode = mode
+            if not body_loaded:
+                body = self._read_body()
+                body_loaded = True
+            return body
+
         def get_payload() -> dict:
-            nonlocal payload_loaded, payload
-            if not payload_loaded:
-                payload = self._read_json()
-                payload_loaded = True
+            nonlocal payload
+            if payload is None:
+                payload = json.loads((read_body("json") or b"{}").decode("utf-8"))
             return payload
+
+        def get_raw_body() -> bytes:
+            return read_body("raw")
 
         return {
             "method": self.command,
@@ -2142,6 +2168,7 @@ class Handler(BaseHTTPRequestHandler):
             "query": query,
             "payload": None,
             "get_payload": get_payload,
+            "get_raw_body": get_raw_body,
         }
 
     def _handler_context(self) -> dict:

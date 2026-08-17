@@ -2,6 +2,12 @@
 
 import re
 
+from creator_batch_import import CreatorBatchImportError
+
+
+XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+CREATOR_IMPORT_TEMPLATE_FILENAME = "KOLConnect_Creator_Import_Template.xlsx"
+
 
 def handle(handler, request: dict, context: dict) -> bool:
     method = request["method"]
@@ -45,6 +51,29 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc), status=400)
             return True
         handler._json({"ok": True, **payload})
+        return True
+
+    # GET /api/creator-library/import-template → 下载 Creator Excel 导入模板；XLSX binary
+    if method == "GET" and path == "/api/creator-library/import-template":
+        handler._binary(
+            creator_service.get_creator_import_template(),
+            XLSX_CONTENT_TYPE,
+            CREATOR_IMPORT_TEMPLATE_FILENAME,
+        )
+        return True
+
+    # POST /api/creator-library/import → 批量导入 Creator；{"ok": true, "data": {"total_rows": 0, "created": 0, "skipped_existing": 0}}
+    if method == "POST" and path == "/api/creator-library/import":
+        content_type = str(handler.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
+        if content_type != XLSX_CONTENT_TYPE:
+            handler._json({"ok": False, "error": "INVALID_FILE"}, status=400)
+            return True
+        try:
+            result = creator_service.import_creator_batch(request["get_raw_body"]())
+            handler._json({"ok": True, "data": result})
+        except CreatorBatchImportError as exc:
+            status = 500 if exc.code == "BATCH_IMPORT_WRITE_FAILED" else 400
+            handler._json(exc.to_response(), status=status)
         return True
 
     trend_match = re.fullmatch(r"/api/creator-library/([^/]+)/trend", path)

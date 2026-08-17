@@ -7,6 +7,11 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
 import creator_data_compat as scraper_module
+from creator_batch_import import (
+    CreatorBatchImportError,
+    build_creator_import_template,
+    parse_creator_import_workbook,
+)
 from ports.agency_port import AgencyPort
 from ports.creator_port import (
     CreatorImportItem,
@@ -80,6 +85,10 @@ class CreatorRepositoryReader(Protocol):
     def getCreatorSnapshots(self, creator_id: str) -> list[dict[str, Any]]: ...
 
     def getCreatorAccounts(self, creator_id: str = "") -> list[dict[str, Any]]: ...
+
+    def getExistingCreatorAccountUids(self, account_uids: set[str]) -> set[str]: ...
+
+    def createCreatorsBatch(self, records: list[dict[str, Any]]) -> dict[str, int]: ...
 
     def updateCreator(
         self,
@@ -407,6 +416,138 @@ class CreatorService:
         )
         # Preserve the legacy records alias while clients migrate to creators.
         return {**result, "records": result["creators"]}
+
+    def import_creator_batch(self, payload: bytes) -> dict[str, int]:
+        parsed_rows = parse_creator_import_workbook(payload)
+        repository = self._repository_provider()
+        prepared: list[dict[str, Any]] = []
+        errors: list[dict[str, Any]] = []
+
+        for parsed in parsed_rows:
+            values = parsed.values
+            platform_value = str(values.get("platform") or "").strip()
+            profile_url = str(values.get("profile_url") or "").strip()
+            if not platform_value:
+                errors.append(self._batch_row_error(parsed.excel_row, "MISSING_REQUIRED_FIELD", "platform"))
+            if not profile_url:
+                errors.append(self._batch_row_error(parsed.excel_row, "MISSING_REQUIRED_FIELD", "profile_url"))
+            if not platform_value or not profile_url:
+                continue
+
+            platform = self._canonical_platform(platform_value)
+            if not platform:
+                errors.append(self._batch_row_error(parsed.excel_row, "INVALID_PLATFORM", "platform"))
+                continue
+            normalized = scraper_module.normalize_link_record(profile_url)
+            normalized_url = str(normalized.get("normalized_url") or "").strip()
+            normalized_platform = self._canonical_platform(normalized.get("platform"))
+            if not normalized.get("valid") or not normalized_url or normalized_platform != platform:
+                errors.append(self._batch_row_error(parsed.excel_row, "INVALID_PROFILE_URL", "profile_url"))
+                continue
+            account_uid = scraper_module.build_creator_uid(
+                {"platform": platform, "url": normalized_url}
+            )
+            if not account_uid:
+                errors.append(self._batch_row_error(parsed.excel_row, "INVALID_PROFILE_URL", "profile_url"))
+                continue
+            prepared.append(
+                {
+                    **{header: str(values.get(header) or "").strip() for header in values},
+                    "excel_row": parsed.excel_row,
+                    "platform": platform,
+                    "profile_url": normalized_url,
+                    "account_uid": account_uid,
+                }
+            )
+
+        rows_by_uid: dict[str, list[dict[str, Any]]] = {}
+        for row in prepared:
+            rows_by_uid.setdefault(row["account_uid"], []).append(row)
+        duplicate_rows = {
+            row["excel_row"]
+            for rows in rows_by_uid.values()
+            if len(rows) > 1
+            for row in rows
+        }
+        errors.extend(
+            self._batch_row_error(row_number, "DUPLICATE_IN_FILE")
+            for row_number in sorted(duplicate_rows)
+        )
+
+        agency_cache: dict[str, bool] = {}
+        for row in prepared:
+            agency_id = str(row.get("agency_id") or "")
+            if not agency_id or row["excel_row"] in duplicate_rows:
+                continue
+            if agency_id not in agency_cache:
+                try:
+                    if self._agency_port_provider is None:
+                        raise ValueError("Agency boundary unavailable")
+                    self._agency_port_provider().get_agency(agency_id)
+                    agency_cache[agency_id] = True
+                except ValueError:
+                    agency_cache[agency_id] = False
+            if not agency_cache[agency_id]:
+                errors.append(
+                    self._batch_row_error(row["excel_row"], "UNKNOWN_AGENCY", "agency_id")
+                )
+
+        existing_uids = repository.getExistingCreatorAccountUids(
+            {row["account_uid"] for row in prepared}
+        )
+        invalid_row_numbers = {int(error["row"]) for error in errors}
+        skipped_existing = sum(
+            1
+            for row in prepared
+            if row["excel_row"] not in invalid_row_numbers
+            and row["account_uid"] in existing_uids
+        )
+        valid_new = [
+            row
+            for row in prepared
+            if row["excel_row"] not in invalid_row_numbers
+            and row["account_uid"] not in existing_uids
+        ]
+        summary = {
+            "total_rows": len(parsed_rows),
+            "valid_new_rows": len(valid_new),
+            "skipped_existing": skipped_existing,
+            "invalid_rows": len(invalid_row_numbers),
+        }
+        if errors:
+            errors.sort(key=lambda item: (int(item["row"]), str(item["code"])))
+            raise CreatorBatchImportError(
+                "BATCH_IMPORT_VALIDATION_FAILED", summary=summary, rows=errors
+            )
+
+        try:
+            result = repository.createCreatorsBatch(valid_new)
+        except Exception as exc:
+            raise CreatorBatchImportError("BATCH_IMPORT_WRITE_FAILED") from exc
+        return {
+            "total_rows": len(parsed_rows),
+            "created": int(result.get("created") or 0),
+            "skipped_existing": skipped_existing + int(result.get("skipped_existing") or 0),
+        }
+
+    @staticmethod
+    def get_creator_import_template() -> bytes:
+        return build_creator_import_template()
+
+    @staticmethod
+    def _canonical_platform(value: object) -> str:
+        return {
+            "tiktok": "TikTok",
+            "instagram": "Instagram",
+            "youtube": "YouTube",
+        }.get(str(value or "").strip().casefold(), "")
+
+    @staticmethod
+    def _batch_row_error(row: int, code: str, field: str = "") -> dict[str, Any]:
+        error: dict[str, Any] = {"row": row, "status": "INVALID", "code": code}
+        if field:
+            error["field"] = field
+        return error
 
     def get_creator_detail(self, creator_id: str) -> dict[str, Any]:
         return self._repository_provider().getCreatorDetail(creator_id)

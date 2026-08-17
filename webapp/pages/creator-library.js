@@ -243,6 +243,14 @@
   const VIEW_MODE_STORAGE_KEY = "creator_library_view_mode";
   const PAGE_SIZES = Object.freeze({ card: [12, 24, 48], table: [25, 50, 100] });
   const DEFAULT_PAGE_SIZE = Object.freeze({ card: 24, table: 50 });
+  const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  const IMPORT_ERROR_LABELS = Object.freeze({
+    MISSING_REQUIRED_FIELD: "必填字段缺失",
+    INVALID_PLATFORM: "平台无效",
+    INVALID_PROFILE_URL: "主页链接无效",
+    DUPLICATE_IN_FILE: "文件内存在重复达人",
+    UNKNOWN_AGENCY: "Agency 不存在",
+  });
 
   function element(id) {
     return document.getElementById(id);
@@ -299,6 +307,7 @@
       country: valueOf("creator-library-country"),
       language: valueOf("creator-library-language"),
       content_category: valueOf("creator-library-category"),
+      agency_id: valueOf("creator-library-agency"),
       tag: valueOf("creator-library-tag"),
       insight_level: valueOf("creator-library-level"),
       status: valueOf("creator-library-status"),
@@ -448,6 +457,7 @@
         "link",
         record.followers || "--",
         record.content_category || "--",
+        record.agency_name || "--",
         record.insight_level || "insufficient",
         formatMetric(record.average_views),
         formatMetric(record.median_views),
@@ -565,6 +575,79 @@
       ? data.creators
       : Array.isArray(data.records) ? data.records : [];
     render();
+  }
+
+  async function loadAgencyOptions() {
+    const data = await pageContext.api.get("/api/local/agencies", {
+      signal: pageContext.resources.signal,
+    });
+    const select = element("creator-library-agency");
+    if (!select) return;
+    const selected = select.value;
+    const options = (Array.isArray(data.agencies) ? data.agencies : [])
+      .filter(agency => agency?.agency_id)
+      .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
+      .map(agency => new Option(agency.name || agency.agency_id, agency.agency_id));
+    select.replaceChildren(new Option("全部 Agency", ""), ...options);
+    select.value = options.some(option => option.value === selected) ? selected : "";
+  }
+
+  function downloadImportTemplate() {
+    const anchor = document.createElement("a");
+    anchor.href = "/api/creator-library/import-template";
+    anchor.download = "KOLConnect_Creator_Import_Template.xlsx";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove?.();
+  }
+
+  function renderImportResult(data, failed = false) {
+    const panel = element("creator-library-import-result");
+    const summary = element("creator-library-import-summary");
+    const errors = element("creator-library-import-errors");
+    if (!panel || !summary || !errors) return;
+    panel.hidden = false;
+    panel.dataset.tone = failed ? "error" : "success";
+    errors.replaceChildren();
+    if (!failed) {
+      summary.textContent = `导入完成：新增 ${Number(data.created) || 0}，跳过已有 ${Number(data.skipped_existing) || 0}。`;
+      return;
+    }
+    const report = data.summary || {};
+    summary.textContent = `导入未执行：共 ${Number(report.total_rows) || 0} 行，无效 ${Number(report.invalid_rows) || 0} 行。`;
+    (Array.isArray(data.rows) ? data.rows : []).forEach(row => {
+      const item = document.createElement("li");
+      const label = IMPORT_ERROR_LABELS[row.code] || row.code || "数据无效";
+      const field = row.field ? `（${row.field}）` : "";
+      item.textContent = `第 ${row.row} 行：${label}${field}`;
+      errors.appendChild(item);
+    });
+  }
+
+  async function importCreatorWorkbook(event) {
+    const input = event.target;
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      if (!String(file.name || "").toLowerCase().endsWith(".xlsx")) {
+        renderImportResult({ summary: { total_rows: 0, invalid_rows: 1 }, rows: [] }, true);
+        return;
+      }
+      const payload = await file.arrayBuffer();
+      const response = await pageContext.api.postRaw(
+        "/api/creator-library/import",
+        payload,
+        { headers: { "Content-Type": XLSX_CONTENT_TYPE }, signal: pageContext.resources.signal },
+      );
+      renderImportResult(response.data || {});
+      pageContext.ui.showSaved("Creator Excel 导入完成。");
+      await loadRecords();
+    } catch (error) {
+      if (error?.responseData) renderImportResult(error.responseData, true);
+      else showError(error);
+    } finally {
+      input.value = "";
+    }
   }
 
   async function setViewMode(viewMode) {
@@ -734,6 +817,7 @@
       element("creator-library-sort").value = `${state.sort}_${state.order}`;
       renderPageSizeOptions();
       campaignModal = global.KOLConnectCreatorCampaignModal.create(context);
+      await loadAgencyOptions().catch(() => {});
       await loadRecords();
     },
 
@@ -746,6 +830,7 @@
         "creator-library-country",
         "creator-library-language",
         "creator-library-category",
+        "creator-library-agency",
         "creator-library-tag",
         "creator-library-level",
         "creator-library-status",
@@ -757,6 +842,9 @@
       listen("creator-library-page-size", "change", () => changePageSize().catch(showError));
       listen("creator-library-page-buttons", "click", event => handlePagination(event).catch(showError));
       listen("creator-library-search", "input", scheduleSearchFilter);
+      listen("creator-library-template-download", "click", downloadImportTemplate);
+      listen("creator-library-import-button", "click", () => element("creator-library-import-input")?.click());
+      listen("creator-library-import-input", "change", importCreatorWorkbook);
       listen("creator-library-cards", "click", handleAction);
       listen("creator-library-body", "click", handleAction);
       listen("creator-library-body", "change", handleStatusChange);
