@@ -608,6 +608,16 @@ class CreatorService:
     ) -> dict[str, Any]:
         """Persist one prepared Extension analysis through the Creator boundary."""
         try:
+            creator = (
+                analysis.get("creator")
+                if isinstance(analysis.get("creator"), dict)
+                else {}
+            )
+            agency_id = str(creator.get("agency_id") or "").strip()
+            if agency_id:
+                if self._agency_port_provider is None:
+                    raise ValueError("Agency boundary unavailable.")
+                self._agency_port_provider().get_agency(agency_id)
             return self._repository_provider().saveCreator(analysis)
         except Exception:
             # Preserve the original import failure even when task cleanup also fails.

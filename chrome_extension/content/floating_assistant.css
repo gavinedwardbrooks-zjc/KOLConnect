@@ -122,6 +122,13 @@
   box-shadow: 0 0 0 2px rgba(139, 170, 140, 0.16);
 }
 
+#kolconnect-next-root .kol-field-status {
+  display: block;
+  margin-top: 4px;
+  color: #7a746b;
+  font-size: 11px;
+}
+
 #kolconnect-next-root .kol-content-section {
   margin-top: 12px;
   padding: 13px;

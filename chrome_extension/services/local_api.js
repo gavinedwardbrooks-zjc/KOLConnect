@@ -10,6 +10,27 @@ export async function loadLocalApiUrl() {
   return stored.localApiUrl || DEFAULT_API_URL;
 }
 
+export async function loadAgencies() {
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL("/api/local/agencies", apiUrl);
+  const response = await fetch(endpoint, { method: "GET", cache: "no-store" });
+  let result = {};
+  try {
+    result = await response.json();
+  } catch (_) {
+    result = {};
+  }
+  if (!response.ok || result.ok === false) {
+    throw new Error(result.error || `KOLConnect 请求失败（HTTP ${response.status}）。`);
+  }
+  return (Array.isArray(result.agencies) ? result.agencies : [])
+    .filter((agency) => clean(agency?.agency_id))
+    .map((agency) => ({
+      agency_id: clean(agency.agency_id),
+      name: clean(agency.name) || clean(agency.agency_id)
+    }));
+}
+
 function buildVideoImportItem(video = {}, capturedAt = "") {
   return {
     platform: video.platform || "",
@@ -41,7 +62,8 @@ export function buildImportPayload(profile = {}, now = new Date()) {
       whatsapp: clean(profile.whatsapp),
       country: clean(profile.country),
       language: clean(profile.language),
-      language_source: clean(profile.language_source)
+      language_source: clean(profile.language_source),
+      agency_id: clean(profile.agency_id)
     },
     videos: Array.isArray(profile.videos)
       ? profile.videos.map((video) => buildVideoImportItem(video, capturedAt))

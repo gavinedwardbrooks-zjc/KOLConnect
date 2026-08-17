@@ -170,12 +170,15 @@ class FakeButtonElement extends FakeElement {}
     vm.runInContext(readFileSync(path.join(EXTENSION, relative), "utf8"), context);
   }
   const assistant = context.__KOLCONNECT_NEXT_ASSISTANT__;
+  const importMessages = () => sentMessages.filter(
+    message => message.type === "KOLCONNECT_NEXT_IMPORT"
+  );
   assistant.state.profile = { ...profile, content_category: "" };
   assistant.initializePreview(assistant.state.profile);
   assert.equal(assistant.previewInputs.email.value, "creator@example.com");
   assert.equal(assistant.previewInputs.content_category.value, "");
   await assistant.importCurrent();
-  assert.equal(sentMessages.length, 0, "category validation must block import");
+  assert.equal(importMessages().length, 0, "category validation must block import");
 
   assistant.previewInputs.email.value = "edited@example.com";
   assistant.previewInputs.whatsapp.value = "+5511888888888";
@@ -184,12 +187,12 @@ class FakeButtonElement extends FakeElement {}
   assistant.previewInputs.content_category.value = "Gaming";
   assistant.previewInputs.content_category.listeners.change();
   await assistant.importCurrent();
-  assert.equal(sentMessages.length, 1);
-  assert.equal(sentMessages[0].profile.email, "edited@example.com");
-  assert.equal(sentMessages[0].profile.whatsapp, "+5511888888888");
-  assert.equal(sentMessages[0].profile.country, "BR");
-  assert.equal(sentMessages[0].profile.language, "pt-BR");
-  assert.equal(sentMessages[0].profile.content_category, "Gaming");
+  assert.equal(importMessages().length, 1);
+  assert.equal(importMessages()[0].profile.email, "edited@example.com");
+  assert.equal(importMessages()[0].profile.whatsapp, "+5511888888888");
+  assert.equal(importMessages()[0].profile.country, "BR");
+  assert.equal(importMessages()[0].profile.language, "pt-BR");
+  assert.equal(importMessages()[0].profile.content_category, "Gaming");
 
   await api.importProfile(profile);
   await api.importProfile(profile);

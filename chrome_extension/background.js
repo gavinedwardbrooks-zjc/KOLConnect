@@ -9,7 +9,7 @@ import {
 } from "./core/content_analysis.js";
 import { MESSAGE } from "./core/messaging.js";
 import { failedProfile, finalizeProfile } from "./core/schema.js";
-import { importProfile } from "./services/local_api.js";
+import { importProfile, loadAgencies } from "./services/local_api.js";
 
 const PLATFORMS = [TikTok, Instagram, YouTube];
 const contentControllers = new Map();
@@ -143,6 +143,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     importProfile(message.profile)
       .then((result) => sendResponse({ ok: true, result }))
       .catch((error) => sendResponse({ ok: false, error: error?.message || "Import failed." }));
+    return true;
+  }
+  if (message?.type === MESSAGE.LOAD_AGENCIES) {
+    loadAgencies()
+      .then((agencies) => sendResponse({ ok: true, agencies }))
+      .catch((error) => sendResponse({
+        ok: false,
+        error: error?.message || "Agency list unavailable."
+      }));
     return true;
   }
   if (message?.type === MESSAGE.ANALYZE_CONTENT) {

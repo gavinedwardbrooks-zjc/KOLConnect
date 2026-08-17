@@ -1938,6 +1938,7 @@ def _extension_analysis_payload(payload: dict, task: dict, account_uid: str) -> 
             "country": str(creator.get("country") or payload.get("country") or "").strip(),
             "language": str(creator.get("language") or payload.get("language") or "").strip(),
             "language_source": str(creator.get("language_source") or "").strip(),
+            "agency_id": str(creator.get("agency_id") or payload.get("agency_id") or "").strip(),
         },
         "content_category": str(
             payload.get("content_category") or creator.get("content_category") or ""
@@ -1963,6 +1964,7 @@ def import_extension_capture(payload: dict) -> dict:
     whatsapp = str(creator.get("whatsapp") or payload.get("whatsapp") or "").strip()
     country = str(creator.get("country") or payload.get("country") or "").strip()
     language = str(creator.get("language") or payload.get("language") or "").strip()
+    agency_id = str(creator.get("agency_id") or payload.get("agency_id") or "").strip()
     content_category = str(
         payload.get("content_category") or creator.get("content_category") or ""
     ).strip()
@@ -1974,6 +1976,7 @@ def import_extension_capture(payload: dict) -> dict:
             "whatsapp": whatsapp,
             "country": country,
             "language": language,
+            "agency_id": agency_id,
         },
         "content_category": content_category,
     }

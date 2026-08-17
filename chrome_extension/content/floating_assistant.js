@@ -8,6 +8,7 @@
     ERROR: "KOLCONNECT_NEXT_ERROR",
     COLLECT: "KOLCONNECT_NEXT_COLLECT",
     IMPORT: "KOLCONNECT_NEXT_IMPORT",
+    LOAD_AGENCIES: "KOLCONNECT_NEXT_LOAD_AGENCIES",
     PAGE_CHANGED: "KOLCONNECT_NEXT_PAGE_CHANGED",
     ANALYZE_CONTENT: "KOLCONNECT_NEXT_ANALYZE_CONTENT",
     CANCEL_CONTENT: "KOLCONNECT_NEXT_CANCEL_CONTENT",
@@ -119,6 +120,19 @@
   categoryField.append(categorySelect);
   previewSection.append(categoryField);
 
+  const agencyField = create("label", "kol-preview-field");
+  agencyField.append(create("span", "kol-label", "Agency"));
+  const agencySelect = create("select", "kol-preview-input");
+  const emptyAgency = create("option", "", "未选择 Agency");
+  emptyAgency.value = "";
+  agencySelect.append(emptyAgency);
+  agencySelect.disabled = true;
+  previewInputs.agency_id = agencySelect;
+  agencyField.append(agencySelect);
+  const agencyStatus = create("span", "kol-field-status", "正在加载 Agency…");
+  agencyField.append(agencyStatus);
+  previewSection.append(agencyField);
+
   const contentSection = create("section", "kol-content-section");
   contentSection.append(create("h3", "kol-section-title", "最近内容分析"));
   const contentStatus = create("div", "kol-content-status", "尚未分析。");
@@ -197,6 +211,34 @@
     });
   });
 
+  const loadAgencyOptions = async () => {
+    agencySelect.disabled = true;
+    agencyStatus.textContent = "正在加载 Agency…";
+    try {
+      const response = await sendMessage({ type: MESSAGE.LOAD_AGENCIES });
+      if (!response?.ok) throw new Error(response?.error || "Agency list unavailable.");
+      const selectedAgencyId = state.preview?.agency_id || "";
+      const options = [emptyAgency];
+      for (const agency of Array.isArray(response.agencies) ? response.agencies : []) {
+        if (!agency?.agency_id) continue;
+        const option = create("option", "", agency.name || agency.agency_id);
+        option.value = agency.agency_id;
+        options.push(option);
+      }
+      agencySelect.replaceChildren(...options);
+      agencySelect.value = options.some((option) => option.value === selectedAgencyId)
+        ? selectedAgencyId
+        : "";
+      agencySelect.disabled = false;
+      agencyStatus.textContent = options.length > 1 ? "" : "暂无可选 Agency";
+    } catch (_) {
+      agencySelect.replaceChildren(emptyAgency);
+      agencySelect.value = "";
+      agencySelect.disabled = true;
+      agencyStatus.textContent = "Agency 暂不可用，不影响导入";
+    }
+  };
+
   const formatNumber = (value) => value == null
     ? "—"
     : new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 0 }).format(value);
@@ -221,7 +263,8 @@
       whatsapp: profile.whatsapp || "",
       country: profile.country || "",
       language: profile.language || "",
-      content_category: profile.content_category || ""
+      content_category: profile.content_category || "",
+      agency_id: ""
     } : null;
     for (const [name, input] of Object.entries(previewInputs)) {
       input.value = state.preview?.[name] || "";
@@ -235,7 +278,8 @@
     whatsapp: state.preview?.whatsapp || "",
     country: state.preview?.country || "",
     language: state.preview?.language || "",
-    content_category: state.preview?.content_category || ""
+    content_category: state.preview?.content_category || "",
+    agency_id: state.preview?.agency_id || ""
   });
 
   const updateContentDiagnostic = () => {
@@ -652,8 +696,11 @@
     previewInputs,
     importCurrent,
     initializePreview,
-    profileForImport
+    profileForImport,
+    agencyStatus
   };
+
+  loadAgencyOptions();
 
   if (pageSupport.isSupportedCreatorPage(location.href)) {
     open();
