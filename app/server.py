@@ -64,6 +64,7 @@ from repositories.agency_repository import AgencyRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.agency_service import AgencyService
 from services.creator_delete_impact_service import CreatorDeleteImpactService
+from services.creator_hard_delete_service import CreatorHardDeleteService
 from services.creator_service import CreatorService
 from services.task_service import TaskService
 from app_logging import log_error, log_event
@@ -1685,6 +1686,20 @@ def get_creator_delete_impact_service() -> CreatorDeleteImpactService:
     return CreatorDeleteImpactService(get_creator_delete_impact_port)
 
 
+def get_creator_hard_delete_repository():
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.creator_hard_delete()
+
+
+def get_creator_hard_delete_service() -> CreatorHardDeleteService:
+    return CreatorHardDeleteService(
+        get_creator_delete_impact_service,
+        get_creator_hard_delete_repository,
+        lambda: DATA_DIR,
+        lambda exc: log_error("CreatorDelete", "永久删除失败", exc),
+    )
+
+
 def get_creator_service() -> CreatorService:
     """Create a stateless facade whose provider resolves the active request repository."""
     return CreatorService(
@@ -2208,6 +2223,7 @@ class Handler(BaseHTTPRequestHandler):
                 "agency": get_agency_service(),
                 "creator": get_creator_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
+                "creator_hard_delete": get_creator_hard_delete_service(),
                 "task": get_task_service(),
                 "build_accounts_payload": build_accounts_payload,
                 "get_dashboard_data": get_dashboard_data,

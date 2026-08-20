@@ -132,17 +132,16 @@ class CreatorDeleteImpactHttpTests(unittest.TestCase):
         self.assertEqual(before_hash, hashlib.sha256(self.workbook_path.read_bytes()).hexdigest())
         self.assertEqual(before_mtime, self.workbook_path.stat().st_mtime_ns)
 
-    def test_not_found_not_archived_and_no_mutation_endpoint(self) -> None:
+    def test_not_found_active_creator_and_no_mutation_endpoint(self) -> None:
         status, missing = self.request("GET", "missing")
         self.assertEqual(404, status)
         self.assertEqual("未找到达人分析记录。", missing["error"])
 
         status, active = self.request("GET", "creator_active")
         self.assertEqual(200, status)
-        self.assertFalse(active["can_delete"])
-        self.assertIn(
-            "CREATOR_NOT_ARCHIVED",
-            {item["code"] for item in active["blockers"]},
+        self.assertTrue(active["can_delete"])
+        self.assertNotIn(
+            "CREATOR_NOT_ARCHIVED", {item["code"] for item in active["blockers"]}
         )
 
         status, _body = self.request("POST", "creator_archived")

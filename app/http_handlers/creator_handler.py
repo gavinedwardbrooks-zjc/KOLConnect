@@ -1,8 +1,10 @@
 """Creator Library, Agency, Extension, and legacy cooperation endpoints."""
 
 import re
+import json
 
 from creator_batch_import import CreatorBatchImportError
+from services.creator_hard_delete_service import CreatorHardDeleteError
 
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -17,6 +19,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     creator_service = services["creator"]
     agency_service = services["agency"]
     delete_impact_service = services["creator_delete_impact"]
+    hard_delete_service = services["creator_hard_delete"]
 
     # POST /api/creator-library/{creator_id}/cooperations → 拒绝新增 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
     # PATCH /api/creator-library/{creator_id}/cooperations → 拒绝修改 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
@@ -115,6 +118,27 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     creator_match = re.fullmatch(r"/api/creator-library/([^/]+)", path)
+    # DELETE /api/creator-library/{creator_id} → 确认后永久删除安全可执行的 Creator 及关联数据；{"ok": true, "data": {"creator_id": "...", "deleted": true}}
+    if method == "DELETE" and creator_match:
+        try:
+            payload = request["get_payload"]()
+            if not isinstance(payload, dict):
+                payload = {}
+            result = hard_delete_service.delete_creator(
+                creator_match.group(1),
+                confirm=payload.get("confirm"),
+                preview_fingerprint=payload.get("preview_fingerprint"),
+            )
+            handler._json({"ok": True, "data": result})
+        except json.JSONDecodeError:
+            handler._json(
+                {"ok": False, "error": "DELETE_CONFIRMATION_REQUIRED"},
+                status=400,
+            )
+        except CreatorHardDeleteError as exc:
+            handler._json(exc.to_response(), status=exc.status)
+        return True
+
     # GET /api/creator-library/{creator_id} → 读取达人详情；{"ok": true, "record": {...}, "analysis": {...}, "accounts": [...], "snapshots": [...], "trend": {...}, "history_analysis_times": [...], "cooperations": [...], "cooperation_statistics": {...}}
     if method == "GET" and creator_match:
         try:

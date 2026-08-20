@@ -15,6 +15,7 @@ from excel_workbook_store import ExcelWorkbookStore
 from product_repository import ProductRepository
 from repositories.agency_repository import AgencyRepository
 from repositories.creator_delete_impact_repository import CreatorDeleteImpactRepository
+from repositories.creator_hard_delete_repository import CreatorHardDeleteRepository
 
 
 _ACTIVE_FACTORY: ContextVar[RepositoryFactory | None] = ContextVar(
@@ -43,6 +44,7 @@ class RepositoryFactory:
         self._creator: CreatorRepository | None = None
         self._agency: AgencyRepository | None = None
         self._creator_delete_impact: CreatorDeleteImpactRepository | None = None
+        self._creator_hard_delete: CreatorHardDeleteRepository | None = None
         self._product: ProductRepository | None = None
         self._campaign: CampaignRepository | None = None
         self._campaign_creator: CampaignCreatorRepository | None = None
@@ -90,6 +92,17 @@ class RepositoryFactory:
                 legacy_library_file=self.legacy_library_file,
             )
         return self._creator_delete_impact
+
+    def creator_hard_delete(self) -> CreatorHardDeleteRepository:
+        if self._creator_hard_delete is None:
+            self._creator_hard_delete = CreatorHardDeleteRepository(
+                self.store,
+                tasks_dir=self.tasks_dir,
+                data_protection_file=self.data_protection_file,
+                legacy_analysis_dir=self.legacy_analysis_dir,
+                legacy_library_file=self.legacy_library_file,
+            )
+        return self._creator_hard_delete
 
     def product(self) -> ProductRepository:
         if self._product is None:

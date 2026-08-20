@@ -58,6 +58,20 @@
     patch(url, payload, options = {}) {
       return request("PATCH", url, { ...options, payload });
     },
+    getCreatorDeleteImpact(creatorId, options = {}) {
+      return request(
+        "GET",
+        `/api/creator-library/${encodeURIComponent(creatorId)}/delete-impact`,
+        options,
+      );
+    },
+    deleteCreator(creatorId, payload, options = {}) {
+      return request(
+        "DELETE",
+        `/api/creator-library/${encodeURIComponent(creatorId)}`,
+        { ...options, payload },
+      );
+    },
     delete(url, options = {}) {
       return request("DELETE", url, options);
     },

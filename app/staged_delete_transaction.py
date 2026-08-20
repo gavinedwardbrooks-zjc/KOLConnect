@@ -231,7 +231,11 @@ class StagedDeleteTransaction:
         if any(not str(item.get("stable_id") or "") for item in plan.get("delete_locators", [])):
             reasons.append("INEXACT_DELETE_LOCATOR")
         workbook_path = Path(workbook_path)
-        if not workbook_path.is_file() or not os.access(workbook_path.parent, os.W_OK):
+        if (
+            workbook_path.is_symlink()
+            or not workbook_path.is_file()
+            or not os.access(workbook_path.parent, os.W_OK)
+        ):
             reasons.append("WORKBOOK_BACKUP_UNAVAILABLE")
         transaction_parent = self.runtime_data_dir / "delete_transactions"
         transaction_parent.mkdir(parents=True, exist_ok=True)
@@ -243,7 +247,7 @@ class StagedDeleteTransaction:
                 reasons.append("ARTIFACT_STAGING_UNAVAILABLE")
         for path in json_paths:
             path = Path(path)
-            if not path.is_file() or not os.access(path.parent, os.W_OK):
+            if path.is_symlink() or not path.is_file() or not os.access(path.parent, os.W_OK):
                 reasons.append("JSON_BACKUP_UNAVAILABLE")
         return {"status": "READY" if not reasons else "BLOCKED", "reasons": sorted(set(reasons))}
 
@@ -312,3 +316,28 @@ def recover_pending_delete_transactions(runtime_data_dir: Path) -> list[dict[str
                     "phase": "RECOVERY_BLOCKED",
                 })
         return recovered
+
+
+def list_blocking_delete_transactions(runtime_data_dir: Path) -> list[dict[str, str]]:
+    """List unfinished transactions that must block a new hard-delete mutation."""
+    with shared_storage_lock():
+        transactions_root = Path(runtime_data_dir) / "delete_transactions"
+        if not transactions_root.is_dir():
+            return []
+        blocking: list[dict[str, str]] = []
+        blocking_phases = {*PRECOMMIT_PHASES, "CLEANUP_PENDING"}
+        for root in sorted(transactions_root.iterdir(), key=lambda item: item.name):
+            manifest_path = root / "manifest.json"
+            if not root.is_dir() or not manifest_path.is_file():
+                continue
+            try:
+                manifest = StagedDeleteTransaction._load_json(manifest_path)
+                phase = str(manifest.get("phase") or "")
+                transaction_id = str(manifest.get("transaction_id") or "")
+                if transaction_id != root.name or phase not in PHASES:
+                    raise RuntimeError("Delete transaction manifest is invalid.")
+                if phase in blocking_phases:
+                    blocking.append({"transaction_id": transaction_id, "phase": phase})
+            except (RuntimeError, ValueError, OSError):
+                blocking.append({"transaction_id": root.name, "phase": "RECOVERY_BLOCKED"})
+        return blocking

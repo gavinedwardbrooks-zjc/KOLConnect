@@ -235,9 +235,222 @@
     create: createCreatorCampaignModal,
   });
 
+  function createCreatorDeleteModal(context) {
+    const IMPACT_LABELS = Object.freeze({
+      creators: "达人主记录",
+      creator_accounts: "账号",
+      videos: "视频",
+      insights: "Insight",
+      analysis_data: "Analysis",
+      creator_snapshots: "Creator Snapshots",
+      video_snapshots: "Video Snapshots",
+      campaign_creators: "Campaign 关系",
+      follow_up_logs: "跟进记录",
+      task_artifacts: "任务文件",
+      data_protection: "数据保护记录",
+      legacy_sources: "Legacy 记录",
+      cooperations: "历史合作",
+      embedded_analysis_references: "嵌入式 Analysis 引用",
+      unmapped_task_artifacts: "未解析任务文件",
+    });
+    let creator = null;
+    let impact = null;
+    let loadingController = null;
+    let deleteController = null;
+    let requestId = 0;
+    let submitting = false;
+    let onDeleted = null;
+    let bound = false;
+
+    function modalElement(id) {
+      return document.getElementById(id);
+    }
+
+    function setMessage(message, tone = "") {
+      const target = modalElement("creator-delete-message");
+      if (!target) return;
+      target.hidden = !message;
+      target.textContent = message || "";
+      target.dataset.tone = tone;
+    }
+
+    function setButtons() {
+      const confirm = modalElement("creator-delete-confirm");
+      const refresh = modalElement("creator-delete-refresh");
+      if (confirm) {
+        confirm.disabled = submitting || !impact?.can_delete || !impact?.preview_fingerprint;
+        confirm.textContent = submitting ? "正在永久删除..." : "确认永久删除";
+      }
+      if (refresh) refresh.disabled = submitting || !creator;
+    }
+
+    function impactCount(value) {
+      if (value && typeof value === "object") return Number(value.total) || 0;
+      return Number(value) || 0;
+    }
+
+    function renderImpact() {
+      const list = modalElement("creator-delete-impact-list");
+      const blockers = modalElement("creator-delete-blockers");
+      if (list) {
+        list.replaceChildren();
+        const values = impact?.impact && typeof impact.impact === "object" ? impact.impact : {};
+        Object.entries(IMPACT_LABELS).forEach(([key, label]) => {
+          if (!Object.prototype.hasOwnProperty.call(values, key)) return;
+          const item = document.createElement("li");
+          const name = document.createElement("span");
+          const count = document.createElement("strong");
+          name.textContent = label;
+          count.textContent = String(impactCount(values[key]));
+          item.append(name, count);
+          list.appendChild(item);
+        });
+      }
+      if (blockers) {
+        blockers.replaceChildren();
+        (impact?.blockers || []).forEach(blocker => {
+          const item = document.createElement("li");
+          item.textContent = blocker.message || blocker.code || "存在无法安全处理的关联数据。";
+          blockers.appendChild(item);
+        });
+        blockers.hidden = !impact?.blockers?.length;
+      }
+      const state = modalElement("creator-delete-state");
+      if (state) {
+        state.textContent = impact?.can_delete
+          ? "影响检查已通过，可以继续确认。"
+          : "当前无法永久删除。请先处理下列阻止项。";
+        state.dataset.tone = impact?.can_delete ? "ready" : "blocked";
+      }
+      setButtons();
+    }
+
+    function close() {
+      requestId += 1;
+      loadingController?.abort();
+      deleteController?.abort();
+      loadingController = null;
+      deleteController = null;
+      creator = null;
+      impact = null;
+      submitting = false;
+      onDeleted = null;
+      const modal = modalElement("creator-delete-modal");
+      if (modal) modal.hidden = true;
+      setMessage("");
+      modalElement("creator-delete-impact-list")?.replaceChildren();
+      modalElement("creator-delete-blockers")?.replaceChildren();
+      setButtons();
+    }
+
+    async function loadImpact(message = "") {
+      if (!creator) return;
+      loadingController?.abort();
+      loadingController = context.resources.createAbortController();
+      const currentRequest = ++requestId;
+      impact = null;
+      setMessage(message || "正在检查永久删除影响...", message ? "warning" : "loading");
+      setButtons();
+      try {
+        const result = await context.api.getCreatorDeleteImpact(
+          creator.creator_id,
+          { signal: loadingController.signal },
+        );
+        if (currentRequest !== requestId || context.resources.signal.aborted) return;
+        impact = result;
+        renderImpact();
+        if (!message) setMessage("");
+      } catch (error) {
+        if (error?.name === "AbortError" || currentRequest !== requestId) return;
+        setMessage(error.message || "无法读取永久删除影响。", "error");
+        setButtons();
+      }
+    }
+
+    async function open(record, options = {}) {
+      const creatorId = String(record?.creator_id || record?.analysis_id || "").trim();
+      if (!creatorId) throw new Error("缺少 Creator ID，无法检查永久删除影响。");
+      close();
+      creator = { ...record, creator_id: creatorId };
+      onDeleted = typeof options.onDeleted === "function" ? options.onDeleted : null;
+      const modal = modalElement("creator-delete-modal");
+      if (!modal) throw new Error("永久删除确认窗口未加载。");
+      modal.hidden = false;
+      modalElement("creator-delete-creator-name").textContent = record.creator_name || "未命名达人";
+      await loadImpact();
+    }
+
+    async function confirmDelete() {
+      if (submitting || !creator || !impact?.can_delete || !impact?.preview_fingerprint) return;
+      submitting = true;
+      setMessage("");
+      setButtons();
+      deleteController?.abort();
+      deleteController = context.resources.createAbortController();
+      try {
+        await context.api.deleteCreator(
+          creator.creator_id,
+          { confirm: true, preview_fingerprint: impact.preview_fingerprint },
+          { signal: deleteController.signal },
+        );
+        const callback = onDeleted;
+        close();
+        if (callback) await callback();
+        context.ui.showSaved("达人已永久删除。");
+      } catch (error) {
+        if (error?.name === "AbortError") return;
+        submitting = false;
+        const code = error?.responseData?.error || error?.message;
+        if (code === "DELETE_PREVIEW_STALE") {
+          await loadImpact("相关数据已发生变化，请重新确认删除影响。");
+        } else if (code === "DELETE_BLOCKED") {
+          await loadImpact("当前出现新的安全阻止项，已刷新删除影响。");
+        } else if (code === "SHARED_STORAGE_LOCK_TIMEOUT") {
+          impact = null;
+          setMessage("当前数据正在被其他操作修改，请稍后重新检查影响。", "warning");
+          setButtons();
+        } else if (code === "CREATOR_NOT_FOUND") {
+          const callback = onDeleted;
+          close();
+          if (callback) await callback();
+          context.ui.showSaved("达人已不存在，列表已刷新。");
+        } else {
+          impact = null;
+          setMessage("永久删除失败，数据已保持或恢复到安全状态。请稍后重试。", "error");
+          setButtons();
+        }
+      }
+    }
+
+    function bind() {
+      if (bound) return;
+      bound = true;
+      const modal = modalElement("creator-delete-modal");
+      context.resources.listen(modalElement("creator-delete-close"), "click", close);
+      context.resources.listen(modalElement("creator-delete-cancel"), "click", close);
+      context.resources.listen(modalElement("creator-delete-refresh"), "click", () => loadImpact());
+      context.resources.listen(modalElement("creator-delete-confirm"), "click", confirmDelete);
+      context.resources.listen(modal, "click", event => {
+        if (event.target === modal && !submitting) close();
+      });
+    }
+
+    function destroy() {
+      close();
+      bound = false;
+    }
+
+    return Object.freeze({ open, bind, close, destroy });
+  }
+
+  global.KOLConnectCreatorDeleteModal = Object.freeze({
+    create: createCreatorDeleteModal,
+  });
+
   let pageContext = null;
   let listController = null;
   let campaignModal = null;
+  let deleteModal = null;
   let lifecycleId = 0;
   let filterRequestId = 0;
   const VIEW_MODE_STORAGE_KEY = "creator_library_view_mode";
@@ -439,6 +652,7 @@
           createAction("归档达人", "archive", creatorId, "soft-btn creator-card-action"),
         );
       }
+      actions.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger creator-card-action"));
       card.append(identity, tags, metrics, actions);
       cards.appendChild(card);
     });
@@ -510,6 +724,7 @@
           createAction("归档", "archive", creatorId, "soft-btn compact-btn"),
         );
       }
+      actions.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger compact-btn"));
       row.appendChild(actions);
       body.appendChild(row);
     });
@@ -756,6 +971,16 @@
         await changeArchiveState(creatorId, true);
       } else if (button.dataset.creatorAction === "restore") {
         await changeArchiveState(creatorId, false);
+      } else if (button.dataset.creatorAction === "delete") {
+        const record = libraryState().records.find(
+          item => String(item.creator_id || item.analysis_id || "") === creatorId,
+        );
+        await deleteModal.open(record, {
+          onDeleted: async () => {
+            pageContext.state.creatorLibraryDetail = {};
+            await loadRecords();
+          },
+        });
       }
     } catch (error) {
       showError(error);
@@ -817,12 +1042,14 @@
       element("creator-library-sort").value = `${state.sort}_${state.order}`;
       renderPageSizeOptions();
       campaignModal = global.KOLConnectCreatorCampaignModal.create(context);
+      deleteModal = global.KOLConnectCreatorDeleteModal.create(context);
       await loadAgencyOptions().catch(() => {});
       await loadRecords();
     },
 
     bind() {
       campaignModal.bind();
+      deleteModal.bind();
       listen("creator-library-refresh", "click", () => loadRecords().catch(showError));
       listen("creator-library-card-view", "click", () => setViewMode("card").catch(showError));
       listen("creator-library-table-view", "click", () => setViewMode("table").catch(showError));
@@ -854,10 +1081,12 @@
       lifecycleId += 1;
       filterRequestId += 1;
       campaignModal?.destroy();
+      deleteModal?.destroy();
       pageContext?.resources.cleanup();
       pageContext = null;
       listController = null;
       campaignModal = null;
+      deleteModal = null;
     },
   };
 

@@ -1512,7 +1512,8 @@ button {
 .creator-campaign-table td:last-child { white-space: nowrap; }
 
 .creator-campaign-modal,
-.creator-edit-modal {
+.creator-edit-modal,
+.creator-delete-modal {
   position: fixed;
   z-index: 1200;
   inset: 0;
@@ -1523,9 +1524,11 @@ button {
   backdrop-filter: blur(3px);
 }
 .creator-campaign-modal[hidden],
-.creator-edit-modal[hidden] { display: none; }
+.creator-edit-modal[hidden],
+.creator-delete-modal[hidden] { display: none; }
 .creator-campaign-modal-card,
-.creator-edit-modal-card {
+.creator-edit-modal-card,
+.creator-delete-modal-card {
   width: min(520px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
@@ -1536,6 +1539,17 @@ button {
   box-shadow: 0 24px 70px rgb(52 64 56 / 22%);
 }
 .creator-edit-modal-card { width: min(680px, 100%); }
+.creator-delete-modal-card { width: min(640px, 100%); }
+.creator-delete-warning { margin: 0 0 14px; color: var(--ink); line-height: 1.6; }
+.creator-delete-state { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: #f3f0e8; color: var(--muted); }
+.creator-delete-state[data-tone="ready"] { background: #e9f4eb; color: #35633f; }
+.creator-delete-state[data-tone="blocked"] { background: #fae9e6; color: #8b4039; }
+.creator-delete-impact-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.creator-delete-impact-list li { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: #fffdf8; }
+.creator-delete-blockers { margin: 14px 0 0; padding: 12px 12px 12px 30px; border-left: 3px solid #bd655d; background: #fae9e6; color: #7d3933; }
+.creator-delete-blockers[hidden] { display: none; }
+.danger { color: #9b3f37; border-color: #d9a39d; }
+.primary-btn.danger { color: #fff; background: #a8433a; border-color: #a8433a; }
 .creator-campaign-modal-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; margin-bottom: 16px; }
 .creator-campaign-modal-heading h2 { margin: 2px 0 0; }
 .creator-campaign-modal-heading .icon-btn { width: 34px; height: 34px; border-radius: 50%; font-size: 22px; line-height: 1; }

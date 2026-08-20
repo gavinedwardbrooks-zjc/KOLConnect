@@ -25,6 +25,10 @@ class CreatorDeleteImpactService:
         self._impact_port_provider = impact_port_provider
 
     def get_delete_impact(self, creator_id: str) -> dict[str, Any]:
+        return self.inspect_delete_impact(creator_id)["preview"]
+
+    def inspect_delete_impact(self, creator_id: str) -> dict[str, Any]:
+        """Return the public preview and its scanner-owned internal delete plan."""
         snapshot = self._impact_port_provider().scan_creator_delete_impact(creator_id)
         impact = snapshot["impact"]
         retained = snapshot["retained"]
@@ -66,7 +70,7 @@ class CreatorDeleteImpactService:
                 separators=(",", ":"),
             ).encode("utf-8")
         ).hexdigest()
-        return {
+        preview = {
             "creator": {
                 "creator_id": snapshot["creator_id"],
                 "display_name": snapshot["display_name"],
@@ -83,6 +87,7 @@ class CreatorDeleteImpactService:
             "can_delete": not blockers,
             "preview_fingerprint": fingerprint,
         }
+        return {"preview": preview, "snapshot": snapshot, "plan": plan}
 
     @staticmethod
     def _blockers(
@@ -96,8 +101,6 @@ class CreatorDeleteImpactService:
                 item["count"] = count
             blockers.append(item)
 
-        if not snapshot["is_archived"]:
-            add("CREATOR_NOT_ARCHIVED", "Creator 必须先归档才能进入硬删除评估。")
         active = snapshot["impact"]["campaign_creators"]["active"]
         if active:
             add("ACTIVE_CAMPAIGN_RELATION", "存在未归档的 Campaign Creator 关系。", active)
