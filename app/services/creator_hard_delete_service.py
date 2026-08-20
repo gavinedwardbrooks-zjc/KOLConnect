@@ -41,6 +41,7 @@ ImpactServiceProvider = Callable[[], CreatorDeleteImpactService]
 RepositoryProvider = Callable[[], CreatorHardDeleteRepository]
 RuntimeDataDirProvider = Callable[[], Path]
 ErrorLogger = Callable[[BaseException], None]
+CacheInvalidator = Callable[[], None]
 
 
 class CreatorHardDeleteService:
@@ -54,12 +55,14 @@ class CreatorHardDeleteService:
         error_logger: ErrorLogger | None = None,
         *,
         lock_timeout: float | None = None,
+        creator_library_cache_invalidator: CacheInvalidator | None = None,
     ) -> None:
         self._impact_service_provider = impact_service_provider
         self._repository_provider = repository_provider
         self._runtime_data_dir_provider = runtime_data_dir_provider
         self._error_logger = error_logger or (lambda _exc: None)
         self._lock_timeout = lock_timeout
+        self._creator_library_cache_invalidator = creator_library_cache_invalidator
 
     def delete_creator(
         self,
@@ -79,7 +82,10 @@ class CreatorHardDeleteService:
         )
         try:
             with shared_storage_lock(**lock_options):
-                return self._delete_locked(creator_id, fingerprint)
+                result = self._delete_locked(creator_id, fingerprint)
+                if self._creator_library_cache_invalidator is not None:
+                    self._creator_library_cache_invalidator()
+                return result
         except SharedStorageLockTimeout as exc:
             raise CreatorHardDeleteError("SHARED_STORAGE_LOCK_TIMEOUT", 409) from exc
 

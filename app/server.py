@@ -65,6 +65,7 @@ from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.agency_service import AgencyService
 from services.creator_delete_impact_service import CreatorDeleteImpactService
 from services.creator_hard_delete_service import CreatorHardDeleteService
+from services.creator_library_cache import CreatorLibraryCache
 from services.creator_service import CreatorService
 from services.task_service import TaskService
 from app_logging import log_error, log_event
@@ -178,6 +179,7 @@ MAIL_PROVIDER_PRESETS = {
 }
 
 HANDLERS = [dashboard_handler, campaign_handler, settings_handler, creator_handler, task_handler]
+CREATOR_LIBRARY_CACHE = CreatorLibraryCache()
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
@@ -1674,7 +1676,11 @@ def get_agency_port() -> AgencyPort:
 
 
 def get_agency_service() -> AgencyService:
-    return AgencyService(get_agency_port, get_creator_repository)
+    return AgencyService(
+        get_agency_port,
+        get_creator_repository,
+        lambda: CREATOR_LIBRARY_CACHE,
+    )
 
 
 def get_creator_delete_impact_port() -> CreatorDeleteImpactPort:
@@ -1697,6 +1703,7 @@ def get_creator_hard_delete_service() -> CreatorHardDeleteService:
         get_creator_hard_delete_repository,
         lambda: DATA_DIR,
         lambda exc: log_error("CreatorDelete", "永久删除失败", exc),
+        creator_library_cache_invalidator=CREATOR_LIBRARY_CACHE.invalidate,
     )
 
 
@@ -1710,6 +1717,7 @@ def get_creator_service() -> CreatorService:
         _resolve_source_contact,
         get_four_table_feishu_config,
         get_agency_port,
+        lambda: CREATOR_LIBRARY_CACHE,
     )
 
 
@@ -1827,6 +1835,7 @@ def background_task_service_scope():
             _resolve_source_contact,
             get_four_table_feishu_config,
             factory.agency,
+            lambda: CREATOR_LIBRARY_CACHE,
         )
         creator_port = _CreatorAnalysisPortAdapter(lambda: creator_service)
         yield TaskService(

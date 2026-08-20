@@ -821,21 +821,86 @@ class CreatorRepository:
         filters: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Return one stable, server-sorted Creator Library page."""
-        if page < 1:
-            raise ValueError("page 必须大于或等于 1。")
-        if page_size not in CREATOR_LIBRARY_PAGE_SIZES:
-            raise ValueError("page_size 仅支持 12、24、25、48、50、100。")
-        if sort not in CREATOR_LIBRARY_SORT_FIELDS:
-            raise ValueError("不支持的达人排序字段。")
-        if order not in {"asc", "desc"}:
-            raise ValueError("order 仅支持 asc 或 desc。")
+        self._validate_creator_page_query(page, page_size, sort, order)
+        snapshot = self.getCreatorLibrarySnapshot()
+        return self.getCreatorsPageFromSnapshot(
+            snapshot,
+            page=page,
+            page_size=page_size,
+            sort=sort,
+            order=order,
+            include_archived=include_archived,
+            filters=filters,
+        )
 
-        request_started = time.perf_counter()
+    def getCreatorLibrarySnapshot(self) -> dict[str, Any]:
+        """Build the existing Creator Library read model for cache storage."""
         workbook = self._load_workbook()
         records, index = self._creator_records_from_workbook(workbook)
+        active_records = [
+            record for record in records if not record.get("archived_at")
+        ]
+        creator_counts: dict[str, int] = {}
+        for record in records:
+            agency_id = str(record.get("agency_id") or "")
+            if agency_id:
+                creator_counts[agency_id] = creator_counts.get(agency_id, 0) + 1
+        contact_counts: dict[str, int] = {}
+        for contact in self._rows(workbook["AgencyContacts"]):
+            agency_id = str(contact.get("agency_id") or "")
+            if agency_id:
+                contact_counts[agency_id] = contact_counts.get(agency_id, 0) + 1
+        agency_options = [
+            {
+                **agency,
+                "creator_count": creator_counts.get(
+                    str(agency.get("agency_id") or ""), 0
+                ),
+                "contact_count": contact_counts.get(
+                    str(agency.get("agency_id") or ""), 0
+                ),
+            }
+            for agency in self._rows(workbook["Agencies"])
+        ]
+        agency_options.sort(
+            key=lambda agency: str(agency.get("name") or "").casefold()
+        )
+        return {
+            "creators": records,
+            "creator_id_index": {
+                str(record.get("creator_id") or ""): record
+                for record in records
+                if str(record.get("creator_id") or "")
+            },
+            "filter_options": {
+                "active": self._creator_filter_options(active_records),
+                "all": self._creator_filter_options(records),
+            },
+            "agency_options": agency_options,
+            "accounts_count": index["accounts_count"],
+            "snapshots_count": index["snapshots_count"],
+        }
+
+    def getCreatorsPageFromSnapshot(
+        self,
+        snapshot: dict[str, Any],
+        page: int = 1,
+        page_size: int = 24,
+        sort: str = "created_at",
+        order: str = "desc",
+        include_archived: bool = False,
+        filters: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Apply the existing query contract to a detached cached snapshot."""
+        self._validate_creator_page_query(page, page_size, sort, order)
+
+        request_started = time.perf_counter()
+        records = list(snapshot["creators"])
         if not include_archived:
             records = [record for record in records if not record.get("archived_at")]
-        filter_options = self._creator_filter_options(records)
+        filter_options = dict(
+            snapshot["filter_options"]["all" if include_archived else "active"]
+        )
         records = self._filter_creator_records(records, filters or {})
         records = self._sort_creator_records(records, sort, order)
         total = len(records)
@@ -847,7 +912,7 @@ class CreatorRepository:
             "分页列表加载完成"
             f" | total={total} | page={page} | page_size={page_size}"
             f" | sort={sort} | order={order}"
-            f" | accounts_count={index['accounts_count']}"
+            f" | accounts_count={snapshot['accounts_count']}"
             f" | response_duration_ms={round((time.perf_counter() - request_started) * 1000, 2)}",
         )
         return {
@@ -858,6 +923,22 @@ class CreatorRepository:
             "creators": creators,
             "filter_options": filter_options,
         }
+
+    @staticmethod
+    def _validate_creator_page_query(
+        page: int,
+        page_size: int,
+        sort: str,
+        order: str,
+    ) -> None:
+        if page < 1:
+            raise ValueError("page 必须大于或等于 1。")
+        if page_size not in CREATOR_LIBRARY_PAGE_SIZES:
+            raise ValueError("page_size 仅支持 12、24、25、48、50、100。")
+        if sort not in CREATOR_LIBRARY_SORT_FIELDS:
+            raise ValueError("不支持的达人排序字段。")
+        if order not in {"asc", "desc"}:
+            raise ValueError("order 仅支持 asc 或 desc。")
 
     @classmethod
     def _filter_creator_records(
