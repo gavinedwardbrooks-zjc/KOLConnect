@@ -1563,6 +1563,20 @@ button {
   min-width: 1450px;
 }
 
+.creator-library-select-all {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.creator-card-select {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
 .creator-library-table td:last-child {
   min-width: 190px;
   white-space: nowrap;

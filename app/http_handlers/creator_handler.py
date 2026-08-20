@@ -9,6 +9,7 @@ from services.creator_hard_delete_service import CreatorHardDeleteError
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 CREATOR_IMPORT_TEMPLATE_FILENAME = "KOLConnect_Creator_Import_Template.xlsx"
+CREATOR_EXPORT_FILENAME = "KOLConnect_Creator_Export.xlsx"
 
 
 def handle(handler, request: dict, context: dict) -> bool:
@@ -63,6 +64,24 @@ def handle(handler, request: dict, context: dict) -> bool:
             XLSX_CONTENT_TYPE,
             CREATOR_IMPORT_TEMPLATE_FILENAME,
         )
+        return True
+
+    # POST /api/creator-library/export → 导出指定 Creator；XLSX binary
+    if method == "POST" and path == "/api/creator-library/export":
+        payload = request["get_payload"]()
+        creator_ids = payload.get("creator_ids") if isinstance(payload, dict) else None
+        try:
+            handler._binary(
+                creator_service.export_creators(creator_ids),
+                XLSX_CONTENT_TYPE,
+                CREATOR_EXPORT_FILENAME,
+            )
+        except ValueError as exc:
+            handler._json({"ok": False, "error": str(exc)}, status=400)
+        except LookupError:
+            handler._json({"ok": False, "error": "CREATOR_NOT_FOUND"}, status=404)
+        except RuntimeError as exc:
+            handler._json({"ok": False, "error": str(exc)}, status=500)
         return True
 
     # POST /api/creator-library/import → 批量导入 Creator；{"ok": true, "data": {"total_rows": 0, "created": 0, "skipped_existing": 0}}

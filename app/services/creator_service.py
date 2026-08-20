@@ -12,6 +12,7 @@ from creator_batch_import import (
     build_creator_import_template,
     parse_creator_import_workbook,
 )
+from creator_library_export import build_creator_export_workbook
 from ports.agency_port import AgencyPort
 from ports.creator_port import (
     CreatorImportItem,
@@ -436,11 +437,9 @@ class CreatorService:
         if self._creator_library_cache_provider is None:
             result = repository.getCreatorsPage(**query)
         else:
-            snapshot = self._creator_library_cache_provider().get_snapshot(
-                repository.workbook_path,
-                repository.getCreatorLibrarySnapshot,
+            result = repository.getCreatorsPageFromSnapshot(
+                self._get_creator_library_snapshot(repository), **query
             )
-            result = repository.getCreatorsPageFromSnapshot(snapshot, **query)
         # Preserve the legacy records alias while clients migrate to creators.
         return {**result, "records": result["creators"]}
 
@@ -557,6 +556,32 @@ class CreatorService:
             "created": int(result.get("created") or 0),
             "skipped_existing": skipped_existing + int(result.get("skipped_existing") or 0),
         }
+
+    def export_creators(self, creator_ids: object) -> bytes:
+        """Export a complete, all-or-nothing selection from the Creator Library."""
+        if not isinstance(creator_ids, list) or not creator_ids:
+            raise ValueError("CREATOR_IDS_REQUIRED")
+        normalized_ids = [str(creator_id or "").strip() for creator_id in creator_ids]
+        if not all(normalized_ids):
+            raise ValueError("CREATOR_IDS_REQUIRED")
+
+        repository = self._repository_provider()
+        snapshot = self._get_creator_library_snapshot(repository)
+        index = snapshot.get("creator_id_index") if isinstance(snapshot, dict) else None
+        if not isinstance(index, dict):
+            raise RuntimeError("CREATOR_EXPORT_FAILED")
+        missing = [creator_id for creator_id in normalized_ids if creator_id not in index]
+        if missing:
+            raise LookupError("CREATOR_NOT_FOUND")
+        return build_creator_export_workbook([dict(index[creator_id]) for creator_id in normalized_ids])
+
+    def _get_creator_library_snapshot(self, repository: CreatorRepositoryReader) -> dict[str, Any]:
+        if self._creator_library_cache_provider is None:
+            return repository.getCreatorLibrarySnapshot()
+        return self._creator_library_cache_provider().get_snapshot(
+            repository.workbook_path,
+            repository.getCreatorLibrarySnapshot,
+        )
 
     @staticmethod
     def get_creator_import_template() -> bytes:

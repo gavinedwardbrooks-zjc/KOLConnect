@@ -132,6 +132,11 @@ function createEnvironment() {
     KOLConnectCreatorCampaignModal: { create() { return { bind() {}, destroy() {} }; } },
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
     confirm: () => true,
+    URL: { createObjectURL: () => "blob:creator-template", revokeObjectURL() {} },
+    async fetch(url) {
+      calls.push({ method: "FETCH", url });
+      return { ok: true, blob: async () => ({}) };
+    },
   };
   const sandbox = {
     AbortController, console, Date, document, Intl, Option: option, Promise, URLSearchParams, window,
@@ -165,7 +170,7 @@ async function run() {
   assert.equal(agency.options[1].value, "agency_one");
   assert.equal(agency.options[1].textContent, "North Studio");
   const row = env.elements.get("creator-library-body").children[0];
-  assert.equal(row.children[5].textContent, "North Studio", "Agency column must render agency_name");
+  assert.equal(row.children[6].textContent, "North Studio", "Agency column must render agency_name");
 
   agency.value = "agency_one";
   await agency.dispatch("change");
@@ -173,8 +178,9 @@ async function run() {
 
   await env.elements.get("creator-library-template-download").dispatch("click");
   const download = env.created.find(item => item.tagName === "A" && item.clicked);
-  assert.equal(download.href, "/api/creator-library/import-template");
+  assert.equal(download.href, "blob:creator-template");
   assert.equal(download.download, "KOLConnect_Creator_Import_Template.xlsx");
+  assert.ok(env.calls.some(call => call.method === "FETCH" && call.url === "/api/creator-library/import-template"));
 
   const input = env.elements.get("creator-library-import-input");
   input.files = [{ name: "creators.xlsx", arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }];

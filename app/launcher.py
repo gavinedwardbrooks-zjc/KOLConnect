@@ -256,8 +256,10 @@ def run_desktop() -> None:
     backup_creator_library(workbook_path)
 
     import webview
+    from desktop_file_bridge import DesktopFileBridge
 
     width, height = load_window_size()
+    desktop_file_bridge = DesktopFileBridge(webview)
     window = webview.create_window(
         APP_DISPLAY_VERSION,
         APP_URL,
@@ -265,7 +267,9 @@ def run_desktop() -> None:
         height=height,
         min_size=(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT),
         resizable=True,
+        js_api=desktop_file_bridge,
     )
+    desktop_file_bridge.bind_window(window)
     install_window_state_handlers(window)
     webview.start()
 

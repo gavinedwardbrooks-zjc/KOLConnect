@@ -305,6 +305,8 @@
                 <button class="soft-btn compact-btn active" id="creator-library-card-view" type="button">卡片</button>
                 <button class="soft-btn compact-btn" id="creator-library-table-view" type="button">表格</button>
               </div>
+              <label class="creator-library-select-all"><input id="creator-library-select-all" type="checkbox"> 本页全选</label>
+              <button class="soft-btn" id="creator-library-export" type="button" disabled>导出选中达人</button>
               <button class="soft-btn" id="creator-library-template-download" type="button">下载 Excel 模板</button>
               <button class="primary-btn" id="creator-library-import-button" type="button">导入 Excel</button>
               <input id="creator-library-import-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
@@ -326,7 +328,7 @@
           <div class="review-table-wrap">
             <table class="review-table creator-library-table">
               <thead><tr>
-                <th>达人名称</th><th>平台</th><th>主页链接</th><th>粉丝数</th><th>内容类型</th><th>Agency</th>
+                <th>选择</th><th>达人名称</th><th>平台</th><th>主页链接</th><th>粉丝数</th><th>内容类型</th><th>Agency</th>
                 <th>Insight 等级</th><th>平均播放</th><th>中位播放</th><th>粉丝变化</th><th>中位播放变化</th><th>评分变化</th><th>最新分析时间</th><th>数据更新时间</th><th>当前状态</th><th>操作</th>
               </tr></thead>
               <tbody id="creator-library-body"></tbody>

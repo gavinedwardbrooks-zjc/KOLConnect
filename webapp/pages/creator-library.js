@@ -590,11 +590,51 @@
     return button;
   }
 
+  function recordId(record) {
+    return String(record?.creator_id || record?.analysis_id || "");
+  }
+
+  function selectedCreatorIds() {
+    return libraryState().selectedCreatorIds instanceof Set
+      ? libraryState().selectedCreatorIds
+      : new Set();
+  }
+
+  function updateSelectionControls() {
+    const state = libraryState();
+    const selected = selectedCreatorIds();
+    const currentIds = state.records.map(recordId).filter(Boolean);
+    const selectAll = element("creator-library-select-all");
+    const exportButton = element("creator-library-export");
+    if (selectAll) {
+      selectAll.checked = currentIds.length > 0 && currentIds.every(id => selected.has(id));
+      selectAll.indeterminate = currentIds.some(id => selected.has(id)) && !selectAll.checked;
+      selectAll.disabled = currentIds.length === 0;
+    }
+    if (exportButton) {
+      exportButton.disabled = selected.size === 0;
+      exportButton.textContent = selected.size ? `导出选中达人（${selected.size}）` : "导出选中达人";
+    }
+  }
+
+  function createSelectionControl(creatorId) {
+    const label = document.createElement("label");
+    label.className = "creator-card-select";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.dataset.creatorSelectId = creatorId;
+    input.checked = selectedCreatorIds().has(creatorId);
+    const text = document.createElement("span");
+    text.textContent = "选择";
+    label.append(input, text);
+    return label;
+  }
+
   function renderCards(records) {
     const cards = element("creator-library-cards");
     cards.replaceChildren();
     records.forEach(record => {
-      const creatorId = String(record.creator_id || record.analysis_id || "");
+      const creatorId = recordId(record);
       const archived = Boolean(record.archived_at);
       const card = document.createElement("article");
       card.className = "creator-card";
@@ -643,6 +683,7 @@
 
       const actions = document.createElement("div");
       actions.className = "creator-card-actions";
+      actions.appendChild(createSelectionControl(creatorId));
       actions.appendChild(createAction("查看达人", "detail", creatorId, "soft-btn creator-card-action"));
       if (archived) {
         actions.appendChild(createAction("恢复达人", "restore", creatorId, "soft-btn creator-card-action"));
@@ -662,9 +703,12 @@
     const body = element("creator-library-body");
     body.replaceChildren();
     records.forEach(record => {
-      const creatorId = String(record.creator_id || record.analysis_id || "");
+      const creatorId = recordId(record);
       const archived = Boolean(record.archived_at);
       const row = document.createElement("tr");
+      const selectionCell = document.createElement("td");
+      selectionCell.appendChild(createSelectionControl(creatorId));
+      row.appendChild(selectionCell);
       const values = [
         record.creator_name || "未命名达人",
         record.platform || "--",
@@ -753,6 +797,7 @@
     body.replaceChildren();
     if (state.viewMode === "card") renderCards(records);
     else renderTable(records);
+    updateSelectionControls();
     renderPagination();
   }
 
@@ -807,13 +852,94 @@
     select.value = options.some(option => option.value === selected) ? selected : "";
   }
 
-  function downloadImportTemplate() {
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    }
+    return global.btoa(binary);
+  }
+
+  function desktopFileBridge() {
+    return global.pywebview?.api?.save_xlsx || null;
+  }
+
+  async function saveXlsxResponse(response, filename) {
+    const saveXlsx = desktopFileBridge();
+    if (saveXlsx) {
+      const result = await saveXlsx(filename, arrayBufferToBase64(await response.arrayBuffer()));
+      if (result?.saved === true) return { saved: true, desktop: true, path: result.path };
+      if (result?.canceled === true) return { saved: false, canceled: true };
+      throw new Error(result?.error || "文件保存失败，请稍后重试。");
+    }
+    const objectUrl = global.URL.createObjectURL(await response.blob());
     const anchor = document.createElement("a");
-    anchor.href = "/api/creator-library/import-template";
-    anchor.download = "KOLConnect_Creator_Import_Template.xlsx";
+    anchor.href = objectUrl;
+    anchor.download = filename;
     document.body.appendChild(anchor);
     anchor.click();
     anchor.remove?.();
+    global.URL.revokeObjectURL(objectUrl);
+    return { saved: true, desktop: false, path: null };
+  }
+
+  async function downloadBinary(url, filename) {
+    const response = await global.fetch(url, { cache: "no-store", signal: pageContext.resources.signal });
+    if (!response.ok) throw new Error("下载失败，请稍后重试。");
+    return saveXlsxResponse(response, filename);
+  }
+
+  async function downloadImportTemplate() {
+    try {
+      const result = await downloadBinary("/api/creator-library/import-template", "KOLConnect_Creator_Import_Template.xlsx");
+      if (result.desktop && result.saved) pageContext.ui.showSaved(`模板已保存到：${result.path}`);
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  async function exportSelectedCreators() {
+    const creatorIds = [...selectedCreatorIds()];
+    if (!creatorIds.length) return;
+    try {
+      const response = await global.fetch("/api/creator-library/export", {
+        method: "POST",
+        cache: "no-store",
+        headers: { "Content-Type": "application/json" },
+        signal: pageContext.resources.signal,
+        body: JSON.stringify({ creator_ids: creatorIds }),
+      });
+      if (!response.ok) throw new Error("导出失败，请刷新达人库后重试。");
+      const result = await saveXlsxResponse(response, "KOLConnect_Creator_Export.xlsx");
+      if (result.canceled) return;
+      pageContext.ui.showSaved(
+        result.desktop ? `已保存到：${result.path}` : `已导出 ${creatorIds.length} 位达人。`,
+      );
+    } catch (error) {
+      showError(error);
+    }
+  }
+
+  function toggleCurrentPageSelection(event) {
+    const selected = selectedCreatorIds();
+    const currentIds = libraryState().records.map(recordId).filter(Boolean);
+    currentIds.forEach(creatorId => {
+      if (event.target.checked) selected.add(creatorId);
+      else selected.delete(creatorId);
+    });
+    render();
+  }
+
+  function toggleCreatorSelection(event) {
+    const checkbox = event.target.closest("[data-creator-select-id]");
+    if (!checkbox) return;
+    const creatorId = String(checkbox.dataset.creatorSelectId || "");
+    if (!creatorId) return;
+    const selected = selectedCreatorIds();
+    if (checkbox.checked) selected.add(creatorId);
+    else selected.delete(creatorId);
+    updateSelectionControls();
   }
 
   function renderImportResult(data, failed = false) {
@@ -1023,6 +1149,9 @@
       context.state.creatorLibrary ||= {};
       const state = context.state.creatorLibrary;
       state.records ||= [];
+      state.selectedCreatorIds = state.selectedCreatorIds instanceof Set
+        ? state.selectedCreatorIds
+        : new Set();
       const storedMode = global.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
       state.viewMode = storedMode === "table" || state.viewMode === "table" ? "table" : "card";
       state.page = Number.isInteger(state.page) && state.page > 0 ? state.page : 1;
@@ -1070,10 +1199,14 @@
       listen("creator-library-page-buttons", "click", event => handlePagination(event).catch(showError));
       listen("creator-library-search", "input", scheduleSearchFilter);
       listen("creator-library-template-download", "click", downloadImportTemplate);
+      listen("creator-library-export", "click", exportSelectedCreators);
+      listen("creator-library-select-all", "change", toggleCurrentPageSelection);
       listen("creator-library-import-button", "click", () => element("creator-library-import-input")?.click());
       listen("creator-library-import-input", "change", importCreatorWorkbook);
       listen("creator-library-cards", "click", handleAction);
+      listen("creator-library-cards", "change", toggleCreatorSelection);
       listen("creator-library-body", "click", handleAction);
+      listen("creator-library-body", "change", toggleCreatorSelection);
       listen("creator-library-body", "change", handleStatusChange);
     },
 
