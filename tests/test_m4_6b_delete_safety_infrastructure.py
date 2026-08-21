@@ -77,6 +77,21 @@ class AtomicWriteJsonTests(WorkspaceTestCase):
         self.assertTrue(sources[0].name.endswith(".tmp"))
         self.assertEqual({"sequence": 2}, json.loads(target.read_text(encoding="utf-8")))
 
+    def test_windows_transient_replace_error_classifier(self) -> None:
+        with mock.patch.object(runtime_paths.os, "name", "nt"):
+            for winerror in (5, 32, 33):
+                with self.subTest(winerror=winerror):
+                    self.assertTrue(
+                        runtime_paths._is_windows_transient_replace_error(
+                            self._windows_permission_error(winerror)
+                        )
+                    )
+            self.assertFalse(
+                runtime_paths._is_windows_transient_replace_error(
+                    self._windows_permission_error(13)
+                )
+            )
+
     def test_atomic_write_retries_transient_windows_replace_errors(self) -> None:
         for winerror in (5, 32, 33):
             with self.subTest(winerror=winerror):
@@ -93,7 +108,11 @@ class AtomicWriteJsonTests(WorkspaceTestCase):
 
                 with (
                     mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
-                    mock.patch.object(runtime_paths.os, "name", "nt"),
+                    mock.patch.object(
+                        runtime_paths,
+                        "_is_windows_transient_replace_error",
+                        return_value=True,
+                    ),
                     mock.patch.object(runtime_paths.os, "replace", side_effect=fail_once),
                     mock.patch.object(runtime_paths.time, "sleep") as sleep,
                 ):
@@ -111,7 +130,11 @@ class AtomicWriteJsonTests(WorkspaceTestCase):
 
         with (
             mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
-            mock.patch.object(runtime_paths.os, "name", "nt"),
+            mock.patch.object(
+                runtime_paths,
+                "_is_windows_transient_replace_error",
+                return_value=False,
+            ),
             mock.patch.object(
                 runtime_paths.os,
                 "replace",
@@ -133,7 +156,11 @@ class AtomicWriteJsonTests(WorkspaceTestCase):
 
         with (
             mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
-            mock.patch.object(runtime_paths.os, "name", "nt"),
+            mock.patch.object(
+                runtime_paths,
+                "_is_windows_transient_replace_error",
+                return_value=True,
+            ),
             mock.patch.object(
                 runtime_paths.os,
                 "replace",

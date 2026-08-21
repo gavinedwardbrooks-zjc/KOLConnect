@@ -99,7 +99,13 @@ class CrossProcessStorageLockTests(unittest.TestCase):
         self.assertNotIn("fcntl", sys.modules if os.name == "nt" else ())
 
     def test_stable_path_and_lockable_persistent_carrier(self) -> None:
-        expected = self.appdata / "KOLConnect" / "locks" / "shared_storage.lock"
+        if sys.platform == "win32":
+            expected_root = self.appdata / "KOLConnect"
+        elif sys.platform == "darwin":
+            expected_root = Path.home() / "Library" / "Application Support" / "KOLConnect"
+        else:
+            expected_root = Path(os.environ["XDG_DATA_HOME"]) / "KOLConnect"
+        expected = expected_root / "locks" / "shared_storage.lock"
         self.assertEqual(20.0, storage_lock.DEFAULT_SHARED_STORAGE_LOCK_TIMEOUT)
         self.assertEqual(0.05, storage_lock.SHARED_STORAGE_LOCK_POLL_INTERVAL)
         self.assertEqual(expected, storage_lock.get_shared_storage_lock_path())
