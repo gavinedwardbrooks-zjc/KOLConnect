@@ -5,6 +5,32 @@
   let currentPage = null;
   let navigationId = 0;
 
+  const PRIMARY_PAGE_BY_PAGE = Object.freeze({
+    dashboard: "dashboard",
+    scrape: "scrape",
+    review: "scrape",
+    discover: "scrape",
+    "task-details": "scrape",
+    "creator-library": "creator-library",
+    "creator-library-detail": "creator-library",
+    products: "mail",
+    agencies: "mail",
+    "agency-detail": "mail",
+    campaigns: "mail",
+    "campaign-detail": "mail",
+    mail: "mail",
+    settings: "settings",
+    accounts: "settings",
+    "mail-accounts": "settings",
+    logs: "settings",
+  });
+
+  const SECONDARY_PAGE_BY_PAGE = Object.freeze({
+    "task-details": "scrape",
+    "agency-detail": "agencies",
+    "campaign-detail": "campaigns",
+  });
+
   function validateLifecycle(name, page) {
     ["load", "bind", "unbind"].forEach(method => {
       if (typeof page?.[method] !== "function") {
@@ -30,14 +56,22 @@
 
   function activateSection(pageName) {
     const pageButton = document.querySelector(`.nav-btn[data-page="${pageName}"]`);
-    const primaryName = pageButton?.dataset.primary || pageName;
+    const primaryName = PRIMARY_PAGE_BY_PAGE[pageName] || pageButton?.dataset.primary || pageName;
+    const secondaryName = SECONDARY_PAGE_BY_PAGE[pageName] || pageName;
+    let visibleSecondaryCount = 0;
     document.querySelectorAll(".nav-btn").forEach(button => {
       const isPrimary = button.classList.contains("nav-primary");
+      if (!isPrimary) {
+        button.hidden = button.dataset.primary !== primaryName;
+        if (!button.hidden) visibleSecondaryCount += 1;
+      }
       button.classList.toggle(
         "active",
-        isPrimary ? button.dataset.primary === primaryName : button.dataset.page === pageName,
+        isPrimary ? button.dataset.primary === primaryName : button.dataset.page === secondaryName,
       );
     });
+    const secondaryNavigation = document.querySelector(".sub-nav");
+    if (secondaryNavigation) secondaryNavigation.hidden = visibleSecondaryCount === 0;
     document.querySelectorAll(".page").forEach(section => {
       section.classList.toggle("active", section.dataset.page === pageName);
     });

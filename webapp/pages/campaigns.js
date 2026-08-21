@@ -148,8 +148,8 @@
     const formValue = formSelect.value;
     filter.replaceChildren();
     formSelect.replaceChildren();
-    appendOption(filter, "", "全部 Product");
-    appendOption(formSelect, "", "请选择 Product");
+    appendOption(filter, "", "全部产品");
+    appendOption(formSelect, "", "请选择产品");
     products.forEach(product => {
       const label = product.company_name
         ? `${product.name || "未命名产品"} · ${product.company_name}`
@@ -184,7 +184,7 @@
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
       products = [];
       renderProductOptions();
-      showProductsError(error.message || "Product 选项加载失败，暂时无法创建或筛选 Campaign。");
+      showProductsError(error.message || "产品选项加载失败，暂时无法创建或筛选 Campaign。");
     }
   }
 
@@ -307,7 +307,7 @@
     if (saving || !resources) return;
     const payload = campaignPayload();
     if (!payload.name) return showFormError("请输入 Campaign 名称。");
-    if (!payload.product_id) return showFormError("请选择 Product。");
+    if (!payload.product_id) return showFormError("请选择产品。");
 
     setSaving(true);
     try {

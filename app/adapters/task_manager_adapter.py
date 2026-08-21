@@ -5,7 +5,9 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 import subprocess
+import sys
 from typing import Callable, Mapping
 
 import scraper as scraper_module
@@ -97,6 +99,20 @@ class TaskManagerAdapter:
         if not paths["results"].exists():
             raise ValueError("当前任务尚未生成结果文件。")
         subprocess.Popen(["explorer.exe", str(paths["results"])])
+
+    def open_task_result_folder(self, task_id: str) -> None:
+        paths = self._repository()._paths(task_id)
+        self._repository().get_task(task_id)
+        task_directory = paths["root"]
+        if not task_directory.is_dir():
+            raise ValueError("当前任务结果文件夹不可用。")
+        if os.name == "nt":
+            command = ["explorer.exe", str(task_directory)]
+        elif sys.platform == "darwin":
+            command = ["open", str(task_directory)]
+        else:
+            command = ["xdg-open", str(task_directory)]
+        subprocess.Popen(command)
 
     def create_manual_task(self, command: ManualTaskCreateCommand) -> CreatedTask:
         task = self._repository().create_task(

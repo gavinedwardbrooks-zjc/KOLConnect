@@ -175,6 +175,17 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc))
         return True
 
+    task_open_result_folder_match = re.fullmatch(r"/api/tasks/([^/]+)/results/open-folder", path)
+    # POST /api/tasks/{task_id}/results/open-folder → 打开受控任务结果目录；{"ok": true}
+    if task_open_result_folder_match:
+        request["get_payload"]()
+        try:
+            task_service.open_task_result_folder(task_open_result_folder_match.group(1))
+            handler._ok()
+        except ValueError as exc:
+            handler._error(str(exc))
+        return True
+
     task_rename_match = re.fullmatch(r"/api/tasks/([^/]+)/rename", path)
     # POST /api/tasks/{task_id}/rename → 重命名任务；{"ok": true, "task": {...}}
     if task_rename_match:
@@ -185,18 +196,28 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc))
         return True
 
-    # POST /api/normalize-links → 标准化达人链接；{"ok": true, "normalized_links": [...], "invalid_links": [...]}
+    # POST /api/normalize-links → 标准化达人链接并返回逐行处理明细。
     if path == "/api/normalize-links":
         payload = request["get_payload"]()
         if isinstance(payload.get("links"), list):
-            raw_links = [str(item or "").strip() for item in payload.get("links", [])]
+            source_lines = [str(item or "") for item in payload.get("links", [])]
         else:
             text = str(payload.get("text") or "")
-            raw_links = [line.strip() for line in text.splitlines() if line.strip()]
-        normalized = context["modules"]["scraper"].build_normalize_payload(raw_links)
+            source_lines = text.splitlines()
+        numbered_links = [
+            (line_number, value.strip())
+            for line_number, value in enumerate(source_lines, start=1)
+            if value.strip()
+        ]
+        normalized = context["modules"]["scraper"].build_normalize_payload(
+            [value for _line_number, value in numbered_links],
+            [line_number for line_number, _value in numbered_links],
+        )
         handler._ok(
             normalized_links=normalized.get("normalized_links", []),
             invalid_links=normalized.get("invalid_links", []),
+            link_results=normalized.get("link_results", []),
+            summary=normalized.get("summary", {}),
         )
         return True
 

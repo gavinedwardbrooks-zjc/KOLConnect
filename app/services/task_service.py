@@ -283,6 +283,9 @@ class TaskService:
     def open_task_results(self, task_id: str) -> None:
         self._get_task_port().open_task_results(task_id)
 
+    def open_task_result_folder(self, task_id: str) -> None:
+        self._get_task_port().open_task_result_folder(task_id)
+
     def create_email_recheck_task(self) -> dict[str, object]:
         scan = self._get_creator_port().get_email_recheck_candidates()
         if not scan.candidates:

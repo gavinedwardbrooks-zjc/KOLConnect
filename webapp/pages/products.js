@@ -118,7 +118,7 @@
 
   function resetForm() {
     editingProductId = null;
-    element("product-form-title").textContent = "创建 Product";
+    element("product-form-title").textContent = "创建产品";
     element("product-name").value = "";
     element("product-company-name").value = "";
     element("product-note").value = "";
@@ -141,7 +141,7 @@
     const product = products.find(item => String(item.product_id) === String(productId));
     if (!product || isArchived(product)) return;
     editingProductId = String(product.product_id);
-    element("product-form-title").textContent = "编辑 Product";
+    element("product-form-title").textContent = "编辑产品";
     element("product-name").value = String(product.name || "");
     element("product-company-name").value = String(product.company_name || "");
     element("product-note").value = String(product.note || "");
@@ -161,7 +161,7 @@
     const saveButton = element("product-form-save");
     if (saveButton) {
       saveButton.disabled = value;
-      saveButton.textContent = value ? "正在保存..." : "保存 Product";
+      saveButton.textContent = value ? "正在保存..." : "保存产品";
     }
   }
 
@@ -207,11 +207,11 @@
       } else {
         await global.KOLConnectAPI.post("/api/products", payload, { signal: resources.signal });
       }
-      getApp().showSaved(editingProductId ? "Product 已更新。" : "Product 已创建。");
+      getApp().showSaved(editingProductId ? "产品已更新。" : "产品已创建。");
       closeForm();
       await loadProducts();
     } catch (error) {
-      if (error?.name !== "AbortError") showFormError(error.message || "Product 保存失败。");
+      if (error?.name !== "AbortError") showFormError(error.message || "产品保存失败。");
     } finally {
       setSaving(false);
     }
@@ -231,7 +231,7 @@
         { archived_at: archived ? new Date().toISOString() : null },
         { signal: resources.signal },
       );
-      getApp().showSaved(archived ? "Product 已归档。" : "Product 已恢复。");
+      getApp().showSaved(archived ? "产品已归档。" : "产品已恢复。");
       if (editingProductId === String(productId)) closeForm();
       await loadProducts();
     } catch (error) {

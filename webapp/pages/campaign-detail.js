@@ -115,7 +115,7 @@
 
     const overview = element("campaign-detail-overview");
     overview.replaceChildren();
-    appendOverviewItem("Product", campaign?.product_name);
+    appendOverviewItem("产品", campaign?.product_name);
     appendOverviewItem("国家/地区", campaign?.country);
     appendOverviewItem("平台", campaign?.platform);
     appendOverviewItem("开始日期", campaign?.start_date);

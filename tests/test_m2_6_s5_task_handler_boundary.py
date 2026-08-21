@@ -27,6 +27,9 @@ class _TaskPortSpy:
     def open_task_results(self, task_id: str) -> None:
         self.opened_task_id = task_id
 
+    def open_task_result_folder(self, task_id: str) -> None:
+        self.opened_folder_task_id = task_id
+
 
 class TaskHandlerBoundaryTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -47,11 +50,16 @@ class TaskHandlerBoundaryTests(unittest.TestCase):
         self.service.open_task_results("task_1")
         self.assertEqual("task_1", self.port.opened_task_id)
 
+    def test_open_result_folder_stays_behind_task_port(self) -> None:
+        self.service.open_task_result_folder("task_1")
+        self.assertEqual("task_1", self.port.opened_folder_task_id)
+
     def test_handler_has_no_direct_task_manager_boundary_calls(self) -> None:
         source = (ROOT / "app" / "http_handlers" / "task_handler.py").read_text(encoding="utf-8")
         self.assertNotIn('context["task_manager"]', source)
         self.assertIn("task_service.create_scrape_task", source)
         self.assertIn("task_service.open_task_results", source)
+        self.assertIn("task_service.open_task_result_folder", source)
 
 
 if __name__ == "__main__":

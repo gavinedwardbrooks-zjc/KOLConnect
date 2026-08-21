@@ -1,6 +1,17 @@
 """Settings, health, account, and mail HTTP endpoints."""
 
 
+def _merge_mail_configuration_update(payload: dict, existing_mail: dict | None, services: dict) -> dict:
+    """Apply only explicitly supplied mail fields, then normalize the complete state."""
+    current = services["normalize_mail_state"](existing_mail)
+    supplied = services["merge_masked_mail_passwords"](payload, current)
+    merged = dict(current)
+    for field in ("accounts", "template_subject", "template_body"):
+        if field in supplied:
+            merged[field] = supplied[field]
+    return services["normalize_mail_state"](merged)
+
+
 def handle(handler, request: dict, context: dict) -> bool:
     method = request["method"]
     path = request["path"]
@@ -141,9 +152,7 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     # POST /api/settings/mail → 保存邮件配置；{"ok": true}
     if path == "/api/settings/mail":
-        state["mail"] = services["normalize_mail_state"](
-            services["merge_masked_mail_passwords"](payload, state.get("mail"))
-        )
+        state["mail"] = _merge_mail_configuration_update(payload, state.get("mail"), services)
         state_access["save"]()
         handler._ok()
         return True

@@ -23,16 +23,17 @@
         <button class="nav-btn nav-primary" data-page="mail" data-primary="mail">合作管理</button>
         <button class="nav-btn nav-primary" data-page="settings" data-primary="settings">设置</button>
       </nav>
-      <nav class="sub-nav" aria-label="功能入口">
-        <button class="nav-btn nav-sub" data-page="scrape" data-primary="scrape" data-i18n="navScrape">抓取任务</button>
+      <nav class="sub-nav" aria-label="功能入口" hidden>
+        <button class="nav-btn nav-sub" data-page="scrape" data-primary="scrape" data-i18n="navScrape">邮箱抓取</button>
         <button class="nav-btn nav-sub" data-page="review" data-primary="scrape" data-i18n="navReview">审核结果</button>
         <button class="nav-btn nav-sub" data-page="discover" data-primary="scrape" data-i18n="navDiscover">链接清洗</button>
-        <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">账号管理</button>
-        <button class="nav-btn nav-sub" data-page="products" data-primary="mail">产品管理</button>
-        <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail">Agency 管理</button>
-        <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign 管理</button>
-        <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件与联系</button>
-        <button class="nav-btn nav-sub" data-page="logs" data-primary="settings" data-i18n="navLogs">系统日志</button>
+        <button class="nav-btn nav-sub" data-page="products" data-primary="mail">产品</button>
+        <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail">Agency</button>
+        <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign</button>
+        <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件</button>
+        <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">Chrome 账号</button>
+        <button class="nav-btn nav-sub" data-page="mail-accounts" data-primary="settings">邮箱账户</button>
+        <button class="nav-btn nav-sub" data-page="logs" data-primary="settings" data-i18n="navLogs">日志</button>
       </nav>
     </header>
 
@@ -75,6 +76,15 @@
             <strong id="dashboard-average-roi">--</strong>
           </div>
         </div>
+
+        <section class="section-card dashboard-card dashboard-action-center">
+          <h2>今日待处理</h2>
+          <div class="dashboard-action-columns">
+            <div><h3>数据过期</h3><div id="dashboard-action-expired" class="dashboard-list"></div></div>
+            <div><h3>待联系</h3><div id="dashboard-pending-contact" class="dashboard-list"></div></div>
+            <div><h3>待复盘</h3><div id="dashboard-incomplete-cooperations" class="dashboard-list"></div></div>
+          </div>
+        </section>
 
         <section class="dashboard-visualization-grid" aria-label="达人数据概览">
           <article class="section-card dashboard-card dashboard-chart-card">
@@ -131,43 +141,48 @@
           </section>
         </div>
 
-        <section class="section-card dashboard-card">
-          <h2>今日待处理</h2>
-          <div class="dashboard-action-columns">
-            <div><h3>数据过期</h3><div id="dashboard-action-expired" class="dashboard-list"></div></div>
-            <div><h3>待联系</h3><div id="dashboard-pending-contact" class="dashboard-list"></div></div>
-            <div><h3>待复盘</h3><div id="dashboard-incomplete-cooperations" class="dashboard-list"></div></div>
-          </div>
-        </section>
       </section>
 
-      <section class="page" data-page="scrape">
+      <section class="page workspace-narrow" data-page="scrape">
         <div class="page-header">
           <h1 data-i18n="scrapeTitle">邮箱抓取</h1>
           <p data-i18n="scrapeSubtitle">抓主页邮箱、外链邮箱和最近发布日期。</p>
         </div>
 
-        <div class="section-card">
-          <div class="section-title" data-i18n="scrapeTask">抓取任务</div>
+        <div class="capture-mode-bar">
+          <label class="field capture-mode-field">
+            <span>抓取模式</span>
+            <select id="capture-mode"><option value="automatic">自动抓取</option><option value="manual">人工抓取</option></select>
+          </label>
+        </div>
+
+        <div class="section-card" id="capture-automatic-panel">
+          <div class="section-title">自动抓取</div>
           <label class="field">
             <span data-i18n="taskName">任务名称</span>
             <input id="task-name" type="text" data-i18n-placeholder="taskNamePlaceholder" placeholder="留空则自动命名">
           </label>
-          <div class="form-grid three">
-            <label class="field task-links-field">
+          <div class="scrape-task-grid">
+            <label class="field task-links-field scrape-task-links">
               <span data-i18n="taskLinks">达人链接</span>
               <textarea id="task-links" rows="6" data-i18n-placeholder="taskLinksPlaceholder" placeholder="一行一个链接"></textarea>
+              <span class="task-link-counts" id="task-link-counts">共 0 行 · 非空 0 行</span>
             </label>
             <label class="field">
               <span data-i18n="runProfile">运行 Profile</span>
               <select id="profile-select"></select>
             </label>
-            <div class="field task-platform-selector">
+            <div class="field task-platform-selector compact-platform-selector">
               <span data-i18n="targetPlatform">目标平台</span>
-              <label class="checkbox-line"><input id="task-platform-all" type="checkbox" checked><span>全部</span></label>
-              <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="tiktok" checked><span>TikTok</span></label>
-              <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="instagram" checked><span>Instagram</span></label>
-              <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="youtube" checked><span>YouTube</span></label>
+              <details class="platform-multiselect" id="task-platform-menu">
+                <summary id="task-platform-summary">全部平台</summary>
+                <div class="platform-multiselect-menu">
+                  <label class="checkbox-line"><input id="task-platform-all" type="checkbox" checked><span>全部</span></label>
+                  <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="tiktok" checked><span>TikTok</span></label>
+                  <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="instagram" checked><span>Instagram</span></label>
+                  <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="youtube" checked><span>YouTube</span></label>
+                </div>
+              </details>
             </div>
           </div>
           <input id="links-file" type="hidden" value="links.txt">
@@ -182,11 +197,12 @@
             <button class="soft-btn" id="scrape-pause" data-i18n="pauseTask" hidden>暂停任务</button>
             <button class="danger-btn" id="scrape-stop" data-i18n="stopScrape" hidden>停止任务</button>
             <button class="soft-btn" id="scrape-open-results" data-i18n="openResults">打开结果文件</button>
+            <button class="soft-btn" id="scrape-open-result-folder" disabled>打开结果文件夹</button>
           </div>
         </div>
 
-        <div class="section-card">
-          <div class="section-title">人工录入任务</div>
+        <div class="section-card" id="capture-manual-panel" hidden>
+          <div class="section-title">人工抓取</div>
           <p class="hint">主动发现的达人先进入审核流程；主页链接会用于生成账号唯一ID。</p>
           <div class="form-grid two">
             <label class="field">
@@ -333,17 +349,23 @@
               </select>
             </label>
             <div class="creator-library-actions">
-              <div class="view-toggle" role="group" aria-label="达人库视图">
-                <button class="soft-btn compact-btn active" id="creator-library-card-view" type="button">卡片</button>
-                <button class="soft-btn compact-btn" id="creator-library-table-view" type="button">表格</button>
+              <div class="creator-library-actions-left">
+                <div class="view-toggle" role="group" aria-label="达人库视图">
+                  <button class="soft-btn compact-btn active" id="creator-library-card-view" type="button">卡片</button>
+                  <button class="soft-btn compact-btn" id="creator-library-table-view" type="button">表格</button>
+                </div>
+                <label class="creator-library-select-all"><input id="creator-library-select-all" type="checkbox"> 本页全选</label>
+                <span class="selection-count" id="creator-library-selected-count">已选 0 人</span>
               </div>
-              <label class="creator-library-select-all"><input id="creator-library-select-all" type="checkbox"> 本页全选</label>
-              <button class="soft-btn" id="creator-library-export" type="button" disabled>导出选中达人</button>
-              <button class="primary-btn" id="creator-library-batch-campaign" type="button" disabled>加入 Campaign</button>
-              <button class="soft-btn" id="creator-library-template-download" type="button">下载 Excel 模板</button>
-              <button class="primary-btn" id="creator-library-import-button" type="button">导入 Excel</button>
-              <input id="creator-library-import-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
-              <button class="soft-btn" id="creator-library-refresh">刷新达人库</button>
+              <div class="creator-library-actions-right">
+                <button class="soft-btn" id="creator-library-export" type="button" disabled>导出选中达人</button>
+                <button class="primary-btn" id="creator-library-batch-campaign" type="button" disabled>加入 Campaign</button>
+                <span class="toolbar-divider" aria-hidden="true"></span>
+                <button class="soft-btn" id="creator-library-template-download" type="button">下载模板</button>
+                <button class="soft-btn" id="creator-library-import-button" type="button">导入 Excel</button>
+                <input id="creator-library-import-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
+                <button class="soft-btn" id="creator-library-refresh">刷新达人库</button>
+              </div>
             </div>
           </div>
         </div>
@@ -420,7 +442,7 @@
           </div>
           <div class="review-table-wrap">
             <table class="review-table creator-campaign-table">
-              <thead><tr><th>Campaign</th><th>Product</th><th>状态</th><th>平台</th><th>日期</th><th>操作</th></tr></thead>
+              <thead><tr><th>Campaign</th><th>产品</th><th>状态</th><th>平台</th><th>日期</th><th>操作</th></tr></thead>
               <tbody id="creator-campaigns-body"></tbody>
             </table>
           </div>
@@ -456,7 +478,7 @@
 
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="cooperations">
           <h2>历史合作（只读）</h2>
-          <p class="hint">以下为旧版本历史数据，不参与 Campaign 和 Dashboard 统计。新的合作请通过 Campaign 管理。</p>
+          <p class="hint">以下为旧版本历史数据，不参与 Campaign 和 Dashboard 统计。新的合作请通过 Campaign。</p>
           <div class="stats-grid creator-cooperation-stats">
             <div class="stat-card"><span class="stat-label">合作次数</span><strong id="cooperation-stat-count">0</strong></div>
             <div class="stat-card"><span class="stat-label">总花费</span><strong id="cooperation-stat-spend">0</strong></div>
@@ -580,7 +602,7 @@
         </div>
       </div>
 
-      <section class="page" data-page="review">
+      <section class="page workspace-narrow" data-page="review">
         <div class="page-header">
           <h1 data-i18n="reviewTitle">审核结果</h1>
           <p data-i18n="reviewSubtitle">查看任务抓取结果，补充人工确认的数据后单条保存。</p>
@@ -605,10 +627,10 @@
             </label>
             <div class="review-toolbar-actions">
               <button class="soft-btn" id="review-refresh" data-i18n="reviewRefresh">刷新任务</button>
-              <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描四表缺失邮箱</button>
+              <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描飞书表缺失邮箱</button>
               <button class="soft-btn" id="review-view-analysis" hidden>达人分析</button>
               <button class="soft-btn" id="review-retry-failed">重新抓取异常记录</button>
-              <button class="primary-btn" id="review-sync-four-tables" data-i18n="reviewSyncFourTables">同步有效结果到四表</button>
+              <button class="primary-btn" id="review-sync-four-tables" data-i18n="reviewSyncFourTables">同步有效结果到飞书表</button>
             </div>
           </div>
           <p class="hint" id="review-summary">请选择一个已有任务。</p>
@@ -709,7 +731,7 @@
         </div>
       </section>
 
-      <section class="page" data-page="discover">
+      <section class="page workspace-narrow" data-page="discover">
         <div class="page-header">
           <h1 data-i18n="discoverTitle">链接清洗</h1>
           <p data-i18n="discoverSubtitle">将原始达人链接整理为标准主页链接。</p>
@@ -728,36 +750,57 @@
         </div>
 
         <div class="section-card">
-          <div class="discover-results-grid">
-            <div class="discover-result-card">
-              <div class="section-title" data-i18n="discoverOutputTitle">标准主页链接</div>
-              <textarea id="discover-output" rows="10" readonly></textarea>
-              <div class="action-row">
-                <button class="soft-btn" id="discover-copy-links" data-i18n="discoverCopyLinks">复制标准主页链接</button>
-              </div>
+          <div class="discover-summary-grid" aria-label="清洗结果汇总">
+            <div class="discover-summary-card"><span>非空输入</span><strong id="discover-count-input">0</strong></div>
+            <div class="discover-summary-card discover-summary-success"><span>有效且唯一</span><strong id="discover-count-accepted">0</strong></div>
+            <div class="discover-summary-card discover-summary-duplicate"><span>重复</span><strong id="discover-count-duplicate">0</strong></div>
+            <div class="discover-summary-card discover-summary-invalid"><span>无效</span><strong id="discover-count-rejected">0</strong></div>
+          </div>
+          <p class="hint" id="discover-count-equation">0 = 0 + 0 + 0</p>
+        </div>
+
+        <div class="discover-output-panels">
+          <div class="section-card discover-result-card">
+            <div class="section-title" data-i18n="discoverOutputTitle">标准主页链接</div>
+            <textarea id="discover-output" rows="9" readonly></textarea>
+            <div class="action-row">
+              <button class="soft-btn" id="discover-copy-links" data-i18n="discoverCopyLinks">复制标准主页链接</button>
+            </div>
+          </div>
+          <div class="section-card discover-result-card">
+            <div class="section-title" data-i18n="discoverInvalidTitle">异常链接</div>
+            <textarea id="discover-invalid-output" rows="9" readonly></textarea>
+            <div class="action-row">
+              <button class="soft-btn" id="discover-copy-invalid" data-i18n="discoverCopyInvalid">复制异常链接</button>
             </div>
           </div>
         </div>
 
         <div class="section-card">
-          <div class="section-title" data-i18n="discoverInvalidTitle">异常链接</div>
-          <textarea id="discover-invalid-output" rows="8" readonly></textarea>
-          <div class="action-row">
-            <button class="soft-btn" id="discover-copy-invalid" data-i18n="discoverCopyInvalid">复制异常链接</button>
+          <div class="discover-detail-heading">
+            <div class="section-title">逐行处理明细</div>
+            <label class="field discover-status-filter"><span>状态筛选</span><select id="discover-status-filter"><option value="">全部状态</option><option value="valid">有效</option><option value="normalized">已标准化</option><option value="duplicate">重复</option><option value="invalid">无效</option></select></label>
           </div>
+          <div class="review-table-wrap">
+            <table class="review-table discover-detail-table">
+              <thead><tr><th>行</th><th>原始链接</th><th>标准链接</th><th>平台</th><th>状态</th><th>说明</th></tr></thead>
+              <tbody id="discover-detail-body"></tbody>
+            </table>
+          </div>
+          <p class="review-empty" id="discover-detail-empty">清洗后将在这里显示每一条非空输入的处理结果。</p>
         </div>
       </section>
 
-      <section class="page" data-page="accounts">
+      <section class="page workspace-narrow" data-page="accounts">
         <div class="page-header">
-          <h1 data-i18n="accountsTitle">账号管理</h1>
-          <p data-i18n="accountsSubtitle">管理用于抓取的平台账号备注和用途。</p>
+          <h1 data-i18n="accountsTitle">Chrome 账号</h1>
+          <p data-i18n="accountsSubtitle">管理用于达人抓取的 Chrome Profile 和用途。</p>
         </div>
 
         <div class="section-card">
-          <div class="section-title" data-i18n="profilesTitle">Profile 列表</div>
+          <div class="section-title" data-i18n="profilesTitle">Chrome Profile</div>
           <div class="action-row">
-            <button class="soft-btn" id="accounts-refresh" data-i18n="refreshProfiles">刷新 Profiles</button>
+            <button class="soft-btn" id="accounts-refresh" data-i18n="refreshProfiles">刷新 Profile</button>
             <button class="primary-btn" id="accounts-save" data-i18n="saveAccounts">保存账号配置</button>
           </div>
           <div id="accounts-list" class="stack-list"></div>
@@ -768,7 +811,7 @@
         <div class="page-header product-page-heading">
           <div>
             <p class="eyebrow">PRODUCT MANAGEMENT</p>
-            <h1>产品管理</h1>
+            <h1>产品</h1>
             <p>管理产品资料，并查看每个产品当前关联的 Campaign 数量。</p>
           </div>
           <div class="product-page-actions">
@@ -776,12 +819,12 @@
               <input id="product-include-archived" type="checkbox">
               <span>显示已归档</span>
             </label>
-            <button class="primary-btn" id="product-create-open" type="button">创建 Product</button>
+            <button class="primary-btn" id="product-create-open" type="button">创建产品</button>
           </div>
         </div>
 
         <div class="section-card product-form-card" id="product-form-card" hidden>
-          <div class="section-title" id="product-form-title">创建 Product</div>
+          <div class="section-title" id="product-form-title">创建产品</div>
           <form id="product-form" novalidate>
             <div class="form-grid two">
               <label class="field">
@@ -799,7 +842,7 @@
             </label>
             <p class="product-form-error" id="product-form-error" role="alert" hidden></p>
             <div class="action-row">
-              <button class="primary-btn" id="product-form-save" type="submit">保存 Product</button>
+              <button class="primary-btn" id="product-form-save" type="submit">保存产品</button>
               <button class="soft-btn" id="product-form-cancel" type="button">取消</button>
             </div>
           </form>
@@ -807,7 +850,7 @@
 
         <div class="section-card product-list-card">
           <div class="product-list-heading">
-            <div class="section-title">Product 列表</div>
+            <div class="section-title">产品列表</div>
             <span class="product-list-count" id="product-list-count">--</span>
           </div>
           <div class="product-list-message" id="product-list-loading">正在加载产品...</div>
@@ -816,7 +859,7 @@
             <button class="soft-btn" id="product-list-retry" type="button">重新加载</button>
           </div>
           <div class="empty-note product-list-empty" id="product-list-empty" hidden>
-            暂无产品。点击“创建 Product”建立第一条产品记录。
+            暂无产品。点击“创建产品”建立第一条产品记录。
           </div>
           <div class="review-table-wrap" id="product-list-table-wrap" hidden>
             <table class="review-table product-table">
@@ -841,7 +884,7 @@
         <div class="page-header agency-page-heading">
           <div>
             <p class="eyebrow">PARTNER NETWORK</p>
-            <h1>Agency 管理</h1>
+            <h1>Agency</h1>
             <p>查看合作机构、联系人覆盖和已关联的达人资源。</p>
           </div>
           <button class="soft-btn" id="agency-list-refresh" type="button">刷新列表</button>
@@ -933,7 +976,7 @@
             <div class="agency-inline-warning" id="agency-campaigns-unavailable" hidden>Campaign 数据当前不可用，Agency 和达人资料不受影响。</div>
             <div class="empty-note" id="agency-campaigns-empty" hidden>关联达人暂未参与 Campaign。</div>
             <div class="review-table-wrap" id="agency-campaigns-table-wrap" hidden>
-              <table class="review-table"><thead><tr><th>Campaign</th><th>Product</th><th>状态</th><th>达人数</th><th></th></tr></thead><tbody id="agency-campaigns-body"></tbody></table>
+              <table class="review-table"><thead><tr><th>Campaign</th><th>产品</th><th>状态</th><th>达人数</th><th></th></tr></thead><tbody id="agency-campaigns-body"></tbody></table>
             </div>
           </section>
         </div>
@@ -943,7 +986,7 @@
         <div class="page-header campaign-page-heading">
           <div>
             <p class="eyebrow">CAMPAIGN MANAGEMENT</p>
-            <h1>Campaign 管理</h1>
+            <h1>Campaign</h1>
             <p>按产品和状态管理达人合作项目，集中查看预算、周期与执行负责人。</p>
           </div>
           <button class="primary-btn" id="campaign-create-open" type="button">创建 Campaign</button>
@@ -952,9 +995,9 @@
         <div class="section-card campaign-filter-card">
           <div class="campaign-filter-grid">
             <label class="field">
-              <span>Product</span>
+              <span>产品</span>
               <select id="campaign-product-filter">
-                <option value="">全部 Product</option>
+                <option value="">全部产品</option>
               </select>
             </label>
             <label class="field">
@@ -984,9 +1027,9 @@
                 <input id="campaign-name" type="text" autocomplete="off" required>
               </label>
               <label class="field">
-                <span>Product *</span>
+                <span>产品 *</span>
                 <select id="campaign-product-id" required>
-                  <option value="">请选择 Product</option>
+                  <option value="">请选择产品</option>
                 </select>
               </label>
               <label class="field">
@@ -1059,7 +1102,7 @@
               <thead>
                 <tr>
                   <th>Campaign 名称</th>
-                  <th>Product 名称</th>
+                  <th>产品名称</th>
                   <th>达人数</th>
                   <th>业务状态</th>
                   <th>归档状态</th>
@@ -1229,19 +1272,10 @@
         </div>
       </section>
 
-      <section class="page" data-page="mail">
+      <section class="page workspace-narrow" data-page="mail">
         <div class="page-header">
-          <h1 data-i18n="mailTitle">邮箱账户</h1>
-          <p data-i18n="mailSubtitle">集中管理多个发件邮箱账户，并保留邮件模板。</p>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title" data-i18n="mailAccountsTitle">邮箱账户</div>
-          <p class="hint" data-i18n="mailAccountsHint">可配置多个邮箱账号，测试连接时只验证 IMAP/SMTP 登录，不发送真实邮件。</p>
-          <div class="action-row">
-            <button class="soft-btn" id="mail-add-account" data-i18n="mailAddAccount">新增邮箱账户</button>
-          </div>
-          <div id="mail-accounts-list" class="mail-accounts"></div>
+          <h1 data-i18n="mailTitle">邮件</h1>
+          <p data-i18n="mailSubtitle">同步达人回复并维护合作邮件模板。</p>
         </div>
 
         <div class="section-card">
@@ -1277,12 +1311,18 @@
         </div>
 
         <div class="section-card">
-          <div class="section-title" data-i18n="mailInboxMessagesTitle">最近邮件</div>
-          <label class="checkbox-line">
-            <input id="mail-matched-only" type="checkbox">
-            <span data-i18n="mailMatchedOnly">仅看达人回复</span>
-          </label>
+          <div class="mail-list-heading">
+            <div class="section-title" data-i18n="mailInboxMessagesTitle">最近邮件</div>
+            <div class="mail-list-controls">
+              <label class="checkbox-line"><input id="mail-matched-only" type="checkbox"><span data-i18n="mailMatchedOnly">仅看达人回复</span></label>
+              <label class="field-inline"><span>每页</span><select id="mail-page-size"><option value="10">10 封</option><option value="20" selected>20 封</option><option value="50">50 封</option></select></label>
+            </div>
+          </div>
           <div id="mail-inbox-messages" class="mail-message-list"></div>
+          <div class="mail-pagination" id="mail-pagination" hidden>
+            <span id="mail-page-total">共 0 封</span>
+            <div class="mail-page-actions"><button class="soft-btn compact-btn" id="mail-page-previous">上一页</button><span id="mail-page-summary">第 1 / 1 页</span><button class="soft-btn compact-btn" id="mail-page-next">下一页</button></div>
+          </div>
         </div>
 
         <div class="section-card">
@@ -1295,7 +1335,27 @@
         </div>
       </section>
 
-      <section class="page" data-page="settings">
+      <section class="page workspace-narrow" data-page="mail-accounts">
+        <div class="page-header">
+          <h1 data-i18n="mailAccountsTitle">邮箱账户</h1>
+          <p data-i18n="mailAccountsHint">配置用于合作邮件的收发账户；连接测试不会发送真实邮件。</p>
+        </div>
+        <div class="section-card">
+          <div class="settings-section-heading">
+            <div>
+              <div class="section-title" data-i18n="mailAccountsTitle">邮箱账户</div>
+              <p class="hint" data-i18n="mailAccountsHint">可配置多个邮箱账号，测试连接时只验证 IMAP/SMTP 登录，不发送真实邮件。</p>
+            </div>
+            <button class="soft-btn" id="mail-add-account" data-i18n="mailAddAccount">新增邮箱账户</button>
+          </div>
+          <div id="mail-accounts-list" class="mail-accounts"></div>
+          <div class="action-row">
+            <button class="primary-btn" id="mail-accounts-save">保存邮箱账户</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="page workspace-narrow" data-page="settings">
         <div class="page-header">
           <h1 data-i18n="settingsTitle">设置</h1>
           <p data-i18n="settingsSubtitle">管理界面语言、默认 Profile 和飞书配置。</p>
@@ -1371,7 +1431,7 @@
         </div>
       </section>
 
-      <section class="page" data-page="logs">
+      <section class="page workspace-narrow" data-page="logs">
         <div class="page-header">
           <h1 data-i18n="logsTitle">日志</h1>
           <p data-i18n="logsSubtitle">查看完整运行日志。</p>

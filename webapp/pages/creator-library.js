@@ -605,6 +605,7 @@
     const selected = selectedCreatorIds();
     const currentIds = state.records.map(recordId).filter(Boolean);
     const selectAll = element("creator-library-select-all");
+    const selectedCount = element("creator-library-selected-count");
     const exportButton = element("creator-library-export");
     const batchCampaignButton = element("creator-library-batch-campaign");
     if (selectAll) {
@@ -612,6 +613,7 @@
       selectAll.indeterminate = currentIds.some(id => selected.has(id)) && !selectAll.checked;
       selectAll.disabled = currentIds.length === 0;
     }
+    if (selectedCount) selectedCount.textContent = `已选 ${selected.size} 人`;
     if (exportButton) {
       exportButton.disabled = selected.size === 0;
       exportButton.textContent = selected.size ? `导出选中达人（${selected.size}）` : "导出选中达人";

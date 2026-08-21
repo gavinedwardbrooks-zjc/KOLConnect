@@ -5,8 +5,8 @@ const I18N = {
     navDashboard: "控制台",
     navScrape: "邮箱抓取",
     navDiscover: "链接清洗",
-    navAccounts: "账号管理",
-    navMail: "邮件发送",
+    navAccounts: "Chrome 账号",
+    navMail: "邮件",
     navSettings: "设置",
     navLogs: "日志",
     dashboardTitle: "控制台",
@@ -56,13 +56,13 @@ const I18N = {
     discoverInputLabel: "一行一个链接",
     discoverOutputTitle: "清洗结果",
     cleanLinks: "清洗链接",
-    accountsTitle: "账号管理",
-    accountsSubtitle: "管理用于抓取的平台账号备注和用途。",
-    profilesTitle: "Profile 列表",
-    refreshProfiles: "刷新 Profiles",
+    accountsTitle: "Chrome 账号",
+    accountsSubtitle: "管理用于达人抓取的 Chrome Profile 和用途。",
+    profilesTitle: "Chrome Profile",
+    refreshProfiles: "刷新 Profile",
     saveAccounts: "保存账号配置",
-    mailTitle: "邮件发送",
-    mailSubtitle: "先把发件配置和模板保存好，后面再接自动群发。",
+    mailTitle: "邮件",
+    mailSubtitle: "同步达人回复并维护合作邮件模板。",
     mailTemplateTitle: "邮件模板",
     senderName: "发件人名称",
     mailSubject: "邮件标题",
@@ -190,8 +190,8 @@ Object.assign(I18N.en, {
 });
 
 Object.assign(I18N.zh, {
-  mailTitle: "邮箱账户",
-  mailSubtitle: "集中管理多个发件邮箱账户，并保留邮件模板。",
+  mailTitle: "邮件",
+  mailSubtitle: "同步达人回复并维护合作邮件模板。",
   mailAccountsTitle: "邮箱账户",
   mailAccountsHint: "可配置多个邮箱账号，测试连接时只验证 IMAP/SMTP 登录，不发送真实邮件。",
   mailAddAccount: "新增邮箱账户",
@@ -385,7 +385,7 @@ Object.assign(I18N.zh, {
     manualSupplement: "补充抓取信息",
     manualDirectSync: "直接同步到四表",
     taskTypeEmailRecheck: "缺失邮箱补全",
-    reviewScanMissingEmail: "扫描四表缺失邮箱",
+    reviewScanMissingEmail: "扫描飞书表缺失邮箱",
     reviewScanMissingEmailConfirm: "将读取达人账号表并创建缺失邮箱补全任务，是否继续？",
     reviewScanMissingEmailResult: "已扫描 {scanned} 个账号，创建补全任务 {created} 条，跳过 {skipped} 条。",
     taskEmailFound: "已补全邮箱",
@@ -444,7 +444,7 @@ Object.assign(I18N.zh, {
   reviewNoRecords: "该任务暂无抓取结果。",
   reviewSummary: "共 {count} 条结果，当前显示 {shown} 条。",
   reviewSaved: "审核结果已保存。",
-  reviewSyncFourTables: "同步有效结果到四表",
+  reviewSyncFourTables: "同步有效结果到飞书表",
   reviewSyncConfirm: "即将同步任务：{task}\n数据数量：{count}\n\n确认继续吗？",
   reviewSyncResult: "创建达人：{creators}，创建账号：{accounts}，更新账号：{updated}，跳过：{skipped}，失败：{failed}。"
 });
@@ -537,6 +537,15 @@ const state = {
     taskId: "",
     task: null,
     links: []
+  },
+  discover: {
+    results: [],
+    summary: {}
+  },
+  mailInbox: {
+    messages: [],
+    page: 1,
+    pageSize: 20
   }
 };
 
@@ -609,6 +618,7 @@ function renderScrapeControls(job = {}) {
 
 function renderCurrentTask() {
   const task = state.currentTask;
+  updateTaskResultActions();
   if (!task) {
     const value = state.currentTaskId
       ? `${t("taskCurrent")}：${state.currentTaskId}`
@@ -987,6 +997,13 @@ async function openResults() {
     throw new Error(state.language === "en" ? "Select a task first." : "请选择任务。")
   }
   await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/results/open`, {});
+}
+
+async function openResultFolder() {
+  if (!state.currentTaskId) {
+    throw new Error(state.language === "en" ? "Select a task first." : "请选择任务。")
+  }
+  await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/results/open-folder`, {});
 }
 
 async function copyText(text) {
@@ -1519,7 +1536,7 @@ function registerLegacyPages() {
   };
   [
     "scrape", "task-details", "review", "discover", "accounts",
-    "mail", "logs",
+    "mail", "mail-accounts", "logs",
   ].forEach(pageName => {
     if (registry.getPage(pageName)) return;
     registry.registerPage(pageName, {
@@ -1842,27 +1859,23 @@ function createTextElement(tagName, className, text) {
   return element;
 }
 
-function renderMailInbox(data = {}) {
-  const summary = data.summary || {};
-  setText("mail-summary-accounts", String(data.accounts_checked || Object.keys(data.accounts || {}).length || 0));
-  setText("mail-summary-fetched", String(data.messages_fetched || 0));
-  setText("mail-summary-new", String(data.messages_new || 0));
-  setText("mail-summary-unread", String(summary.unread || 0));
-  setText("mail-summary-matched", String(summary.matched || data.matched_messages || 0));
-  setText("mail-inbox-updated-at", `${t("mailInboxUpdatedAt")}：${formatMailSyncUpdatedAt(data.updated_at || "")}`);
-
+function renderMailMessages() {
   const wrap = $("mail-inbox-messages");
   if (!wrap) return;
   wrap.replaceChildren();
   const matchedOnly = checkedOf("mail-matched-only");
-  const allMessages = Array.isArray(data.messages) ? data.messages : [];
-  const messages = matchedOnly ? allMessages.filter(message => message.reply_status === "matched") : allMessages;
-  if (messages.length === 0) {
+  const filtered = matchedOnly
+    ? state.mailInbox.messages.filter(message => message.reply_status === "matched")
+    : state.mailInbox.messages;
+  const pageSize = Number(valueOf("mail-page-size", state.mailInbox.pageSize)) || 20;
+  state.mailInbox.pageSize = pageSize;
+  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  state.mailInbox.page = Math.min(Math.max(1, state.mailInbox.page), totalPages);
+  const start = (state.mailInbox.page - 1) * pageSize;
+  const messages = filtered.slice(start, start + pageSize);
+  if (filtered.length === 0) {
     wrap.appendChild(createTextElement("div", "empty-note", t("mailInboxNoMessages")));
-    return;
-  }
-
-  messages.forEach(message => {
+  } else messages.forEach(message => {
     const item = document.createElement("div");
     item.className = "mail-message-item";
 
@@ -1900,6 +1913,27 @@ function renderMailInbox(data = {}) {
     item.appendChild(createTextElement("div", "mail-message-snippet", message.snippet || "--"));
     wrap.appendChild(item);
   });
+
+  const pagination = $("mail-pagination");
+  if (pagination) pagination.hidden = filtered.length === 0;
+  setText("mail-page-total", `共 ${filtered.length} 封`);
+  setText("mail-page-summary", `第 ${state.mailInbox.page} / ${totalPages} 页`);
+  const previous = $("mail-page-previous");
+  const next = $("mail-page-next");
+  if (previous) previous.disabled = state.mailInbox.page <= 1;
+  if (next) next.disabled = state.mailInbox.page >= totalPages;
+}
+
+function renderMailInbox(data = {}) {
+  const summary = data.summary || {};
+  setText("mail-summary-accounts", String(data.accounts_checked || Object.keys(data.accounts || {}).length || 0));
+  setText("mail-summary-fetched", String(data.messages_fetched || 0));
+  setText("mail-summary-new", String(data.messages_new || 0));
+  setText("mail-summary-unread", String(summary.unread || 0));
+  setText("mail-summary-matched", String(summary.matched || data.matched_messages || 0));
+  setText("mail-inbox-updated-at", `${t("mailInboxUpdatedAt")}：${formatMailSyncUpdatedAt(data.updated_at || "")}`);
+  state.mailInbox.messages = Array.isArray(data.messages) ? data.messages : [];
+  renderMailMessages();
 }
 
 async function loadMailInbox() {
@@ -1947,8 +1981,17 @@ function collectAccounts() {
 }
 
 function clearDiscoverOutputs() {
+  state.discover.results = [];
+  state.discover.summary = {};
   setValue("discover-output", "");
   setValue("discover-invalid-output", "");
+  setText("discover-count-input", "0");
+  setText("discover-count-accepted", "0");
+  setText("discover-count-duplicate", "0");
+  setText("discover-count-rejected", "0");
+  setText("discover-count-equation", "0 = 0 + 0 + 0");
+  setValue("discover-status-filter", "");
+  renderDiscoverDetails();
 }
 
 function clearDiscoverAll() {
@@ -1966,6 +2009,108 @@ function formatInvalidLinks(items) {
   }).filter(Boolean).join("\n\n");
 }
 
+function discoverStatusLabel(status) {
+  return {
+    valid: "有效",
+    normalized: "已标准化",
+    duplicate: "重复",
+    invalid: "无效",
+  }[status] || "未知";
+}
+
+function discoverPlatformLabel(platform) {
+  return {
+    tiktok: "TikTok",
+    instagram: "Instagram",
+    youtube: "YouTube",
+  }[String(platform || "").toLowerCase()] || "未知";
+}
+
+function renderDiscoverDetails() {
+  const body = $("discover-detail-body");
+  const empty = $("discover-detail-empty");
+  if (!body || !empty) return;
+  const statusFilter = valueOf("discover-status-filter");
+  const visible = state.discover.results.filter(item => !statusFilter || item.status === statusFilter);
+  body.textContent = "";
+  visible.forEach(item => {
+    const row = document.createElement("tr");
+    const duplicateNote = item.status === "duplicate" && item.duplicate_of_line
+      ? `，与第 ${item.duplicate_of_line} 行重复`
+      : "";
+    [
+      item.line_number,
+      item.original,
+      item.normalized || "--",
+      discoverPlatformLabel(item.platform),
+      discoverStatusLabel(item.status),
+      `${item.reason || "--"}${duplicateNote}`,
+    ].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = String(value ?? "");
+      row.appendChild(cell);
+    });
+    row.dataset.status = item.status || "unknown";
+    body.appendChild(row);
+  });
+  empty.hidden = visible.length > 0;
+}
+
+function renderDiscoverResults(data) {
+  state.discover.results = Array.isArray(data?.link_results) ? data.link_results : [];
+  state.discover.summary = data?.summary && typeof data.summary === "object" ? data.summary : {};
+  const nonEmpty = Number(state.discover.summary.non_empty_count || 0);
+  const accepted = Number(state.discover.summary.accepted_unique_count || 0);
+  const duplicate = Number(state.discover.summary.duplicate_count || 0);
+  const rejected = Number(state.discover.summary.rejected_count || 0);
+  setValue("discover-output", (data?.normalized_links || []).join("\n"));
+  setValue("discover-invalid-output", formatInvalidLinks(data?.invalid_links));
+  setText("discover-count-input", String(nonEmpty));
+  setText("discover-count-accepted", String(accepted));
+  setText("discover-count-duplicate", String(duplicate));
+  setText("discover-count-rejected", String(rejected));
+  setText("discover-count-equation", `${nonEmpty} = ${accepted} + ${duplicate} + ${rejected}`);
+  renderDiscoverDetails();
+}
+
+function updateTaskLinkCounts() {
+  const text = valueOf("task-links");
+  const lines = text ? text.split(/\r?\n/) : [];
+  const nonEmpty = lines.map(line => line.trim()).filter(Boolean);
+  const duplicateCount = nonEmpty.length - new Set(nonEmpty).size;
+  setText("task-link-counts", `共 ${lines.length} 行 · 非空 ${nonEmpty.length} 行 · 原样重复 ${duplicateCount} 行`);
+}
+
+function updateTaskResultActions() {
+  const folderButton = $("scrape-open-result-folder");
+  if (folderButton) folderButton.disabled = !state.currentTaskId;
+}
+
+function renderCaptureMode() {
+  const mode = valueOf("capture-mode", "automatic");
+  const automaticPanel = $("capture-automatic-panel");
+  const manualPanel = $("capture-manual-panel");
+  if (automaticPanel) automaticPanel.hidden = mode !== "automatic";
+  if (manualPanel) manualPanel.hidden = mode !== "manual";
+}
+
+async function saveMailConfiguration(payload) {
+  await apiPost("/api/settings/mail", payload);
+  showSaved();
+  await loadState();
+}
+
+async function saveMailTemplate() {
+  await saveMailConfiguration({
+    template_subject: valueOf("mail-template-subject"),
+    template_body: valueOf("mail-template-body")
+  });
+}
+
+async function saveMailAccounts() {
+  await saveMailConfiguration({ accounts: collectMailAccounts() });
+}
+
 function selectedTaskPlatforms() {
   return [...document.querySelectorAll(".task-platform-option:checked")]
     .map(input => String(input.value || "").trim())
@@ -1976,21 +2121,33 @@ function bindTaskPlatformSelector() {
   const all = $("task-platform-all");
   const options = [...document.querySelectorAll(".task-platform-option")];
   if (!all || !options.length) return;
+  const updateSummary = () => {
+    const selected = options.filter(item => item.checked);
+    const labels = selected.map(item => item.parentElement?.textContent?.trim()).filter(Boolean);
+    setText("task-platform-summary", selected.length === options.length ? "全部平台" : labels.join("、") || "请选择平台");
+  };
   all.addEventListener("change", () => {
     options.forEach(option => { option.checked = all.checked; });
+    updateSummary();
   });
   options.forEach(option => {
     option.addEventListener("change", () => {
       all.checked = options.every(item => item.checked);
+      updateSummary();
     });
   });
+  updateSummary();
 }
 
 function bindEvents() {
   bindTaskPlatformSelector();
+  updateTaskLinkCounts();
+  renderCaptureMode();
   document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.addEventListener("click", () => setPage(btn.dataset.page).catch(showError));
   });
+  $("task-links").addEventListener("input", updateTaskLinkCounts);
+  $("capture-mode").addEventListener("change", renderCaptureMode);
 
   $("review-task-select").addEventListener("change", async () => {
     try {
@@ -2208,14 +2365,16 @@ function bindEvents() {
   $("scrape-open-results").addEventListener("click", async () => {
     try { await openResults(); } catch (error) { showError(error); }
   });
+  $("scrape-open-result-folder").addEventListener("click", async () => {
+    try { await openResultFolder(); } catch (error) { showError(error); }
+  });
 
   $("discover-clean").addEventListener("click", async () => {
     try {
       const data = await apiPost("/api/normalize-links", {
         text: valueOf("discover-input")
       });
-      setValue("discover-output", (data.normalized_links || []).join("\n"));
-      setValue("discover-invalid-output", formatInvalidLinks(data.invalid_links));
+      renderDiscoverResults(data);
     } catch (error) {
       clearDiscoverOutputs();
       showError(error);
@@ -2224,6 +2383,7 @@ function bindEvents() {
   $("discover-clear").addEventListener("click", () => {
     clearDiscoverAll();
   });
+  $("discover-status-filter").addEventListener("change", renderDiscoverDetails);
   $("discover-copy-links").addEventListener("click", async () => {
     try {
       await copyText(valueOf("discover-output"));
@@ -2252,20 +2412,37 @@ function bindEvents() {
 
   $("mail-save").addEventListener("click", async () => {
     try {
-      await apiPost("/api/settings/mail", {
-        accounts: collectMailAccounts(),
-        template_subject: valueOf("mail-template-subject"),
-        template_body: valueOf("mail-template-body")
-      });
-      showSaved();
-      await loadState();
+      await saveMailTemplate();
+    } catch (error) {
+      showError(error);
+    }
+  });
+
+  $("mail-accounts-save").addEventListener("click", async () => {
+    try {
+      await saveMailAccounts();
     } catch (error) {
       showError(error);
     }
   });
 
   $("mail-add-account").addEventListener("click", () => addMailAccount());
-  $("mail-matched-only").addEventListener("change", loadMailInbox);
+  $("mail-matched-only").addEventListener("change", () => {
+    state.mailInbox.page = 1;
+    renderMailMessages();
+  });
+  $("mail-page-size").addEventListener("change", () => {
+    state.mailInbox.page = 1;
+    renderMailMessages();
+  });
+  $("mail-page-previous").addEventListener("click", () => {
+    state.mailInbox.page = Math.max(1, state.mailInbox.page - 1);
+    renderMailMessages();
+  });
+  $("mail-page-next").addEventListener("click", () => {
+    state.mailInbox.page += 1;
+    renderMailMessages();
+  });
   $("mail-inbox-sync").addEventListener("click", async () => {
     try {
       const data = await apiPost("/api/mail/inbox/sync", { limit_per_account: 20 });

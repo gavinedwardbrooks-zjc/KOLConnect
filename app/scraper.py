@@ -346,34 +346,84 @@ def normalize_urls(urls: list[str]) -> list[str]:
     return result
 
 
-def build_normalize_payload(urls: list[str]) -> dict:
+def build_normalize_payload(urls: list[str], line_numbers: list[int] | None = None) -> dict:
     normalized_links: list[str] = []
     invalid_links: list[dict[str, str]] = []
+    link_results: list[dict] = []
     seen_links: set[str] = set()
+    first_line_by_link: dict[str, int] = {}
     seen_invalid: set[str] = set()
 
-    for raw in urls:
+    for index, raw in enumerate(urls):
+        line_number = line_numbers[index] if line_numbers and index < len(line_numbers) else index + 1
         record = normalize_link_record(raw)
         if record["valid"]:
             normalized_url = str(record["normalized_url"])
-            if normalized_url and normalized_url not in seen_links:
+            if normalized_url in seen_links:
+                link_results.append(
+                    {
+                        "line_number": line_number,
+                        "original": str(record.get("input") or ""),
+                        "normalized": normalized_url,
+                        "platform": str(record.get("platform") or ""),
+                        "status": "duplicate",
+                        "reason": "标准化后重复",
+                        "duplicate_of_line": first_line_by_link[normalized_url],
+                    }
+                )
+            elif normalized_url:
                 seen_links.add(normalized_url)
+                first_line_by_link[normalized_url] = line_number
                 normalized_links.append(normalized_url)
+                was_normalized = str(record.get("input") or "") != normalized_url
+                link_results.append(
+                    {
+                        "line_number": line_number,
+                        "original": str(record.get("input") or ""),
+                        "normalized": normalized_url,
+                        "platform": str(record.get("platform") or ""),
+                        "status": "normalized" if was_normalized else "valid",
+                        "reason": "已标准化" if was_normalized else "无需调整",
+                        "duplicate_of_line": None,
+                    }
+                )
         else:
             raw_value = str(record["input"] or "").strip()
+            reason = str(record.get("reason") or "无法确定达人主页")
+            if raw_value:
+                link_results.append(
+                    {
+                        "line_number": line_number,
+                        "original": raw_value,
+                        "normalized": "",
+                        "platform": str(record.get("platform") or ""),
+                        "status": "invalid",
+                        "reason": reason,
+                        "duplicate_of_line": None,
+                    }
+                )
             if raw_value and raw_value not in seen_invalid:
                 seen_invalid.add(raw_value)
                 invalid_links.append(
                     {
                         "original_url": raw_value,
                         "status": "failed",
-                        "reason": str(record.get("reason") or "无法确定达人主页"),
+                        "reason": reason,
                     }
                 )
 
+    duplicate_count = sum(item["status"] == "duplicate" for item in link_results)
+    rejected_count = sum(item["status"] == "invalid" for item in link_results)
     return {
         "normalized_links": normalized_links,
         "invalid_links": invalid_links,
+        "link_results": link_results,
+        "summary": {
+            "non_empty_count": len(link_results),
+            "accepted_unique_count": len(normalized_links),
+            "duplicate_count": duplicate_count,
+            "rejected_count": rejected_count,
+        },
     }
 
 
