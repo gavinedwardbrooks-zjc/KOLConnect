@@ -190,6 +190,106 @@ class CampaignCreatorRepository(ExcelDataRepository):
             creators, accounts, agencies = self._display_indexes(workbook)
         return self._campaign_creator_response(record, creators, accounts, agencies)
 
+    def batch_add_creators(
+        self, campaign_id: object, creator_ids: list[str]
+    ) -> list[dict[str, str]]:
+        """Add creators in one workbook write while preserving relation semantics."""
+        campaign_id = self.require_text(campaign_id, "Campaign ID")
+        now = utc_now()
+        with self.workbook(write=True) as workbook:
+            campaign = self.row_by_key(workbook["Campaigns"], "campaign_id", campaign_id)
+            if not campaign:
+                raise ValueError("关联的 Campaign 不存在。")
+            if str(campaign.get("archived_at") or "").strip():
+                raise ValueError("关联的 Campaign 已归档。")
+
+            creators = {
+                str(row.get("creator_id") or ""): row
+                for row in self.rows(workbook["Creators"])
+                if str(row.get("creator_id") or "")
+            }
+            accounts_by_creator: dict[str, list[dict[str, Any]]] = {}
+            for account in self.rows(workbook["CreatorAccounts"]):
+                creator_id = str(account.get("creator_id") or "")
+                if creator_id and str(account.get("account_id") or ""):
+                    accounts_by_creator.setdefault(creator_id, []).append(account)
+            for accounts in accounts_by_creator.values():
+                accounts.sort(
+                    key=lambda account: (
+                        str(account.get("created_at") or ""),
+                        str(account.get("account_id") or ""),
+                    )
+                )
+
+            relations_by_creator = {
+                str(row.get("creator_id") or ""): row
+                for row in self.rows(workbook["CampaignCreators"])
+                if str(row.get("campaign_id") or "") == campaign_id
+                and str(row.get("creator_id") or "")
+            }
+            campaign_platform = str(campaign.get("platform") or "").strip().casefold()
+            results: list[dict[str, str]] = []
+            for creator_id in creator_ids:
+                creator = creators.get(creator_id)
+                if not creator:
+                    results.append({
+                        "creator_id": creator_id,
+                        "status": "failed",
+                        "error": "关联的达人不存在。",
+                    })
+                    continue
+                accounts = accounts_by_creator.get(creator_id, [])
+                if not accounts:
+                    results.append({
+                        "creator_id": creator_id,
+                        "status": "failed",
+                        "error": "该达人暂无可用社交账号。",
+                    })
+                    continue
+                account = next(
+                    (
+                        item
+                        for item in accounts
+                        if campaign_platform
+                        and str(item.get("platform") or "").strip().casefold()
+                        == campaign_platform
+                    ),
+                    accounts[0],
+                )
+                existing = relations_by_creator.get(creator_id)
+                if existing and not str(existing.get("archived_at") or "").strip():
+                    results.append({
+                        "creator_id": creator_id,
+                        "status": "already_present",
+                        "error": "",
+                    })
+                    continue
+
+                record = {
+                    **self._values({}, existing),
+                    "id": (
+                        str(existing.get("id") or "")
+                        if existing
+                        else f"campaign_creator_{uuid.uuid4().hex[:16]}"
+                    ),
+                    "campaign_id": campaign_id,
+                    "creator_id": creator_id,
+                    "account_id": str(account.get("account_id") or ""),
+                    "created_at": (
+                        str(existing.get("created_at") or now) if existing else now
+                    ),
+                    "updated_at": now,
+                    "archived_at": "",
+                }
+                self.upsert_row(workbook["CampaignCreators"], "id", record["id"], record)
+                relations_by_creator[creator_id] = record
+                results.append({
+                    "creator_id": creator_id,
+                    "status": "restored" if existing else "added",
+                    "error": "",
+                })
+        return results
+
     def getCampaignCreators(
         self,
         campaign_id: str = "",

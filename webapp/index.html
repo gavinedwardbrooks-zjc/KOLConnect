@@ -339,6 +339,7 @@
               </div>
               <label class="creator-library-select-all"><input id="creator-library-select-all" type="checkbox"> 本页全选</label>
               <button class="soft-btn" id="creator-library-export" type="button" disabled>导出选中达人</button>
+              <button class="primary-btn" id="creator-library-batch-campaign" type="button" disabled>加入 Campaign</button>
               <button class="soft-btn" id="creator-library-template-download" type="button">下载 Excel 模板</button>
               <button class="primary-btn" id="creator-library-import-button" type="button">导入 Excel</button>
               <input id="creator-library-import-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
@@ -496,6 +497,30 @@
             <div class="action-row creator-campaign-modal-actions">
               <button class="soft-btn" id="creator-edit-cancel" type="button">取消</button>
               <button class="primary-btn" id="creator-edit-save" type="submit">保存资料</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="creator-campaign-modal" id="creator-library-batch-campaign-modal" hidden>
+        <div class="creator-campaign-modal-card" role="dialog" aria-modal="true" aria-labelledby="creator-library-batch-campaign-title">
+          <div class="creator-campaign-modal-heading">
+            <div>
+              <p class="eyebrow">Creator Campaign</p>
+              <h2 id="creator-library-batch-campaign-title">加入 Campaign</h2>
+            </div>
+            <button class="icon-btn" id="creator-library-batch-campaign-close" type="button" aria-label="关闭">×</button>
+          </div>
+          <form id="creator-library-batch-campaign-form">
+            <p class="hint" id="creator-library-batch-campaign-count">已选择 0 位达人</p>
+            <label class="field">
+              <span>Campaign</span>
+              <select id="creator-library-batch-campaign-select" required><option value="">请选择 Campaign</option></select>
+            </label>
+            <p class="form-message" id="creator-library-batch-campaign-message" hidden></p>
+            <div class="action-row creator-campaign-modal-actions">
+              <button class="soft-btn" id="creator-library-batch-campaign-cancel" type="button">取消</button>
+              <button class="primary-btn" id="creator-library-batch-campaign-submit" type="submit">确认加入</button>
             </div>
           </form>
         </div>

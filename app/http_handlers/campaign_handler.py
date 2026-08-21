@@ -46,6 +46,9 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     campaign_creators_match = re.fullmatch(r"/api/campaigns/([^/]+)/creators", path)
+    campaign_creators_batch_match = re.fullmatch(
+        r"/api/campaigns/([^/]+)/creators/batch", path
+    )
     # GET /api/campaigns/{campaign_id}/creators → {"ok": true, "campaign_creators": [...]}
     if method == "GET" and campaign_creators_match:
         campaign_id = campaign_creators_match.group(1)
@@ -103,6 +106,18 @@ def handle(handler, request: dict, context: dict) -> bool:
             )
             invalidate_dashboard()
             handler._json({"ok": True, "campaign_creator": record}, status=201)
+        except ValueError as exc:
+            handler._repository_error(exc)
+        return True
+
+    # POST /api/campaigns/{campaign_id}/creators/batch → per-Creator results.
+    if method == "POST" and campaign_creators_batch_match:
+        payload = request["get_payload"]()
+        try:
+            result = context["services"]["campaign_creator"].batch_add_creators(
+                campaign_creators_batch_match.group(1), payload.get("creator_ids")
+            )
+            handler._json({"ok": True, **result})
         except ValueError as exc:
             handler._repository_error(exc)
         return True

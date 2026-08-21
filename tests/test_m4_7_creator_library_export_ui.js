@@ -74,12 +74,16 @@ async function run() {
     "creator-library-category", "creator-library-agency", "creator-library-tag",
     "creator-library-level", "creator-library-status", "creator-library-sort",
     "creator-library-page-size", "creator-library-refresh", "creator-library-card-view",
-    "creator-library-table-view", "creator-library-select-all", "creator-library-export",
+    "creator-library-table-view", "creator-library-select-all", "creator-library-export", "creator-library-batch-campaign",
     "creator-library-template-download", "creator-library-import-button", "creator-library-import-input",
     "creator-library-cards", "creator-library-table-wrap", "creator-library-body",
     "creator-library-empty", "creator-library-pagination", "creator-library-page-summary",
     "creator-library-page-buttons", "creator-library-import-result", "creator-library-import-summary",
     "creator-library-import-errors",
+    "creator-library-batch-campaign-modal", "creator-library-batch-campaign-close",
+    "creator-library-batch-campaign-count", "creator-library-batch-campaign-select",
+    "creator-library-batch-campaign-message", "creator-library-batch-campaign-cancel",
+    "creator-library-batch-campaign-submit", "creator-library-batch-campaign-form",
   ];
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
   elements.get("creator-library-sort").value = "created_at_desc";
@@ -95,6 +99,9 @@ async function run() {
   const api = {
     async get(url) {
       if (url === "/api/local/agencies") return { agencies: [] };
+      if (url === "/api/campaigns") return {
+        campaigns: [{ campaign_id: "campaign_one", name: "Launch", platform: "TikTok" }],
+      };
       if (url.startsWith("/api/creator-library?")) {
         const secondPage = url.includes("page=2");
         return {
@@ -108,6 +115,20 @@ async function run() {
         };
       }
       throw new Error(`unexpected GET ${url}`);
+    },
+    async post(url, payload) {
+      requests.push({ url, payload });
+      if (url === "/api/campaigns/campaign_one/creators/batch") {
+        return {
+          added: 1, restored: 0, already_present: 1, failed: 1,
+          results: [
+            { creator_id: "creator_one", status: "added", error: "" },
+            { creator_id: "creator_two", status: "already_present", error: "" },
+            { creator_id: "creator_three", status: "failed", error: "缺少账号" },
+          ],
+        };
+      }
+      throw new Error(`unexpected POST ${url}`);
     },
   };
   const window = {
@@ -177,6 +198,16 @@ async function run() {
   await elements.get("creator-library-cards").dispatch("change", { target: thirdCheckbox });
   assert.match(elements.get("creator-library-export").textContent, /3/);
 
+  await elements.get("creator-library-batch-campaign").dispatch("click");
+  assert.equal(elements.get("creator-library-batch-campaign-modal").hidden, false);
+  assert.match(elements.get("creator-library-batch-campaign-count").textContent, /3/);
+  elements.get("creator-library-batch-campaign-select").value = "campaign_one";
+  await elements.get("creator-library-batch-campaign-form").dispatch("submit");
+  const batchRequest = requests.find(request => request.url === "/api/campaigns/campaign_one/creators/batch");
+  assert.deepEqual(Array.from(batchRequest.payload.creator_ids), ["creator_one", "creator_two", "creator_three"]);
+  assert.match(elements.get("creator-library-batch-campaign-message").textContent, /失败 1/);
+  assert.match(elements.get("creator-library-export").textContent, /1/, "only failed creators remain selected");
+
   window.pywebview = { api: { async save_xlsx(filename, payload) {
     bridgeCalls.push({ filename, payload });
     return bridgeResult || { saved: true, canceled: false, path: "C:\\Exports\\Creators.xlsx" };
@@ -184,7 +215,7 @@ async function run() {
   await elements.get("creator-library-export").dispatch("click");
   const exportRequest = requests.find(request => request.url === "/api/creator-library/export");
   assert.equal(exportRequest.options.method, "POST");
-  assert.deepEqual(JSON.parse(exportRequest.options.body).creator_ids, ["creator_one", "creator_two", "creator_three"]);
+  assert.deepEqual(JSON.parse(exportRequest.options.body).creator_ids, ["creator_three"]);
   assert.equal(bridgeCalls[0].filename, "KOLConnect_Creator_Export.xlsx");
   assert.equal(bridgeCalls[0].payload, "AQID");
   assert.match(savedMessages.pop(), /C:\\Exports\\Creators.xlsx/);
@@ -210,6 +241,7 @@ async function run() {
   assert.match(source, /URL\.createObjectURL/);
   assert.match(source, /pywebview\?\.api\?\.save_xlsx/);
   assert.match(source, /creator-library-select-all/);
+  assert.match(source, /creators\/batch/);
   console.log("M4.7 Creator Library export UI: OK");
 }
 

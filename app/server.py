@@ -66,6 +66,7 @@ from services.agency_service import AgencyService
 from services.creator_delete_impact_service import CreatorDeleteImpactService
 from services.creator_hard_delete_service import CreatorHardDeleteService
 from services.creator_library_cache import CreatorLibraryCache
+from services.campaign_creator_service import CampaignCreatorService
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
 from services.task_service import TaskService
@@ -1710,6 +1711,13 @@ def get_creator_hard_delete_service() -> CreatorHardDeleteService:
     )
 
 
+def get_campaign_creator_service() -> CampaignCreatorService:
+    return CampaignCreatorService(
+        get_campaign_creator_repository,
+        DASHBOARD_RESPONSE_CACHE.invalidate,
+    )
+
+
 def get_creator_service() -> CreatorService:
     """Create a stateless facade whose provider resolves the active request repository."""
     return CreatorService(
@@ -2248,6 +2256,7 @@ class Handler(BaseHTTPRequestHandler):
                 "creator": get_creator_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),
+                "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
                 "build_accounts_payload": build_accounts_payload,
                 "get_dashboard_data": get_dashboard_data,

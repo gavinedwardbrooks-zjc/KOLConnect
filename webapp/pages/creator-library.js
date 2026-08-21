@@ -606,6 +606,7 @@
     const currentIds = state.records.map(recordId).filter(Boolean);
     const selectAll = element("creator-library-select-all");
     const exportButton = element("creator-library-export");
+    const batchCampaignButton = element("creator-library-batch-campaign");
     if (selectAll) {
       selectAll.checked = currentIds.length > 0 && currentIds.every(id => selected.has(id));
       selectAll.indeterminate = currentIds.some(id => selected.has(id)) && !selectAll.checked;
@@ -614,6 +615,12 @@
     if (exportButton) {
       exportButton.disabled = selected.size === 0;
       exportButton.textContent = selected.size ? `导出选中达人（${selected.size}）` : "导出选中达人";
+    }
+    if (batchCampaignButton) {
+      batchCampaignButton.disabled = selected.size === 0 || Boolean(state.batchCampaignSubmitting);
+      batchCampaignButton.textContent = selected.size
+        ? `加入 Campaign（${selected.size}）`
+        : "加入 Campaign";
     }
   }
 
@@ -921,6 +928,128 @@
     }
   }
 
+  function batchCampaignElement(id) {
+    return element(`creator-library-batch-campaign-${id}`);
+  }
+
+  function setBatchCampaignMessage(message, tone = "") {
+    const target = batchCampaignElement("message");
+    if (!target) return;
+    target.hidden = !message;
+    target.textContent = message || "";
+    target.dataset.tone = tone;
+  }
+
+  function setBatchCampaignSubmit(disabled, label = "确认加入") {
+    const button = batchCampaignElement("submit");
+    if (!button) return;
+    button.disabled = disabled;
+    button.textContent = label;
+  }
+
+  function closeBatchCampaignModal() {
+    const modal = element("creator-library-batch-campaign-modal");
+    if (modal) modal.hidden = true;
+    setBatchCampaignMessage("");
+    setBatchCampaignSubmit(false);
+  }
+
+  async function openBatchCampaignModal() {
+    const creatorIds = [...selectedCreatorIds()];
+    if (!creatorIds.length) return;
+    const modal = element("creator-library-batch-campaign-modal");
+    const select = batchCampaignElement("select");
+    if (!modal || !select) return;
+    modal.hidden = false;
+    batchCampaignElement("count").textContent = `已选择 ${creatorIds.length} 位达人`;
+    select.replaceChildren(new Option("正在加载 Campaign...", ""));
+    select.disabled = true;
+    setBatchCampaignMessage("");
+    setBatchCampaignSubmit(true, "正在加载...");
+    try {
+      const data = await pageContext.api.get("/api/campaigns", {
+        signal: pageContext.resources.signal,
+      });
+      const campaigns = Array.isArray(data.campaigns) ? data.campaigns : [];
+      const options = campaigns.map(campaign => new Option(
+        [campaign.name, campaign.product_name, campaign.platform].filter(Boolean).join(" · "),
+        String(campaign.campaign_id || ""),
+      ));
+      select.replaceChildren(new Option(
+        options.length ? "请选择 Campaign" : "暂无可用 Campaign", ""
+      ), ...options);
+      select.disabled = options.length === 0;
+      setBatchCampaignSubmit(options.length === 0);
+      if (!options.length) setBatchCampaignMessage("当前没有可加入的 Campaign。", "warning");
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+      setBatchCampaignMessage(error.message || "无法加载 Campaign。", "error");
+      setBatchCampaignSubmit(true);
+    }
+  }
+
+  function batchSummary(result) {
+    return [
+      `成功加入 ${Number(result.added) || 0}`,
+      `恢复 ${Number(result.restored) || 0}`,
+      `已存在 ${Number(result.already_present) || 0}`,
+      `失败 ${Number(result.failed) || 0}`,
+    ].join("，");
+  }
+
+  async function submitBatchCampaign(event) {
+    event.preventDefault();
+    const state = libraryState();
+    if (state.batchCampaignSubmitting) return;
+    const campaignId = String(batchCampaignElement("select")?.value || "").trim();
+    const creatorIds = [...selectedCreatorIds()];
+    if (!campaignId) {
+      setBatchCampaignMessage("请选择 Campaign。", "warning");
+      return;
+    }
+    if (!creatorIds.length) {
+      closeBatchCampaignModal();
+      updateSelectionControls();
+      return;
+    }
+    state.batchCampaignSubmitting = true;
+    setBatchCampaignSubmit(true, "正在加入...");
+    updateSelectionControls();
+    try {
+      const result = await pageContext.api.post(
+        `/api/campaigns/${encodeURIComponent(campaignId)}/creators/batch`,
+        { creator_ids: creatorIds },
+        { signal: pageContext.resources.signal },
+      );
+      const successful = new Set(
+        (Array.isArray(result.results) ? result.results : [])
+          .filter(item => ["added", "restored", "already_present"].includes(item.status))
+          .map(item => String(item.creator_id || ""))
+          .filter(Boolean),
+      );
+      successful.forEach(creatorId => selectedCreatorIds().delete(creatorId));
+      const summary = batchSummary(result);
+      const failures = (Array.isArray(result.results) ? result.results : [])
+        .filter(item => item.status === "failed")
+        .map(item => `${item.creator_id || "未知达人"}：${item.error || "加入失败"}`);
+      if (failures.length) {
+        setBatchCampaignMessage(`${summary}。${failures.join("；")}`, "warning");
+      } else {
+        closeBatchCampaignModal();
+        pageContext.ui.showSaved(summary);
+      }
+      render();
+    } catch (error) {
+      if (error?.name !== "AbortError") {
+        setBatchCampaignMessage(error.message || "批量加入 Campaign 失败。", "error");
+      }
+    } finally {
+      state.batchCampaignSubmitting = false;
+      setBatchCampaignSubmit(false);
+      updateSelectionControls();
+    }
+  }
+
   function toggleCurrentPageSelection(event) {
     const selected = selectedCreatorIds();
     const currentIds = libraryState().records.map(recordId).filter(Boolean);
@@ -1152,6 +1281,7 @@
       state.selectedCreatorIds = state.selectedCreatorIds instanceof Set
         ? state.selectedCreatorIds
         : new Set();
+      state.batchCampaignSubmitting = Boolean(state.batchCampaignSubmitting);
       const storedMode = global.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
       state.viewMode = storedMode === "table" || state.viewMode === "table" ? "table" : "card";
       state.page = Number.isInteger(state.page) && state.page > 0 ? state.page : 1;
@@ -1200,6 +1330,10 @@
       listen("creator-library-search", "input", scheduleSearchFilter);
       listen("creator-library-template-download", "click", downloadImportTemplate);
       listen("creator-library-export", "click", exportSelectedCreators);
+      listen("creator-library-batch-campaign", "click", () => openBatchCampaignModal().catch(showError));
+      listen("creator-library-batch-campaign-close", "click", closeBatchCampaignModal);
+      listen("creator-library-batch-campaign-cancel", "click", closeBatchCampaignModal);
+      listen("creator-library-batch-campaign-form", "submit", event => submitBatchCampaign(event).catch(showError));
       listen("creator-library-select-all", "change", toggleCurrentPageSelection);
       listen("creator-library-import-button", "click", () => element("creator-library-import-input")?.click());
       listen("creator-library-import-input", "change", importCreatorWorkbook);
