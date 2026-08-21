@@ -143,6 +143,7 @@ DataProtectionSaver = Callable[[dict], None]
 SourceContactResolver = Callable[[object], dict | None]
 FourTableConfigProvider = Callable[[], dict]
 CreatorLibraryCacheProvider = Callable[[], Any]
+DashboardResponseCacheInvalidator = Callable[[], None]
 
 
 class CreatorService:
@@ -158,6 +159,7 @@ class CreatorService:
         four_table_config_provider: FourTableConfigProvider | None = None,
         agency_port_provider: AgencyPortProvider | None = None,
         creator_library_cache_provider: CreatorLibraryCacheProvider | None = None,
+        dashboard_response_cache_invalidator: DashboardResponseCacheInvalidator | None = None,
     ) -> None:
         self._repository_provider = repository_provider
         self._task_port_provider = task_port_provider
@@ -167,10 +169,21 @@ class CreatorService:
         self._four_table_config_provider = four_table_config_provider or (lambda: {})
         self._agency_port_provider = agency_port_provider
         self._creator_library_cache_provider = creator_library_cache_provider
+        self._dashboard_response_cache_invalidator = dashboard_response_cache_invalidator
 
     def _invalidate_creator_library_cache(self) -> None:
         if self._creator_library_cache_provider is not None:
             self._creator_library_cache_provider().invalidate()
+
+    def _invalidate_dashboard_response_cache(self) -> None:
+        if self._dashboard_response_cache_invalidator is not None:
+            self._dashboard_response_cache_invalidator()
+
+    def _invalidate_creator_read_caches(self, payload: dict[str, Any] | None = None) -> None:
+        self._invalidate_creator_library_cache()
+        # Agency-only reassignment is not represented in the current Dashboard payload.
+        if payload is None or set(payload) != {"agency_id"}:
+            self._invalidate_dashboard_response_cache()
 
     def prepare_four_table_sync(
         self, command: FourTableSyncCommand
@@ -550,7 +563,7 @@ class CreatorService:
             result = repository.createCreatorsBatch(valid_new)
         except Exception as exc:
             raise CreatorBatchImportError("BATCH_IMPORT_WRITE_FAILED") from exc
-        self._invalidate_creator_library_cache()
+        self._invalidate_creator_read_caches()
         return {
             "total_rows": len(parsed_rows),
             "created": int(result.get("created") or 0),
@@ -632,12 +645,12 @@ class CreatorService:
                 )
             )
         }
-        self._invalidate_creator_library_cache()
+        self._invalidate_creator_read_caches(payload)
         return result
 
     def update_creator_status(self, creator_id: str, status: object) -> dict[str, Any]:
         result = self._repository_provider().updateCreatorStatus(creator_id, status)
-        self._invalidate_creator_library_cache()
+        self._invalidate_creator_read_caches()
         return result
 
     def update_creator_relations(
@@ -656,7 +669,7 @@ class CreatorService:
                 creator_id, payload, agency_port=agency_port
             )
         )
-        self._invalidate_creator_library_cache()
+        self._invalidate_creator_read_caches(payload)
         return result
 
     def import_creator_from_extension(
@@ -678,7 +691,7 @@ class CreatorService:
                     raise ValueError("Agency boundary unavailable.")
                 self._agency_port_provider().get_agency(agency_id)
             result = self._repository_provider().saveCreator(analysis)
-            self._invalidate_creator_library_cache()
+            self._invalidate_creator_read_caches()
             return result
         except Exception:
             # Preserve the original import failure even when task cleanup also fails.
@@ -841,7 +854,7 @@ class CreatorService:
                 source=command.source,
                 imported_at=command.imported_at,
             )
-            self._invalidate_creator_library_cache()
+            self._invalidate_creator_read_caches()
             return CreatorImportSummary(
                 input_records=int(summary.get("input_records") or 0),
                 created_creators=int(summary.get("created_creators") or 0),
@@ -878,7 +891,7 @@ class CreatorService:
                 task.get("finished_at") or task.get("created_at") or self._utc_now()
             ),
         )
-        self._invalidate_creator_library_cache()
+        self._invalidate_creator_read_caches()
         imported_at = self._utc_now()
         public_summary = {
             key: value

@@ -76,6 +76,38 @@
           </div>
         </div>
 
+        <section class="dashboard-visualization-grid" aria-label="达人数据概览">
+          <article class="section-card dashboard-card dashboard-chart-card">
+            <div class="dashboard-chart-heading">
+              <div><p class="eyebrow">CREATOR MIX</p><h2>平台分布</h2></div>
+              <span id="dashboard-platform-chart-empty" class="dashboard-chart-empty" hidden>暂无平台数据</span>
+            </div>
+            <div class="dashboard-chart-frame dashboard-chart-frame-donut">
+              <canvas id="dashboard-platform-chart" aria-label="达人平台分布图" role="img"></canvas>
+            </div>
+          </article>
+
+          <article class="section-card dashboard-card dashboard-chart-card">
+            <div class="dashboard-chart-heading">
+              <div><p class="eyebrow">CREATOR STATUS</p><h2>达人状态</h2></div>
+              <span id="dashboard-status-chart-empty" class="dashboard-chart-empty" hidden>暂无状态数据</span>
+            </div>
+            <div class="dashboard-chart-frame">
+              <canvas id="dashboard-status-chart" aria-label="达人状态分布图" role="img"></canvas>
+            </div>
+          </article>
+
+          <article class="section-card dashboard-card dashboard-chart-card dashboard-growth-card">
+            <div class="dashboard-chart-heading">
+              <div><p class="eyebrow">30-DAY GROWTH</p><h2>近 30 天新增达人</h2></div>
+              <span id="dashboard-growth-chart-empty" class="dashboard-chart-empty" hidden>暂无新增数据</span>
+            </div>
+            <div class="dashboard-chart-frame">
+              <canvas id="dashboard-growth-chart" aria-label="近三十天新增达人趋势图" role="img"></canvas>
+            </div>
+          </article>
+        </section>
+
         <div class="dashboard-section-grid">
           <section class="section-card dashboard-card">
             <h2>值得关注的达人</h2>
@@ -1319,6 +1351,7 @@
   <script src="core/page-resources.js"></script>
   <script src="core/page-registry.js"></script>
   <script src="app.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
   <script src="pages/dashboard.js"></script>
   <script src="pages/creator-library.js"></script>
   <script src="pages/creator-library-detail.js"></script>

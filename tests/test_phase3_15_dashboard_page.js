@@ -80,6 +80,10 @@ class FakeElement {
     const event = { target: this, preventDefault() {}, ...overrides };
     for (const listener of [...(this.listeners.get(type) || [])]) await listener(event);
   }
+
+  getContext() {
+    return { canvas: this };
+  }
 }
 
 function dashboardResponse(totalCreators = 12) {
@@ -109,6 +113,18 @@ function dashboardResponse(totalCreators = 12) {
       pending_contact: [],
       incomplete_cooperations: [],
     },
+    platform_distribution: [
+      { platform: "TikTok", count: 8 },
+      { platform: "YouTube", count: 4 },
+    ],
+    creator_status_distribution: [
+      { status: "discovered", count: 9 },
+      { status: "contacted", count: 3 },
+    ],
+    creator_growth_trend: [
+      { date: "2026-08-20", count: 1 },
+      { date: "2026-08-21", count: 2 },
+    ],
   };
 }
 
@@ -126,6 +142,8 @@ async function run() {
     "dashboard-total-views", "dashboard-cooperation-roi", "dashboard-rising-creators",
     "dashboard-falling-creators", "dashboard-expired-creators", "dashboard-action-expired",
     "dashboard-pending-contact", "dashboard-incomplete-cooperations", "dashboard-top-creators",
+    "dashboard-platform-chart", "dashboard-status-chart", "dashboard-growth-chart",
+    "dashboard-platform-chart-empty", "dashboard-status-chart-empty", "dashboard-growth-chart-empty",
   ];
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
   const navButtons = ["dashboard", "products"].map(name => {
@@ -165,6 +183,19 @@ async function run() {
   const navigations = [];
   const errors = [];
   const responses = [];
+  const chartCalls = [];
+  class FakeChart {
+    constructor(context, config) {
+      this.context = context;
+      this.config = config;
+      this.destroyed = false;
+      chartCalls.push(this);
+    }
+
+    destroy() {
+      this.destroyed = true;
+    }
+  }
   const api = {
     async get(url, options = {}) {
       calls.push({ url, signal: options.signal });
@@ -175,6 +206,7 @@ async function run() {
   const window = {
     AbortController,
     KOLConnectAPI: api,
+    Chart: FakeChart,
     KOLConnectApp: {
       showError(error) { errors.push(error); },
       navigate(pageName, params) {
@@ -206,6 +238,10 @@ async function run() {
   assert.ok(calls[0].signal instanceof AbortSignal);
   assert.equal(elements.get("dashboard-total-creators").textContent, "30");
   assert.equal(elements.get("dashboard-campaigns").textContent, "3");
+  assert.equal(chartCalls.length, 3);
+  assert.deepEqual(chartCalls[0].config.data.labels, ["TikTok", "YouTube"]);
+  assert.deepEqual(chartCalls[1].config.data.datasets[0].data, [9, 3]);
+  assert.deepEqual(chartCalls[2].config.data.datasets[0].data, [1, 2]);
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 1);
   assert.equal(sections[0].listenerCount("click"), 1);
 
@@ -216,6 +252,7 @@ async function run() {
   assert.equal(navigations[0].params.creatorId, "creator_one");
 
   await window.KOLConnectPages.navigate("products");
+  assert.equal(chartCalls.filter(chart => chart.destroyed).length, 3);
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 0);
   assert.equal(sections[0].listenerCount("click"), 0);
   responses.push(dashboardResponse(31));
@@ -223,6 +260,17 @@ async function run() {
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 1);
   assert.equal(sections[0].listenerCount("click"), 1);
   assert.equal(elements.get("dashboard-total-creators").textContent, "31");
+
+  const emptyCharts = dashboardResponse(32);
+  emptyCharts.platform_distribution = [];
+  emptyCharts.creator_status_distribution = [];
+  emptyCharts.creator_growth_trend = [];
+  responses.push(emptyCharts);
+  await elements.get("dashboard-refresh").dispatch("click");
+  assert.equal(elements.get("dashboard-platform-chart-empty").hidden, false);
+  assert.equal(elements.get("dashboard-status-chart-empty").hidden, false);
+  assert.equal(elements.get("dashboard-growth-chart-empty").hidden, false);
+  assert.equal(elements.get("dashboard-total-creators").textContent, "32");
 
   const stale = deferred();
   responses.push(stale.promise);
@@ -233,7 +281,7 @@ async function run() {
   assert.equal(staleCall.signal.aborted, true, "leaving Dashboard must abort its active request");
   stale.resolve(dashboardResponse(999));
   await refreshPromise;
-  assert.equal(elements.get("dashboard-total-creators").textContent, "31", "stale responses must not update Dashboard DOM");
+  assert.equal(elements.get("dashboard-total-creators").textContent, "32", "stale responses must not update Dashboard DOM");
   assert.equal(errors.length, 0);
 
   const appSource = read("webapp/app.js");
@@ -243,6 +291,11 @@ async function run() {
   assert.doesNotMatch(appSource, /dashboard:\s*\(\)\s*=>\s*loadDashboard/);
 
   const html = read("webapp/index.html");
+  assert.match(html, /src="vendor\/chart\.umd\.min\.js"/);
+  assert.doesNotMatch(html, /https?:\/\/.*chart/i);
+  assert.match(html, /id="dashboard-platform-chart"/);
+  assert.match(html, /id="dashboard-status-chart"/);
+  assert.match(html, /id="dashboard-growth-chart"/);
   assert.match(html, /src="pages\/dashboard\.js"/);
   assert.match(html, />活跃 Campaign</);
   assert.match(html, />待复盘</);

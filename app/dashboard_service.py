@@ -153,9 +153,48 @@ class DashboardService:
             "incomplete_cooperations": incomplete_cooperations,
         }
 
+    def getPlatformDistribution(self) -> list[dict[str, Any]]:
+        """Return active Creator counts grouped by their stored platform value."""
+        return self._distribution(self._repository.get_creators(), "platform")
+
+    def getCreatorStatusDistribution(self) -> list[dict[str, Any]]:
+        """Return active Creator counts grouped by the existing status field."""
+        return self._distribution(self._repository.get_creators(), "status")
+
+    def getCreatorGrowthTrend(self) -> list[dict[str, Any]]:
+        """Return a zero-filled UTC calendar-day series for recent Creator additions."""
+        today = datetime.now(timezone.utc).date()
+        dates = [today - timedelta(days=offset) for offset in range(29, -1, -1)]
+        counts = {day: 0 for day in dates}
+        for creator in self._repository.get_creators():
+            created_at = self._parse_datetime(creator.get("created_at"))
+            if created_at is not None and created_at.date() in counts:
+                counts[created_at.date()] += 1
+        return [
+            {"date": day.isoformat(), "count": counts[day]}
+            for day in dates
+        ]
+
     @staticmethod
     def _status_count(creators: list[dict[str, Any]], status: str) -> int:
         return sum(1 for creator in creators if str(creator.get("status") or "") == status)
+
+    @staticmethod
+    def _distribution(
+        creators: list[dict[str, Any]],
+        field: str,
+    ) -> list[dict[str, Any]]:
+        counts: dict[str, int] = {}
+        for creator in creators:
+            value = str(creator.get(field) or "").strip() or "Other/Unknown"
+            counts[value] = counts.get(value, 0) + 1
+        return [
+            {field: value, "count": count}
+            for value, count in sorted(
+                counts.items(),
+                key=lambda item: (-item[1], item[0].casefold()),
+            )
+        ]
 
     @classmethod
     def _records_in_stages(
@@ -269,10 +308,15 @@ class DashboardService:
 
     @staticmethod
     def _is_on_or_after(value: object, cutoff: datetime) -> bool:
+        parsed = DashboardService._parse_datetime(value)
+        return parsed is not None and parsed >= cutoff
+
+    @staticmethod
+    def _parse_datetime(value: object) -> datetime | None:
         try:
             parsed = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
-            return parsed >= cutoff
+            return parsed.astimezone(timezone.utc)
         except ValueError:
-            return False
+            return None

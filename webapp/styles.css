@@ -826,6 +826,7 @@ button:disabled {
 }
 
 .dashboard-section-grid,
+.dashboard-visualization-grid,
 .dashboard-health-columns,
 .dashboard-action-columns {
   display: grid;
@@ -834,6 +835,52 @@ button:disabled {
 
 .dashboard-section-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dashboard-visualization-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.dashboard-growth-card {
+  grid-column: 1 / -1;
+}
+
+.dashboard-chart-card {
+  min-width: 0;
+}
+
+.dashboard-chart-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.dashboard-chart-heading .eyebrow {
+  margin: 0 0 4px;
+}
+
+.dashboard-chart-heading h2 {
+  margin-bottom: 0;
+}
+
+.dashboard-chart-frame {
+  position: relative;
+  height: 260px;
+}
+
+.dashboard-chart-frame-donut {
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.dashboard-chart-empty {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .dashboard-health-columns,
@@ -1778,6 +1825,7 @@ button {
 @media (max-width: 960px) {
   .stats-grid,
   .dashboard-overview-grid,
+  .dashboard-visualization-grid,
   .dashboard-section-grid,
   .dashboard-health-columns,
   .dashboard-action-columns,

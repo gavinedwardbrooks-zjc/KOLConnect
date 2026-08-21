@@ -8,6 +8,9 @@ def handle(handler, request: dict, context: dict) -> bool:
     path = request["path"]
     query = request["query"]
     repositories = context["repositories"]
+    invalidate_dashboard = context.get("services", {}).get(
+        "invalidate_dashboard_response_cache", lambda: None
+    )
 
     # GET /api/products → {"ok": true, "products": [...]}
     if method == "GET" and path == "/api/products":
@@ -98,6 +101,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             record = repositories["campaign_creator"]().createCampaignCreator(
                 {**payload, "campaign_id": campaign_id}
             )
+            invalidate_dashboard()
             handler._json({"ok": True, "campaign_creator": record}, status=201)
         except ValueError as exc:
             handler._repository_error(exc)
@@ -130,6 +134,12 @@ def handle(handler, request: dict, context: dict) -> bool:
                 campaign = repository.archiveCampaign(campaign_match.group(1))
             else:
                 campaign = repository.updateCampaign(campaign_match.group(1), payload)
+            if (
+                "archived_at" in payload
+                or payload.get("archived") is True
+                or "name" in payload
+            ):
+                invalidate_dashboard()
             handler._json({"ok": True, "campaign": campaign})
         except ValueError as exc:
             handler._repository_error(exc)
@@ -146,6 +156,20 @@ def handle(handler, request: dict, context: dict) -> bool:
                 if payload.get("archived") is True
                 else repository.updateCampaignCreator(campaign_creator_match.group(1), payload)
             )
+            if payload.get("archived") is True or set(payload).intersection(
+                {
+                    "stage",
+                    "cost",
+                    "views",
+                    "roi",
+                    "performance_note",
+                    "campaign_id",
+                    "creator_id",
+                    "account_id",
+                    "publish_date",
+                }
+            ):
+                invalidate_dashboard()
             handler._json({"ok": True, "campaign_creator": record})
         except ValueError as exc:
             handler._repository_error(exc)
@@ -157,6 +181,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             result = repositories["campaign_creator"]().remove_creator_from_campaign(
                 campaign_creator_match.group(1)
             )
+            invalidate_dashboard()
             handler._ok(**result)
         except ValueError as exc:
             handler._repository_error(exc)
@@ -166,6 +191,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "DELETE" and campaign_match:
         try:
             result = repositories["campaign"]().delete_campaign(campaign_match.group(1))
+            invalidate_dashboard()
             handler._ok(**result)
         except ValueError as exc:
             handler._repository_error(exc)

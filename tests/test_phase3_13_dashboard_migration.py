@@ -241,7 +241,16 @@ class DashboardCampaignCreatorMigrationTests(unittest.TestCase):
 
         self.assertEqual(200, status)
         self.assertEqual(
-            {"ok", "overview", "creator_health", "cooperation_performance", "action_items"},
+            {
+                "ok",
+                "overview",
+                "creator_health",
+                "cooperation_performance",
+                "action_items",
+                "platform_distribution",
+                "creator_status_distribution",
+                "creator_growth_trend",
+            },
             set(payload),
         )
         overview = payload["overview"]
@@ -277,6 +286,9 @@ class DashboardCampaignCreatorMigrationTests(unittest.TestCase):
             self.assertIsInstance(overview[key], (int, float))
         for key in ("total_campaigns", "total_cost", "total_views", "average_roi"):
             self.assertIsInstance(performance[key], (int, float))
+        self.assertEqual([{"platform": "TikTok", "count": 5}], payload["platform_distribution"])
+        self.assertEqual([{"status": "discovered", "count": 5}], payload["creator_status_distribution"])
+        self.assertEqual(30, len(payload["creator_growth_trend"]))
 
 
 if __name__ == "__main__":

@@ -66,6 +66,7 @@ from services.agency_service import AgencyService
 from services.creator_delete_impact_service import CreatorDeleteImpactService
 from services.creator_hard_delete_service import CreatorHardDeleteService
 from services.creator_library_cache import CreatorLibraryCache
+from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
 from services.task_service import TaskService
 from app_logging import log_error, log_event
@@ -180,6 +181,7 @@ MAIL_PROVIDER_PRESETS = {
 
 HANDLERS = [dashboard_handler, campaign_handler, settings_handler, creator_handler, task_handler]
 CREATOR_LIBRARY_CACHE = CreatorLibraryCache()
+DASHBOARD_RESPONSE_CACHE = DashboardResponseCache()
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
@@ -1704,6 +1706,7 @@ def get_creator_hard_delete_service() -> CreatorHardDeleteService:
         lambda: DATA_DIR,
         lambda exc: log_error("CreatorDelete", "永久删除失败", exc),
         creator_library_cache_invalidator=CREATOR_LIBRARY_CACHE.invalidate,
+        dashboard_response_cache_invalidator=DASHBOARD_RESPONSE_CACHE.invalidate,
     )
 
 
@@ -1718,6 +1721,7 @@ def get_creator_service() -> CreatorService:
         get_four_table_feishu_config,
         get_agency_port,
         lambda: CREATOR_LIBRARY_CACHE,
+        DASHBOARD_RESPONSE_CACHE.invalidate,
     )
 
 
@@ -1836,6 +1840,7 @@ def background_task_service_scope():
             get_four_table_feishu_config,
             factory.agency,
             lambda: CREATOR_LIBRARY_CACHE,
+            DASHBOARD_RESPONSE_CACHE.invalidate,
         )
         creator_port = _CreatorAnalysisPortAdapter(lambda: creator_service)
         yield TaskService(
@@ -1925,19 +1930,29 @@ def import_task_results_to_creator_library(
 
 def get_dashboard_data() -> dict:
     """Return read-only operational dashboard data from the Creator Repository."""
-    factory = get_active_repository_factory()
-    repository = (
-        factory.dashboard(get_creator_repository())
-        if factory
-        else DashboardRepository(get_creator_repository())
+    creator_repository = get_creator_repository()
+
+    def build_response() -> dict:
+        factory = get_active_repository_factory()
+        repository = (
+            factory.dashboard(creator_repository)
+            if factory
+            else DashboardRepository(creator_repository)
+        )
+        service = DashboardService(repository)
+        return {
+            "overview": service.getOverview(),
+            "creator_health": service.getCreatorHealth(),
+            "cooperation_performance": service.getCooperationPerformance(),
+            "action_items": service.getActionItems(),
+            "platform_distribution": service.getPlatformDistribution(),
+            "creator_status_distribution": service.getCreatorStatusDistribution(),
+            "creator_growth_trend": service.getCreatorGrowthTrend(),
+        }
+
+    return DASHBOARD_RESPONSE_CACHE.get_response(
+        creator_repository.workbook_path, build_response
     )
-    service = DashboardService(repository)
-    return {
-        "overview": service.getOverview(),
-        "creator_health": service.getCreatorHealth(),
-        "cooperation_performance": service.getCooperationPerformance(),
-        "action_items": service.getActionItems(),
-    }
 
 
 def _extension_analysis_payload(payload: dict, task: dict, account_uid: str) -> dict:
@@ -2236,6 +2251,7 @@ class Handler(BaseHTTPRequestHandler):
                 "task": get_task_service(),
                 "build_accounts_payload": build_accounts_payload,
                 "get_dashboard_data": get_dashboard_data,
+                "invalidate_dashboard_response_cache": DASHBOARD_RESPONSE_CACHE.invalidate,
                 "get_agency_contact_options": get_agency_contact_options,
                 "get_four_table_feishu_config": get_four_table_feishu_config,
                 "get_profiles": get_profiles,

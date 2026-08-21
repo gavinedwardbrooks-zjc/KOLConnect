@@ -5,6 +5,8 @@
   let requestController = null;
   let dashboardData = null;
   let lifecycleId = 0;
+  const charts = new Map();
+  const CHART_COLORS = ["#e56b46", "#2f7d6d", "#e9a23b", "#5574b9", "#b65d7a", "#717171"];
 
   function element(id) {
     return document.getElementById(id);
@@ -37,6 +39,80 @@
   function setText(id, value) {
     const target = element(id);
     if (target) target.textContent = value;
+  }
+
+  function setChartEmpty(id, isEmpty) {
+    const target = element(id);
+    if (target) target.hidden = !isEmpty;
+  }
+
+  function destroyChart(id) {
+    const chart = charts.get(id);
+    if (chart) chart.destroy();
+    charts.delete(id);
+  }
+
+  function destroyCharts() {
+    [...charts.keys()].forEach(destroyChart);
+  }
+
+  function chartRows(rows, labelField) {
+    return (Array.isArray(rows) ? rows : [])
+      .map(row => ({ label: String(row?.[labelField] || "Other/Unknown"), count: Number(row?.count) || 0 }))
+      .filter(row => row.count > 0);
+  }
+
+  function renderChart(id, emptyId, config, hasData) {
+    destroyChart(id);
+    setChartEmpty(emptyId, !hasData);
+    if (!hasData || typeof global.Chart !== "function") return;
+    const canvas = element(id);
+    if (!canvas?.getContext) return;
+    charts.set(id, new global.Chart(canvas.getContext("2d"), config));
+  }
+
+  function renderVisualizations(data) {
+    const platform = chartRows(data?.platform_distribution, "platform");
+    renderChart("dashboard-platform-chart", "dashboard-platform-chart-empty", {
+      type: "doughnut",
+      data: {
+        labels: platform.map(row => row.label),
+        datasets: [{ data: platform.map(row => row.count), backgroundColor: CHART_COLORS, borderWidth: 0 }],
+      },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom" } } },
+    }, platform.length > 0);
+
+    const statuses = chartRows(data?.creator_status_distribution, "status");
+    renderChart("dashboard-status-chart", "dashboard-status-chart-empty", {
+      type: "bar",
+      data: {
+        labels: statuses.map(row => row.label),
+        datasets: [{ label: "达人数量", data: statuses.map(row => row.count), backgroundColor: "#2f7d6d", borderRadius: 6 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } },
+      },
+    }, statuses.length > 0);
+
+    const trend = (Array.isArray(data?.creator_growth_trend) ? data.creator_growth_trend : [])
+      .filter(row => typeof row?.date === "string")
+      .map(row => ({ date: row.date, count: Number(row.count) || 0 }));
+    renderChart("dashboard-growth-chart", "dashboard-growth-chart-empty", {
+      type: "line",
+      data: {
+        labels: trend.map(row => row.date.slice(5)),
+        datasets: [{ label: "新增达人", data: trend.map(row => row.count), borderColor: "#e56b46", backgroundColor: "rgba(229, 107, 70, 0.16)", fill: true, tension: 0.32, pointRadius: 2 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false }, ticks: { maxTicksLimit: 6 } } },
+      },
+    }, trend.some(row => row.count > 0));
   }
 
   function renderCreatorList(id, records, emptyText, reasonForRecord) {
@@ -95,6 +171,7 @@
       const roi = record.average_roi == null ? "ROI 暂无" : `ROI ${formatNumber(record.average_roi)}`;
       return `${record.campaign_count || 0} 个 Campaign · ${roi}`;
     });
+    renderVisualizations(data);
   }
 
   function isCurrentLifecycle(expectedLifecycle, controller) {
@@ -136,6 +213,7 @@
   const page = {
     async load() {
       resources?.cleanup();
+      destroyCharts();
       resources = global.KOLConnectPageResources.create();
       lifecycleId += 1;
       dashboardData = null;
@@ -155,6 +233,7 @@
       resources?.cleanup();
       resources = null;
       dashboardData = null;
+      destroyCharts();
     },
   };
 
