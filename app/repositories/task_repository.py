@@ -315,24 +315,40 @@ class TaskRepository:
         progress: TaskCsvDocument,
         modifications: list[Mapping[str, object]],
         metadata_changes: Mapping[str, object],
+        review_state: Mapping[str, object] | None = None,
     ) -> dict:
         """Atomically replace task data documents without exposing their paths."""
         task = self.get_task(task_id)
         task.update(metadata_changes)
         paths = self._paths(task_id)
-        self._atomic_write_files(
-            {
-                paths["results"]: self._csv_bytes(results),
-                paths["progress"]: self._csv_bytes(progress),
-                paths["modifications"]: json.dumps(
-                    modifications, ensure_ascii=False, indent=2
-                ).encode("utf-8"),
-                paths["metadata"]: json.dumps(
-                    task, ensure_ascii=False, indent=2
-                ).encode("utf-8"),
-            }
-        )
+        contents = {
+            paths["results"]: self._csv_bytes(results),
+            paths["progress"]: self._csv_bytes(progress),
+            paths["modifications"]: json.dumps(
+                modifications, ensure_ascii=False, indent=2
+            ).encode("utf-8"),
+            paths["metadata"]: json.dumps(
+                task, ensure_ascii=False, indent=2
+            ).encode("utf-8"),
+        }
+        if review_state is not None:
+            contents[paths["review_state"]] = json.dumps(
+                review_state, ensure_ascii=False, indent=2
+            ).encode("utf-8")
+        self._atomic_write_files(contents)
         return task
+
+    def read_review_state(self, task_id: str) -> dict:
+        """Return the optional D4 per-result review state without creating it."""
+        self.get_task(task_id)
+        path = self._paths(task_id)["review_state"]
+        data = self._read_json(path, {})
+        if not isinstance(data, dict):
+            raise ValueError("审核状态格式无效。")
+        rows = data.get("rows", {})
+        if not isinstance(rows, dict):
+            raise ValueError("审核状态格式无效。")
+        return {"version": int(data.get("version") or 1), "rows": rows}
 
     @staticmethod
     def _read_csv(
@@ -449,6 +465,7 @@ class TaskRepository:
             "metadata": root / "task.json",
             "sync_result": root / ".sync_result.json",
             "modifications": root / "modifications.json",
+            "review_state": root / "review_state.json",
             "filtered_links": root / "filtered_links.json",
         }
 
