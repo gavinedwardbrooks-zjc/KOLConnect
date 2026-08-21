@@ -162,6 +162,63 @@ class TaskSyncStatusUpdate:
     sync_log: tuple[Mapping[str, object], ...] | None = None
 
 
+@dataclass(frozen=True)
+class TaskRuntimeSnapshot:
+    """Bounded task metadata consumed by the scrape runtime."""
+
+    task_id: str
+    status: str
+    task_type: str
+    profile: str
+    started_at: str
+    finished_at: str
+    heartbeat_time: str
+    stop_requested: bool
+    pause_requested: bool
+    retry_round: int
+    retry_requested_urls: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class TaskRuntimeDocuments:
+    """Fixed documents consumed by the local scraper process only."""
+
+    links_file: str
+    progress_file: str
+    results_file: str
+    metadata_file: str
+
+
+@dataclass(frozen=True)
+class TaskSummaryDocuments:
+    links: tuple[str, ...]
+    progress_rows: tuple[Mapping[str, object], ...]
+    result_rows: tuple[Mapping[str, object], ...]
+    results_available: bool
+
+
+@dataclass(frozen=True)
+class RuntimeProgressUpdate:
+    completed_count: int
+    last_successful_index: int = 0
+    current_item: str = ""
+    last_progress_time: str = ""
+    heartbeat_time: str = ""
+    instagram_error_count: int = 0
+    instagram_status: str = ""
+    instagram_message: str = ""
+
+
+@dataclass(frozen=True)
+class TaskFinalizationDocuments:
+    """Task-local documents written atomically at a named lifecycle boundary."""
+
+    results: "TaskCsvDocument"
+    progress: "TaskCsvDocument"
+    modifications: tuple[Mapping[str, object], ...]
+    metadata_changes: Mapping[str, object]
+
+
 class TaskPort(Protocol):
     def create_scrape_task(self, command: ScrapeTaskCreateCommand) -> CreatedTask: ...
 
@@ -180,6 +237,56 @@ class TaskPort(Protocol):
     ) -> CreatedTask: ...
 
     def get_task(self, task_id: str) -> TaskSnapshot: ...
+
+    def get_runtime_task_snapshot(self, task_id: str) -> TaskRuntimeSnapshot: ...
+
+    def get_runtime_documents(self, task_id: str) -> TaskRuntimeDocuments: ...
+
+    def get_task_summary_documents(self, task_id: str) -> TaskSummaryDocuments: ...
+
+    def list_recovery_candidates(self) -> tuple[TaskRuntimeSnapshot, ...]: ...
+
+    def recover_stopping_task(self, task_id: str, *, finished_at: str) -> TaskSnapshot: ...
+
+    def mark_task_interrupted(
+        self, task_id: str, *, interrupted_at: str, reason: str
+    ) -> TaskSnapshot: ...
+
+    def start_runtime_task(
+        self, task_id: str, *, profile: str, started_at: str, heartbeat_interval: int,
+        completed_count: int, current_item: str, last_progress_time: str
+    ) -> TaskSnapshot: ...
+
+    def mark_runtime_worker_running(self, task_id: str) -> TaskSnapshot: ...
+
+    def persist_runtime_progress(
+        self, task_id: str, update: RuntimeProgressUpdate
+    ) -> TaskSnapshot: ...
+
+    def mark_runtime_paused(self, task_id: str) -> TaskSnapshot: ...
+
+    def mark_runtime_resumed(self, task_id: str) -> TaskSnapshot: ...
+
+    def request_runtime_stop(self, task_id: str) -> TaskSnapshot: ...
+
+    def mark_runtime_finalizing(
+        self, task_id: str, *, metadata_changes: Mapping[str, object]
+    ) -> TaskSnapshot: ...
+
+    def complete_runtime_task(
+        self, task_id: str, *, finished_at: str, metadata_changes: Mapping[str, object]
+    ) -> TaskSnapshot: ...
+
+    def fail_runtime_task(
+        self, task_id: str, *, finished_at: str, error: str,
+        metadata_changes: Mapping[str, object]
+    ) -> TaskSnapshot: ...
+
+    def get_task_documents(self, task_id: str) -> TaskFinalizationDocuments: ...
+
+    def finalize_task_documents(
+        self, task_id: str, documents: TaskFinalizationDocuments
+    ) -> TaskSnapshot: ...
 
     def get_tasks(self) -> TaskReadResult: ...
 

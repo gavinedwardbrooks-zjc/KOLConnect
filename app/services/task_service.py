@@ -31,6 +31,11 @@ from ports.task_port import (
     TaskPort,
     TaskResultImportLinkage,
     TaskSyncStatusUpdate,
+    TaskFinalizationDocuments,
+    TaskRuntimeSnapshot,
+    TaskRuntimeDocuments,
+    TaskSummaryDocuments,
+    RuntimeProgressUpdate,
 )
 from repositories.task_repository import TaskCsvDocument, TaskRepository
 from services.task_result_mapper import (
@@ -108,6 +113,62 @@ class TaskService:
 
     def get_task_details(self, task_id: str) -> dict[str, object]:
         return self._get_task_port().get_task_details(task_id).to_response()
+
+    def get_task_metadata(self, task_id: str) -> dict[str, object]:
+        return self._get_task_port().get_task(task_id).to_response()
+
+    # These lifecycle operations are intentionally named transitions, rather than
+    # exposing the legacy task-manager's generic metadata/file primitives.
+    def get_runtime_task_snapshot(self, task_id: str) -> TaskRuntimeSnapshot:
+        return self._get_task_port().get_runtime_task_snapshot(task_id)
+
+    def get_runtime_documents(self, task_id: str) -> TaskRuntimeDocuments:
+        return self._get_task_port().get_runtime_documents(task_id)
+
+    def get_task_summary_documents(self, task_id: str) -> TaskSummaryDocuments:
+        return self._get_task_port().get_task_summary_documents(task_id)
+
+    def list_recovery_candidates(self) -> tuple[TaskRuntimeSnapshot, ...]:
+        return self._get_task_port().list_recovery_candidates()
+
+    def recover_stopping_task(self, task_id: str, *, finished_at: str) -> dict[str, object]:
+        return self._get_task_port().recover_stopping_task(task_id, finished_at=finished_at).to_response()
+
+    def mark_task_interrupted(self, task_id: str, *, interrupted_at: str, reason: str) -> dict[str, object]:
+        return self._get_task_port().mark_task_interrupted(task_id, interrupted_at=interrupted_at, reason=reason).to_response()
+
+    def start_runtime_task(self, task_id: str, **kwargs: object) -> dict[str, object]:
+        return self._get_task_port().start_runtime_task(task_id, **kwargs).to_response()  # type: ignore[arg-type]
+
+    def mark_runtime_worker_running(self, task_id: str) -> dict[str, object]:
+        return self._get_task_port().mark_runtime_worker_running(task_id).to_response()
+
+    def persist_runtime_progress(self, task_id: str, update: RuntimeProgressUpdate) -> dict[str, object]:
+        return self._get_task_port().persist_runtime_progress(task_id, update).to_response()
+
+    def mark_runtime_paused(self, task_id: str) -> dict[str, object]:
+        return self._get_task_port().mark_runtime_paused(task_id).to_response()
+
+    def mark_runtime_resumed(self, task_id: str) -> dict[str, object]:
+        return self._get_task_port().mark_runtime_resumed(task_id).to_response()
+
+    def request_runtime_stop(self, task_id: str) -> dict[str, object]:
+        return self._get_task_port().request_runtime_stop(task_id).to_response()
+
+    def mark_runtime_finalizing(self, task_id: str, *, metadata_changes: dict[str, object]) -> dict[str, object]:
+        return self._get_task_port().mark_runtime_finalizing(task_id, metadata_changes=metadata_changes).to_response()
+
+    def complete_runtime_task(self, task_id: str, *, finished_at: str, metadata_changes: dict[str, object]) -> dict[str, object]:
+        return self._get_task_port().complete_runtime_task(task_id, finished_at=finished_at, metadata_changes=metadata_changes).to_response()
+
+    def fail_runtime_task(self, task_id: str, *, finished_at: str, error: str, metadata_changes: dict[str, object]) -> dict[str, object]:
+        return self._get_task_port().fail_runtime_task(task_id, finished_at=finished_at, error=error, metadata_changes=metadata_changes).to_response()
+
+    def get_task_finalization_documents(self, task_id: str) -> TaskFinalizationDocuments:
+        return self._get_task_port().get_task_documents(task_id)
+
+    def finalize_task_documents(self, task_id: str, documents: TaskFinalizationDocuments) -> dict[str, object]:
+        return self._get_task_port().finalize_task_documents(task_id, documents).to_response()
 
     def get_task_results(self, task_id: str) -> dict[str, object]:
         return self._get_task_port().get_task_results(task_id).to_response()

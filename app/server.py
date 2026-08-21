@@ -58,7 +58,13 @@ from ports.creator_port import (
     TaskResultImportCommand,
     TaskResultUpdateCommand,
 )
-from ports.task_port import CreatorImportLinkage, ManualReviewTaskCommand, TaskPort
+from ports.task_port import (
+    CreatorImportLinkage,
+    ManualTaskCreateCommand,
+    ManualTaskInitializationCommand,
+    ManualReviewTaskCommand,
+    TaskPort,
+)
 from repositories.task_repository import TaskRepository
 from repositories.agency_repository import AgencyRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
@@ -694,8 +700,8 @@ class ScrapeJob:
                 status = "stopping" if self.stop_requested else "paused" if self.pause_requested else "running"
                 if self.task_id:
                     try:
-                        task, _paths = task_manager.load_task(TASKS_DIR, self.task_id)
-                        persisted_status = str(task.get("status") or "").strip()
+                        task = get_task_service().get_runtime_task_snapshot(self.task_id)
+                        persisted_status = task.status
                         if persisted_status in {"running", "finalizing", "paused", "stopping"}:
                             status = persisted_status
                     except ValueError:
@@ -735,9 +741,9 @@ def detect_interrupted_tasks() -> int:
     """Mark running tasks with no live worker or a stale heartbeat as interrupted."""
     interrupted = 0
     recovered_stopping = 0
-    for task in task_manager.list_tasks(TASKS_DIR):
-        status = str(task.get("status") or "")
-        task_id = str(task["id"])
+    for task in get_task_service().list_recovery_candidates():
+        status = task.status
+        task_id = task.task_id
         active_worker = (
             SCRAPE_JOB.running
             and SCRAPE_JOB.task_id == task_id
@@ -745,22 +751,12 @@ def detect_interrupted_tasks() -> int:
             and SCRAPE_JOB.process.poll() is None
         )
         if status == "stopping" and not active_worker:
-            task_manager.update_task(
-                TASKS_DIR,
-                task_id,
-                status="stopped",
-                pause_requested=False,
-                stop_requested=False,
-                browser_status="closed",
-                worker_status="stopped",
-                current_item="",
-                finished_at=str(task.get("finished_at") or _utc_now()),
-            )
+            get_task_service().recover_stopping_task(task_id, finished_at=task.finished_at or _utc_now())
             recovered_stopping += 1
             continue
         if status != "running":
             continue
-        heartbeat = task.get("heartbeat_time") or task.get("started_at")
+        heartbeat = task.heartbeat_time or task.started_at
         if active_worker:
             continue
         reason = (
@@ -768,17 +764,7 @@ def detect_interrupted_tasks() -> int:
             if _task_timestamp_is_stale(heartbeat)
             else "任务执行进程不存在，可能由于程序关闭、Chrome 关闭或进程异常结束"
         )
-        task_manager.update_task(
-            TASKS_DIR,
-            task_id,
-            status="interrupted",
-            pause_requested=False,
-            stop_requested=False,
-            browser_status="closed",
-            worker_status="stopped",
-            interrupted_time=_utc_now(),
-            interrupted_reason=reason,
-        )
+        get_task_service().mark_task_interrupted(task_id, interrupted_at=_utc_now(), reason=reason)
         interrupted += 1
     if interrupted:
         SCRAPE_JOB.append(f"检测到任务异常中断：{interrupted} 个。\n")
@@ -825,7 +811,7 @@ def _monitor_scrape_task(task_id: str, task_paths: dict[str, Path], stop_event: 
         if not SCRAPE_JOB.running or SCRAPE_JOB.task_id != task_id:
             return
         try:
-            task, _ = task_manager.load_task(TASKS_DIR, task_id)
+            task = get_task_service().get_runtime_task_snapshot(task_id)
             changes: dict[str, object] = {}
             completed = len(scraper_module.load_progress(str(task_paths["progress"])))
             if completed > last_completed:
@@ -841,17 +827,26 @@ def _monitor_scrape_task(task_id: str, task_paths: dict[str, Path], stop_event: 
                     instagram_status="login_required",
                     instagram_message="Instagram登录状态异常，请重新登录后继续。",
                 )
-            if str(task.get("status") or "") in {"running", "stopping"} and time.monotonic() - last_heartbeat >= TASK_HEARTBEAT_SECONDS:
+            if task.status in {"running", "stopping"} and time.monotonic() - last_heartbeat >= TASK_HEARTBEAT_SECONDS:
                 changes["heartbeat_time"] = _utc_now()
                 last_heartbeat = time.monotonic()
                 SCRAPE_JOB.append("任务心跳更新。\n")
             if changes:
-                task_manager.update_task(TASKS_DIR, task_id, **changes)
+                get_task_service().persist_runtime_progress(
+                    task_id,
+                    RuntimeProgressUpdate(
+                        completed_count=int(changes.get("completed_count") or 0),
+                        last_successful_index=int(changes.get("last_successful_index") or 0),
+                        current_item=str(changes.get("current_item") or ""),
+                        last_progress_time=str(changes.get("last_progress_time") or ""),
+                        heartbeat_time=str(changes.get("heartbeat_time") or ""),
+                        instagram_error_count=int(changes.get("instagram_error_count") or 0),
+                        instagram_status=str(changes.get("instagram_status") or ""),
+                        instagram_message=str(changes.get("instagram_message") or ""),
+                    ),
+                )
         except Exception as exc:
             SCRAPE_JOB.append(f"任务监控更新失败：{exc}\n")
-
-
-detect_interrupted_tasks()
 
 
 def build_accounts_payload() -> list[dict]:
@@ -879,10 +874,16 @@ def start_scrape(payload: dict) -> dict:
     task_id = str(payload.get("taskId") or "").strip()
     if not task_id:
         raise RuntimeError("请选择任务。")
-    _task, task_paths = task_manager.load_task(TASKS_DIR, task_id)
-    links_file = str(task_paths["links"])
-    progress_file = str(task_paths["progress"])
-    output_file = str(task_paths["results"])
+    runtime_task = get_task_service().get_runtime_task_snapshot(task_id)
+    runtime_documents = get_task_service().get_runtime_documents(task_id)
+    task_paths = {
+        "links": Path(runtime_documents.links_file),
+        "progress": Path(runtime_documents.progress_file),
+        "results": Path(runtime_documents.results_file),
+    }
+    links_file = runtime_documents.links_file
+    progress_file = runtime_documents.progress_file
+    output_file = runtime_documents.results_file
 
     profile = (payload.get("profile") or "").strip() or STATE["profiles"].get("selected", AUTOMATION_PROFILE_NAME)
     chrome_user_data_dir, chrome_profile_directory = resolve_chrome_launch_config(profile)
@@ -896,7 +897,7 @@ def start_scrape(payload: dict) -> dict:
         "--output",
         output_file,
         "--task-file",
-        str(task_paths["metadata"]),
+        runtime_documents.metadata_file,
         "--chrome-dir",
         str(chrome_user_data_dir),
         "--chrome-profile",
@@ -908,34 +909,7 @@ def start_scrape(payload: dict) -> dict:
     STATE["profiles"]["selected"] = profile
     save_state(STATE)
     completed_before_start = len(scraper_module.load_progress(str(task_paths["progress"])))
-    task_manager.update_task(
-        TASKS_DIR,
-        task_id,
-        status="running",
-        started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        finished_at="",
-        profile=profile,
-        feishu_enabled=False,
-        last_error="",
-        sync_status="not_requested",
-        sync_summary={},
-        sync_errors=[],
-        pause_requested=False,
-        stop_requested=False,
-        heartbeat_time=_utc_now(),
-        heartbeat_interval=TASK_HEARTBEAT_SECONDS,
-        last_progress_time=str(_task.get("last_progress_time") or ""),
-        current_item=_task_next_pending_item(task_paths),
-        completed_count=completed_before_start,
-        last_successful_index=completed_before_start,
-        browser_status="starting",
-        worker_status="starting",
-        interrupted_time="",
-        interrupted_reason="",
-        instagram_error_count=0,
-        instagram_status="",
-        instagram_message="",
-    )
+    get_task_service().start_runtime_task(task_id, profile=profile, started_at=_utc_now(), heartbeat_interval=TASK_HEARTBEAT_SECONDS, completed_count=completed_before_start, current_item="", last_progress_time=runtime_task.heartbeat_time)
 
     SCRAPE_JOB.logs = startup_logs
     SCRAPE_JOB.running = True
@@ -960,13 +934,7 @@ def start_scrape(payload: dict) -> dict:
                 encoding="utf-8",
                 errors="replace",
             )
-            task_manager.update_task(
-                TASKS_DIR,
-                task_id,
-                status="running",
-                browser_status="running",
-                worker_status="running",
-            )
+            get_task_service().mark_runtime_worker_running(task_id)
             monitor_thread = threading.Thread(
                 target=_monitor_scrape_task,
                 args=(task_id, task_paths, monitor_stop_event),
@@ -989,7 +957,7 @@ def start_scrape(payload: dict) -> dict:
                 instagram_errors = _instagram_error_count(task_paths["progress"])
                 sync_summary: dict = {}
                 sync_errors: list[str] = []
-                final_task, _ = task_manager.load_task(TASKS_DIR, task_id)
+                final_task = get_task_service().get_task_metadata(task_id)
                 stop_requested = bool(final_task.get("stop_requested")) or SCRAPE_JOB.stop_requested
                 retry_urls = [
                     str(url or "").strip()
@@ -1038,8 +1006,8 @@ def start_scrape(payload: dict) -> dict:
                     "instagram_status": "login_required" if instagram_errors >= 5 else "",
                     "instagram_message": "Instagram登录状态异常，请重新登录后继续。" if instagram_errors >= 5 else "",
                     "has_system_supplement": True
-                    if _task.get("task_type") == "manual" and return_code == 0
-                    else _task.get("has_system_supplement", False),
+                    if str(final_task.get("task_type") or "") == "manual" and return_code == 0
+                    else final_task.get("has_system_supplement", False),
                     **retry_changes,
                 }
 
@@ -1055,15 +1023,7 @@ def start_scrape(payload: dict) -> dict:
 
                 final_state_persisted = False
                 if status == "finalizing":
-                    task_manager.update_task(
-                        TASKS_DIR,
-                        task_id,
-                        status="finalizing",
-                        finished_at="",
-                        last_error="",
-                        sync_status=sync_status,
-                        **common_changes,
-                    )
+                    get_task_service().mark_runtime_finalizing(task_id, metadata_changes={"finished_at": "", "last_error": "", "sync_status": sync_status, **common_changes})
                     try:
                         finalization = import_task_results_to_creator_library(
                             task_id,
@@ -1078,11 +1038,7 @@ def start_scrape(payload: dict) -> dict:
                             f"任务完成后导入达人库失败 | task_id={task_id}",
                             library_error,
                         )
-                        task_manager.update_task(
-                            TASKS_DIR,
-                            task_id,
-                            creator_library_import_error=str(library_error),
-                        )
+                        get_task_service().mark_runtime_finalizing(task_id, metadata_changes={"creator_library_import_error": str(library_error)})
                     else:
                         if finalization.get("status") == "failed":
                             status = "failed"
@@ -1093,9 +1049,7 @@ def start_scrape(payload: dict) -> dict:
                         else:
                             status = "completed"
                         try:
-                            persisted_task, _ = task_manager.load_task(
-                                TASKS_DIR, task_id
-                            )
+                            persisted_task = get_task_service().get_task_metadata(task_id)
                             final_state_persisted = (
                                 str(persisted_task.get("status") or "") == status
                             )
@@ -1103,15 +1057,10 @@ def start_scrape(payload: dict) -> dict:
                             final_state_persisted = False
 
                 if not final_state_persisted:
-                    task_manager.update_task(
-                        TASKS_DIR,
-                        task_id,
-                        status=status,
-                        finished_at=_utc_now(),
-                        last_error=last_error,
-                        sync_status=sync_status,
-                        **common_changes,
-                    )
+                    if status == "completed":
+                        get_task_service().complete_runtime_task(task_id, finished_at=_utc_now(), metadata_changes={"sync_status": sync_status, **common_changes})
+                    else:
+                        get_task_service().fail_runtime_task(task_id, finished_at=_utc_now(), error=last_error, metadata_changes={"sync_status": sync_status, **common_changes})
                 if status == "completed":
                     SCRAPE_JOB.append("任务完成。\n")
                 elif status == "failed":
@@ -1119,17 +1068,7 @@ def start_scrape(payload: dict) -> dict:
             except Exception as task_error:
                 SCRAPE_JOB.append(f"\n任务状态保存失败：{task_error}\n")
                 try:
-                    task_manager.update_task(
-                        TASKS_DIR,
-                        task_id,
-                        status="failed",
-                        finished_at=_utc_now(),
-                        last_error=str(task_error),
-                        pause_requested=False,
-                        stop_requested=False,
-                        browser_status="closed",
-                        worker_status="stopped",
-                    )
+                    get_task_service().fail_runtime_task(task_id, finished_at=_utc_now(), error=str(task_error), metadata_changes={"pause_requested": False, "stop_requested": False, "browser_status": "closed", "worker_status": "stopped"})
                 except Exception as recovery_error:
                     SCRAPE_JOB.append(f"任务失败状态保存失败：{recovery_error}\n")
             finally:
@@ -1151,10 +1090,10 @@ def _active_scrape_task() -> str:
 
 def _active_scrape_is_finalizing(task_id: str) -> bool:
     try:
-        task, _paths = task_manager.load_task(TASKS_DIR, task_id)
+        task = get_task_service().get_runtime_task_snapshot(task_id)
     except ValueError:
         task = {}
-    if str(task.get("status") or "") == "finalizing":
+    if task.status == "finalizing":
         return True
     process = SCRAPE_JOB.process
     return bool(process is not None and process.poll() is not None)
@@ -1172,14 +1111,7 @@ def pause_scrape() -> dict:
         raise RuntimeError("任务正在停止，不能暂停。")
     if not SCRAPE_JOB.pause_requested:
         SCRAPE_JOB.pause_requested = True
-        task_manager.update_task(
-            TASKS_DIR,
-            task_id,
-            status="paused",
-            pause_requested=True,
-            browser_status="open",
-            worker_status="sleep",
-        )
+        get_task_service().mark_runtime_paused(task_id)
         SCRAPE_JOB.append("任务已暂停，等待继续。\n")
     return {"task_id": task_id, "status": "paused"}
 
@@ -1191,14 +1123,7 @@ def resume_scrape() -> dict:
         raise RuntimeError("任务正在停止，不能继续。")
     if SCRAPE_JOB.pause_requested:
         SCRAPE_JOB.pause_requested = False
-        task_manager.update_task(
-            TASKS_DIR,
-            task_id,
-            status="running",
-            pause_requested=False,
-            browser_status="running",
-            worker_status="running",
-        )
+        get_task_service().mark_runtime_resumed(task_id)
         SCRAPE_JOB.append("任务恢复运行。\n")
     return {"task_id": task_id, "status": "running"}
 
@@ -1209,14 +1134,7 @@ def request_stop_scrape() -> dict:
     if not SCRAPE_JOB.stop_requested:
         SCRAPE_JOB.stop_requested = True
         SCRAPE_JOB.pause_requested = False
-        task_manager.update_task(
-            TASKS_DIR,
-            task_id,
-            status="stopping",
-            pause_requested=False,
-            stop_requested=True,
-            worker_status="stopping",
-        )
+        get_task_service().request_runtime_stop(task_id)
         SCRAPE_JOB.append("收到停止请求，正在保存当前进度。\n")
     return {"task_id": task_id, "status": "stopping"}
 
@@ -1297,26 +1215,21 @@ def _review_record(row: dict) -> dict:
 def _task_progress(task_id: str, fallback_total: int = 0) -> dict:
     """Calculate task-local progress from its own input and latest progress rows."""
     try:
-        _task, paths = task_manager.load_task(TASKS_DIR, task_id)
+        documents = get_task_service().get_task_summary_documents(task_id)
     except ValueError:
         return {"total_links": fallback_total, "completed_links": 0, "failed_links": 0, "pending_links": fallback_total, "progress": 0}
 
     try:
-        links = [line.strip() for line in paths["links"].read_text(encoding="utf-8").splitlines() if line.strip()]
+        links = list(documents.links)
     except OSError:
         links = []
     total_links = len(links) or fallback_total
     task_urls = set(links)
     latest_status_by_url: dict[str, str] = {}
-    if paths["progress"].exists():
-        try:
-            with paths["progress"].open(encoding="utf-8-sig", newline="", errors="ignore") as handle:
-                for row in csv.DictReader(handle):
-                    url = str(row.get(scraper_module.FIELD_URL) or "").strip()
-                    if url and (not task_urls or url in task_urls):
-                        latest_status_by_url[url] = str(row.get(scraper_module.FIELD_STATUS) or "").strip()
-        except OSError:
-            pass
+    for row in documents.progress_rows:
+        url = str(row.get(scraper_module.FIELD_URL) or "").strip()
+        if url and (not task_urls or url in task_urls):
+            latest_status_by_url[url] = str(row.get(scraper_module.FIELD_STATUS) or "").strip()
 
     completed = sum(1 for status in latest_status_by_url.values() if status == "完成")
     failed = sum(1 for status in latest_status_by_url.values() if status == "失败")
@@ -1460,10 +1373,10 @@ def _merge_data_protection(
 
 def _email_recheck_summary(task_id: str) -> dict:
     try:
-        _task, paths = task_manager.load_task(TASKS_DIR, task_id)
-        if not paths["results"].exists():
+        documents = get_task_service().get_task_summary_documents(task_id)
+        if not documents.results_available:
             return {"email_found_count": 0, "email_failed_count": 0}
-        _fieldnames, rows = _read_task_csv(paths["results"])
+        rows = documents.result_rows
     except (OSError, ValueError):
         return {"email_found_count": 0, "email_failed_count": 0}
     found = sum(
@@ -1544,27 +1457,16 @@ def _create_manual_task_legacy(
         "Instagram": int(selected_platform == "Instagram"),
         "YouTube": int(selected_platform == "YouTube"),
     }
-    if task_port is None:
-        task = task_manager.create_task(
-            TASKS_DIR,
-            [url],
-            [],
-            1,
-            name=payload.get("task_name"),
-            target_platform=selected_platform,
+    active_task_port = task_port or get_task_port()
+    task = active_task_port.create_manual_task(
+        ManualTaskCreateCommand(
+            normalized_url=url,
+            task_name=str(payload.get("task_name") or ""),
+            platform=selected_platform,
             platform_summary=platform_summary,
-            task_type="manual",
+            defer_library_import=defer_library_import,
         )
-    else:
-        task = task_port.create_manual_review_task(
-            ManualReviewTaskCommand(
-                normalized_links=(url,),
-                input_count=1,
-                name=str(payload.get("task_name") or ""),
-                target_platform=selected_platform,
-                platform_summary=platform_summary,
-            )
-        ).task.to_response()
+    ).task.to_response()
     now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     result = scraper_module.build_result(
         url=url,
@@ -1635,15 +1537,23 @@ def _create_manual_task_legacy(
     )
     if source_contact:
         task["source_contact_name"] = source_contact["name"]
-    _task, paths = task_manager.load_task(TASKS_DIR, task["id"])
-    task_manager.atomic_write_files(
-        {
-            paths["results"]: _csv_content(scraper_module.OUTPUT_FIELDS, [result_row]),
-            paths["progress"]: _csv_content(scraper_module.PROGRESS_FIELDS, [progress_row]),
-            paths["modifications"]: json.dumps(modifications, ensure_ascii=False, indent=2).encode("utf-8"),
-            paths["metadata"]: json.dumps(task, ensure_ascii=False, indent=2).encode("utf-8"),
-        }
+    initialized = active_task_port.initialize_manual_task(
+        task["id"],
+        ManualTaskInitializationCommand(
+            creator_name=name,
+            platform=selected_platform,
+            profile_url=url,
+            follower_count=follower_count,
+            email=email,
+            whatsapp=whatsapp,
+            note=note,
+            source_contact_record_id=source_contact["record_id"] if source_contact else "",
+            source_contact_name=source_contact["name"] if source_contact else "",
+            local_source_contact_id=local_source_contact_id,
+        ),
     )
+    task = initialized.task.to_response()
+    account_uid = initialized.account_uid
     if manual_values:
         with shared_storage_lock():
             protection = load_data_protection()
@@ -1656,7 +1566,7 @@ def _create_manual_task_legacy(
                 task["id"],
                 allowed_task_statuses={"manual_created"},
             )
-            task, _paths = task_manager.load_task(TASKS_DIR, task["id"])
+            task = active_task_port.get_task(task["id"]).to_response()
         except (OSError, RuntimeError, ValueError) as exc:
             log_error("CreatorLibrary", f"人工任务进入达人库失败 | task_id={task['id']}", exc)
             library_import = {"status": "failed", "error": str(exc)}
@@ -1832,6 +1742,10 @@ def get_task_service() -> TaskService:
             "Feishu", f"同步失败 | task_id={task_id}", exc
         ),
     )
+
+
+# Recovery now depends on the composed TaskService boundary.
+detect_interrupted_tasks()
 
 
 @contextmanager

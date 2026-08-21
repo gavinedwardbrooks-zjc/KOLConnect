@@ -24,6 +24,11 @@ from ports.task_port import (
     TaskResultImportLinkage,
     TaskSyncStatusUpdate,
     TaskSnapshot,
+    TaskRuntimeSnapshot,
+    TaskRuntimeDocuments,
+    TaskSummaryDocuments,
+    RuntimeProgressUpdate,
+    TaskFinalizationDocuments,
 )
 from repositories.task_repository import TaskCsvDocument, TaskRepository
 
@@ -228,6 +233,112 @@ class TaskManagerAdapter:
 
     def get_task(self, task_id: str) -> TaskSnapshot:
         return self._snapshot(self._repository().get_task(task_id))
+
+    def get_runtime_task_snapshot(self, task_id: str) -> TaskRuntimeSnapshot:
+        return self._runtime_snapshot(self._repository().get_task(task_id))
+
+    def get_runtime_documents(self, task_id: str) -> TaskRuntimeDocuments:
+        repository = self._repository()
+        repository.get_task(task_id)
+        paths = repository._paths(task_id)
+        return TaskRuntimeDocuments(
+            links_file=str(paths["links"]), progress_file=str(paths["progress"]),
+            results_file=str(paths["results"]), metadata_file=str(paths["metadata"]),
+        )
+
+    def get_task_summary_documents(self, task_id: str) -> TaskSummaryDocuments:
+        repository = self._repository()
+        repository.get_task(task_id)
+        try:
+            links = tuple(repository.read_links(task_id))
+        except OSError:
+            links = ()
+        progress = tuple(repository.read_progress(task_id))
+        available = repository.results_exist(task_id)
+        rows = tuple(repository.read_results(task_id)) if available else ()
+        return TaskSummaryDocuments(links, progress, rows, available)
+
+    def list_recovery_candidates(self) -> tuple[TaskRuntimeSnapshot, ...]:
+        return tuple(self._runtime_snapshot(task) for task in self._repository().list_tasks())
+
+    def recover_stopping_task(self, task_id: str, *, finished_at: str) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(
+            task_id, status="stopped", stop_requested=False, pause_requested=False,
+            browser_status="closed", worker_status="stopped", current_item="", finished_at=finished_at,
+        ))
+
+    def mark_task_interrupted(self, task_id: str, *, interrupted_at: str, reason: str) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(
+            task_id, status="interrupted", pause_requested=False, stop_requested=False,
+            browser_status="closed", worker_status="stopped", interrupted_time=interrupted_at,
+            interrupted_reason=reason,
+        ))
+
+    def start_runtime_task(self, task_id: str, *, profile: str, started_at: str, heartbeat_interval: int, completed_count: int, current_item: str, last_progress_time: str) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(
+            task_id, status="running", started_at=started_at, finished_at="", profile=profile,
+            feishu_enabled=False, last_error="", sync_status="not_requested", sync_summary={},
+            sync_errors=[], pause_requested=False, stop_requested=False, heartbeat_time=started_at,
+            heartbeat_interval=heartbeat_interval, last_progress_time=last_progress_time,
+            current_item=current_item, completed_count=completed_count,
+            last_successful_index=completed_count, browser_status="starting", worker_status="starting",
+            interrupted_time="", interrupted_reason="", instagram_error_count=0,
+            instagram_status="", instagram_message="",
+        ))
+
+    def mark_runtime_worker_running(self, task_id: str) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(
+            task_id, status="running", browser_status="running", worker_status="running"
+        ))
+
+    def persist_runtime_progress(self, task_id: str, update: RuntimeProgressUpdate) -> TaskSnapshot:
+        changes = {
+            "completed_count": update.completed_count,
+            "last_successful_index": update.last_successful_index,
+            "current_item": update.current_item,
+            "last_progress_time": update.last_progress_time,
+            "heartbeat_time": update.heartbeat_time,
+            "instagram_error_count": update.instagram_error_count,
+            "instagram_status": update.instagram_status,
+            "instagram_message": update.instagram_message,
+        }
+        return self._snapshot(self._repository().update_task(task_id, **{key: value for key, value in changes.items() if value != "" or key in {"current_item", "heartbeat_time"}}))
+
+    def mark_runtime_paused(self, task_id: str) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(task_id, status="paused", pause_requested=True, browser_status="open", worker_status="sleep"))
+
+    def mark_runtime_resumed(self, task_id: str) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(task_id, status="running", pause_requested=False, browser_status="running", worker_status="running"))
+
+    def request_runtime_stop(self, task_id: str) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(task_id, status="stopping", pause_requested=False, stop_requested=True, worker_status="stopping"))
+
+    def mark_runtime_finalizing(self, task_id: str, *, metadata_changes: Mapping[str, object]) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(task_id, status="finalizing", **dict(metadata_changes)))
+
+    def complete_runtime_task(self, task_id: str, *, finished_at: str, metadata_changes: Mapping[str, object]) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(task_id, status="completed", finished_at=finished_at, last_error="", **dict(metadata_changes)))
+
+    def fail_runtime_task(self, task_id: str, *, finished_at: str, error: str, metadata_changes: Mapping[str, object]) -> TaskSnapshot:
+        return self._snapshot(self._repository().update_task(task_id, status="failed", finished_at=finished_at, last_error=error, **dict(metadata_changes)))
+
+    def get_task_documents(self, task_id: str) -> TaskFinalizationDocuments:
+        repository = self._repository()
+        repository.get_task(task_id)
+        return TaskFinalizationDocuments(
+            results=repository.read_results_document(task_id),
+            progress=repository.read_progress_document(task_id),
+            modifications=tuple(repository.read_modifications(task_id)),
+            metadata_changes={},
+        )
+
+    def finalize_task_documents(self, task_id: str, documents: TaskFinalizationDocuments) -> TaskSnapshot:
+        task = self._repository().write_task_documents(
+            task_id, results=documents.results, progress=documents.progress,
+            modifications=[dict(item) for item in documents.modifications],
+            metadata_changes=dict(documents.metadata_changes),
+        )
+        return self._snapshot(task)
 
     def get_tasks(self) -> TaskReadResult:
         items: list[dict[str, object]] = []
@@ -735,4 +846,17 @@ class TaskManagerAdapter:
             extension_content_category=str(crm.get("content_category") or ""),
             profile=str(task.get("profile") or ""),
             _response=deepcopy(dict(task)),
+        )
+
+    @staticmethod
+    def _runtime_snapshot(task: Mapping[str, object]) -> TaskRuntimeSnapshot:
+        retry_urls = task.get("retry_requested_urls")
+        return TaskRuntimeSnapshot(
+            task_id=str(task.get("id") or ""), status=str(task.get("status") or ""),
+            task_type=str(task.get("task_type") or "scrape"), profile=str(task.get("profile") or ""),
+            started_at=str(task.get("started_at") or ""), finished_at=str(task.get("finished_at") or ""),
+            heartbeat_time=str(task.get("heartbeat_time") or ""),
+            stop_requested=bool(task.get("stop_requested")), pause_requested=bool(task.get("pause_requested")),
+            retry_round=int(task.get("retry_round") or 0),
+            retry_requested_urls=tuple(str(value) for value in retry_urls) if isinstance(retry_urls, list) else (),
         )
