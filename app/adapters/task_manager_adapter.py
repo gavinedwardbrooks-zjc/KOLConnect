@@ -300,7 +300,8 @@ class TaskManagerAdapter:
                 }
             )
         rows = repository.read_results(task_id)
-        records = [self._review_record(row) for row in rows]
+        review_rows = repository.read_review_state(task_id).get("rows", {})
+        records = [self._review_record(row, review_rows) for row in rows]
         platform_results = {platform: 0 for platform in _PLATFORMS}
         for record in records:
             platform = str(record.get(scraper_module.FIELD_PLATFORM) or "").strip()
@@ -316,6 +317,16 @@ class TaskManagerAdapter:
                 "platform_results": platform_results,
                 "creator_analysis_available": bool(task.get("creator_analysis_id")),
                 "records": records,
+                "review_total": sum(record["review_eligible"] for record in records),
+                "reviewed_count": sum(
+                    record["review_eligible"]
+                    and record["review_state"] in {"approved", "rejected"}
+                    for record in records
+                ),
+                "pending_count": sum(
+                    record["review_eligible"] and record["review_state"] == "pending"
+                    for record in records
+                ),
             }
         )
 
@@ -611,10 +622,22 @@ class TaskManagerAdapter:
         return str(row.get(field) or "")
 
     @classmethod
-    def _review_record(cls, row: Mapping[str, object]) -> dict[str, str]:
+    def _review_record(cls, row: Mapping[str, object], review_rows: Mapping[str, object] | None = None) -> dict[str, object]:
         result = scraper_module.row_to_result(dict(row))
+        account_uid = scraper_module.build_creator_uid(result)
+        stored = (review_rows or {}).get(account_uid)
+        stored = stored if isinstance(stored, Mapping) else {}
+        state = str(stored.get("review_state") or "pending")
+        if state not in {"pending", "approved", "rejected"}:
+            state = "pending"
+        scrape_status = str(result.get("scrape_status") or "success")
+        # The read-model status is reclassified for data usability. Review
+        # eligibility must retain the CSV's original access outcome instead.
+        source_scrape_status = str(
+            row.get(scraper_module.FIELD_SCRAPE_STATUS) or "success"
+        ).strip()
         return {
-            "account_uid": scraper_module.build_creator_uid(result),
+            "account_uid": account_uid,
             scraper_module.FIELD_NAME: str(row.get(scraper_module.FIELD_NAME) or ""),
             scraper_module.FIELD_PLATFORM: str(
                 row.get(scraper_module.FIELD_PLATFORM) or ""
@@ -637,9 +660,11 @@ class TaskManagerAdapter:
                 row.get(scraper_module.FIELD_FOLLOWER_COUNT) or ""
             ),
             scraper_module.FIELD_STATUS: str(row.get(scraper_module.FIELD_STATUS) or ""),
-            scraper_module.FIELD_SCRAPE_STATUS: str(
-                result.get("scrape_status") or "success"
-            ),
+            scraper_module.FIELD_SCRAPE_STATUS: scrape_status,
+            "review_state": state,
+            "reviewed_at": str(stored.get("reviewed_at") or ""),
+            "rejection_reason": str(stored.get("rejection_reason") or ""),
+            "review_eligible": source_scrape_status not in _RETRYABLE_SCRAPE_STATUSES,
             scraper_module.FIELD_STATUS_REASON: str(result.get("status_reason") or ""),
             scraper_module.FIELD_LAST_SCRAPE_TIME: str(
                 row.get(scraper_module.FIELD_LAST_SCRAPE_TIME) or ""
