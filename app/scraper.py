@@ -23,7 +23,6 @@ import shutil
 import sys
 import tempfile
 import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import unquote, urljoin, urlparse
@@ -32,6 +31,7 @@ import requests
 from bs4 import BeautifulSoup
 from chromedriver_resolver import ChromeDriverResolutionError, resolve_chromedriver
 from local_storage_lock import shared_storage_lock
+from uuid_compat import uuid7_or_uuid4
 
 try:
     import pandas as pd
@@ -1869,7 +1869,7 @@ def _four_table_sync_log(account_uid: str, data_source: str, updated_fields: dic
 def _four_table_creator_fields(result: dict, *, source_contact_record_id: str = "") -> dict:
     fields = {
         FOUR_TABLE_CREATOR_FIELD_NAME: _four_table_creator_display_name(result),
-        FOUR_TABLE_CREATOR_FIELD_ID: f"creator_{uuid.uuid7().hex}",
+        FOUR_TABLE_CREATOR_FIELD_ID: f"creator_{uuid7_or_uuid4().hex}",
         FOUR_TABLE_CREATOR_FIELD_REGION: FOUR_TABLE_DEFAULT_REGION,
         FOUR_TABLE_CREATOR_FIELD_LANGUAGE: FOUR_TABLE_DEFAULT_LANGUAGE,
         FOUR_TABLE_CREATOR_FIELD_STAGE: FOUR_TABLE_DEFAULT_STAGE,
