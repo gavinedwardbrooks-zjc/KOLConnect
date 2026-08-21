@@ -311,6 +311,18 @@ class CreatorRepository:
         if not records:
             return {"created": 0, "skipped_existing": 0}
         workbook = self._load_workbook()
+        creators_sheet = workbook["Creators"]
+        accounts_sheet = workbook["CreatorAccounts"]
+        creator_ids = {
+            str(row.get("creator_id") or "")
+            for row in self._rows(creators_sheet)
+            if str(row.get("creator_id") or "")
+        }
+        accounts_by_uid = {
+            str(row.get("account_uid") or ""): row
+            for row in self._rows(accounts_sheet)
+            if str(row.get("account_uid") or "")
+        }
         now = _utc_now()
         created = 0
         skipped_existing = 0
@@ -318,15 +330,14 @@ class CreatorRepository:
             account_uid = str(record.get("account_uid") or "").strip()
             if not account_uid:
                 raise ValueError("Creator account identity is required.")
-            existing_account = self._account_row_by_uid(workbook["CreatorAccounts"], account_uid)
-            if existing_account and self._creator_row(
-                workbook["Creators"], str(existing_account.get("creator_id") or "")
-            ):
+            existing_account = accounts_by_uid.get(account_uid, {})
+            existing_creator_id = str(existing_account.get("creator_id") or "")
+            if existing_creator_id and existing_creator_id in creator_ids:
                 skipped_existing += 1
                 continue
 
             creator_id = f"creator_{hashlib.sha256(account_uid.encode('utf-8')).hexdigest()[:16]}"
-            if self._creator_row(workbook["Creators"], creator_id):
+            if creator_id in creator_ids:
                 skipped_existing += 1
                 continue
             creator_values = {
@@ -349,7 +360,7 @@ class CreatorRepository:
                 "bio": str(record.get("bio") or ""),
                 "archived_at": "",
             }
-            self._upsert_row(workbook["Creators"], "creator_id", creator_id, creator_values)
+            self._append_row(creators_sheet, creator_values)
             account_values = {
                 "account_id": self._account_id(account_uid),
                 "creator_id": creator_id,
@@ -372,9 +383,13 @@ class CreatorRepository:
                 "created_at": now,
                 "updated_at": now,
             }
-            self._upsert_row(
-                workbook["CreatorAccounts"], "account_uid", account_uid, account_values
-            )
+            if existing_account:
+                # Preserve the legacy repair path for an orphaned account row.
+                self._upsert_row(accounts_sheet, "account_uid", account_uid, account_values)
+            else:
+                self._append_row(accounts_sheet, account_values)
+            creator_ids.add(creator_id)
+            accounts_by_uid[account_uid] = account_values
             created += 1
         if created:
             self._save_workbook(workbook)
@@ -1872,6 +1887,12 @@ class CreatorRepository:
         for column, header in enumerate(headers, start=1):
             if header in values:
                 sheet.cell(row_index, column, values[header])
+
+    @staticmethod
+    def _append_row(sheet, values: dict[str, Any]) -> None:
+        """Append a known-new record without scanning or touching existing rows."""
+        headers = [str(cell.value or "") for cell in sheet[1]]
+        sheet.append([values.get(header, "") for header in headers])
 
     def _replace_video_rows(self, sheet, creator_id: str, videos: object) -> None:
         headers = [str(cell.value or "") for cell in sheet[1]]

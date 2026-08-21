@@ -531,26 +531,29 @@ class CreatorService:
                     self._batch_row_error(row["excel_row"], "UNKNOWN_AGENCY", "agency_id")
                 )
 
-        existing_uids = repository.getExistingCreatorAccountUids(
-            {row["account_uid"] for row in prepared}
-        )
         invalid_row_numbers = {int(error["row"]) for error in errors}
-        skipped_existing = sum(
-            1
-            for row in prepared
-            if row["excel_row"] not in invalid_row_numbers
-            and row["account_uid"] in existing_uids
-        )
-        valid_new = [
+        valid_rows = [
             row
             for row in prepared
             if row["excel_row"] not in invalid_row_numbers
-            and row["account_uid"] not in existing_uids
         ]
+        # Only validation failures need the legacy "valid_new_rows" preview.
+        # A successful batch resolves existing identities inside the one write scope.
+        existing_uids = (
+            repository.getExistingCreatorAccountUids(
+                {row["account_uid"] for row in valid_rows}
+            )
+            if errors
+            else set()
+        )
         summary = {
             "total_rows": len(parsed_rows),
-            "valid_new_rows": len(valid_new),
-            "skipped_existing": skipped_existing,
+            "valid_new_rows": sum(
+                1 for row in valid_rows if row["account_uid"] not in existing_uids
+            ),
+            "skipped_existing": sum(
+                1 for row in valid_rows if row["account_uid"] in existing_uids
+            ),
             "invalid_rows": len(invalid_row_numbers),
         }
         if errors:
@@ -560,14 +563,14 @@ class CreatorService:
             )
 
         try:
-            result = repository.createCreatorsBatch(valid_new)
+            result = repository.createCreatorsBatch(valid_rows)
         except Exception as exc:
             raise CreatorBatchImportError("BATCH_IMPORT_WRITE_FAILED") from exc
         self._invalidate_creator_read_caches()
         return {
             "total_rows": len(parsed_rows),
             "created": int(result.get("created") or 0),
-            "skipped_existing": skipped_existing + int(result.get("skipped_existing") or 0),
+            "skipped_existing": int(result.get("skipped_existing") or 0),
         }
 
     def export_creators(self, creator_ids: object) -> bytes:

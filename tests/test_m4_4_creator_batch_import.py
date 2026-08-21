@@ -210,7 +210,7 @@ class CreatorBatchImportContractTests(unittest.TestCase):
                 ["TikTok", "https://www.tiktok.com/@one"],
                 ["YouTube", "https://www.youtube.com/@two"],
             ])
-        self.assertEqual(2, load.call_count, "one read for existing lookup and one batch write")
+        self.assertEqual(1, load.call_count, "one batch write uses one workbook read")
         self.assertEqual(1, save.call_count)
 
     def test_save_failure_preserves_original_workbook(self) -> None:
