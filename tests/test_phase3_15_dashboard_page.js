@@ -72,6 +72,7 @@ class FakeElement {
   }
 
   closest(selector) {
+    if (selector === "[data-dashboard-campaign-id]" && this.dataset.dashboardCampaignId) return this;
     if (selector === "[data-dashboard-creator-id]" && this.dataset.dashboardCreatorId) return this;
     return this.parentElement?.closest(selector) || null;
   }
@@ -231,7 +232,16 @@ async function run() {
     unbind: () => {},
   });
 
-  responses.push(dashboardResponse(30));
+  const initialDashboard = dashboardResponse(30);
+  initialDashboard.action_items.incomplete_cooperations = [{
+    cooperation_id: "relation_one",
+    creator_id: "creator_one",
+    creator_name: "Maria",
+    platform: "TikTok",
+    campaign: "Campaign One",
+    campaign_id: "campaign_one",
+  }];
+  responses.push(initialDashboard);
   await window.KOLConnectPages.navigate("dashboard");
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url, "/api/dashboard");
@@ -250,6 +260,12 @@ async function run() {
   assert.equal(navigations.length, 1);
   assert.equal(navigations[0].pageName, "creator-library-detail");
   assert.equal(navigations[0].params.creatorId, "creator_one");
+
+  const reviewButton = elements.get("dashboard-incomplete-cooperations").children[0];
+  await sections[0].dispatch("click", { target: reviewButton });
+  assert.equal(navigations.length, 2);
+  assert.equal(navigations[1].pageName, "campaign-detail");
+  assert.equal(navigations[1].params.campaignId, "campaign_one");
 
   await window.KOLConnectPages.navigate("products");
   assert.equal(chartCalls.filter(chart => chart.destroyed).length, 3);

@@ -14,6 +14,7 @@ class DashboardService:
 
     _COOPERATION_STAGES = {"agreed", "executing", "completed"}
     _EXECUTING_STAGES = {"agreed", "executing"}
+    _ACTION_ITEMS_PER_CATEGORY_LIMIT = 5
 
     def __init__(self, repository: DashboardRepository) -> None:
         self._repository = repository
@@ -124,11 +125,43 @@ class DashboardService:
         creators = self._repository.get_creators()
         health = self.getCreatorHealth()
         relations = self._repository.get_campaign_creator_records(creators)
-        operational_records = [record for record in relations if self._is_operational(record)]
-        pending_contact = [
-            self._campaign_creator_summary(record)
+        active_creator_ids = {
+            str(creator.get("creator_id") or creator.get("analysis_id") or "")
+            for creator in creators
+            if not str(creator.get("archived_at") or "").strip()
+        }
+        operational_records = [
+            record
+            for record in relations
+            if self._is_operational(record)
+            and str(record.get("creator_id") or "") in active_creator_ids
+        ]
+        expired_creators = [
+            record
+            for record in health["expired_creators"]
+            if str(record.get("creator_id") or "") in active_creator_ids
+        ]
+        expired_creators.sort(
+            key=lambda record: (
+                -self._freshness_days(record),
+                self._oldest_first_timestamp(record.get("last_analysis_time")),
+                str(record.get("creator_id") or ""),
+            )
+        )
+        pending_records = [
+            record
             for record in operational_records
             if str(record.get("stage") or "") == "pending_contact"
+        ]
+        pending_records.sort(
+            key=lambda record: (
+                self._oldest_first_timestamp(record.get("created_at")),
+                str(record.get("id") or ""),
+            )
+        )
+        pending_contact = [
+            self._campaign_creator_summary(record)
+            for record in pending_records[: self._ACTION_ITEMS_PER_CATEGORY_LIMIT]
         ]
         incomplete_cooperations = []
         for relation in operational_records:
@@ -142,15 +175,24 @@ class DashboardService:
                 "creator_name": str(relation.get("creator_name") or ""),
                 "platform": str(relation.get("platform") or ""),
                 "campaign": str(relation.get("campaign") or ""),
+                "campaign_id": str(relation.get("campaign_id") or ""),
                 "contact_date": str(
                     relation.get("publish_date") or relation.get("created_at") or ""
                 ),
                 "reason": "missing_performance_note",
             })
+        incomplete_cooperations.sort(
+            key=lambda record: (
+                self._oldest_first_timestamp(record.get("contact_date")),
+                str(record.get("cooperation_id") or ""),
+            )
+        )
         return {
-            "expired_creators": health["expired_creators"],
+            "expired_creators": expired_creators[: self._ACTION_ITEMS_PER_CATEGORY_LIMIT],
             "pending_contact": pending_contact,
-            "incomplete_cooperations": incomplete_cooperations,
+            "incomplete_cooperations": incomplete_cooperations[
+                : self._ACTION_ITEMS_PER_CATEGORY_LIMIT
+            ],
         }
 
     def getPlatformDistribution(self) -> list[dict[str, Any]]:
@@ -230,7 +272,25 @@ class DashboardService:
             "status": str(record.get("stage") or ""),
             "campaign_id": str(record.get("campaign_id") or ""),
             "campaign": str(record.get("campaign") or ""),
+            "created_at": str(record.get("created_at") or ""),
         }
+
+    @staticmethod
+    def _freshness_days(record: dict[str, Any]) -> int:
+        freshness = record.get("freshness")
+        if not isinstance(freshness, dict):
+            return 0
+        try:
+            return max(0, int(freshness.get("days") or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    @classmethod
+    def _oldest_first_timestamp(cls, value: object) -> tuple[int, datetime, str]:
+        parsed = cls._parse_datetime(value)
+        if parsed is None:
+            return (1, datetime.max.replace(tzinfo=timezone.utc), str(value or ""))
+        return (0, parsed, "")
 
     @staticmethod
     def _creator_summary(creator: dict[str, Any], *, change: dict[str, Any] | None = None, freshness: dict[str, Any] | None = None) -> dict[str, Any]:

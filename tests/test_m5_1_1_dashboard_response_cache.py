@@ -112,15 +112,39 @@ class DashboardResponseCacheTests(unittest.TestCase):
     def test_build_time_workbook_change_is_not_cached(self) -> None:
         self.cache.get_response(self.workbook_path, lambda: {"version": "stable"})
         self.workbook_path.write_bytes(b"external-change")
+        build_number = 0
 
         def unstable_loader() -> dict:
-            self.workbook_path.write_bytes(b"changed-during-build")
+            nonlocal build_number
+            build_number += 1
+            self.workbook_path.write_bytes(
+                f"changed-during-build-{build_number}".encode("ascii")
+            )
+            stat = self.workbook_path.stat()
+            os.utime(
+                self.workbook_path,
+                ns=(stat.st_atime_ns, stat.st_mtime_ns + build_number),
+            )
             return {"version": "unstable"}
 
         with self.assertRaises(DashboardResponseCacheUnstableBuild):
             self.cache.get_response(self.workbook_path, unstable_loader)
-        with self.assertRaises(DashboardResponseCacheUnstableBuild):
-            self.cache.get_response(self.workbook_path, unstable_loader)
+
+    def test_first_read_can_create_workbook_without_returning_dashboard_error(self) -> None:
+        missing_workbook = self.root / "new" / "Creator_Library.xlsx"
+
+        def create_workbook() -> dict:
+            missing_workbook.parent.mkdir()
+            missing_workbook.write_bytes(b"created")
+            return {"overview": {"creator_count": 0}}
+
+        first = self.cache.get_response(missing_workbook, create_workbook)
+        self.assertEqual(0, first["overview"]["creator_count"])
+
+        stable_loader = mock.Mock(return_value={"overview": {"creator_count": 0}})
+        second = self.cache.get_response(missing_workbook, stable_loader)
+        self.assertEqual(0, second["overview"]["creator_count"])
+        self.assertEqual(1, stable_loader.call_count)
 
     def test_shared_storage_lock_is_acquired_before_cache_build(self) -> None:
         trace: list[str] = []

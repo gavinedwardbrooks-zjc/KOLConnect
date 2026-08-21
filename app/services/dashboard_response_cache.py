@@ -55,6 +55,11 @@ class DashboardResponseCache:
                 payload = loader()
                 after_build = self._fingerprint(path)
                 if after_build != fingerprint:
+                    # The first Dashboard read can create the workbook. Return that
+                    # response without caching it; the next read will use its stable
+                    # on-disk fingerprint.
+                    if fingerprint.mtime_ns == -1 and after_build.mtime_ns != -1:
+                        return deepcopy(payload)
                     raise DashboardResponseCacheUnstableBuild(
                         "Dashboard workbook changed while building its response."
                     )

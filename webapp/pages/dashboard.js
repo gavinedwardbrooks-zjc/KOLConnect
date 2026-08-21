@@ -134,6 +134,8 @@
       item.className = "dashboard-list-item";
       const creatorId = record.creator_id || record.analysis_id;
       if (creatorId) item.dataset.dashboardCreatorId = String(creatorId);
+      const campaignId = record.campaign_id;
+      if (campaignId) item.dataset.dashboardCampaignId = String(campaignId);
 
       const title = document.createElement("strong");
       title.textContent = record.creator_name || "未命名达人";
@@ -204,6 +206,12 @@
   }
 
   function handleDashboardClick(event) {
+    const campaignItem = event.target.closest?.("[data-dashboard-campaign-id]");
+    const campaignId = campaignItem?.dataset.dashboardCampaignId;
+    if (campaignId) {
+      getApp().navigate("campaign-detail", { campaignId }).catch(getApp().showError);
+      return;
+    }
     const item = event.target.closest?.("[data-dashboard-creator-id]");
     const creatorId = item?.dataset.dashboardCreatorId;
     if (!creatorId) return;
