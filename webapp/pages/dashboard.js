@@ -3,6 +3,7 @@
 
   let resources = null;
   let requestController = null;
+  let riskController = null;
   let dashboardData = null;
   let lifecycleId = 0;
   const charts = new Map();
@@ -176,6 +177,15 @@
     renderVisualizations(data);
   }
 
+  function renderRiskSummary(data, failed = false) {
+    const summary = data?.summary || {};
+    setText("dashboard-risk-high", failed ? "--" : formatNumber(summary.high || 0));
+    setText("dashboard-risk-medium", failed ? "--" : formatNumber(summary.medium || 0));
+    setText("dashboard-risk-low", failed ? "--" : formatNumber(summary.low || 0));
+    const error = element("dashboard-risk-error");
+    if (error) error.hidden = !failed;
+  }
+
   function isCurrentLifecycle(expectedLifecycle, controller) {
     return Boolean(
       resources
@@ -205,6 +215,25 @@
     }
   }
 
+  async function loadRisks() {
+    if (!resources) return;
+    const expectedLifecycle = lifecycleId;
+    riskController?.abort();
+    const controller = resources.createAbortController();
+    riskController = controller;
+    try {
+      const data = await global.KOLConnectAPI.get("/api/risks", { signal: controller.signal });
+      if (!isCurrentLifecycle(expectedLifecycle, controller)) return;
+      renderRiskSummary(data);
+    } catch (error) {
+      if (error?.name !== "AbortError" && isCurrentLifecycle(expectedLifecycle, controller)) {
+        renderRiskSummary(null, true);
+      }
+    } finally {
+      if (riskController === controller) riskController = null;
+    }
+  }
+
   function handleDashboardClick(event) {
     const campaignItem = event.target.closest?.("[data-dashboard-campaign-id]");
     const campaignId = campaignItem?.dataset.dashboardCampaignId;
@@ -225,7 +254,7 @@
       resources = global.KOLConnectPageResources.create();
       lifecycleId += 1;
       dashboardData = null;
-      await loadDashboard();
+      await Promise.all([loadDashboard(), loadRisks()]);
     },
 
     bind() {
@@ -238,6 +267,8 @@
       lifecycleId += 1;
       requestController?.abort();
       requestController = null;
+      riskController?.abort();
+      riskController = null;
       resources?.cleanup();
       resources = null;
       dashboardData = null;

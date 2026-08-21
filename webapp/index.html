@@ -77,6 +77,18 @@
           </div>
         </div>
 
+        <section class="section-card dashboard-card dashboard-risk-summary" aria-label="数据风险">
+          <div class="dashboard-risk-heading">
+            <div><p class="eyebrow">DATA RISKS</p><h2>数据风险</h2></div>
+            <span id="dashboard-risk-error" class="dashboard-chart-empty" hidden>风险数据暂不可用</span>
+          </div>
+          <div class="dashboard-risk-grid">
+            <div class="dashboard-risk-card risk-high"><span>高风险</span><strong id="dashboard-risk-high">--</strong></div>
+            <div class="dashboard-risk-card risk-medium"><span>中风险</span><strong id="dashboard-risk-medium">--</strong></div>
+            <div class="dashboard-risk-card risk-low"><span>低风险</span><strong id="dashboard-risk-low">--</strong></div>
+          </div>
+        </section>
+
         <section class="section-card dashboard-card dashboard-action-center">
           <h2>今日待处理</h2>
           <div class="dashboard-action-columns">
@@ -1157,6 +1169,20 @@
             </div>
             <div class="campaign-readonly-note" id="campaign-detail-readonly" hidden>
               此 Campaign 已归档，当前不可新增或编辑合作记录；仍可移除达人关系或删除 Campaign。
+            </div>
+          </section>
+
+          <section class="section-card campaign-detail-section" data-campaign-section="publish-risks">
+            <div class="campaign-detail-section-heading">
+              <div><p class="eyebrow">PUBLISHING RISKS</p><h2>缺失发布信息</h2></div>
+              <span class="campaign-list-count" id="campaign-missing-publish-count">0 条</span>
+            </div>
+            <div class="campaign-detail-message" id="campaign-missing-publish-empty">暂无缺失发布信息。</div>
+            <div class="review-table-wrap" id="campaign-missing-publish-table-wrap" hidden>
+              <table class="review-table campaign-missing-publish-table">
+                <thead><tr><th>Campaign</th><th>Creator</th><th>Stage</th><th>Publish Date</th><th>Publish Link</th><th>Risk</th></tr></thead>
+                <tbody id="campaign-missing-publish-body"></tbody>
+              </table>
             </div>
           </section>
 

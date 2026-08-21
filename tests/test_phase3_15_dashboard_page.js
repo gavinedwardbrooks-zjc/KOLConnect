@@ -129,6 +129,13 @@ function dashboardResponse(totalCreators = 12) {
   };
 }
 
+function risksResponse() {
+  return {
+    summary: { high: 0, medium: 0, low: 0 },
+    cards: [],
+  };
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise(next => { resolve = next; });
@@ -145,6 +152,7 @@ async function run() {
     "dashboard-pending-contact", "dashboard-incomplete-cooperations", "dashboard-top-creators",
     "dashboard-platform-chart", "dashboard-status-chart", "dashboard-growth-chart",
     "dashboard-platform-chart-empty", "dashboard-status-chart-empty", "dashboard-growth-chart-empty",
+    "dashboard-risk-high", "dashboard-risk-medium", "dashboard-risk-low", "dashboard-risk-error",
   ];
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
   const navButtons = ["dashboard", "products"].map(name => {
@@ -200,6 +208,8 @@ async function run() {
   const api = {
     async get(url, options = {}) {
       calls.push({ url, signal: options.signal });
+      if (url === "/api/risks") return clone(risksResponse());
+      if (url !== "/api/dashboard") throw new Error(`Unexpected GET ${url}`);
       const response = responses.length ? responses.shift() : dashboardResponse();
       return response instanceof Promise ? response : clone(response);
     },
@@ -243,11 +253,18 @@ async function run() {
   }];
   responses.push(initialDashboard);
   await window.KOLConnectPages.navigate("dashboard");
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].url, "/api/dashboard");
-  assert.ok(calls[0].signal instanceof AbortSignal);
+  assert.equal(calls.length, 2);
+  const dashboardCall = calls.find(call => call.url === "/api/dashboard");
+  const riskCall = calls.find(call => call.url === "/api/risks");
+  assert.ok(dashboardCall, "Dashboard should request its existing aggregate payload");
+  assert.ok(riskCall, "Dashboard should request the independent risk summary");
+  assert.ok(dashboardCall.signal instanceof AbortSignal);
+  assert.ok(riskCall.signal instanceof AbortSignal);
   assert.equal(elements.get("dashboard-total-creators").textContent, "30");
   assert.equal(elements.get("dashboard-campaigns").textContent, "3");
+  assert.equal(elements.get("dashboard-risk-high").textContent, "0");
+  assert.equal(elements.get("dashboard-risk-medium").textContent, "0");
+  assert.equal(elements.get("dashboard-risk-low").textContent, "0");
   assert.equal(chartCalls.length, 3);
   assert.deepEqual(chartCalls[0].config.data.labels, ["TikTok", "YouTube"]);
   assert.deepEqual(chartCalls[1].config.data.datasets[0].data, [9, 3]);
@@ -290,9 +307,11 @@ async function run() {
 
   const stale = deferred();
   responses.push(stale.promise);
+  const callsBeforeStaleRefresh = calls.length;
   const refreshPromise = elements.get("dashboard-refresh").dispatch("click");
   await Promise.resolve();
-  const staleCall = calls.at(-1);
+  const staleCall = calls.slice(callsBeforeStaleRefresh).find(call => call.url === "/api/dashboard");
+  assert.ok(staleCall, "refresh should make a Dashboard request");
   await window.KOLConnectPages.navigate("products");
   assert.equal(staleCall.signal.aborted, true, "leaving Dashboard must abort its active request");
   stale.resolve(dashboardResponse(999));

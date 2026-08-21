@@ -1961,6 +1961,32 @@ button {
   border-radius: 8px;
 }
 
+.dashboard-risk-heading,
+.dashboard-risk-grid {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashboard-risk-grid { margin-top: 16px; }
+
+.dashboard-risk-card {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft, #faf8f4);
+}
+
+.dashboard-risk-card strong { font-size: 24px; }
+.dashboard-risk-card.risk-high strong { color: #b44434; }
+.dashboard-risk-card.risk-medium strong { color: #b37719; }
+.dashboard-risk-card.risk-low strong { color: #2f7d6d; }
+
 @media (max-width: 960px) {
   .stats-grid,
   .dashboard-overview-grid,
@@ -2033,6 +2059,11 @@ button {
   .agency-overview,
   .agency-profile-grid {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-risk-grid {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .agency-profile-grid .agency-profile-wide {

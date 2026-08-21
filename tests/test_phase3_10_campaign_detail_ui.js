@@ -88,6 +88,8 @@ async function run() {
     "campaign-creator-roi", "campaign-creator-performance-note", "campaign-creator-form-error",
     "campaign-creator-form-save", "campaign-creator-form-cancel", "campaign-creator-empty",
     "campaign-creator-table-wrap", "campaign-creator-list-body",
+    "campaign-missing-publish-count", "campaign-missing-publish-empty",
+    "campaign-missing-publish-table-wrap", "campaign-missing-publish-body",
   ];
   const elements = new Map(ids.map(id => [id, new FakeElement(id)]));
   elements.get("campaign-creator-form-card").hidden = true;
@@ -154,6 +156,9 @@ async function run() {
       calls.push({ method: "GET", url, signal: options.signal });
       if (url === "/api/campaigns/campaign_one") return { campaign: clone(campaign) };
       if (url === "/api/campaigns/campaign_one/creators") return { campaign_creators: clone(relations) };
+      if (url === "/api/campaigns/campaign_one/missing-publish-links") {
+        return { missing_publish_links: [] };
+      }
       if (url === "/api/creator-library") return { records: clone(creators) };
       const creatorMatch = url.match(/^\/api\/creator-library\/(.+)$/);
       if (creatorMatch) return { accounts: clone(accounts[creatorMatch[1]] || []) };
@@ -252,7 +257,8 @@ async function run() {
   assert.deepEqual(initialCalls.map(call => `${call.method} ${call.url}`), [
     "GET /api/campaigns/campaign_one",
     "GET /api/campaigns/campaign_one/creators",
-  ], "initial load must use two parallel aggregate requests only");
+    "GET /api/campaigns/campaign_one/missing-publish-links",
+  ], "initial load must use the three parallel read-only aggregate requests");
   assert.equal(elements.get("campaign-detail-title").textContent, "Brazil Launch");
   assert.equal(elements.get("campaign-creator-count").textContent, "1 位达人");
   assert.equal(elements.get("campaign-detail-content").hidden, false);

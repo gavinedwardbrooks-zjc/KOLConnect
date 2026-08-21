@@ -75,6 +75,7 @@ from services.campaign_creator_service import CampaignCreatorService
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
 from services.task_service import TaskService
+from services.risk_service import RiskService
 from app_logging import log_error, log_event
 from openpyxl import load_workbook
 from runtime_paths import (
@@ -94,6 +95,7 @@ from http_handlers import (
     dashboard_handler,
     settings_handler,
     task_handler,
+    risk_handler,
 )
 
 
@@ -185,7 +187,7 @@ MAIL_PROVIDER_PRESETS = {
     },
 }
 
-HANDLERS = [dashboard_handler, campaign_handler, settings_handler, creator_handler, task_handler]
+HANDLERS = [dashboard_handler, risk_handler, campaign_handler, settings_handler, creator_handler, task_handler]
 CREATOR_LIBRARY_CACHE = CreatorLibraryCache()
 DASHBOARD_RESPONSE_CACHE = DashboardResponseCache()
 
@@ -1814,6 +1816,11 @@ def get_campaign_creator_repository() -> CampaignCreatorRepository:
     return factory.campaign_creator()
 
 
+def get_risk_service() -> RiskService:
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return RiskService(factory.risk())
+
+
 def import_task_results_to_creator_library(
     task_id: str,
     *,
@@ -2167,6 +2174,7 @@ class Handler(BaseHTTPRequestHandler):
                 "creator_hard_delete": get_creator_hard_delete_service(),
                 "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
+                "risk": get_risk_service(),
                 "build_accounts_payload": build_accounts_payload,
                 "get_dashboard_data": get_dashboard_data,
                 "invalidate_dashboard_response_cache": DASHBOARD_RESPONSE_CACHE.invalidate,

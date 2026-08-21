@@ -16,6 +16,7 @@ from product_repository import ProductRepository
 from repositories.agency_repository import AgencyRepository
 from repositories.creator_delete_impact_repository import CreatorDeleteImpactRepository
 from repositories.creator_hard_delete_repository import CreatorHardDeleteRepository
+from repositories.risk_repository import RiskRepository
 
 
 _ACTIVE_FACTORY: ContextVar[RepositoryFactory | None] = ContextVar(
@@ -49,6 +50,7 @@ class RepositoryFactory:
         self._campaign: CampaignRepository | None = None
         self._campaign_creator: CampaignCreatorRepository | None = None
         self._dashboard: DashboardRepository | None = None
+        self._risk: RiskRepository | None = None
 
     @classmethod
     def for_path(
@@ -118,6 +120,11 @@ class RepositoryFactory:
         if self._campaign_creator is None:
             self._campaign_creator = CampaignCreatorRepository(self.store)
         return self._campaign_creator
+
+    def risk(self) -> RiskRepository:
+        if self._risk is None:
+            self._risk = RiskRepository(self.store)
+        return self._risk
 
     def dashboard(
         self,

@@ -27,6 +27,7 @@
   let campaignId = "";
   let campaign = null;
   let relations = [];
+  let missingPublishLinks = [];
   let creators = [];
   let creatorsLoaded = false;
   let editingRelationId = null;
@@ -233,6 +234,26 @@
     });
   }
 
+  function renderMissingPublishLinks() {
+    const body = element("campaign-missing-publish-body");
+    const empty = element("campaign-missing-publish-empty");
+    const table = element("campaign-missing-publish-table-wrap");
+    body.replaceChildren();
+    element("campaign-missing-publish-count").textContent = `${missingPublishLinks.length} 条`;
+    empty.hidden = missingPublishLinks.length !== 0;
+    table.hidden = missingPublishLinks.length === 0;
+    missingPublishLinks.forEach(record => {
+      const row = document.createElement("tr");
+      row.appendChild(createCell(valueOrDash(record.campaign_name || record.campaign_id)));
+      row.appendChild(createCell(valueOrDash(record.creator_name || record.creator_id)));
+      row.appendChild(createCell(valueOrDash(record.stage)));
+      row.appendChild(createCell(valueOrDash(record.publish_date)));
+      row.appendChild(createCell(valueOrDash(record.publish_links)));
+      row.appendChild(createCell(String(record.risk_level || "").toUpperCase() || "--"));
+      body.appendChild(row);
+    });
+  }
+
   async function loadDetail() {
     if (!resources || !campaignId) return;
     const currentLifecycle = lifecycleId;
@@ -243,12 +264,18 @@
     setDetailState("loading");
 
     try {
-      const [campaignData, relationsData] = await Promise.all([
+      const [campaignData, relationsData, publishingData] = await Promise.all([
         global.KOLConnectAPI.get(`/api/campaigns/${encodeURIComponent(campaignId)}`, {
           signal: campaignController.signal,
         }),
         global.KOLConnectAPI.get(`/api/campaigns/${encodeURIComponent(campaignId)}/creators`, {
           signal: relationsController.signal,
+        }),
+        global.KOLConnectAPI.get(`/api/campaigns/${encodeURIComponent(campaignId)}/missing-publish-links`, {
+          signal: relationsController.signal,
+        }).catch(error => {
+          if (error?.name === "AbortError") throw error;
+          return { missing_publish_links: [] };
         }),
       ]);
       if (!resources || currentLifecycle !== lifecycleId) return;
@@ -256,15 +283,20 @@
       relations = Array.isArray(relationsData.campaign_creators)
         ? relationsData.campaign_creators
         : [];
+      missingPublishLinks = Array.isArray(publishingData.missing_publish_links)
+        ? publishingData.missing_publish_links
+        : [];
       if (!campaign) throw new Error("Campaign 数据不存在。");
       if (isArchived()) closeCreatorForm();
       renderOverview();
       renderRelations();
+      renderMissingPublishLinks();
       setDetailState("loaded");
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
       campaign = null;
       relations = [];
+      missingPublishLinks = [];
       setDetailState("error", error.message || "Campaign 详情加载失败，请稍后重试。");
     }
   }
@@ -560,6 +592,7 @@
       campaignId = String(context?.campaignId || "").trim();
       campaign = null;
       relations = [];
+      missingPublishLinks = [];
       creators = [];
       creatorsLoaded = false;
       accountCache.clear();
@@ -593,6 +626,7 @@
       campaignId = "";
       campaign = null;
       relations = [];
+      missingPublishLinks = [];
       creators = [];
       creatorsLoaded = false;
       accountCache.clear();
