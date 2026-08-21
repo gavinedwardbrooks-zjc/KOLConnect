@@ -509,6 +509,10 @@ const state = {
     platforms: [],
     platformResults: {},
     creatorAnalysisAvailable: false,
+    reviewTotal: 0,
+    reviewedCount: 0,
+    pendingCount: 0,
+    submitting: false,
     page: 1
   },
   creatorLibrary: {
@@ -1124,6 +1128,103 @@ function isRetryableReviewStatus(status) {
   return ["missing_data", "failed", "login_required", "platform_error"].includes(String(status || "").trim());
 }
 
+function pendingReviewRecords() {
+  return state.review.records.filter(record => record.review_eligible === true && record.review_state === "pending");
+}
+
+function reviewQueueField(label, field, value, multiline = false) {
+  const labelElement = document.createElement("label");
+  labelElement.className = "field";
+  const title = document.createElement("span");
+  title.textContent = label;
+  const input = document.createElement(multiline ? "textarea" : "input");
+  input.value = value || "";
+  input.dataset.queueField = field;
+  labelElement.append(title, input);
+  return labelElement;
+}
+
+async function submitReviewQueueAction(action, record) {
+  if (state.review.submitting || !state.review.taskId) return;
+  const actions = $("review-queue-actions");
+  const fields = {};
+  document.querySelectorAll("[data-queue-field]").forEach(input => {
+    fields[input.dataset.queueField] = input.value;
+  });
+  const payload = { account_uid: reviewField(record, "account_uid"), action };
+  if (action === "reject") payload.rejection_reason = fields.rejection_reason || "";
+  if (action === "edit_approve") {
+    delete fields.rejection_reason;
+    payload.fields = fields;
+  }
+  state.review.submitting = true;
+  actions?.querySelectorAll("button").forEach(button => { button.disabled = true; });
+  try {
+    await apiPost(`/api/tasks/${encodeURIComponent(state.review.taskId)}/results/review`, payload);
+    await loadReviewResults();
+    showSaved(action === "reject" ? "已拒绝，已切换至下一条。" : "已审核，已切换至下一条。");
+  } catch (error) {
+    if (String(error?.message || error).includes("REVIEW_CREATOR_MUTATION_FAILED")) {
+      await loadReviewResults();
+    }
+    showError(error);
+  } finally {
+    state.review.submitting = false;
+    renderReviewQueue();
+  }
+}
+
+function renderReviewQueue() {
+  const panel = $("review-queue");
+  const progress = $("review-queue-progress");
+  const queueState = $("review-queue-state");
+  const current = $("review-queue-current");
+  const actions = $("review-queue-actions");
+  if (!panel || !progress || !queueState || !current || !actions) return;
+  const queue = pendingReviewRecords();
+  panel.hidden = !state.review.taskId;
+  current.textContent = "";
+  actions.textContent = "";
+  progress.textContent = `审核进度 ${state.review.reviewedCount} / ${state.review.reviewTotal}，剩余 ${state.review.pendingCount} 条`;
+  if (!state.review.reviewTotal) {
+    queueState.textContent = "暂无待审核结果";
+    return;
+  }
+  if (!queue.length) {
+    queueState.textContent = "当前任务审核完成";
+    return;
+  }
+  queueState.textContent = `待审核 ${queue.length} 条`;
+  const record = queue[0];
+  const identity = document.createElement("p");
+  identity.className = "hint";
+  identity.textContent = `${reviewField(record, "平台")} · ${reviewField(record, "达人名称") || "未命名达人"} · ${reviewField(record, "达人链接")}`;
+  const fields = document.createElement("div");
+  fields.className = "form-grid two";
+  fields.append(
+    reviewQueueField("达人名称", "达人名称", reviewField(record, "达人名称")),
+    reviewQueueField("邮箱", "邮箱", reviewField(record, "邮箱")),
+    reviewQueueField("粉丝数", "粉丝数", reviewField(record, "粉丝数")),
+    reviewQueueField("WhatsApp", "WhatsApp", reviewField(record, "WhatsApp")),
+    reviewQueueField("备注", "备注", reviewField(record, "备注"), true),
+    reviewQueueField("拒绝原因（可选）", "rejection_reason", "", true),
+  );
+  current.append(identity, fields);
+  [
+    ["approve", "通过", "primary-btn"],
+    ["reject", "拒绝", "soft-btn"],
+    ["edit_approve", "编辑并通过", "soft-btn"],
+  ].forEach(([action, label, className]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = label;
+    button.disabled = state.review.submitting;
+    button.addEventListener("click", () => submitReviewQueueAction(action, record));
+    actions.appendChild(button);
+  });
+}
+
 async function retryAllFailedReviewRecords() {
   if (!state.review.taskId) throw new Error("请选择任务。");
   const data = await apiPost(`/api/tasks/${encodeURIComponent(state.review.taskId)}/results/retry-failed`, {
@@ -1179,6 +1280,7 @@ function renderReviewResults() {
     summary.textContent += `\n成功：${statusCounts.success} / 部分成功：${statusCounts.partial_success} / 缺少数据：${statusCounts.missing_data} / 失败：${statusCounts.failed + statusCounts.login_required + statusCounts.platform_error}`;
     summary.textContent += `\n本次抓取：${platforms}\n结果：TikTok ${counts.TikTok || 0} / Instagram ${counts.Instagram || 0} / YouTube ${counts.YouTube || 0}`;
   }
+  renderReviewQueue();
 
   visible.forEach(record => {
     const row = document.createElement("tr");
@@ -1313,6 +1415,9 @@ async function loadReviewResults() {
   state.review.platforms = Array.isArray(data.platforms) ? data.platforms : [];
   state.review.platformResults = data.platform_results || {};
   state.review.creatorAnalysisAvailable = Boolean(data.creator_analysis_available);
+  state.review.reviewTotal = Number(data.review_total || 0);
+  state.review.reviewedCount = Number(data.reviewed_count || 0);
+  state.review.pendingCount = Number(data.pending_count || 0);
   const analysisPanel = $("creator-analysis-panel");
   if (analysisPanel) analysisPanel.hidden = true;
   renderReviewResults();

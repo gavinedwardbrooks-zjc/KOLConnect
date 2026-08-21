@@ -177,8 +177,7 @@ class RejectTransitionTests(unittest.TestCase):
         for payload, code in (
             ({"action": "reject"}, "REVIEW_ACCOUNT_UID_REQUIRED"),
             ({"account_uid": self.uids["normal"]}, "REVIEW_ACTION_REQUIRED"),
-            ({"account_uid": self.uids["normal"], "action": "approve"}, "REVIEW_ACTION_UNSUPPORTED"),
-            ({"account_uid": self.uids["normal"], "action": "edit_approve"}, "REVIEW_ACTION_UNSUPPORTED"),
+            ({"account_uid": self.uids["normal"], "action": "unknown"}, "REVIEW_ACTION_UNSUPPORTED"),
             ({"account_uid": "missing", "action": "reject"}, "REVIEW_RESULT_NOT_FOUND"),
             ({"account_uid": self.uids["failed"], "action": "reject"}, "REVIEW_RESULT_NOT_ELIGIBLE"),
         ):

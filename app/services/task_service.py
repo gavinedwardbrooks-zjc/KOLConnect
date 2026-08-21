@@ -65,13 +65,16 @@ class BackgroundFinalizationResult:
 class TaskReviewError(ValueError):
     """Stable API-safe failure for a result-review transition."""
 
-    def __init__(self, code: str, *, status: int = 400) -> None:
+    def __init__(
+        self, code: str, *, status: int = 400, details: dict[str, object] | None = None
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.status = status
+        self.details = dict(details or {})
 
     def to_response(self) -> dict[str, object]:
-        return {"ok": False, "error": self.code}
+        return {"ok": False, "error": self.code, **self.details}
 
 
 class TaskService:
@@ -472,6 +475,199 @@ class TaskService:
                 raise TaskReviewError("REVIEW_PERSISTENCE_FAILED", status=500) from exc
 
         return self._review_response(task_id, normalized_uid)
+
+    def approve_task_result(self, task_id: str, account_uid: object) -> dict[str, object]:
+        """Approve one eligible result and complete existing Creator import work."""
+        normalized_uid, repository, _record = self._review_target(task_id, account_uid)
+        with repository.operation_lock():
+            _current_uid, _current_repository, record = self._review_target(
+                task_id, normalized_uid
+            )
+            if record.get("review_state") == "rejected":
+                raise TaskReviewError("REVIEW_TRANSITION_CONFLICT", status=409)
+            if record.get("review_state") != "approved":
+                self._persist_review_state(
+                    repository,
+                    task_id,
+                    normalized_uid,
+                    "approved",
+                    reviewed_at=self._utc_now(),
+                )
+        return self._complete_review_creator_mutation(task_id, normalized_uid)
+
+    def edit_approve_task_result(
+        self, task_id: str, account_uid: object, fields: object
+    ) -> dict[str, object]:
+        """Atomically persist supported edits and approval before Creator mutation."""
+        if not isinstance(fields, dict) or not fields:
+            raise TaskReviewError("REVIEW_FIELDS_REQUIRED")
+        normalized_uid, repository, _record = self._review_target(task_id, account_uid)
+        creator_port = self._get_creator_port()
+        with repository.operation_lock():
+            _current_uid, _current_repository, record = self._review_target(
+                task_id, normalized_uid
+            )
+            task = repository.get_task(task_id)
+            if record.get("review_state") == "rejected":
+                raise TaskReviewError("REVIEW_TRANSITION_CONFLICT", status=409)
+            if record.get("review_state") == "approved":
+                raise TaskReviewError("REVIEW_TRANSITION_CONFLICT", status=409)
+            now = str(record.get("reviewed_at") or self._utc_now())
+            results = repository.read_results_document(task_id)
+            progress = repository.read_progress_document(task_id)
+            try:
+                prepared = creator_port.prepare_task_result_update(
+                    TaskResultUpdateCommand(
+                        task_id=task_id,
+                        account_uid=normalized_uid,
+                        fields=fields,
+                        task_type=str(task.get("task_type") or "scrape"),
+                        updated_at=now,
+                        result_fieldnames=results.fieldnames,
+                        result_rows=results.rows,
+                        progress_fieldnames=progress.fieldnames,
+                        progress_rows=progress.rows,
+                    )
+                )
+            except ValueError as exc:
+                raise TaskReviewError("REVIEW_FIELDS_INVALID") from exc
+            modifications = repository.read_modifications(task_id)
+            modifications.append(
+                {
+                    "account_uid": normalized_uid,
+                    "modified_fields": dict(prepared.modified_fields),
+                    "status": "pending_sync",
+                    "time": now,
+                }
+            )
+            review_state = repository.read_review_state(task_id)
+            rows = dict(review_state["rows"])
+            rows[normalized_uid] = {
+                "review_state": "approved",
+                "reviewed_at": now,
+                "rejection_reason": "",
+            }
+            try:
+                repository.write_task_documents(
+                    task_id,
+                    results=TaskCsvDocument(prepared.result_fieldnames, prepared.result_rows),
+                    progress=TaskCsvDocument(prepared.progress_fieldnames, prepared.progress_rows),
+                    modifications=modifications,
+                    metadata_changes={
+                        "modified_count": len(modifications),
+                        "last_modified_time": now,
+                    },
+                    review_state={"version": review_state["version"], "rows": rows},
+                )
+            except (OSError, RuntimeError) as exc:
+                raise TaskReviewError("REVIEW_PERSISTENCE_FAILED", status=500) from exc
+
+        try:
+            creator_port.commit_task_result_protection(task_id, prepared)
+        except (OSError, RuntimeError, ValueError) as exc:
+            raise self._review_partial_failure(task_id, normalized_uid, exc) from exc
+        return self._complete_review_creator_mutation(task_id, normalized_uid)
+
+    def _review_target(
+        self, task_id: str, account_uid: object
+    ) -> tuple[str, TaskRepository, dict[str, object]]:
+        normalized_uid = str(account_uid or "").strip()
+        if not normalized_uid:
+            raise TaskReviewError("REVIEW_ACCOUNT_UID_REQUIRED")
+        repository = self._get_task_repository()
+        try:
+            repository.get_task(task_id)
+        except ValueError as exc:
+            raise TaskReviewError("TASK_NOT_FOUND", status=404) from exc
+        results = self._get_task_port().get_task_results(task_id).to_response()
+        record = next(
+            (
+                item
+                for item in results.get("records", [])
+                if str(item.get("account_uid") or "") == normalized_uid
+            ),
+            None,
+        )
+        if record is None:
+            raise TaskReviewError("REVIEW_RESULT_NOT_FOUND", status=404)
+        if not bool(record.get("review_eligible")):
+            raise TaskReviewError("REVIEW_RESULT_NOT_ELIGIBLE", status=409)
+        return normalized_uid, repository, dict(record)
+
+    def _persist_review_state(
+        self,
+        repository: TaskRepository,
+        task_id: str,
+        account_uid: str,
+        state: str,
+        *,
+        reviewed_at: str,
+    ) -> None:
+        review_state = repository.read_review_state(task_id)
+        rows = dict(review_state["rows"])
+        rows[account_uid] = {
+            "review_state": state,
+            "reviewed_at": reviewed_at,
+            "rejection_reason": "",
+        }
+        try:
+            repository.write_task_documents(
+                task_id,
+                results=repository.read_results_document(task_id),
+                progress=repository.read_progress_document(task_id),
+                modifications=repository.read_modifications(task_id),
+                metadata_changes={},
+                review_state={"version": review_state["version"], "rows": rows},
+            )
+        except (OSError, RuntimeError) as exc:
+            raise TaskReviewError("REVIEW_PERSISTENCE_FAILED", status=500) from exc
+
+    def _complete_review_creator_mutation(
+        self, task_id: str, account_uid: str
+    ) -> dict[str, object]:
+        repository = self._get_task_repository()
+        task = repository.get_task(task_id)
+        library_import = None
+        if str(task.get("status") or "") in {"completed", "manual_created"}:
+            if str(task.get("creator_library_imported_at") or ""):
+                return {
+                    **self._review_response(task_id, account_uid),
+                    "creator_library_import": {"status": "already_imported"},
+                }
+            try:
+                import_result = self._get_creator_port().import_task_results(
+                    TaskResultImportCommand(
+                        task_id=task_id,
+                        task=task,
+                        rows=repository.read_results_document(task_id).rows,
+                        allowed_statuses=("completed", "manual_created"),
+                    )
+                )
+                if not isinstance(import_result, CreatorImportResult):
+                    raise RuntimeError("Creator 导入结果无效。")
+                if import_result.imported_at:
+                    self._get_task_port().attach_task_result_import(
+                        task_id,
+                        TaskResultImportLinkage(
+                            imported_at=import_result.imported_at,
+                            creator_ids=import_result.creator_ids,
+                            account_ids=import_result.account_ids,
+                            summary=dict(import_result.summary or {}),
+                        ),
+                    )
+                library_import = dict(import_result.response)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise self._review_partial_failure(task_id, account_uid, exc) from exc
+        return {**self._review_response(task_id, account_uid), "creator_library_import": library_import}
+
+    def _review_partial_failure(
+        self, task_id: str, account_uid: str, exc: Exception
+    ) -> TaskReviewError:
+        return TaskReviewError(
+            "REVIEW_CREATOR_MUTATION_FAILED",
+            status=502,
+            details={"review": self._review_response(task_id, account_uid)},
+        )
 
     def _review_response(self, task_id: str, account_uid: str) -> dict[str, object]:
         results = self._get_task_port().get_task_results(task_id).to_response()

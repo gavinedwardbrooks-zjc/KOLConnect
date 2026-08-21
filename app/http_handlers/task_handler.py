@@ -104,22 +104,32 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     task_result_review_match = re.fullmatch(r"/api/tasks/([^/]+)/results/review", path)
-    # POST /api/tasks/{task_id}/results/review → 仅拒绝审核结果。
+    # POST /api/tasks/{task_id}/results/review → 审核一个结果；支持 reject/approve/edit_approve。
     if task_result_review_match:
         payload = request["get_payload"]()
         action = str(payload.get("action") or "").strip()
         if not action:
             handler._json({"ok": False, "error": "REVIEW_ACTION_REQUIRED"}, status=400)
             return True
-        if action != "reject":
+        if action not in {"reject", "approve", "edit_approve"}:
             handler._json({"ok": False, "error": "REVIEW_ACTION_UNSUPPORTED"}, status=400)
             return True
         try:
-            result = task_service.reject_task_result(
-                task_result_review_match.group(1),
-                payload.get("account_uid"),
-                payload.get("rejection_reason"),
-            )
+            task_id = task_result_review_match.group(1)
+            if action == "reject":
+                if payload.get("fields") not in (None, {}):
+                    raise TaskReviewError("REVIEW_FIELDS_NOT_ALLOWED")
+                result = task_service.reject_task_result(
+                    task_id, payload.get("account_uid"), payload.get("rejection_reason")
+                )
+            elif action == "approve":
+                if payload.get("fields") not in (None, {}):
+                    raise TaskReviewError("REVIEW_FIELDS_NOT_ALLOWED")
+                result = task_service.approve_task_result(task_id, payload.get("account_uid"))
+            else:
+                result = task_service.edit_approve_task_result(
+                    task_id, payload.get("account_uid"), payload.get("fields")
+                )
             handler._json({"ok": True, **result})
         except TaskReviewError as exc:
             handler._json(exc.to_response(), status=exc.status)
