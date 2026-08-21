@@ -147,7 +147,7 @@ class CreatorLibraryCrmTests(unittest.TestCase):
             mock.patch.object(server, "get_creator_repository", return_value=self.repository),
             mock.patch.object(
                 server,
-                "get_agency_port",
+                "get_agency_repository",
                 return_value=AgencyRepository(self.repository.store),
             ),
             mock.patch.object(server, "log_event"),

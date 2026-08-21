@@ -37,7 +37,6 @@ from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from product_repository import ProductRepository
-from ports.agency_port import AgencyPort
 from ports.creator_delete_impact_port import CreatorDeleteImpactPort
 from ports.creator_port import (
     CreatorAnalysisSnapshot,
@@ -1584,13 +1583,9 @@ def get_agency_repository() -> AgencyRepository:
     return factory.agency()
 
 
-def get_agency_port() -> AgencyPort:
-    return get_agency_repository()
-
-
 def get_agency_service() -> AgencyService:
     return AgencyService(
-        get_agency_port,
+        get_agency_repository,
         get_creator_repository,
         lambda: CREATOR_LIBRARY_CACHE,
     )
@@ -1637,7 +1632,7 @@ def get_creator_service() -> CreatorService:
         _save_data_protection,
         _resolve_source_contact,
         get_four_table_feishu_config,
-        get_agency_port,
+        get_agency_repository,
         lambda: CREATOR_LIBRARY_CACHE,
         DASHBOARD_RESPONSE_CACHE.invalidate,
     )
@@ -2164,7 +2159,7 @@ class Handler(BaseHTTPRequestHandler):
                 "campaign": get_campaign_repository,
                 "campaign_creator": get_campaign_creator_repository,
             },
-            "ports": {"agency": get_agency_port, "task": get_task_port},
+            "ports": {"agency": get_agency_repository, "task": get_task_port},
             "services": {
                 "agency": get_agency_service(),
                 "creator": get_creator_service(),
