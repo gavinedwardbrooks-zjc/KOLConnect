@@ -6,6 +6,8 @@ import os
 import json
 import shutil
 import sys
+import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,9 @@ from local_storage_lock import shared_storage_lock
 
 
 APP_NAME = "KOLConnect"
+WINDOWS_REPLACE_MAX_RETRIES = 5
+WINDOWS_REPLACE_RETRY_DELAYS = (0.05, 0.10, 0.20, 0.40, 0.80)
+WINDOWS_TRANSIENT_REPLACE_WINERRORS = frozenset({5, 32, 33})
 
 
 def get_resource_dir() -> Path:
@@ -77,11 +82,17 @@ def atomic_write_json(path: Path, data: Any) -> None:
     """Validate a temporary JSON file, retain a valid backup, then replace it."""
     with shared_storage_lock():
         path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = path.with_suffix(f"{path.suffix}.tmp")
         backup_path = json_backup_path(path)
         serialized = json.dumps(data, ensure_ascii=False, indent=2)
+        fd, raw_temp_path = tempfile.mkstemp(
+            prefix=f"{path.name}.", suffix=".tmp", dir=path.parent
+        )
+        temp_path = Path(raw_temp_path)
         try:
-            temp_path.write_text(serialized, encoding="utf-8")
+            with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                handle.write(serialized)
+                handle.flush()
+                os.fsync(handle.fileno())
             json.loads(temp_path.read_text(encoding="utf-8"))
             if path.is_file():
                 try:
@@ -90,10 +101,30 @@ def atomic_write_json(path: Path, data: Any) -> None:
                     pass
                 else:
                     shutil.copy2(path, backup_path)
-            temp_path.replace(path)
+            _replace_json_file(temp_path, path)
         finally:
             if temp_path.exists():
                 temp_path.unlink()
+
+
+def _replace_json_file(temp_path: Path, path: Path) -> None:
+    """Replace a JSON file, tolerating only transient Windows sharing denial."""
+    for retry_index in range(WINDOWS_REPLACE_MAX_RETRIES):
+        try:
+            os.replace(temp_path, path)
+            return
+        except PermissionError as exc:
+            if not _is_windows_transient_replace_error(exc):
+                raise
+            time.sleep(WINDOWS_REPLACE_RETRY_DELAYS[retry_index])
+    os.replace(temp_path, path)
+
+
+def _is_windows_transient_replace_error(exc: PermissionError) -> bool:
+    return (
+        os.name == "nt"
+        and getattr(exc, "winerror", None) in WINDOWS_TRANSIENT_REPLACE_WINERRORS
+    )
 
 
 def is_frozen() -> bool:

@@ -5,6 +5,7 @@ import shutil
 import sys
 import unittest
 import uuid
+from contextlib import nullcontext
 from pathlib import Path
 from unittest import mock
 
@@ -27,6 +28,7 @@ from staged_delete_transaction import (  # noqa: E402
     StagedDeleteTransaction,
     recover_pending_delete_transactions,
 )
+import runtime_paths  # noqa: E402
 
 
 def append_row(workbook, sheet_name: str, values: dict) -> None:
@@ -42,6 +44,112 @@ class WorkspaceTestCase(unittest.TestCase):
 
     def tearDown(self) -> None:
         shutil.rmtree(self.root, ignore_errors=True)
+
+
+class AtomicWriteJsonTests(WorkspaceTestCase):
+    @staticmethod
+    def _windows_permission_error(winerror: int) -> PermissionError:
+        error = PermissionError(13, "Access is denied")
+        error.winerror = winerror
+        return error
+
+    def test_atomic_write_uses_unique_sibling_temp_files(self) -> None:
+        target = self.root / "manifest.json"
+        real_replace = runtime_paths.os.replace
+        sources: list[Path] = []
+
+        def record_replace(source, destination):
+            sources.append(Path(source))
+            return real_replace(source, destination)
+
+        with (
+            mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
+            mock.patch.object(runtime_paths.os, "replace", side_effect=record_replace),
+        ):
+            runtime_paths.atomic_write_json(target, {"sequence": 1})
+            runtime_paths.atomic_write_json(target, {"sequence": 2})
+
+        self.assertEqual(2, len(sources))
+        self.assertNotEqual(sources[0], sources[1])
+        self.assertEqual(target.parent, sources[0].parent)
+        self.assertEqual(target.parent, sources[1].parent)
+        self.assertTrue(sources[0].name.startswith("manifest.json."))
+        self.assertTrue(sources[0].name.endswith(".tmp"))
+        self.assertEqual({"sequence": 2}, json.loads(target.read_text(encoding="utf-8")))
+
+    def test_atomic_write_retries_transient_windows_replace_errors(self) -> None:
+        for winerror in (5, 32, 33):
+            with self.subTest(winerror=winerror):
+                target = self.root / f"manifest_{winerror}.json"
+                real_replace = runtime_paths.os.replace
+                calls = 0
+
+                def fail_once(source, destination):
+                    nonlocal calls
+                    calls += 1
+                    if calls == 1:
+                        raise self._windows_permission_error(winerror)
+                    return real_replace(source, destination)
+
+                with (
+                    mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
+                    mock.patch.object(runtime_paths.os, "name", "nt"),
+                    mock.patch.object(runtime_paths.os, "replace", side_effect=fail_once),
+                    mock.patch.object(runtime_paths.time, "sleep") as sleep,
+                ):
+                    runtime_paths.atomic_write_json(target, {"saved": True})
+
+                self.assertEqual(2, calls)
+                sleep.assert_called_once_with(0.05)
+                self.assertEqual({"saved": True}, json.loads(target.read_text(encoding="utf-8")))
+
+    def test_atomic_write_does_not_retry_other_windows_permission_errors(self) -> None:
+        target = self.root / "manifest.json"
+
+        def fail_with_non_transient_error(*_args):
+            raise self._windows_permission_error(13)
+
+        with (
+            mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
+            mock.patch.object(runtime_paths.os, "name", "nt"),
+            mock.patch.object(
+                runtime_paths.os,
+                "replace",
+                side_effect=fail_with_non_transient_error,
+            ) as replace,
+            mock.patch.object(runtime_paths.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(PermissionError):
+                runtime_paths.atomic_write_json(target, {"saved": False})
+
+        replace.assert_called_once()
+        sleep.assert_not_called()
+
+    def test_atomic_write_reraises_persistent_windows_access_denied(self) -> None:
+        target = self.root / "manifest.json"
+
+        def always_fail(*_args):
+            raise self._windows_permission_error(32)
+
+        with (
+            mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
+            mock.patch.object(runtime_paths.os, "name", "nt"),
+            mock.patch.object(
+                runtime_paths.os,
+                "replace",
+                side_effect=always_fail,
+            ) as replace,
+            mock.patch.object(runtime_paths.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(PermissionError):
+                runtime_paths.atomic_write_json(target, {"saved": False})
+
+        self.assertEqual(runtime_paths.WINDOWS_REPLACE_MAX_RETRIES + 1, replace.call_count)
+        self.assertEqual(
+            [mock.call(delay) for delay in runtime_paths.WINDOWS_REPLACE_RETRY_DELAYS],
+            sleep.call_args_list,
+        )
+        self.assertFalse(target.exists())
 
 
 class DeletePlanClassificationTests(WorkspaceTestCase):
