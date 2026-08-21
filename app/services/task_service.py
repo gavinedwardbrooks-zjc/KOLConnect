@@ -62,6 +62,18 @@ class BackgroundFinalizationResult:
     import_result: dict[str, object] = field(default_factory=dict)
 
 
+class TaskReviewError(ValueError):
+    """Stable API-safe failure for a result-review transition."""
+
+    def __init__(self, code: str, *, status: int = 400) -> None:
+        super().__init__(code)
+        self.code = code
+        self.status = status
+
+    def to_response(self) -> dict[str, object]:
+        return {"ok": False, "error": self.code}
+
+
 class TaskService:
     """Resolve operation-scoped dependencies for Task domain workflows."""
 
@@ -392,6 +404,95 @@ class TaskService:
             "data_status": prepared.data_status,
             "modified_at": now,
             "creator_library_import": library_import,
+        }
+
+    def reject_task_result(
+        self,
+        task_id: str,
+        account_uid: object,
+        rejection_reason: object = None,
+    ) -> dict[str, object]:
+        """Persist a pending-to-rejected transition without changing task data."""
+        normalized_uid = str(account_uid or "").strip()
+        if not normalized_uid:
+            raise TaskReviewError("REVIEW_ACCOUNT_UID_REQUIRED")
+
+        repository = self._get_task_repository()
+        normalized_reason = str(rejection_reason or "").strip()
+        with repository.operation_lock():
+            try:
+                repository.get_task(task_id)
+            except ValueError as exc:
+                raise TaskReviewError("TASK_NOT_FOUND", status=404) from exc
+
+            results = self._get_task_port().get_task_results(task_id).to_response()
+            record = next(
+                (
+                    item
+                    for item in results.get("records", [])
+                    if str(item.get("account_uid") or "") == normalized_uid
+                ),
+                None,
+            )
+            if record is None:
+                raise TaskReviewError("REVIEW_RESULT_NOT_FOUND", status=404)
+            if not bool(record.get("review_eligible")):
+                raise TaskReviewError("REVIEW_RESULT_NOT_ELIGIBLE", status=409)
+            if record.get("review_state") == "approved":
+                raise TaskReviewError("REVIEW_TRANSITION_CONFLICT", status=409)
+
+            review_state = repository.read_review_state(task_id)
+            rows = dict(review_state["rows"])
+            existing = rows.get(normalized_uid)
+            existing = dict(existing) if isinstance(existing, dict) else {}
+            if record.get("review_state") == "rejected":
+                if not normalized_reason:
+                    return self._review_response(task_id, normalized_uid)
+                reviewed_at = str(existing.get("reviewed_at") or record.get("reviewed_at") or "")
+            else:
+                reviewed_at = self._utc_now()
+
+            rows[normalized_uid] = {
+                "review_state": "rejected",
+                "reviewed_at": reviewed_at,
+                "rejection_reason": normalized_reason or str(
+                    existing.get("rejection_reason") or ""
+                ),
+            }
+            try:
+                repository.write_task_documents(
+                    task_id,
+                    results=repository.read_results_document(task_id),
+                    progress=repository.read_progress_document(task_id),
+                    modifications=repository.read_modifications(task_id),
+                    metadata_changes={},
+                    review_state={"version": review_state["version"], "rows": rows},
+                )
+            except (OSError, RuntimeError) as exc:
+                raise TaskReviewError("REVIEW_PERSISTENCE_FAILED", status=500) from exc
+
+        return self._review_response(task_id, normalized_uid)
+
+    def _review_response(self, task_id: str, account_uid: str) -> dict[str, object]:
+        results = self._get_task_port().get_task_results(task_id).to_response()
+        record = next(
+            (
+                item
+                for item in results.get("records", [])
+                if str(item.get("account_uid") or "") == account_uid
+            ),
+            None,
+        )
+        if record is None:
+            raise TaskReviewError("REVIEW_RESULT_NOT_FOUND", status=404)
+        return {
+            "account_uid": account_uid,
+            "review_state": record["review_state"],
+            "reviewed_at": record["reviewed_at"],
+            "rejection_reason": record["rejection_reason"],
+            "review_total": results["review_total"],
+            "reviewed_count": results["reviewed_count"],
+            "pending_count": results["pending_count"],
         }
 
     def sync_four_tables(self, task_id: str) -> dict[str, object]:

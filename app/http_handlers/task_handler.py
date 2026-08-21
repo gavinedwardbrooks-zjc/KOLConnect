@@ -3,6 +3,8 @@
 import re
 import subprocess
 
+from services.task_service import TaskReviewError
+
 
 def handle(handler, request: dict, context: dict) -> bool:
     method = request["method"]
@@ -99,6 +101,28 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._ok(**result)
         except (ValueError, RuntimeError) as exc:
             handler._error(str(exc))
+        return True
+
+    task_result_review_match = re.fullmatch(r"/api/tasks/([^/]+)/results/review", path)
+    # POST /api/tasks/{task_id}/results/review → 仅拒绝审核结果。
+    if task_result_review_match:
+        payload = request["get_payload"]()
+        action = str(payload.get("action") or "").strip()
+        if not action:
+            handler._json({"ok": False, "error": "REVIEW_ACTION_REQUIRED"}, status=400)
+            return True
+        if action != "reject":
+            handler._json({"ok": False, "error": "REVIEW_ACTION_UNSUPPORTED"}, status=400)
+            return True
+        try:
+            result = task_service.reject_task_result(
+                task_result_review_match.group(1),
+                payload.get("account_uid"),
+                payload.get("rejection_reason"),
+            )
+            handler._json({"ok": True, **result})
+        except TaskReviewError as exc:
+            handler._json(exc.to_response(), status=exc.status)
         return True
 
     task_retry_match = re.fullmatch(r"/api/tasks/([^/]+)/results/retry-failed", path)
