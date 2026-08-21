@@ -26,6 +26,7 @@ from ports.task_port import (
     ManualTaskCreateCommand,
     ManualTaskInitializationCommand,
     RetryFailedResultsCommand,
+    ScrapeTaskCreateCommand,
     TaskLinksUpdateCommand,
     TaskPort,
     TaskResultImportLinkage,
@@ -191,6 +192,35 @@ class TaskService:
             "account_uid": initialized.account_uid,
             "creator_library_import": None,
         }
+
+    def create_scrape_task(
+        self,
+        *,
+        normalized_links: list[str],
+        invalid_links: list[str],
+        input_count: int,
+        name: object,
+        target_platform: object,
+        platforms: list[str],
+        platform_summary: dict[str, int],
+        filtered_links: list[dict[str, object]],
+    ) -> dict[str, object]:
+        created = self._get_task_port().create_scrape_task(
+            ScrapeTaskCreateCommand(
+                normalized_links=tuple(normalized_links),
+                invalid_links=tuple(invalid_links),
+                input_count=input_count,
+                name=str(name or ""),
+                target_platform=str(target_platform or "全部"),
+                platforms=tuple(platforms),
+                platform_summary=dict(platform_summary),
+                filtered_links=tuple(dict(item) for item in filtered_links),
+            )
+        )
+        return created.task.to_response()
+
+    def open_task_results(self, task_id: str) -> None:
+        self._get_task_port().open_task_results(task_id)
 
     def create_email_recheck_task(self) -> dict[str, object]:
         scan = self._get_creator_port().get_email_recheck_candidates()

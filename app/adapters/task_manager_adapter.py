@@ -5,6 +5,7 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
+import subprocess
 from typing import Callable, Mapping
 
 import scraper as scraper_module
@@ -17,6 +18,7 @@ from ports.task_port import (
     ManualTaskInitializationCommand,
     ManualReviewTaskCommand,
     RetryFailedResultsCommand,
+    ScrapeTaskCreateCommand,
     TaskLinksUpdateCommand,
     TaskReadResult,
     TaskResultImportLinkage,
@@ -69,6 +71,27 @@ class TaskManagerAdapter:
             task_type="manual",
         )
         return CreatedTask(task=self._snapshot(task))
+
+    def create_scrape_task(self, command: ScrapeTaskCreateCommand) -> CreatedTask:
+        task = self._repository().create_task(
+            list(command.normalized_links),
+            list(command.invalid_links),
+            command.input_count,
+            name=command.name,
+            target_platform=command.target_platform,
+            platforms=list(command.platforms),
+            platform_summary=dict(command.platform_summary),
+            filtered_links=[dict(item) for item in command.filtered_links],
+            task_type="scrape",
+        )
+        return CreatedTask(task=self._snapshot(task))
+
+    def open_task_results(self, task_id: str) -> None:
+        paths = self._repository()._paths(task_id)
+        self._repository().get_task(task_id)
+        if not paths["results"].exists():
+            raise ValueError("当前任务尚未生成结果文件。")
+        subprocess.Popen(["explorer.exe", str(paths["results"])])
 
     def create_manual_task(self, command: ManualTaskCreateCommand) -> CreatedTask:
         task = self._repository().create_task(

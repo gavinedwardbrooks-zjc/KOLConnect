@@ -1,7 +1,6 @@
 """Task, scrape lifecycle, and task-result HTTP endpoints."""
 
 import re
-import subprocess
 
 from services.task_service import TaskReviewError
 
@@ -170,14 +169,8 @@ def handle(handler, request: dict, context: dict) -> bool:
     if task_open_results_match:
         request["get_payload"]()
         try:
-            _task, task_paths = context["task_manager"].load_task(
-                context["paths"]["tasks"], task_open_results_match.group(1)
-            )
-            if not task_paths["results"].exists():
-                handler._error("当前任务尚未生成结果文件。")
-            else:
-                subprocess.Popen(["explorer.exe", str(task_paths["results"])])
-                handler._ok()
+            task_service.open_task_results(task_open_results_match.group(1))
+            handler._ok()
         except ValueError as exc:
             handler._error(str(exc))
         return True
@@ -237,11 +230,10 @@ def handle(handler, request: dict, context: dict) -> bool:
         if not prepared["normalized_links"]:
             handler._error("没有符合目标平台的有效链接。")
             return True
-        task = context["task_manager"].create_task(
-            context["paths"]["tasks"],
-            prepared["normalized_links"],
-            prepared["invalid_links"],
-            len(raw_links),
+        task = task_service.create_scrape_task(
+            normalized_links=prepared["normalized_links"],
+            invalid_links=prepared["invalid_links"],
+            input_count=len(raw_links),
             name=payload.get("name"),
             target_platform=prepared["target_platform"],
             platforms=prepared["platforms"],

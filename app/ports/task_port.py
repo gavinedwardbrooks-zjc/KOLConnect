@@ -19,6 +19,18 @@ class ManualReviewTaskCommand:
 
 
 @dataclass(frozen=True)
+class ScrapeTaskCreateCommand:
+    normalized_links: tuple[str, ...]
+    invalid_links: tuple[str, ...] = ()
+    input_count: int = 0
+    name: str = ""
+    target_platform: str = "全部"
+    platforms: tuple[str, ...] = ()
+    platform_summary: Mapping[str, int] = field(default_factory=dict)
+    filtered_links: tuple[Mapping[str, object], ...] = ()
+
+
+@dataclass(frozen=True)
 class ManualTaskCreateCommand:
     normalized_url: str
     task_name: str
@@ -151,6 +163,8 @@ class TaskSyncStatusUpdate:
 
 
 class TaskPort(Protocol):
+    def create_scrape_task(self, command: ScrapeTaskCreateCommand) -> CreatedTask: ...
+
     def create_manual_task(self, command: ManualTaskCreateCommand) -> CreatedTask: ...
 
     def initialize_manual_task(
@@ -188,6 +202,8 @@ class TaskPort(Protocol):
     def retry_failed_results(
         self, task_id: str, command: RetryFailedResultsCommand
     ) -> TaskReadResult: ...
+
+    def open_task_results(self, task_id: str) -> None: ...
 
     def attach_creator_import(
         self, task_id: str, linkage: CreatorImportLinkage
