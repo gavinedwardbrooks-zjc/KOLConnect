@@ -19,6 +19,9 @@ packaging/*.iconset/
 .pytest_cache/
 .uuid7_test_runtime/
 .uuid7_test_temp/
+/.m3_0_p1_metadata_*/
+/.m4_*/
+/.m5_*/
 *.exe
 *.dmg
 /release/
