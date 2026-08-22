@@ -60,6 +60,37 @@ class DashboardService:
             "expired_creators": expired_creators,
         }
 
+    def getHealthSummary(self) -> dict[str, int | None]:
+        """Summarize active Creator health without inventing new health states."""
+        active_creator_ids = {
+            str(creator.get("creator_id") or creator.get("analysis_id") or "").strip()
+            for creator in self._repository.get_creators()
+            if str(creator.get("creator_id") or creator.get("analysis_id") or "").strip()
+        }
+        health = self.getCreatorHealth()
+        expired_creator_ids = {
+            str(record.get("creator_id") or "").strip()
+            for record in health["expired_creators"]
+            if str(record.get("creator_id") or "").strip() in active_creator_ids
+        }
+        falling_creator_ids = {
+            str(record.get("creator_id") or "").strip()
+            for record in health["falling_creators"]
+            if str(record.get("creator_id") or "").strip() in active_creator_ids
+        }
+        # Expired is the stricter state, so overlap is counted as critical only.
+        critical = len(expired_creator_ids)
+        warning = len(falling_creator_ids - expired_creator_ids)
+        total = len(active_creator_ids)
+        healthy = max(0, total - critical - warning)
+        return {
+            "score": round(healthy / total * 100) if total else None,
+            "healthy": healthy,
+            "warning": warning,
+            "critical": critical,
+            "total": total,
+        }
+
     def getCooperationPerformance(self) -> dict[str, Any]:
         creators = self._repository.get_creators()
         relations = self._repository.get_campaign_creator_records(creators)

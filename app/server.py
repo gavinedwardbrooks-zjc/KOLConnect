@@ -1867,6 +1867,7 @@ def get_dashboard_data() -> dict:
         return {
             "overview": service.getOverview(),
             "creator_health": service.getCreatorHealth(),
+            "health_summary": service.getHealthSummary(),
             "cooperation_performance": service.getCooperationPerformance(),
             "action_items": service.getActionItems(),
             "platform_distribution": service.getPlatformDistribution(),

@@ -163,6 +163,7 @@
     setText("dashboard-total-cost", formatNumber(cooperation.total_cost));
     setText("dashboard-total-views", formatNumber(cooperation.total_views));
     setText("dashboard-cooperation-roi", formatNumber(cooperation.average_roi));
+    renderHealthSummary(data?.health_summary);
 
     renderCreatorList("dashboard-rising-creators", health.rising_creators, "暂无上升达人。", record => formatChange(record.change));
     renderCreatorList("dashboard-falling-creators", health.falling_creators, "暂无下滑达人。", record => formatChange(record.change));
@@ -175,6 +176,30 @@
       return `${record.campaign_count || 0} 个 Campaign · ${roi}`;
     });
     renderVisualizations(data);
+  }
+
+  function renderHealthSummary(summary) {
+    const total = Number(summary?.total);
+    const hasHealthData = Number.isFinite(total) && total > 0;
+    const healthy = Number(summary?.healthy) || 0;
+    const warning = Number(summary?.warning) || 0;
+    const critical = Number(summary?.critical) || 0;
+    const score = Number(summary?.score);
+    setText("dashboard-health-score", hasHealthData && Number.isFinite(score) ? formatNumber(score) : "--");
+    const emptyState = element("dashboard-health-empty");
+    if (emptyState) emptyState.hidden = hasHealthData;
+    setText("dashboard-health-healthy", formatNumber(healthy));
+    setText("dashboard-health-warning", formatNumber(warning));
+    setText("dashboard-health-critical", formatNumber(critical));
+    const distribution = [
+      ["dashboard-health-healthy-bar", healthy],
+      ["dashboard-health-warning-bar", warning],
+      ["dashboard-health-critical-bar", critical],
+    ];
+    distribution.forEach(([id, count]) => {
+      const bar = element(id);
+      if (bar) bar.style.width = hasHealthData ? `${Math.max(0, count) / total * 100}%` : "0%";
+    });
   }
 
   function renderRiskSummary(data, failed = false) {

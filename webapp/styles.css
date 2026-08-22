@@ -1987,6 +1987,85 @@ button {
 .dashboard-risk-card.risk-medium strong { color: #b37719; }
 .dashboard-risk-card.risk-low strong { color: #2f7d6d; }
 
+.dashboard-health-overview {
+  margin-bottom: 20px;
+}
+
+.dashboard-health-overview-heading,
+.dashboard-health-score,
+.dashboard-health-distribution,
+.dashboard-health-summary-grid {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.dashboard-health-overview-heading .eyebrow {
+  margin: 0 0 4px;
+}
+
+.dashboard-health-overview-heading h2 { margin-bottom: 0; }
+
+.dashboard-health-score {
+  align-items: flex-end;
+  flex-direction: column;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dashboard-health-score strong {
+  color: var(--text);
+  font-size: 32px;
+  line-height: 1;
+}
+
+.dashboard-health-score small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dashboard-health-summary-grid {
+  margin: 18px 0;
+}
+
+.dashboard-health-summary-grid > div {
+  flex: 1;
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-soft, #faf8f4);
+}
+
+.dashboard-health-summary-grid span,
+.dashboard-health-distribution > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dashboard-health-summary-grid strong { font-size: 22px; }
+.dashboard-health-summary-grid > div:nth-child(1) strong { color: #2f7d6d; }
+.dashboard-health-summary-grid > div:nth-child(2) strong { color: #b37719; }
+.dashboard-health-summary-grid > div:nth-child(3) strong { color: #b44434; }
+
+.dashboard-health-distribution { align-items: center; }
+
+.dashboard-health-bar {
+  flex: 1;
+  display: flex;
+  min-height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+.dashboard-health-bar i { display: block; min-width: 0; transition: width 180ms ease; }
+.dashboard-health-bar .health-healthy { background: #2f7d6d; }
+.dashboard-health-bar .health-warning { background: #e9a23b; }
+.dashboard-health-bar .health-critical { background: #b44434; }
+
 @media (max-width: 960px) {
   .stats-grid,
   .dashboard-overview-grid,
@@ -2062,6 +2141,11 @@ button {
   }
 
   .dashboard-risk-grid {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .dashboard-health-summary-grid {
     align-items: stretch;
     flex-direction: column;
   }

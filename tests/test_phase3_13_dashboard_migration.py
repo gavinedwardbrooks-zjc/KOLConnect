@@ -245,6 +245,7 @@ class DashboardCampaignCreatorMigrationTests(unittest.TestCase):
                 "ok",
                 "overview",
                 "creator_health",
+                "health_summary",
                 "cooperation_performance",
                 "action_items",
                 "platform_distribution",
@@ -254,6 +255,7 @@ class DashboardCampaignCreatorMigrationTests(unittest.TestCase):
             set(payload),
         )
         overview = payload["overview"]
+        health_summary = payload["health_summary"]
         performance = payload["cooperation_performance"]
         actions = payload["action_items"]
 
@@ -289,6 +291,10 @@ class DashboardCampaignCreatorMigrationTests(unittest.TestCase):
         self.assertEqual([{"platform": "TikTok", "count": 5}], payload["platform_distribution"])
         self.assertEqual([{"status": "discovered", "count": 5}], payload["creator_status_distribution"])
         self.assertEqual(30, len(payload["creator_growth_trend"]))
+        self.assertEqual(
+            health_summary["total"],
+            health_summary["healthy"] + health_summary["warning"] + health_summary["critical"],
+        )
 
 
 if __name__ == "__main__":

@@ -130,6 +130,33 @@
           </article>
         </section>
 
+        <section class="section-card dashboard-card dashboard-health-overview" aria-label="达人合作健康">
+          <div class="dashboard-health-overview-heading">
+            <div>
+              <p class="eyebrow">CREATOR HEALTH</p>
+              <h2>达人合作健康</h2>
+            </div>
+            <div class="dashboard-health-score">
+              <span>Health Score</span>
+              <strong id="dashboard-health-score">--</strong>
+              <small id="dashboard-health-empty" hidden>暂无数据</small>
+            </div>
+          </div>
+          <div class="dashboard-health-summary-grid">
+            <div><span>Healthy</span><strong id="dashboard-health-healthy">0</strong></div>
+            <div><span>Warning</span><strong id="dashboard-health-warning">0</strong></div>
+            <div><span>Critical</span><strong id="dashboard-health-critical">0</strong></div>
+          </div>
+          <div class="dashboard-health-distribution" aria-label="Health Distribution">
+            <span>Health Distribution</span>
+            <div class="dashboard-health-bar" aria-hidden="true">
+              <i id="dashboard-health-healthy-bar" class="health-healthy"></i>
+              <i id="dashboard-health-warning-bar" class="health-warning"></i>
+              <i id="dashboard-health-critical-bar" class="health-critical"></i>
+            </div>
+          </div>
+        </section>
+
         <div class="dashboard-section-grid">
           <section class="section-card dashboard-card">
             <h2>值得关注的达人</h2>
