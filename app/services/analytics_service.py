@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import date
 from statistics import median
 from typing import Any, Protocol
 
@@ -25,7 +26,7 @@ class CampaignCreatorAnalyticsSource(Protocol):
 
 
 class AnalyticsService:
-    """Compare supported platforms using Creator main-platform ownership."""
+    """Build read-only analytics from existing Creator-domain records."""
 
     PLATFORMS = ("tiktok", "instagram", "youtube")
 
@@ -43,6 +44,103 @@ class AnalyticsService:
             include_archived=False
         )
         return self.build_platform_analytics(creators, relations)
+
+    def get_geography_analytics(self) -> dict[str, Any]:
+        creators = self._creator_repository.getCreators(include_archived=True)
+        return self.build_geography_analytics(creators)
+
+    def get_recorded_roi_trend(self) -> list[dict[str, Any]]:
+        relations = self._campaign_creator_repository.getCampaignCreators(
+            include_archived=False
+        )
+        return self.build_recorded_roi_trend(relations)
+
+    @classmethod
+    def build_geography_analytics(
+        cls,
+        creators: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        countries: dict[str, dict[str, Any]] = {}
+        languages: dict[str, dict[str, Any]] = {}
+
+        for creator in creators:
+            country_key, country_name = cls._category(creator.get("country"))
+            country = countries.setdefault(
+                country_key,
+                {"name": country_name, "creator_count": 0, "active_creator_count": 0},
+            )
+            country["creator_count"] += 1
+            if not cls._text(creator.get("archived_at")):
+                country["active_creator_count"] += 1
+
+            language_key, language_name = cls._category(creator.get("language"))
+            language = languages.setdefault(
+                language_key,
+                {"name": language_name, "creator_count": 0},
+            )
+            language["creator_count"] += 1
+
+        return {
+            "countries": cls._top_categories(list(countries.values())),
+            "languages": cls._top_categories(list(languages.values())),
+        }
+
+    @classmethod
+    def build_recorded_roi_trend(
+        cls,
+        relations: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        monthly: dict[str, dict[str, Any]] = {}
+        for relation in relations:
+            if cls._text(relation.get("archived_at")):
+                continue
+            month = cls._publish_month(relation.get("publish_date"))
+            if month is None:
+                continue
+            aggregate = monthly.setdefault(
+                month,
+                {
+                    "campaign_creator_count": 0,
+                    "total_cost": 0.0,
+                    "recorded_roi": [],
+                    "total_views": 0.0,
+                    "total_likes": 0.0,
+                    "total_comments": 0.0,
+                },
+            )
+            aggregate["campaign_creator_count"] += 1
+            for field in ("cost", "views", "likes", "comments"):
+                value = cls._nonnegative_number(relation.get(field))
+                if value is not None:
+                    target = {
+                        "cost": "total_cost",
+                        "views": "total_views",
+                        "likes": "total_likes",
+                        "comments": "total_comments",
+                    }[field]
+                    aggregate[target] += value
+            roi = cls._number(relation.get("roi"))
+            if roi is not None:
+                aggregate["recorded_roi"].append(roi)
+
+        trend = []
+        for month in sorted(monthly):
+            aggregate = monthly[month]
+            roi_values = aggregate["recorded_roi"]
+            views = aggregate["total_views"]
+            trend.append({
+                "month": month,
+                "campaign_creator_count": aggregate["campaign_creator_count"],
+                "total_cost": cls._rounded(aggregate["total_cost"]),
+                "average_recorded_roi": cls._rounded(sum(roi_values) / len(roi_values))
+                if roi_values else None,
+                "total_views": cls._rounded(views),
+                "engagement_rate": cls._rounded(
+                    (aggregate["total_likes"] + aggregate["total_comments"])
+                    / views * 100
+                ) if views else None,
+            })
+        return trend
 
     @classmethod
     def build_platform_analytics(
@@ -155,6 +253,50 @@ class AnalyticsService:
     def _canonical_platform(value: object) -> str | None:
         normalized = str(value or "").strip().casefold()
         return normalized if normalized in AnalyticsService.PLATFORMS else None
+
+    @classmethod
+    def _category(cls, value: object) -> tuple[str, str]:
+        name = cls._text(value)
+        if not name or name.casefold() == "unknown":
+            return "unknown", "Unknown"
+        return name.casefold(), name
+
+    @staticmethod
+    def _top_categories(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        unknown = [row for row in rows if row["name"] == "Unknown"]
+        known = [row for row in rows if row["name"] != "Unknown"]
+        known.sort(key=lambda row: (-row["creator_count"], row["name"].casefold()))
+        top = known[:10]
+        overflow = known[10:]
+        if overflow:
+            other = next(
+                (row for row in top if row["name"].casefold() == "other"),
+                None,
+            )
+            if other is None:
+                other = {"name": "Other", "creator_count": 0}
+                if "active_creator_count" in known[0]:
+                    other["active_creator_count"] = 0
+                top.append(other)
+            other["creator_count"] += sum(row["creator_count"] for row in overflow)
+            if "active_creator_count" in other:
+                other["active_creator_count"] += sum(
+                    row["active_creator_count"] for row in overflow
+                )
+        result = top + unknown
+        result.sort(key=lambda row: (-row["creator_count"], row["name"].casefold()))
+        return result
+
+    @classmethod
+    def _publish_month(cls, value: object) -> str | None:
+        text = cls._text(value)
+        if len(text) < 10:
+            return None
+        try:
+            parsed = date.fromisoformat(text[:10])
+        except ValueError:
+            return None
+        return parsed.strftime("%Y-%m")
 
     @staticmethod
     def _follower_number(value: object) -> float | None:

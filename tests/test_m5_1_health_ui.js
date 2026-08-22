@@ -61,6 +61,8 @@ async function run() {
       async get(url) {
         if (url === "/api/risks") return { summary: { high: 0, medium: 0, low: 0 }, cards: [] };
         if (url === "/api/analytics/platforms") return { platforms: [], summary: {} };
+        if (url === "/api/analytics/geography") return { countries: [], languages: [] };
+        if (url === "/api/analytics/roi-trend") return { trend: [] };
         assert.equal(url, "/api/dashboard");
         return responses.shift();
       },

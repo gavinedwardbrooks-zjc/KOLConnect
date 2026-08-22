@@ -147,6 +147,22 @@ function platformAnalyticsResponse() {
   };
 }
 
+function geographyResponse() {
+  return {
+    countries: [{ name: "Brazil", creator_count: 5, active_creator_count: 4 }],
+    languages: [{ name: "Portuguese", creator_count: 5 }],
+  };
+}
+
+function roiTrendResponse() {
+  return {
+    trend: [
+      { month: "2026-01", average_recorded_roi: 1.2 },
+      { month: "2026-03", average_recorded_roi: 2.4 },
+    ],
+  };
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise(next => { resolve = next; });
@@ -165,7 +181,9 @@ async function run() {
     "dashboard-platform-chart-empty", "dashboard-status-chart-empty", "dashboard-growth-chart-empty",
     "dashboard-risk-high", "dashboard-risk-medium", "dashboard-risk-low", "dashboard-risk-error",
     "dashboard-platform-analytics-chart", "dashboard-platform-analytics-empty",
-    "dashboard-platform-analytics-error",
+    "dashboard-platform-analytics-error", "dashboard-country-list", "dashboard-language-list",
+    "dashboard-geography-error", "dashboard-roi-trend-chart", "dashboard-roi-trend-empty",
+    "dashboard-roi-trend-error", "dashboard-roi-latest",
   ];
   for (const platform of ["tiktok", "instagram", "youtube"]) {
     for (const metric of ["creators", "followers-median", "followers-average", "relations", "publish-rate", "views", "likes", "comments", "engagement", "cost", "roi"]) {
@@ -228,6 +246,8 @@ async function run() {
       calls.push({ url, signal: options.signal });
       if (url === "/api/risks") return clone(risksResponse());
       if (url === "/api/analytics/platforms") return clone(platformAnalyticsResponse());
+      if (url === "/api/analytics/geography") return clone(geographyResponse());
+      if (url === "/api/analytics/roi-trend") return clone(roiTrendResponse());
       if (url !== "/api/dashboard") throw new Error(`Unexpected GET ${url}`);
       const response = responses.length ? responses.shift() : dashboardResponse();
       return response instanceof Promise ? response : clone(response);
@@ -272,26 +292,33 @@ async function run() {
   }];
   responses.push(initialDashboard);
   await window.KOLConnectPages.navigate("dashboard");
-  assert.equal(calls.length, 3);
+  assert.equal(calls.length, 5);
   const dashboardCall = calls.find(call => call.url === "/api/dashboard");
   const riskCall = calls.find(call => call.url === "/api/risks");
   const analyticsCall = calls.find(call => call.url === "/api/analytics/platforms");
+  const geographyCall = calls.find(call => call.url === "/api/analytics/geography");
+  const roiTrendCall = calls.find(call => call.url === "/api/analytics/roi-trend");
   assert.ok(dashboardCall, "Dashboard should request its existing aggregate payload");
   assert.ok(riskCall, "Dashboard should request the independent risk summary");
   assert.ok(analyticsCall, "Dashboard should request independent platform analytics");
+  assert.ok(geographyCall, "Dashboard should request independent geography analytics");
+  assert.ok(roiTrendCall, "Dashboard should request independent recorded ROI trend");
   assert.ok(dashboardCall.signal instanceof AbortSignal);
   assert.ok(riskCall.signal instanceof AbortSignal);
   assert.ok(analyticsCall.signal instanceof AbortSignal);
+  assert.ok(geographyCall.signal instanceof AbortSignal);
+  assert.ok(roiTrendCall.signal instanceof AbortSignal);
   assert.equal(elements.get("dashboard-total-creators").textContent, "30");
   assert.equal(elements.get("dashboard-campaigns").textContent, "3");
   assert.equal(elements.get("dashboard-risk-high").textContent, "0");
   assert.equal(elements.get("dashboard-risk-medium").textContent, "0");
   assert.equal(elements.get("dashboard-risk-low").textContent, "0");
-  assert.equal(chartCalls.length, 4);
+  assert.equal(chartCalls.length, 5);
   assert.deepEqual(chartCalls[0].config.data.labels, ["TikTok", "YouTube"]);
   assert.deepEqual(chartCalls[1].config.data.datasets[0].data, [9, 3]);
   assert.deepEqual(chartCalls[2].config.data.datasets[0].data, [1, 2]);
   assert.deepEqual(Array.from(chartCalls[3].config.data.labels), ["TikTok", "Instagram", "YouTube"]);
+  assert.deepEqual(Array.from(chartCalls[4].config.data.labels), ["2026-01", "2026-03"]);
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 1);
   assert.equal(sections[0].listenerCount("click"), 1);
 
@@ -308,7 +335,7 @@ async function run() {
   assert.equal(navigations[1].params.campaignId, "campaign_one");
 
   await window.KOLConnectPages.navigate("products");
-  assert.equal(chartCalls.filter(chart => chart.destroyed).length, 4);
+  assert.equal(chartCalls.filter(chart => chart.destroyed).length, 5);
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 0);
   assert.equal(sections[0].listenerCount("click"), 0);
   responses.push(dashboardResponse(31));

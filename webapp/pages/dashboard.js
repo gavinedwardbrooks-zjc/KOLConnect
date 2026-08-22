@@ -5,6 +5,8 @@
   let requestController = null;
   let riskController = null;
   let analyticsController = null;
+  let geographyController = null;
+  let roiTrendController = null;
   let dashboardData = null;
   let lifecycleId = 0;
   const charts = new Map();
@@ -263,6 +265,75 @@
     if (error) error.hidden = !failed;
   }
 
+  function renderRanking(id, rows, includeActive) {
+    const target = element(id);
+    if (!target) return;
+    target.replaceChildren();
+    const values = Array.isArray(rows) ? rows : [];
+    if (!values.length) {
+      const empty = document.createElement("p");
+      empty.className = "dashboard-empty";
+      empty.textContent = "暂无数据";
+      target.appendChild(empty);
+      return;
+    }
+    values.forEach(row => {
+      const item = document.createElement("div");
+      item.className = "dashboard-ranking-row";
+      const label = document.createElement("span");
+      label.textContent = String(row?.name || "Unknown");
+      const value = document.createElement("strong");
+      value.textContent = formatNumber(row?.creator_count || 0);
+      item.appendChild(label);
+      item.appendChild(value);
+      if (includeActive) {
+        const active = document.createElement("small");
+        active.textContent = `活跃 ${formatNumber(row?.active_creator_count || 0)}`;
+        item.appendChild(active);
+      }
+      target.appendChild(item);
+    });
+  }
+
+  function renderGeographyAnalytics(data, failed = false) {
+    renderRanking("dashboard-country-list", data?.countries, true);
+    renderRanking("dashboard-language-list", data?.languages, false);
+    const error = element("dashboard-geography-error");
+    if (error) error.hidden = !failed;
+  }
+
+  function renderRecordedRoiTrend(data, failed = false) {
+    const trend = (Array.isArray(data?.trend) ? data.trend : [])
+      .filter(row => typeof row?.month === "string")
+      .map(row => ({ ...row, average_recorded_roi: row.average_recorded_roi == null ? null : Number(row.average_recorded_roi) }));
+    const latest = trend.length ? trend[trend.length - 1].average_recorded_roi : null;
+    setText("dashboard-roi-latest", Number.isFinite(latest) ? formatNumber(latest) : "--");
+    renderChart("dashboard-roi-trend-chart", "dashboard-roi-trend-empty", {
+      type: "line",
+      data: {
+        labels: trend.map(row => row.month),
+        datasets: [{
+          label: "Average recorded ROI",
+          data: trend.map(row => Number.isFinite(row.average_recorded_roi) ? row.average_recorded_roi : null),
+          borderColor: "#b65d7a",
+          backgroundColor: "rgba(182, 93, 122, 0.14)",
+          fill: true,
+          tension: 0.28,
+          spanGaps: false,
+          pointRadius: 3,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: { display: false } } },
+      },
+    }, trend.some(row => Number.isFinite(row.average_recorded_roi)));
+    const error = element("dashboard-roi-trend-error");
+    if (error) error.hidden = !failed;
+  }
+
   function isCurrentLifecycle(expectedLifecycle, controller) {
     return Boolean(
       resources
@@ -330,6 +401,44 @@
     }
   }
 
+  async function loadGeographyAnalytics() {
+    if (!resources) return;
+    const expectedLifecycle = lifecycleId;
+    geographyController?.abort();
+    const controller = resources.createAbortController();
+    geographyController = controller;
+    try {
+      const data = await global.KOLConnectAPI.get("/api/analytics/geography", { signal: controller.signal });
+      if (!isCurrentLifecycle(expectedLifecycle, controller)) return;
+      renderGeographyAnalytics(data);
+    } catch (error) {
+      if (error?.name !== "AbortError" && isCurrentLifecycle(expectedLifecycle, controller)) {
+        renderGeographyAnalytics(null, true);
+      }
+    } finally {
+      if (geographyController === controller) geographyController = null;
+    }
+  }
+
+  async function loadRecordedRoiTrend() {
+    if (!resources) return;
+    const expectedLifecycle = lifecycleId;
+    roiTrendController?.abort();
+    const controller = resources.createAbortController();
+    roiTrendController = controller;
+    try {
+      const data = await global.KOLConnectAPI.get("/api/analytics/roi-trend", { signal: controller.signal });
+      if (!isCurrentLifecycle(expectedLifecycle, controller)) return;
+      renderRecordedRoiTrend(data);
+    } catch (error) {
+      if (error?.name !== "AbortError" && isCurrentLifecycle(expectedLifecycle, controller)) {
+        renderRecordedRoiTrend(null, true);
+      }
+    } finally {
+      if (roiTrendController === controller) roiTrendController = null;
+    }
+  }
+
   function handleDashboardClick(event) {
     const campaignItem = event.target.closest?.("[data-dashboard-campaign-id]");
     const campaignId = campaignItem?.dataset.dashboardCampaignId;
@@ -350,13 +459,16 @@
       resources = global.KOLConnectPageResources.create();
       lifecycleId += 1;
       dashboardData = null;
-      await Promise.all([loadDashboard(), loadRisks(), loadPlatformAnalytics()]);
+      await Promise.all([
+        loadDashboard(), loadRisks(), loadPlatformAnalytics(),
+        loadGeographyAnalytics(), loadRecordedRoiTrend(),
+      ]);
     },
 
     bind() {
       if (!resources || resources.disposed) return;
       resources.listen(element("dashboard-refresh"), "click", () => Promise.all([
-        loadDashboard(), loadPlatformAnalytics(),
+        loadDashboard(), loadPlatformAnalytics(), loadGeographyAnalytics(), loadRecordedRoiTrend(),
       ]));
       resources.listen(document.querySelector('.page[data-page="dashboard"]'), "click", handleDashboardClick);
     },
@@ -369,6 +481,10 @@
       riskController = null;
       analyticsController?.abort();
       analyticsController = null;
+      geographyController?.abort();
+      geographyController = null;
+      roiTrendController?.abort();
+      roiTrendController = null;
       resources?.cleanup();
       resources = null;
       dashboardData = null;

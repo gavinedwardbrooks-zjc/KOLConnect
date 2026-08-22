@@ -2058,6 +2058,59 @@ button {
   font-size: 11px;
 }
 
+.dashboard-advanced-analytics {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.dashboard-geography-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.dashboard-geography-grid h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
+.dashboard-ranking-list {
+  display: grid;
+  gap: 6px;
+}
+
+.dashboard-ranking-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  background: var(--surface-soft, #faf8f4);
+  font-size: 12px;
+}
+
+.dashboard-ranking-row strong { font-size: 13px; }
+.dashboard-ranking-row small { color: var(--muted); }
+
+.dashboard-roi-latest {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dashboard-roi-latest strong {
+  color: var(--text);
+  font-size: 20px;
+}
+
+.dashboard-roi-chart-frame { min-height: 230px; }
+
 .dashboard-health-overview-heading,
 .dashboard-health-score,
 .dashboard-health-distribution,
@@ -2218,7 +2271,9 @@ button {
   }
 
   .dashboard-platform-analytics-layout,
-  .dashboard-platform-analytics-grid {
+  .dashboard-platform-analytics-grid,
+  .dashboard-advanced-analytics,
+  .dashboard-geography-grid {
     grid-template-columns: 1fr;
   }
 

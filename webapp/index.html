@@ -194,6 +194,38 @@
           <p class="dashboard-platform-analytics-note">可见互动率仅按已录入点赞与评论占播放量计算。ROI 基于已录入值，不代表系统根据收入自动计算的财务 ROI。</p>
         </section>
 
+        <section class="dashboard-advanced-analytics" aria-label="高级分析">
+          <article class="section-card dashboard-card dashboard-geography-analytics">
+            <div class="dashboard-chart-heading">
+              <div><p class="eyebrow">GEOGRAPHY</p><h2>达人地域与语言</h2></div>
+              <span id="dashboard-geography-error" class="dashboard-chart-empty" hidden>地域分析暂不可用</span>
+            </div>
+            <div class="dashboard-geography-grid">
+              <div>
+                <h3>Top Countries</h3>
+                <div id="dashboard-country-list" class="dashboard-ranking-list"></div>
+              </div>
+              <div>
+                <h3>Top Languages</h3>
+                <div id="dashboard-language-list" class="dashboard-ranking-list"></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="section-card dashboard-card dashboard-roi-trend-analytics">
+            <div class="dashboard-chart-heading">
+              <div><p class="eyebrow">RECORDED ROI TREND</p><h2>已录入 ROI 趋势</h2></div>
+              <span id="dashboard-roi-trend-error" class="dashboard-chart-empty" hidden>ROI 趋势暂不可用</span>
+            </div>
+            <div class="dashboard-roi-latest"><span>Latest recorded average</span><strong id="dashboard-roi-latest">--</strong></div>
+            <div class="dashboard-chart-frame dashboard-roi-chart-frame">
+              <canvas id="dashboard-roi-trend-chart" aria-label="月度已录入 ROI 趋势图" role="img"></canvas>
+              <span id="dashboard-roi-trend-empty" class="dashboard-chart-empty" hidden>暂无已录入 ROI 趋势</span>
+            </div>
+            <p class="dashboard-platform-analytics-note">Based on recorded ROI values, not automatically calculated financial ROI.</p>
+          </article>
+        </section>
+
         <section class="section-card dashboard-card dashboard-health-overview" aria-label="达人合作健康">
           <div class="dashboard-health-overview-heading">
             <div>

@@ -79,6 +79,8 @@ async function run() {
     KOLConnectAPI: {
       async get(url) {
         if (url === "/api/analytics/platforms") return analyticsResponse();
+        if (url === "/api/analytics/geography") return { countries: [], languages: [] };
+        if (url === "/api/analytics/roi-trend") return { trend: [] };
         if (url === "/api/risks") return { summary: { high: 1, medium: 2, low: 3 }, cards: [] };
         if (url === "/api/dashboard") return {
           overview: {}, creator_health: {}, cooperation_performance: {}, action_items: {},
