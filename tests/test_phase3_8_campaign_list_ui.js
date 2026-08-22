@@ -112,6 +112,9 @@ async function run() {
     "campaign-create-open",
     "campaign-product-filter",
     "campaign-status-filter",
+    "campaign-start-date-from",
+    "campaign-start-date-to",
+    "campaign-date-filter-apply",
     "campaign-include-archived",
     "campaign-products-error",
     "campaign-form-card",
@@ -209,10 +212,14 @@ async function run() {
         const params = new URLSearchParams(query);
         const productId = params.get("product_id") || "";
         const status = params.get("status") || "";
+        const startDateFrom = params.get("start_date_from") || "";
+        const startDateTo = params.get("start_date_to") || "";
         const includeArchived = params.get("include_archived") === "true";
         const filtered = campaigns.filter(campaign => {
           if (productId && campaign.product_id !== productId) return false;
           if (status && campaign.status !== status) return false;
+          if (startDateFrom && campaign.start_date < startDateFrom) return false;
+          if (startDateTo && campaign.start_date > startDateTo) return false;
           return includeArchived || !campaign.archived_at;
         });
         return { campaigns: clone(filtered) };
@@ -274,6 +281,17 @@ async function run() {
   assert.equal(elements.get("campaign-list-body").children.length, 1);
   assert.equal(elements.get("campaign-list-count").textContent, "1 个 Campaign");
   assert.equal(elements.get("campaign-create-open").listenerCount("click"), 1);
+  assert.equal(elements.get("campaign-date-filter-apply").listenerCount("click"), 1);
+
+  elements.get("campaign-start-date-from").value = "2026-08-01";
+  elements.get("campaign-start-date-to").value = "2026-08-31";
+  await elements.get("campaign-date-filter-apply").dispatch("click");
+  assert.match(calls.at(-1).url, /start_date_from=2026-08-01/);
+  assert.match(calls.at(-1).url, /start_date_to=2026-08-31/);
+  assert.equal(elements.get("campaign-list-body").children.length, 1, "date bounds must be inclusive");
+  elements.get("campaign-start-date-from").value = "";
+  elements.get("campaign-start-date-to").value = "";
+  await elements.get("campaign-date-filter-apply").dispatch("click");
 
   elements.get("campaign-product-filter").value = "product_one";
   await elements.get("campaign-product-filter").dispatch("change");
@@ -368,6 +386,10 @@ async function run() {
   assert.equal(elements.get("campaign-list-empty").hidden, false, "successful empty response must show empty state");
 
   const source = read("webapp/pages/campaigns.js");
+  const html = read("webapp/index.html");
+  assert.match(html, /id="campaign-start-date-from"/);
+  assert.match(html, /id="campaign-start-date-to"/);
+  assert.match(html, /id="campaign-date-filter-apply"/);
   assert.doesNotMatch(source, /\bfetch\s*\(/);
   assert.doesNotMatch(source, /\/api\/creator/);
   assert.doesNotMatch(source, /\bdelete\s*\(/i);

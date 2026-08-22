@@ -424,6 +424,30 @@ body {
   background: rgba(199, 125, 114, 0.08);
 }
 
+.campaign-filter-apply {
+  align-self: end;
+}
+
+.settings-backup-summary {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.settings-backup-summary > div {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.35fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.settings-backup-summary dt { color: var(--muted); }
+
+.settings-backup-summary dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
 .agency-page-heading,
 .agency-detail-heading,
 .agency-list-heading,

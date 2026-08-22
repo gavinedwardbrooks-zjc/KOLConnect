@@ -38,6 +38,8 @@ def handle(handler, request: dict, context: dict) -> bool:
                 product_id=(query.get("product_id") or [""])[0],
                 status=(query.get("status") or [""])[0],
                 creator_id=(query.get("creator_id") or [""])[0],
+                start_date_from=(query.get("start_date_from") or [""])[0],
+                start_date_to=(query.get("start_date_to") or [""])[0],
                 include_archived=str((query.get("include_archived") or [""])[0]).lower() == "true",
             )
             handler._json({"ok": True, "campaigns": campaigns if isinstance(campaigns, list) else []})

@@ -1145,10 +1145,19 @@
                 <option value="completed">Completed</option>
               </select>
             </label>
+            <label class="field">
+              <span>Start date</span>
+              <input id="campaign-start-date-from" type="date">
+            </label>
+            <label class="field">
+              <span>End date</span>
+              <input id="campaign-start-date-to" type="date">
+            </label>
             <label class="checkbox-field campaign-archive-filter">
               <input id="campaign-include-archived" type="checkbox">
               <span>显示已归档</span>
             </label>
+            <button class="secondary-btn campaign-filter-apply" id="campaign-date-filter-apply" type="button">Apply</button>
           </div>
           <p class="campaign-products-error" id="campaign-products-error" role="alert" hidden></p>
         </div>
@@ -1558,6 +1567,18 @@
           <p class="hint">可设置为 WPS 云盘或其他同步文件夹。首次使用时会自动创建 Creators、Videos、Insights 工作表。</p>
           <div class="action-row">
             <button class="primary-btn" id="creator-library-save-config">保存达人库文件设置</button>
+          </div>
+        </div>
+
+        <div class="section-card creator-library-backup-card">
+          <div class="section-title">Creator Library Backup</div>
+          <dl class="settings-backup-summary">
+            <div><dt>Current workbook</dt><dd id="creator-library-backup-workbook">--</dd></div>
+            <div><dt>Latest created backup</dt><dd id="creator-library-backup-latest">尚未在本次会话创建备份</dd></div>
+          </dl>
+          <p class="hint">备份将保存到当前工作簿目录下的 backups 文件夹。</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="creator-library-backup-create">Create Backup</button>
           </div>
         </div>
 

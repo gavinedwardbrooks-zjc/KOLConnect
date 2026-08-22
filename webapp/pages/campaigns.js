@@ -192,9 +192,13 @@
     const params = new URLSearchParams();
     const productId = element("campaign-product-filter")?.value || "";
     const status = element("campaign-status-filter")?.value || "";
+    const startDateFrom = element("campaign-start-date-from")?.value || "";
+    const startDateTo = element("campaign-start-date-to")?.value || "";
     const includeArchived = Boolean(element("campaign-include-archived")?.checked);
     if (productId) params.set("product_id", productId);
     if (status) params.set("status", status);
+    if (startDateFrom) params.set("start_date_from", startDateFrom);
+    if (startDateTo) params.set("start_date_to", startDateTo);
     if (includeArchived) params.set("include_archived", "true");
     const query = params.toString();
     return query ? `/api/campaigns?${query}` : "/api/campaigns";
@@ -394,6 +398,7 @@
       listen("campaign-product-filter", "change", loadCampaigns);
       listen("campaign-status-filter", "change", loadCampaigns);
       listen("campaign-include-archived", "change", loadCampaigns);
+      listen("campaign-date-filter-apply", "click", loadCampaigns);
     },
 
     unbind() {

@@ -69,6 +69,7 @@ from repositories.agency_repository import AgencyRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.agency_service import AgencyService
 from services.analytics_service import AnalyticsService
+from services.workbook_backup_service import WorkbookBackupService
 from services.creator_delete_impact_service import CreatorDeleteImpactService
 from services.creator_hard_delete_service import CreatorHardDeleteService
 from services.creator_library_cache import CreatorLibraryCache
@@ -1828,6 +1829,10 @@ def get_analytics_service() -> AnalyticsService:
     return AnalyticsService(factory.creator(), factory.campaign_creator())
 
 
+def get_workbook_backup_service() -> WorkbookBackupService:
+    return WorkbookBackupService(_creator_library_workbook_path)
+
+
 def import_task_results_to_creator_library(
     task_id: str,
     *,
@@ -2178,6 +2183,7 @@ class Handler(BaseHTTPRequestHandler):
             "services": {
                 "agency": get_agency_service(),
                 "analytics": get_analytics_service(),
+                "workbook_backup": get_workbook_backup_service(),
                 "creator": get_creator_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),

@@ -34,6 +34,8 @@ class FakeElement {
     this.dataset = {};
     this.classList = new FakeClassList(classes);
     this.listeners = new Map();
+    this.textContent = "";
+    this.disabled = false;
   }
 
   addEventListener(type, listener) {
@@ -48,6 +50,12 @@ class FakeElement {
 
   listenerCount(type) {
     return this.listeners.get(type)?.size || 0;
+  }
+
+  async dispatch(type) {
+    for (const listener of this.listeners.get(type) || []) {
+      await listener({ target: this, preventDefault() {} });
+    }
   }
 }
 
@@ -141,16 +149,37 @@ async function testSettingsRepeatedEntry() {
     "debug-mode",
     "feishu-save",
     "creator-library-save-config",
+    "creator-library-workbook-path",
+    "creator-library-backup-workbook",
+    "creator-library-backup-latest",
+    "creator-library-backup-create",
     "ui-language",
   ];
   const elements = new Map(ids.map(id => [id, new FakeElement(id)]));
   const document = createPageDocument(elements);
   const sandbox = createSandbox(document);
   let settingsLoads = 0;
+  const posts = [];
+  const notices = [];
 
-  sandbox.window.KOLConnectAPI = { post: async () => ({}) };
+  sandbox.window.KOLConnectAPI = {
+    post: async (url, payload) => {
+      posts.push({ url, payload });
+      if (url === "/api/settings/creator-library/backup") {
+        return {
+          ok: true,
+          backup: {
+            filename: "Creator_Library_20260822.xlsx",
+            created_at: "2026-08-22T08:30:00Z",
+            size: 1024,
+          },
+        };
+      }
+      return {};
+    },
+  };
   sandbox.window.KOLConnectApp = {
-    valueOf: () => "",
+    valueOf: id => (id === "creator-library-workbook-path" ? "C:/Data/Creator_Library.xlsx" : ""),
     checkedOf: () => false,
     loadSettingsState: async () => { settingsLoads += 1; },
     loadSystemHealth: async () => ({}),
@@ -158,7 +187,7 @@ async function testSettingsRepeatedEntry() {
     setLanguage: () => {},
     renderStaticText: () => {},
     renderCurrentTask: () => {},
-    showSaved: () => {},
+    showSaved: message => { notices.push(message); },
     showError: error => { throw error; },
   };
 
@@ -173,6 +202,15 @@ async function testSettingsRepeatedEntry() {
 
   await sandbox.window.KOLConnectPages.navigate("settings");
   assert.equal(elements.get("save-ui-settings").listenerCount("click"), 1);
+  assert.equal(elements.get("creator-library-backup-create").listenerCount("click"), 1);
+  assert.equal(elements.get("creator-library-backup-workbook").textContent, "C:/Data/Creator_Library.xlsx");
+  await elements.get("creator-library-backup-create").dispatch("click");
+  const backupCall = posts.find(call => call.url === "/api/settings/creator-library/backup");
+  assert.ok(backupCall, "settings backup card must call the manual workbook backup endpoint");
+  assert.equal(Object.keys(backupCall.payload).length, 0);
+  assert.match(elements.get("creator-library-backup-latest").textContent, /Creator_Library_20260822\.xlsx/);
+  assert.equal(elements.get("creator-library-backup-create").disabled, false);
+  assert.ok(notices.includes("达人库 Excel 备份已创建。"));
   await sandbox.window.KOLConnectPages.navigate("settings");
   assert.equal(elements.get("save-ui-settings").listenerCount("click"), 1);
   await sandbox.window.KOLConnectPages.navigate("dashboard");
@@ -180,6 +218,10 @@ async function testSettingsRepeatedEntry() {
   await sandbox.window.KOLConnectPages.navigate("settings");
   assert.equal(elements.get("save-ui-settings").listenerCount("click"), 1);
   assert.equal(settingsLoads, 3);
+  const html = read("webapp/index.html");
+  assert.match(html, /id="creator-library-backup-workbook"/);
+  assert.match(html, /id="creator-library-backup-latest"/);
+  assert.match(html, /id="creator-library-backup-create"/);
 }
 
 function testPageResourceCleanup() {

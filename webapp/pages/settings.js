@@ -14,7 +14,12 @@
 
   async function reloadSettings() {
     const app = getApp();
-    return app.loadSettingsState({ signal: resources?.signal });
+    const result = await app.loadSettingsState({ signal: resources?.signal });
+    const currentWorkbook = document.getElementById("creator-library-backup-workbook");
+    if (currentWorkbook) {
+      currentWorkbook.textContent = app.valueOf("creator-library-workbook-path").trim() || "--";
+    }
+    return result;
   }
 
   function listen(id, type, listener) {
@@ -89,6 +94,30 @@
           await reloadSettings();
         } catch (error) {
           handleError(error);
+        }
+      });
+
+      listen("creator-library-backup-create", "click", async () => {
+        const button = document.getElementById("creator-library-backup-create");
+        if (button) button.disabled = true;
+        try {
+          const data = await api.post(
+            "/api/settings/creator-library/backup",
+            {},
+            { signal: resources.signal },
+          );
+          const backup = data?.backup || {};
+          const latest = document.getElementById("creator-library-backup-latest");
+          if (latest) {
+            latest.textContent = backup.filename
+              ? `${backup.filename} · ${backup.created_at || "--"}`
+              : "--";
+          }
+          app.showSaved("达人库 Excel 备份已创建。");
+        } catch (error) {
+          handleError(error);
+        } finally {
+          if (button) button.disabled = false;
         }
       });
 

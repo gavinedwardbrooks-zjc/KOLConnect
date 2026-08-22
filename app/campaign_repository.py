@@ -3,8 +3,9 @@ from __future__ import annotations
 """Campaign data access for the Product-Campaign model."""
 
 import logging
+import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,8 @@ class CampaignRepository(ExcelDataRepository):
         product_id: str = "",
         status: str = "",
         creator_id: str = "",
+        start_date_from: str = "",
+        start_date_to: str = "",
         *,
         include_archived: bool = False,
     ) -> list[dict[str, Any]]:
@@ -193,6 +196,18 @@ class CampaignRepository(ExcelDataRepository):
                 for row in campaigns
                 if str(row.get("campaign_id") or "") in creator_campaign_ids
             ]
+        from_date = self._date_filter(start_date_from, "开始日期起点")
+        to_date = self._date_filter(start_date_to, "开始日期终点")
+        if from_date and to_date and from_date > to_date:
+            raise ValueError("开始日期起点不能晚于终点。")
+        if from_date or to_date:
+            campaigns = [
+                campaign
+                for campaign in campaigns
+                if self._campaign_date_in_range(
+                    campaign.get("start_date"), from_date, to_date
+                )
+            ]
         if not include_archived:
             campaigns = [row for row in campaigns if not str(row.get("archived_at") or "").strip()]
         campaigns.sort(key=lambda row: (str(row.get("created_at") or ""), str(row.get("campaign_id") or "")), reverse=True)
@@ -200,6 +215,33 @@ class CampaignRepository(ExcelDataRepository):
             self._campaign_response(campaign, product_names, creator_counts)
             for campaign in campaigns
         ]
+
+    @staticmethod
+    def _date_filter(value: object, label: str) -> date | None:
+        text = str(value or "").strip()
+        if not text:
+            return None
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            raise ValueError(f"{label}必须为 YYYY-MM-DD 格式。")
+        try:
+            return date.fromisoformat(text)
+        except ValueError as exc:
+            raise ValueError(f"{label}必须为 YYYY-MM-DD 格式。") from exc
+
+    @staticmethod
+    def _campaign_date_in_range(
+        value: object,
+        from_date: date | None,
+        to_date: date | None,
+    ) -> bool:
+        try:
+            campaign_date = date.fromisoformat(str(value or "").strip())
+        except ValueError:
+            return False
+        return not (
+            (from_date is not None and campaign_date < from_date)
+            or (to_date is not None and campaign_date > to_date)
+        )
 
     def getCampaign(self, campaign_id: str) -> dict[str, Any]:
         campaign_id = self.require_text(campaign_id, "Campaign ID")

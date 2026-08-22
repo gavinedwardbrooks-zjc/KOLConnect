@@ -1,5 +1,10 @@
 """Settings, health, account, and mail HTTP endpoints."""
 
+from services.workbook_backup_service import (
+    WorkbookBackupError,
+    WorkbookBackupNotFoundError,
+)
+
 
 def _merge_mail_configuration_update(payload: dict, existing_mail: dict | None, services: dict) -> dict:
     """Apply only explicitly supplied mail fields, then normalize the complete state."""
@@ -79,7 +84,8 @@ def handle(handler, request: dict, context: dict) -> bool:
     settings_paths = {
         "/api/settings/ui", "/api/settings/profiles", "/api/settings/accounts",
         "/api/account/open", "/api/settings/feishu", "/api/settings/mail",
-        "/api/settings/creator-library", "/api/mail/test", "/api/mail/inbox/sync",
+        "/api/settings/creator-library", "/api/settings/creator-library/backup",
+        "/api/mail/test", "/api/mail/inbox/sync",
         "/api/mail/inbox/sync-crm-replies",
     }
     if path not in settings_paths:
@@ -87,6 +93,18 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     payload = request["get_payload"]()
     state = state_access["get"]()
+
+    if path == "/api/settings/creator-library/backup":
+        try:
+            backup = services["workbook_backup"].create_backup()
+        except WorkbookBackupNotFoundError as exc:
+            handler._json({"ok": False, "error": str(exc)}, status=404)
+            return True
+        except WorkbookBackupError as exc:
+            handler._json({"ok": False, "error": str(exc)}, status=500)
+            return True
+        handler._json({"ok": True, "backup": backup})
+        return True
 
     # POST /api/settings/ui → 保存界面设置；{"ok": true}
     if path == "/api/settings/ui":
