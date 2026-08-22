@@ -118,6 +118,8 @@ function creatorDetail(creatorId, name, accounts = []) {
       creator_name: name,
       platform: "TikTok",
       profile_url: `https://www.tiktok.com/@${creatorId}`,
+      country: "Brazil",
+      language: "Portuguese",
       insight_level: "good",
       source: "extension",
       analysis_time: "2026-08-01T00:00:00Z",
@@ -176,7 +178,8 @@ async function run() {
     "creator-campaign-modal-message", "creator-campaign-submit",
     "creator-edit-modal", "creator-edit-modal-close", "creator-edit-cancel",
     "creator-edit-form", "creator-edit-name", "creator-edit-platform",
-    "creator-edit-profile-url", "creator-edit-followers", "creator-edit-content-category",
+    "creator-edit-profile-url", "creator-edit-followers", "creator-edit-country", "creator-edit-language",
+    "creator-edit-content-category",
     "creator-edit-agency", "creator-edit-bio", "creator-edit-message", "creator-edit-save",
   ];
   const selectIds = new Set(ids.filter(id => id.includes("platform") || id.includes("language")
@@ -581,9 +584,13 @@ async function run() {
   await elements.get("creator-library-detail-edit").dispatch("click");
   assert.equal(elements.get("creator-edit-modal").hidden, false);
   assert.equal(elements.get("creator-edit-agency").children.length, 2);
+  assert.equal(elements.get("creator-edit-country").value, "Brazil");
+  assert.equal(elements.get("creator-edit-language").value, "Portuguese");
   elements.get("creator-edit-name").value = "Bella Updated";
   elements.get("creator-edit-profile-url").value = "https://www.tiktok.com/@bella-updated";
   elements.get("creator-edit-followers").value = "25K";
+  elements.get("creator-edit-country").value = "Brazil";
+  elements.get("creator-edit-language").value = "Portuguese";
   elements.get("creator-edit-content-category").value = "Lifestyle";
   elements.get("creator-edit-bio").value = "Updated bio";
   elements.get("creator-edit-agency").value = "agency_new";
@@ -591,6 +598,8 @@ async function run() {
   const profilePatch = calls.find(call => call.method === "PATCH" && call.payload.creator_name);
   assert.ok(profilePatch, "profile edit must use the Creator PATCH endpoint");
   assert.equal(profilePatch.payload.agency_id, "agency_new");
+  assert.equal(profilePatch.payload.country, "Brazil");
+  assert.equal(profilePatch.payload.language, "Portuguese");
   assert.match(elements.get("creator-library-detail-summary").textContent, /Bella Updated/);
 
   assert.equal(elements.get("creator-cooperations-body").children.length, 1, "legacy cooperation history must remain visible");

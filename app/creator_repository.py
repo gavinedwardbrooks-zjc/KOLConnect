@@ -642,7 +642,8 @@ class CreatorRepository:
         if not isinstance(payload, dict) or not payload:
             raise ValueError("缺少可更新的达人资料。")
         allowed = {
-            "creator_name", "profile_url", "followers", "content_category",
+            "creator_name", "profile_url", "followers", "country", "language",
+            "content_category",
             "bio", "agency_id", "archived_at",
         }
         unknown = set(payload) - allowed
@@ -689,6 +690,18 @@ class CreatorRepository:
             updated["followers"] = followers
             analysis_creator["followers"] = followers
             crm["followers"] = followers
+
+        if "country" in payload:
+            country = str(payload.get("country") or "").strip()
+            updated["country"] = country
+            analysis_creator["country"] = country
+            crm["country"] = country
+
+        if "language" in payload:
+            language = str(payload.get("language") or "").strip()
+            updated["language"] = language
+            analysis_creator["language"] = language
+            crm["language"] = language
 
         if "content_category" in payload:
             content_category = str(payload.get("content_category") or "").strip()

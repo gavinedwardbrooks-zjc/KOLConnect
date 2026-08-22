@@ -395,6 +395,8 @@
     setValue("creator-edit-platform", record.platform || creator.platform);
     setValue("creator-edit-profile-url", record.profile_url || creator.profile_url);
     setValue("creator-edit-followers", record.followers || creator.followers);
+    setValue("creator-edit-country", record.country || creator.country);
+    setValue("creator-edit-language", record.language || creator.language);
     setValue("creator-edit-content-category", record.content_category || analysis.content_category);
     setValue("creator-edit-bio", record.bio || creator.bio);
     renderAgencyOptions([], record.agency_id);
@@ -425,6 +427,8 @@
           creator_name: valueOf("creator-edit-name").trim(),
           profile_url: valueOf("creator-edit-profile-url").trim(),
           followers: valueOf("creator-edit-followers").trim(),
+          country: valueOf("creator-edit-country").trim(),
+          language: valueOf("creator-edit-language").trim(),
           content_category: valueOf("creator-edit-content-category").trim(),
           bio: valueOf("creator-edit-bio").trim(),
           agency_id: valueOf("creator-edit-agency").trim(),
