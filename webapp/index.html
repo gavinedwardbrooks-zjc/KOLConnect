@@ -130,6 +130,70 @@
           </article>
         </section>
 
+        <section class="section-card dashboard-card dashboard-platform-analytics" aria-label="平台分析">
+          <div class="dashboard-chart-heading">
+            <div><p class="eyebrow">PLATFORM ANALYTICS</p><h2>平台分析</h2></div>
+            <span id="dashboard-platform-analytics-error" class="dashboard-chart-empty" hidden>平台分析暂不可用</span>
+          </div>
+          <div class="dashboard-platform-analytics-layout">
+            <div class="dashboard-chart-frame dashboard-platform-analytics-chart-frame">
+              <canvas id="dashboard-platform-analytics-chart" aria-label="平台运营指标对比图" role="img"></canvas>
+              <span id="dashboard-platform-analytics-empty" class="dashboard-chart-empty" hidden>暂无平台运营数据</span>
+            </div>
+            <div class="dashboard-platform-analytics-grid">
+              <article class="dashboard-platform-metric-card" data-platform="tiktok">
+                <h3>TikTok</h3>
+                <dl>
+                  <div><dt>达人数量</dt><dd id="platform-tiktok-creators">0</dd></div>
+                  <div><dt>粉丝中位数</dt><dd id="platform-tiktok-followers-median">--</dd></div>
+                  <div><dt>粉丝平均值</dt><dd id="platform-tiktok-followers-average">--</dd></div>
+                  <div><dt>合作记录数</dt><dd id="platform-tiktok-relations">0</dd></div>
+                  <div><dt>发布率</dt><dd id="platform-tiktok-publish-rate">--</dd></div>
+                  <div><dt>总播放</dt><dd id="platform-tiktok-views">0</dd></div>
+                  <div><dt>总点赞</dt><dd id="platform-tiktok-likes">0</dd></div>
+                  <div><dt>总评论</dt><dd id="platform-tiktok-comments">0</dd></div>
+                  <div><dt>可见互动率</dt><dd id="platform-tiktok-engagement">--</dd></div>
+                  <div><dt>累计成本</dt><dd id="platform-tiktok-cost">0</dd></div>
+                  <div><dt>平均录入 ROI</dt><dd id="platform-tiktok-roi">--</dd></div>
+                </dl>
+              </article>
+              <article class="dashboard-platform-metric-card" data-platform="instagram">
+                <h3>Instagram</h3>
+                <dl>
+                  <div><dt>达人数量</dt><dd id="platform-instagram-creators">0</dd></div>
+                  <div><dt>粉丝中位数</dt><dd id="platform-instagram-followers-median">--</dd></div>
+                  <div><dt>粉丝平均值</dt><dd id="platform-instagram-followers-average">--</dd></div>
+                  <div><dt>合作记录数</dt><dd id="platform-instagram-relations">0</dd></div>
+                  <div><dt>发布率</dt><dd id="platform-instagram-publish-rate">--</dd></div>
+                  <div><dt>总播放</dt><dd id="platform-instagram-views">0</dd></div>
+                  <div><dt>总点赞</dt><dd id="platform-instagram-likes">0</dd></div>
+                  <div><dt>总评论</dt><dd id="platform-instagram-comments">0</dd></div>
+                  <div><dt>可见互动率</dt><dd id="platform-instagram-engagement">--</dd></div>
+                  <div><dt>累计成本</dt><dd id="platform-instagram-cost">0</dd></div>
+                  <div><dt>平均录入 ROI</dt><dd id="platform-instagram-roi">--</dd></div>
+                </dl>
+              </article>
+              <article class="dashboard-platform-metric-card" data-platform="youtube">
+                <h3>YouTube</h3>
+                <dl>
+                  <div><dt>达人数量</dt><dd id="platform-youtube-creators">0</dd></div>
+                  <div><dt>粉丝中位数</dt><dd id="platform-youtube-followers-median">--</dd></div>
+                  <div><dt>粉丝平均值</dt><dd id="platform-youtube-followers-average">--</dd></div>
+                  <div><dt>合作记录数</dt><dd id="platform-youtube-relations">0</dd></div>
+                  <div><dt>发布率</dt><dd id="platform-youtube-publish-rate">--</dd></div>
+                  <div><dt>总播放</dt><dd id="platform-youtube-views">0</dd></div>
+                  <div><dt>总点赞</dt><dd id="platform-youtube-likes">0</dd></div>
+                  <div><dt>总评论</dt><dd id="platform-youtube-comments">0</dd></div>
+                  <div><dt>可见互动率</dt><dd id="platform-youtube-engagement">--</dd></div>
+                  <div><dt>累计成本</dt><dd id="platform-youtube-cost">0</dd></div>
+                  <div><dt>平均录入 ROI</dt><dd id="platform-youtube-roi">--</dd></div>
+                </dl>
+              </article>
+            </div>
+          </div>
+          <p class="dashboard-platform-analytics-note">可见互动率仅按已录入点赞与评论占播放量计算。ROI 基于已录入值，不代表系统根据收入自动计算的财务 ROI。</p>
+        </section>
+
         <section class="section-card dashboard-card dashboard-health-overview" aria-label="达人合作健康">
           <div class="dashboard-health-overview-heading">
             <div>

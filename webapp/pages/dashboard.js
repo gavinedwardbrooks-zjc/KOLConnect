@@ -4,6 +4,7 @@
   let resources = null;
   let requestController = null;
   let riskController = null;
+  let analyticsController = null;
   let dashboardData = null;
   let lifecycleId = 0;
   const charts = new Map();
@@ -40,6 +41,12 @@
   function setText(id, value) {
     const target = element(id);
     if (target) target.textContent = value;
+  }
+
+  function formatPercent(value) {
+    if (value == null || value === "") return "--";
+    const number = Number(value);
+    return Number.isFinite(number) ? `${formatNumber(number)}%` : "--";
   }
 
   function setChartEmpty(id, isEmpty) {
@@ -211,6 +218,51 @@
     if (error) error.hidden = !failed;
   }
 
+  function renderPlatformAnalytics(data, failed = false) {
+    const rows = Array.isArray(data?.platforms) ? data.platforms : [];
+    const byPlatform = new Map(rows.map(row => [String(row?.platform || ""), row]));
+    const labels = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
+    const chartRows = [];
+    Object.entries(labels).forEach(([platform, label]) => {
+      const row = byPlatform.get(platform) || {};
+      setText(`platform-${platform}-creators`, formatNumber(row.creator_count || 0));
+      setText(`platform-${platform}-followers-median`, row.followers_median == null ? "--" : formatNumber(row.followers_median));
+      setText(`platform-${platform}-followers-average`, row.followers_average == null ? "--" : formatNumber(row.followers_average));
+      setText(`platform-${platform}-relations`, formatNumber(row.campaign_creator_count || 0));
+      setText(`platform-${platform}-publish-rate`, formatPercent(row.publish_rate));
+      setText(`platform-${platform}-views`, formatNumber(row.views_total || 0));
+      setText(`platform-${platform}-likes`, formatNumber(row.likes_total || 0));
+      setText(`platform-${platform}-comments`, formatNumber(row.comments_total || 0));
+      setText(`platform-${platform}-engagement`, formatPercent(row.visible_engagement_rate));
+      setText(`platform-${platform}-cost`, formatNumber(row.cost_total || 0));
+      setText(`platform-${platform}-roi`, row.recorded_roi_average == null ? "--" : formatNumber(row.recorded_roi_average));
+      chartRows.push({ label, row });
+    });
+
+    const hasChartData = chartRows.some(({ row }) =>
+      Number(row.creator_count) > 0 || Number(row.campaign_creator_count) > 0
+    );
+    renderChart("dashboard-platform-analytics-chart", "dashboard-platform-analytics-empty", {
+      type: "bar",
+      data: {
+        labels: chartRows.map(item => item.label),
+        datasets: [
+          { label: "达人", data: chartRows.map(item => Number(item.row.creator_count) || 0), backgroundColor: "#2f7d6d", borderRadius: 5 },
+          { label: "合作", data: chartRows.map(item => Number(item.row.campaign_creator_count) || 0), backgroundColor: "#5574b9", borderRadius: 5 },
+          { label: "已发布", data: chartRows.map(item => Number(item.row.published_count) || 0), backgroundColor: "#e56b46", borderRadius: 5 },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { position: "bottom" } },
+        scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { grid: { display: false } } },
+      },
+    }, hasChartData);
+    const error = element("dashboard-platform-analytics-error");
+    if (error) error.hidden = !failed;
+  }
+
   function isCurrentLifecycle(expectedLifecycle, controller) {
     return Boolean(
       resources
@@ -259,6 +311,25 @@
     }
   }
 
+  async function loadPlatformAnalytics() {
+    if (!resources) return;
+    const expectedLifecycle = lifecycleId;
+    analyticsController?.abort();
+    const controller = resources.createAbortController();
+    analyticsController = controller;
+    try {
+      const data = await global.KOLConnectAPI.get("/api/analytics/platforms", { signal: controller.signal });
+      if (!isCurrentLifecycle(expectedLifecycle, controller)) return;
+      renderPlatformAnalytics(data);
+    } catch (error) {
+      if (error?.name !== "AbortError" && isCurrentLifecycle(expectedLifecycle, controller)) {
+        renderPlatformAnalytics(null, true);
+      }
+    } finally {
+      if (analyticsController === controller) analyticsController = null;
+    }
+  }
+
   function handleDashboardClick(event) {
     const campaignItem = event.target.closest?.("[data-dashboard-campaign-id]");
     const campaignId = campaignItem?.dataset.dashboardCampaignId;
@@ -279,12 +350,14 @@
       resources = global.KOLConnectPageResources.create();
       lifecycleId += 1;
       dashboardData = null;
-      await Promise.all([loadDashboard(), loadRisks()]);
+      await Promise.all([loadDashboard(), loadRisks(), loadPlatformAnalytics()]);
     },
 
     bind() {
       if (!resources || resources.disposed) return;
-      resources.listen(element("dashboard-refresh"), "click", () => loadDashboard());
+      resources.listen(element("dashboard-refresh"), "click", () => Promise.all([
+        loadDashboard(), loadPlatformAnalytics(),
+      ]));
       resources.listen(document.querySelector('.page[data-page="dashboard"]'), "click", handleDashboardClick);
     },
 
@@ -294,6 +367,8 @@
       requestController = null;
       riskController?.abort();
       riskController = null;
+      analyticsController?.abort();
+      analyticsController = null;
       resources?.cleanup();
       resources = null;
       dashboardData = null;

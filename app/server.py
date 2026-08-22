@@ -68,6 +68,7 @@ from repositories.task_repository import TaskRepository
 from repositories.agency_repository import AgencyRepository
 from repository_factory import RepositoryFactory, get_active_repository_factory
 from services.agency_service import AgencyService
+from services.analytics_service import AnalyticsService
 from services.creator_delete_impact_service import CreatorDeleteImpactService
 from services.creator_hard_delete_service import CreatorHardDeleteService
 from services.creator_library_cache import CreatorLibraryCache
@@ -90,6 +91,7 @@ from runtime_paths import (
 from local_storage_lock import shared_storage_lock
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
+    analytics_handler,
     campaign_handler,
     creator_handler,
     dashboard_handler,
@@ -187,7 +189,7 @@ MAIL_PROVIDER_PRESETS = {
     },
 }
 
-HANDLERS = [dashboard_handler, risk_handler, campaign_handler, settings_handler, creator_handler, task_handler]
+HANDLERS = [analytics_handler, dashboard_handler, risk_handler, campaign_handler, settings_handler, creator_handler, task_handler]
 CREATOR_LIBRARY_CACHE = CreatorLibraryCache()
 DASHBOARD_RESPONSE_CACHE = DashboardResponseCache()
 
@@ -1821,6 +1823,11 @@ def get_risk_service() -> RiskService:
     return RiskService(factory.risk())
 
 
+def get_analytics_service() -> AnalyticsService:
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return AnalyticsService(factory.creator(), factory.campaign_creator())
+
+
 def import_task_results_to_creator_library(
     task_id: str,
     *,
@@ -2170,6 +2177,7 @@ class Handler(BaseHTTPRequestHandler):
             "ports": {"agency": get_agency_repository, "task": get_task_port},
             "services": {
                 "agency": get_agency_service(),
+                "analytics": get_analytics_service(),
                 "creator": get_creator_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),

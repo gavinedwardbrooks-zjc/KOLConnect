@@ -60,6 +60,7 @@ async function run() {
     KOLConnectAPI: {
       async get(url) {
         if (url === "/api/risks") return { summary: { high: 0, medium: 0, low: 0 }, cards: [] };
+        if (url === "/api/analytics/platforms") return { platforms: [], summary: {} };
         assert.equal(url, "/api/dashboard");
         return responses.shift();
       },

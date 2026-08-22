@@ -1991,6 +1991,73 @@ button {
   margin-bottom: 20px;
 }
 
+.dashboard-platform-analytics {
+  margin-bottom: 20px;
+}
+
+.dashboard-platform-analytics-layout {
+  display: grid;
+  grid-template-columns: minmax(230px, 0.7fr) minmax(0, 2fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.dashboard-platform-analytics-chart-frame {
+  min-height: 260px;
+}
+
+.dashboard-platform-analytics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.dashboard-platform-metric-card {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft, #faf8f4);
+}
+
+.dashboard-platform-metric-card h3 {
+  margin-bottom: 10px;
+  font-size: 16px;
+}
+
+.dashboard-platform-metric-card dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.dashboard-platform-metric-card dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.dashboard-platform-metric-card dt {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dashboard-platform-metric-card dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.dashboard-platform-analytics-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
 .dashboard-health-overview-heading,
 .dashboard-health-score,
 .dashboard-health-distribution,
@@ -2148,6 +2215,11 @@ button {
   .dashboard-health-summary-grid {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .dashboard-platform-analytics-layout,
+  .dashboard-platform-analytics-grid {
+    grid-template-columns: 1fr;
   }
 
   .agency-profile-grid .agency-profile-wide {

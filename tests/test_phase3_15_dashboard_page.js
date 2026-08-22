@@ -136,6 +136,17 @@ function risksResponse() {
   };
 }
 
+function platformAnalyticsResponse() {
+  return {
+    platforms: [
+      { platform: "tiktok", creator_count: 8, campaign_creator_count: 4, published_count: 3 },
+      { platform: "instagram", creator_count: 2, campaign_creator_count: 1, published_count: 1 },
+      { platform: "youtube", creator_count: 4, campaign_creator_count: 2, published_count: 1 },
+    ],
+    summary: { platform_count: 3, creator_count: 14, campaign_creator_count: 7, ignored_campaign_creator_count: 0 },
+  };
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise(next => { resolve = next; });
@@ -153,7 +164,14 @@ async function run() {
     "dashboard-platform-chart", "dashboard-status-chart", "dashboard-growth-chart",
     "dashboard-platform-chart-empty", "dashboard-status-chart-empty", "dashboard-growth-chart-empty",
     "dashboard-risk-high", "dashboard-risk-medium", "dashboard-risk-low", "dashboard-risk-error",
+    "dashboard-platform-analytics-chart", "dashboard-platform-analytics-empty",
+    "dashboard-platform-analytics-error",
   ];
+  for (const platform of ["tiktok", "instagram", "youtube"]) {
+    for (const metric of ["creators", "followers-median", "followers-average", "relations", "publish-rate", "views", "likes", "comments", "engagement", "cost", "roi"]) {
+      ids.push(`platform-${platform}-${metric}`);
+    }
+  }
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
   const navButtons = ["dashboard", "products"].map(name => {
     const button = new FakeElement("button", "", ["nav-btn"]);
@@ -209,6 +227,7 @@ async function run() {
     async get(url, options = {}) {
       calls.push({ url, signal: options.signal });
       if (url === "/api/risks") return clone(risksResponse());
+      if (url === "/api/analytics/platforms") return clone(platformAnalyticsResponse());
       if (url !== "/api/dashboard") throw new Error(`Unexpected GET ${url}`);
       const response = responses.length ? responses.shift() : dashboardResponse();
       return response instanceof Promise ? response : clone(response);
@@ -253,22 +272,26 @@ async function run() {
   }];
   responses.push(initialDashboard);
   await window.KOLConnectPages.navigate("dashboard");
-  assert.equal(calls.length, 2);
+  assert.equal(calls.length, 3);
   const dashboardCall = calls.find(call => call.url === "/api/dashboard");
   const riskCall = calls.find(call => call.url === "/api/risks");
+  const analyticsCall = calls.find(call => call.url === "/api/analytics/platforms");
   assert.ok(dashboardCall, "Dashboard should request its existing aggregate payload");
   assert.ok(riskCall, "Dashboard should request the independent risk summary");
+  assert.ok(analyticsCall, "Dashboard should request independent platform analytics");
   assert.ok(dashboardCall.signal instanceof AbortSignal);
   assert.ok(riskCall.signal instanceof AbortSignal);
+  assert.ok(analyticsCall.signal instanceof AbortSignal);
   assert.equal(elements.get("dashboard-total-creators").textContent, "30");
   assert.equal(elements.get("dashboard-campaigns").textContent, "3");
   assert.equal(elements.get("dashboard-risk-high").textContent, "0");
   assert.equal(elements.get("dashboard-risk-medium").textContent, "0");
   assert.equal(elements.get("dashboard-risk-low").textContent, "0");
-  assert.equal(chartCalls.length, 3);
+  assert.equal(chartCalls.length, 4);
   assert.deepEqual(chartCalls[0].config.data.labels, ["TikTok", "YouTube"]);
   assert.deepEqual(chartCalls[1].config.data.datasets[0].data, [9, 3]);
   assert.deepEqual(chartCalls[2].config.data.datasets[0].data, [1, 2]);
+  assert.deepEqual(Array.from(chartCalls[3].config.data.labels), ["TikTok", "Instagram", "YouTube"]);
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 1);
   assert.equal(sections[0].listenerCount("click"), 1);
 
@@ -285,7 +308,7 @@ async function run() {
   assert.equal(navigations[1].params.campaignId, "campaign_one");
 
   await window.KOLConnectPages.navigate("products");
-  assert.equal(chartCalls.filter(chart => chart.destroyed).length, 3);
+  assert.equal(chartCalls.filter(chart => chart.destroyed).length, 4);
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 0);
   assert.equal(sections[0].listenerCount("click"), 0);
   responses.push(dashboardResponse(31));
