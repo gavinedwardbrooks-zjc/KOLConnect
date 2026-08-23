@@ -1681,12 +1681,13 @@ button {
 }
 
 .creator-card {
+  position: relative;
   display: grid;
-  gap: 16px;
+  gap: 10px;
   min-width: 0;
-  padding: 20px;
+  padding: 15px;
   border: 1px solid var(--border);
-  border-radius: 20px;
+  border-radius: 16px;
   background: var(--surface);
   box-shadow: var(--shadow-soft);
   transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
@@ -1694,25 +1695,33 @@ button {
 
 .creator-card:hover { transform: translateY(-2px); border-color: #d6cfc2; box-shadow: var(--shadow); }
 .creator-card-identity { display: flex; align-items: center; gap: 12px; min-width: 0; }
-.creator-card-avatar { display: grid; flex: 0 0 42px; width: 42px; height: 42px; place-items: center; border-radius: 15px; color: #fff; background: var(--brand); font-size: 17px; font-weight: 800; }
+.creator-card-avatar { display: grid; flex: 0 0 38px; width: 38px; height: 38px; place-items: center; border-radius: 13px; color: #fff; background: var(--brand); font-size: 15px; font-weight: 800; }
 .creator-card-avatar.platform-tiktok { background: #2e3431; }
 .creator-card-avatar.platform-instagram { background: var(--accent); }
 .creator-card-avatar.platform-youtube { background: #c77d72; }
 .creator-card-identity h2 { overflow: hidden; margin: 0; color: var(--text); font-size: 16px; text-overflow: ellipsis; white-space: nowrap; }
 .creator-card-identity p { margin: 3px 0 0; color: var(--muted); font-size: 12px; }
+.creator-card-metadata-list { display: flex; flex-wrap: wrap; gap: 5px 10px; min-height: 0; }
+.creator-card-metadata { color: var(--muted); font-size: 12px; line-height: 1.3; }
 .creator-card-tags { display: flex; flex-wrap: wrap; gap: 6px; }
 .creator-card-tag, .creator-card-level { padding: 4px 8px; border-radius: 999px; color: var(--muted); background: var(--surface-muted); font-size: 11px; font-weight: 700; }
-.creator-card-level { color: var(--primary-dark); background: var(--brand-soft); text-transform: uppercase; }
-.creator-card-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.creator-card-metrics div { min-width: 0; padding: 9px; border-radius: 12px; background: var(--surface-soft); }
-.creator-card-metrics div:last-child { grid-column: span 2; }
-.creator-card-metrics span, .creator-card-metrics strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.creator-card-metrics span { color: var(--muted); font-size: 11px; }
-.creator-card-metrics strong { margin-top: 3px; color: var(--text); font-size: 13px; }
+.creator-card-level { color: #8c5f26; background: #fff2d9; }
+.creator-card-metrics { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.creator-card-metrics div { display: flex; gap: 5px; min-width: 0; }
+.creator-card-metrics span, .creator-card-metrics strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.creator-card-metrics span { color: var(--muted); font-size: 12px; }
+.creator-card-metrics strong { color: var(--text); font-size: 12px; }
 .creator-card-action { width: 100%; }
 
-.creator-card-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.creator-card-actions { display: flex; align-items: center; gap: 8px; }
+.creator-card-primary-actions { display: grid; flex: 1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .creator-card-actions .creator-card-action { min-width: 0; }
+.creator-card-more { position: relative; flex: 0 0 auto; }
+.creator-card-more summary { padding: 8px 10px; border: 1px solid var(--border); border-radius: 9px; color: var(--muted); background: var(--surface); cursor: pointer; font-size: 12px; font-weight: 700; list-style: none; white-space: nowrap; }
+.creator-card-more summary::-webkit-details-marker { display: none; }
+.creator-card-more-menu { position: absolute; z-index: 5; right: 0; bottom: calc(100% + 6px); display: grid; min-width: 112px; gap: 6px; padding: 7px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
+.creator-card-more:not([open]) .creator-card-more-menu { display: none; }
+.creator-card-more-menu .creator-card-action { text-align: left; }
 .creator-campaign-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .creator-campaign-section-heading h2 { margin-bottom: 4px; }
 .creator-campaign-table td:last-child { white-space: nowrap; }
@@ -1777,10 +1786,14 @@ button {
 }
 
 .creator-card-select {
-  align-items: center;
   display: inline-flex;
-  gap: 6px;
-  margin-left: auto;
+  padding: 3px;
+}
+
+.creator-card > .creator-card-select {
+  position: absolute;
+  top: 13px;
+  right: 13px;
 }
 
 .creator-library-table td:last-child {

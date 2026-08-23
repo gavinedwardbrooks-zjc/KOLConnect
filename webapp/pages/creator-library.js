@@ -631,12 +631,25 @@
     label.className = "creator-card-select";
     const input = document.createElement("input");
     input.type = "checkbox";
+    input.ariaLabel = "选择达人";
     input.dataset.creatorSelectId = creatorId;
     input.checked = selectedCreatorIds().has(creatorId);
-    const text = document.createElement("span");
-    text.textContent = "选择";
-    label.append(input, text);
+    label.append(input);
     return label;
+  }
+
+  function createCardMetadata(label, value, kind) {
+    if (value === null || value === undefined || String(value).trim() === "") return null;
+    const metadata = document.createElement("span");
+    metadata.className = "creator-card-metadata";
+    metadata.dataset.creatorMetadata = kind;
+    metadata.textContent = `${label} ${String(value).trim()}`;
+    return metadata;
+  }
+
+  function insightLabel(value) {
+    const insight = String(value || "insufficient").trim();
+    return insight === "insufficient" ? "⚠ 数据不足" : insight;
   }
 
   function renderCards(records) {
@@ -657,19 +670,26 @@
       const title = document.createElement("h2");
       title.textContent = record.creator_name || "未命名达人";
       const subtitle = document.createElement("p");
-      subtitle.textContent = [record.platform, record.country || "未知地区"].filter(Boolean).join(" · ");
+      subtitle.textContent = record.platform || "未标注平台";
       identityText.append(title, subtitle);
       identity.append(avatar, identityText);
+
+      const metadata = document.createElement("div");
+      metadata.className = "creator-card-metadata-list";
+      [
+        createCardMetadata("国家", record.country, "country"),
+        createCardMetadata("语言", record.language, "language"),
+        createCardMetadata("分类", record.content_category, "content-category"),
+      ].filter(Boolean).forEach(item => metadata.appendChild(item));
 
       const tags = document.createElement("div");
       tags.className = "creator-card-tags";
       [
-        record.content_category,
-        record.insight_level || "insufficient",
+        insightLabel(record.insight_level),
         STATUS_LABELS[record.status] || "已发现",
       ].filter(Boolean).forEach((label, index) => {
         const tag = document.createElement("span");
-        tag.className = index === 1 ? "creator-card-level" : "creator-card-tag";
+        tag.className = index === 0 ? "creator-card-level" : "creator-card-tag";
         tag.textContent = label;
         tags.appendChild(tag);
       });
@@ -679,7 +699,6 @@
       [
         ["粉丝", record.followers || "--"],
         ["平均播放", formatMetric(record.average_views)],
-        ["最近分析", formatTime(record.last_analysis_time || record.analysis_time)],
       ].forEach(([label, value]) => {
         const metric = document.createElement("div");
         const metricLabel = document.createElement("span");
@@ -692,18 +711,29 @@
 
       const actions = document.createElement("div");
       actions.className = "creator-card-actions";
-      actions.appendChild(createSelectionControl(creatorId));
-      actions.appendChild(createAction("查看达人", "detail", creatorId, "soft-btn creator-card-action"));
+      const primaryActions = document.createElement("div");
+      primaryActions.className = "creator-card-primary-actions";
+      primaryActions.appendChild(createAction("查看达人", "detail", creatorId, "soft-btn creator-card-action"));
       if (archived) {
-        actions.appendChild(createAction("恢复达人", "restore", creatorId, "soft-btn creator-card-action"));
+        primaryActions.appendChild(createAction("恢复达人", "restore", creatorId, "primary-btn creator-card-action"));
       } else {
-        actions.append(
+        primaryActions.append(
           createAction("加入 Campaign", "campaign", creatorId, "primary-btn creator-card-action"),
-          createAction("归档达人", "archive", creatorId, "soft-btn creator-card-action"),
         );
       }
-      actions.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger creator-card-action"));
-      card.append(identity, tags, metrics, actions);
+      const moreActions = document.createElement("details");
+      moreActions.className = "creator-card-more";
+      const moreToggle = document.createElement("summary");
+      moreToggle.textContent = "更多 ▼";
+      const moreMenu = document.createElement("div");
+      moreMenu.className = "creator-card-more-menu";
+      if (!archived) {
+        moreMenu.appendChild(createAction("归档达人", "archive", creatorId, "soft-btn creator-card-action"));
+      }
+      moreMenu.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger creator-card-action"));
+      moreActions.append(moreToggle, moreMenu);
+      actions.append(primaryActions, moreActions);
+      card.append(createSelectionControl(creatorId), identity, metadata, tags, metrics, actions);
       cards.appendChild(card);
     });
   }

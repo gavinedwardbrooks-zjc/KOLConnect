@@ -247,7 +247,7 @@ async function run() {
   };
 
   const records = [
-    { creator_id: "creator_a", analysis_id: "creator_a", creator_name: "Ana", agency_name: "Ana Agency", platform: "TikTok", country: "Brazil", status: "discovered", followers: "10K", analysis_time: "2026-08-01T00:00:00Z" },
+    { creator_id: "creator_a", analysis_id: "creator_a", creator_name: "Ana", agency_name: "Ana Agency", platform: "TikTok", country: "Brazil", language: "Portuguese", content_category: "Gaming", insight_level: "insufficient", average_views: 1200, status: "discovered", followers: "10K", analysis_time: "2026-08-01T00:00:00Z" },
     { creator_id: "creator_b", analysis_id: "creator_b", creator_name: "Bella", agency_name: "Bella Agency", platform: "TikTok", country: "USA", status: "discovered", followers: "20K", analysis_time: "2026-08-02T00:00:00Z" },
   ];
   const details = {
@@ -464,6 +464,17 @@ async function run() {
   assert.equal(window.KOLConnectPages.getCurrentPage(), "creator-library");
   assert.equal(elements.get("creator-library-cards").children.length, 2);
   assert.equal(elements.get("creator-library-refresh").listenerCount("click"), 1);
+  const anaCard = elements.get("creator-library-cards").children[0];
+  assert.ok(findNode(anaCard, node => node.dataset.creatorMetadata === "country" && node.textContent === "国家 Brazil"));
+  assert.ok(findNode(anaCard, node => node.dataset.creatorMetadata === "language" && node.textContent === "语言 Portuguese"));
+  assert.ok(findNode(anaCard, node => node.dataset.creatorMetadata === "content-category" && node.textContent === "分类 Gaming"));
+  assert.ok(findNode(anaCard, node => node.textContent === "⚠ 数据不足"), "technical insight state must use the friendly card label");
+  const selectionControl = findNode(anaCard, node => node.dataset.creatorSelectId === "creator_a");
+  assert.equal(selectionControl.parentElement.children.length, 1, "card selection must not render a redundant text label");
+  const moreActions = findNode(anaCard, node => node.className === "creator-card-more");
+  assert.equal(moreActions.children[0].textContent, "更多 ▼");
+  assert.equal(findNode(moreActions, node => node.dataset.creatorAction === "archive").dataset.creatorId, "creator_a");
+  assert.equal(findNode(moreActions, node => node.dataset.creatorAction === "delete").dataset.creatorId, "creator_a");
   paginationTotal = 30;
   await elements.get("creator-library-refresh").dispatch("click");
   const nextPage = findNode(
