@@ -1567,7 +1567,7 @@
             <span>Excel 工作簿路径</span>
             <input id="creator-library-workbook-path" type="text" placeholder="例如：WPS云盘\KOLConnect\Creator_Library.xlsx">
           </label>
-          <p class="hint">可设置为 WPS 云盘或其他同步文件夹。首次使用时会自动创建 Creators、Videos、Insights 工作表。</p>
+          <p class="hint" id="creator-library-workbook-path-hint">这是运行 KOLConnect 的本机文件路径。</p>
           <div class="action-row">
             <button class="primary-btn" id="creator-library-save-config">保存达人库文件设置</button>
           </div>
@@ -1582,6 +1582,14 @@
           <p class="hint">备份将保存到当前工作簿目录下的 backups 文件夹。</p>
           <div class="action-row">
             <button class="secondary-btn" id="creator-library-backup-create">Create Backup</button>
+          </div>
+        </div>
+
+        <div class="section-card" id="browser-mode-exit-card" hidden>
+          <div class="section-title">浏览器模式</div>
+          <p class="hint">关闭浏览器标签不会停止本机服务。完成使用后，请在这里安全退出 KOLConnect。</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="browser-mode-exit">退出浏览器模式</button>
           </div>
         </div>
 

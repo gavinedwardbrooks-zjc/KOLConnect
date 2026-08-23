@@ -22,6 +22,19 @@
     return result;
   }
 
+  function renderWorkbookPathCapability() {
+    const hint = document.getElementById("creator-library-workbook-path-hint");
+    if (!hint) return;
+    const desktopBridgeAvailable = Boolean(global.pywebview?.api?.save_xlsx);
+    hint.dataset.runtimeMode = desktopBridgeAvailable ? "desktop" : "browser";
+    hint.textContent = desktopBridgeAvailable
+      ? "可设置为 WPS 云盘或其他同步文件夹。首次使用时会自动创建所需工作表。"
+      : "高级本地文件设置：请填写运行 KOLConnect 的本机后端可访问路径；浏览器不会提供原生文件选择器，也不会上传工作簿。";
+
+    const browserExitCard = document.getElementById("browser-mode-exit-card");
+    if (browserExitCard) browserExitCard.hidden = desktopBridgeAvailable;
+  }
+
   function listen(id, type, listener) {
     const element = document.getElementById(id);
     if (element) resources.listen(element, type, listener);
@@ -32,6 +45,7 @@
       resources?.cleanup();
       resources = global.KOLConnectPageResources.create();
       await reloadSettings();
+      renderWorkbookPathCapability();
     },
 
     bind() {
@@ -118,6 +132,18 @@
           handleError(error);
         } finally {
           if (button) button.disabled = false;
+        }
+      });
+
+      listen("browser-mode-exit", "click", async () => {
+        const button = document.getElementById("browser-mode-exit");
+        if (button) button.disabled = true;
+        try {
+          await api.post("/api/runtime/shutdown", {});
+          if (button) button.textContent = "KOLConnect 已退出，可关闭此页面";
+        } catch (error) {
+          if (button) button.disabled = false;
+          handleError(error);
         }
       });
 

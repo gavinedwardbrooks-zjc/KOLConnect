@@ -3,12 +3,15 @@ from __future__ import annotations
 """PyInstaller desktop entry point for KOL Connect."""
 
 import errno
+import importlib
 import os
 import shutil
 import socket
 import sys
 import threading
 import time
+import webbrowser
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from types import ModuleType
@@ -33,6 +36,12 @@ WINDOW_MARGIN_HEIGHT = 120
 SERVER_START_TIMEOUT_SECONDS = 60
 BACKUP_KEEP_COUNT = 10
 _LOCALHOST_OPENER = build_opener(ProxyHandler({}))
+
+
+@dataclass(frozen=True)
+class LocalRuntime:
+    server_module: ModuleType
+    server_thread: threading.Thread
 
 
 def window_state_path() -> Path:
@@ -222,20 +231,37 @@ def run_scraper_worker() -> None:
         sys.argv = worker_args
 
 
-def run_desktop() -> None:
-    os.environ["KOLCONNECT_DESKTOP"] = "1"
-    import server
+def _configure_runtime_mode(mode: str) -> None:
+    if mode == "desktop":
+        os.environ["KOLCONNECT_DESKTOP"] = "1"
+        os.environ.pop("KOLCONNECT_BROWSER", None)
+        return
+    if mode == "browser":
+        os.environ["KOLCONNECT_BROWSER"] = "1"
+        os.environ.pop("KOLCONNECT_DESKTOP", None)
+        return
+    raise ValueError(f"Unsupported runtime mode: {mode}")
+
+
+def start_local_runtime(
+    mode: str,
+    *,
+    server_module: ModuleType | None = None,
+) -> LocalRuntime:
+    """Start the shared localhost backend and complete startup preparation."""
+    _configure_runtime_mode(mode)
+    server_module = server_module or importlib.import_module("server")
 
     if server_is_ready():
         exc = OSError(errno.EADDRINUSE, f"{HOST}:{PORT}")
         message = _startup_error_message(exc)
-        _record_startup_error(server, message, exc)
+        _record_startup_error(server_module, message, exc)
         raise RuntimeError(message)
 
     startup_state: dict[str, Any] = {"last_error": None}
     thread = threading.Thread(
         target=_run_server,
-        args=(server, startup_state),
+        args=(server_module, startup_state),
         name="kolconnect-server",
         daemon=True,
     )
@@ -246,14 +272,19 @@ def run_desktop() -> None:
             raise RuntimeError(_startup_error_message(startup_error)) from startup_error
         message = f"本地服务启动超时（{SERVER_START_TIMEOUT_SECONDS} 秒），请查看日志。"
         timeout_error = TimeoutError(message)
-        _record_startup_error(server, message, timeout_error)
+        _record_startup_error(server_module, message, timeout_error)
         raise RuntimeError(message)
 
     workbook_path = Path(
-        server.STATE.get("creator_library", {}).get("workbook_path")
-        or server.DEFAULT_CREATOR_LIBRARY_WORKBOOK
+        server_module.STATE.get("creator_library", {}).get("workbook_path")
+        or server_module.DEFAULT_CREATOR_LIBRARY_WORKBOOK
     )
     backup_creator_library(workbook_path)
+    return LocalRuntime(server_module=server_module, server_thread=thread)
+
+
+def run_desktop() -> None:
+    start_local_runtime("desktop")
 
     import webview
     from desktop_file_bridge import DesktopFileBridge
@@ -274,10 +305,29 @@ def run_desktop() -> None:
     webview.start()
 
 
-def main() -> None:
+def run_browser(
+    *,
+    browser_opener=None,
+    wait_for_exit: bool = True,
+) -> None:
+    runtime = start_local_runtime("browser")
+    opener = browser_opener or webbrowser.open
+    opener(APP_URL)
+    if wait_for_exit:
+        try:
+            runtime.server_thread.join()
+        except KeyboardInterrupt:
+            return
+
+
+def main(argv: list[str] | None = None) -> None:
+    arguments = list(sys.argv[1:] if argv is None else argv)
     get_logs_dir()
-    if "--scraper-worker" in sys.argv:
+    if "--scraper-worker" in arguments:
         run_scraper_worker()
+        return
+    if "--browser" in arguments:
+        run_browser()
         return
     run_desktop()
 

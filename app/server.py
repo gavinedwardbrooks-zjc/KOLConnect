@@ -90,6 +90,12 @@ from runtime_paths import (
     scraper_worker_command,
 )
 from local_storage_lock import shared_storage_lock
+from local_request_security import (
+    MUTATING_METHODS,
+    allowed_host_header,
+    allowed_mutation_origin,
+    browser_shutdown_allowed,
+)
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
     analytics_handler,
@@ -2105,6 +2111,34 @@ class Handler(BaseHTTPRequestHandler):
         save_state(STATE)
         self._ok()
 
+    def _allow_local_request(self) -> bool:
+        port = int(self.server.server_port)
+        if not allowed_host_header(self.headers.get("Host"), port):
+            self._json({"error": "LOCAL_REQUEST_REJECTED"}, status=403)
+            return False
+        path = urlparse(self.path).path
+        if self.command in MUTATING_METHODS and not allowed_mutation_origin(
+            self.headers.get("Origin"), path, port
+        ):
+            self._json({"error": "LOCAL_REQUEST_REJECTED"}, status=403)
+            return False
+        return True
+
+    def _handle_runtime_shutdown(self, path: str) -> bool:
+        """Stop only a Browser Mode server after its local response is delivered."""
+        if path != "/api/runtime/shutdown":
+            return False
+        if not browser_shutdown_allowed(path, os.environ.get("KOLCONNECT_BROWSER")):
+            self._json({"error": "LOCAL_REQUEST_REJECTED"}, status=403)
+            return True
+        self._ok(shutting_down=True)
+        threading.Thread(
+            target=self.server.shutdown,
+            name="kolconnect-browser-shutdown",
+            daemon=True,
+        ).start()
+        return True
+
     def _normalize_save_state_and_ok(self) -> None:
         global STATE
         STATE = normalize_state(STATE)
@@ -2272,6 +2306,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self) -> None:
+        if not self._allow_local_request():
+            return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
 
@@ -2285,7 +2321,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_file(STATIC_DIR / parsed.path.lstrip("/"))
 
     def do_POST(self) -> None:
+        if not self._allow_local_request():
+            return
         parsed = urlparse(self.path)
+        if self._handle_runtime_shutdown(parsed.path):
+            return
         request = self._request_context(parsed, parse_qs(parsed.query))
         try:
             with self._repository_request_scope():
@@ -2300,6 +2340,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(_friendly_error_message(exc), status=500)
 
     def do_PATCH(self) -> None:
+        if not self._allow_local_request():
+            return
         parsed = urlparse(self.path)
         request = self._request_context(parsed, parse_qs(parsed.query))
         try:
@@ -2316,6 +2358,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(_friendly_error_message(exc), status=500)
 
     def do_PUT(self) -> None:
+        if not self._allow_local_request():
+            return
         parsed = urlparse(self.path)
         with self._repository_request_scope():
             if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
@@ -2323,6 +2367,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._error("接口不存在。", status=404)
 
     def do_DELETE(self) -> None:
+        if not self._allow_local_request():
+            return
         parsed = urlparse(self.path)
         with self._repository_request_scope():
             if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
@@ -2337,7 +2383,10 @@ def run() -> None:
         "KOLConnect Start",
         f"version={APP_DISPLAY_VERSION} | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
     )
-    if os.environ.get("KOLCONNECT_DESKTOP") != "1":
+    if (
+        os.environ.get("KOLCONNECT_DESKTOP") != "1"
+        and os.environ.get("KOLCONNECT_BROWSER") != "1"
+    ):
         webbrowser.open(f"http://{HOST}:{PORT}/?v={int(time.time())}")
     server.serve_forever()
 
