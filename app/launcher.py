@@ -3,7 +3,6 @@ from __future__ import annotations
 """PyInstaller desktop entry point for KOL Connect."""
 
 import errno
-import importlib
 import os
 import shutil
 import socket
@@ -250,7 +249,11 @@ def start_local_runtime(
 ) -> LocalRuntime:
     """Start the shared localhost backend and complete startup preparation."""
     _configure_runtime_mode(mode)
-    server_module = server_module or importlib.import_module("server")
+    if server_module is None:
+        # Keep this import static so PyInstaller discovers server.py from launcher.py.
+        import server as local_server
+
+        server_module = local_server
 
     if server_is_ready():
         exc = OSError(errno.EADDRINUSE, f"{HOST}:{PORT}")

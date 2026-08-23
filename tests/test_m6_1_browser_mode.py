@@ -44,6 +44,23 @@ def _fake_server(workbook: Path | None = None):
 
 
 class BrowserModeStartupTests(unittest.TestCase):
+    def test_server_import_is_static_and_pyinstaller_discoverable(self) -> None:
+        source = (APP_DIR / "launcher.py").read_text(encoding="utf-8-sig")
+        tree = ast.parse(source)
+        start_function = next(
+            node
+            for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "start_local_runtime"
+        )
+        imported_modules = {
+            alias.name
+            for node in ast.walk(start_function)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        }
+        self.assertIn("server", imported_modules)
+        self.assertNotIn('importlib.import_module("server")', source)
+
     def test_default_startup_remains_desktop_and_browser_flag_selects_browser(self) -> None:
         with (
             mock.patch.object(launcher, "get_logs_dir"),
