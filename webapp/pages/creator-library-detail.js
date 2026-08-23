@@ -7,6 +7,7 @@
   let detailController = null;
   let campaignsController = null;
   let editController = null;
+  let summaryController = null;
   let campaignModal = null;
   let creatorId = "";
   let detail = null;
@@ -85,6 +86,108 @@
       }
       return [dt, dd];
     }));
+  }
+
+  function summaryMetric(measurement) {
+    if (!measurement || measurement.value === null || measurement.value === undefined || measurement.value === "") return "--";
+    const source = measurement.source === "creator_snapshot" ? "Snapshot" : "Insights";
+    const measuredAt = measurement.measured_at ? ` · ${formatTime(measurement.measured_at)}` : " · 时间未知";
+    return `${formatMetric(measurement.value)} · ${source}${measuredAt}`;
+  }
+
+  function summaryFreshnessLabel(status) {
+    return {
+      fresh: "数据较新",
+      update_recommended: "建议更新数据",
+      stale: "数据更新时间较早，请在决策前重新采集",
+      unknown: "数据更新时间未知",
+    }[status] || "数据更新时间未知";
+  }
+
+  function resetAISummary() {
+    summaryController?.abort();
+    summaryController = null;
+    const button = element("creator-ai-summary-generate");
+    if (button) {
+      button.disabled = false;
+      button.textContent = "生成摘要";
+    }
+    setText("creator-ai-summary-status", "点击“生成摘要”查看本地确定性分析。");
+    const content = element("creator-ai-summary-content");
+    if (content) content.hidden = true;
+    [
+      "creator-ai-summary-profile",
+      "creator-ai-summary-performance",
+      "creator-ai-summary-observations",
+      "creator-ai-summary-limitations",
+    ].forEach(id => element(id)?.replaceChildren());
+  }
+
+  function renderAISummary(data) {
+    const profile = data?.profile || {};
+    const performance = data?.performance || {};
+    const limitations = Array.isArray(data?.limitations) ? data.limitations : [];
+    const observations = Array.isArray(data?.observations) ? data.observations : [];
+    const dataStatus = data?.data_status || "insufficient";
+    const freshnessStatus = data?.freshness?.status || "unknown";
+    const content = element("creator-ai-summary-content");
+    if (content) content.hidden = false;
+    renderDefinitionList(element("creator-ai-summary-profile"), [
+      ["达人名称", profile.name],
+      ["平台", profile.platform],
+      ["粉丝数", profile.followers],
+      ["国家/地区", profile.country],
+      ["语言", profile.language],
+      ["内容类型", profile.content_category],
+    ]);
+    renderDefinitionList(element("creator-ai-summary-performance"), [
+      ["平均播放", summaryMetric(performance.average_views)],
+      ["中位播放", summaryMetric(performance.median_views)],
+      ["视频数量", summaryMetric(performance.video_count)],
+      ["Creator Score", summaryMetric(performance.creator_score)],
+      ["稳定性", summaryMetric(performance.stability)],
+    ]);
+    const statusLabel = { sufficient: "数据较完整", partial: "部分数据可用", insufficient: "数据不足" }[dataStatus] || "数据不足";
+    setText("creator-ai-summary-data-status", statusLabel);
+    setText("creator-ai-summary-freshness", summaryFreshnessLabel(freshnessStatus));
+    renderList("creator-ai-summary-observations", observations, "暂无可展示的事实摘要。");
+    renderList(
+      "creator-ai-summary-limitations",
+      limitations.map(item => item?.message).filter(Boolean),
+      "当前未发现额外数据限制。",
+    );
+    if (dataStatus === "insufficient") {
+      setText("creator-ai-summary-status", "数据不足。当前缺少可用于表现分析的数据。");
+    } else if (freshnessStatus === "stale") {
+      setText("creator-ai-summary-status", "数据更新时间较早，请在决策前重新采集");
+    } else {
+      setText("creator-ai-summary-status", dataStatus === "partial" ? "摘要已生成，部分数据仍待补充。" : "摘要已生成。");
+    }
+    const button = element("creator-ai-summary-generate");
+    if (button) button.textContent = "重新生成";
+  }
+
+  async function generateAISummary() {
+    const currentLifecycle = lifecycleId;
+    const button = element("creator-ai-summary-generate");
+    summaryController?.abort();
+    summaryController = pageContext.resources.createAbortController();
+    if (button) button.disabled = true;
+    setText("creator-ai-summary-status", "正在生成本地摘要...");
+    try {
+      const data = await pageContext.api.get(
+        `/api/creator-library/${encodeURIComponent(creatorId)}/ai-summary`,
+        { signal: summaryController.signal },
+      );
+      if (!pageContext || currentLifecycle !== lifecycleId) return;
+      renderAISummary(data);
+    } catch (error) {
+      if (error?.name !== "AbortError" && pageContext && currentLifecycle === lifecycleId) {
+        setText("creator-ai-summary-status", "摘要暂时无法生成，原始达人资料仍可正常查看");
+      }
+    } finally {
+      if (button && pageContext && currentLifecycle === lifecycleId) button.disabled = false;
+    }
   }
 
   function setDetailTab(tab) {
@@ -278,6 +381,7 @@
 
   async function loadDetail() {
     const currentLifecycle = lifecycleId;
+    resetAISummary();
     detailController?.abort();
     campaignsController?.abort();
     detailController = pageContext.resources.createAbortController();
@@ -502,6 +606,7 @@
       listen("creator-library-detail-archive", "click", () => changeArchiveState().catch(showError));
       listen("creator-library-detail-add-campaign", "click", () => openCampaignModal().catch(showError));
       listen("creator-library-detail-task", "click", () => openCollaborationTask().catch(showError));
+      listen("creator-ai-summary-generate", "click", () => generateAISummary().catch(showError));
       listen("creator-campaigns-body", "click", handleCampaignAction);
       listen("creator-edit-modal-close", "click", closeEditModal);
       listen("creator-edit-cancel", "click", closeEditModal);
@@ -516,6 +621,8 @@
       detailController = null;
       campaignsController = null;
       editController = null;
+      summaryController?.abort();
+      summaryController = null;
       campaignModal = null;
       creatorId = "";
       detail = null;

@@ -116,6 +116,18 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc), status=404)
         return True
 
+    ai_summary_match = re.fullmatch(r"/api/creator-library/([^/]+)/ai-summary", path)
+    # GET /api/creator-library/{creator_id}/ai-summary -> deterministic local Creator summary.
+    if method == "GET" and ai_summary_match:
+        try:
+            handler._json({
+                "ok": True,
+                **services["creator_summary"].get_creator_summary(ai_summary_match.group(1)),
+            })
+        except ValueError as exc:
+            handler._error(str(exc), status=404)
+        return True
+
     delete_impact_match = re.fullmatch(
         r"/api/creator-library/([^/]+)/delete-impact", path
     )

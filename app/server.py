@@ -76,6 +76,7 @@ from services.creator_library_cache import CreatorLibraryCache
 from services.campaign_creator_service import CampaignCreatorService
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
+from services.creator_summary_service import CreatorSummaryService
 from services.task_service import TaskService
 from services.risk_service import RiskService
 from app_logging import log_error, log_event
@@ -1649,6 +1650,10 @@ def get_creator_service() -> CreatorService:
     )
 
 
+def get_creator_summary_service() -> CreatorSummaryService:
+    return CreatorSummaryService(get_creator_repository)
+
+
 def get_task_port() -> TaskPort:
     """Build a stateless adapter for one task operation."""
     return TaskManagerAdapter(
@@ -2219,6 +2224,7 @@ class Handler(BaseHTTPRequestHandler):
                 "analytics": get_analytics_service(),
                 "workbook_backup": get_workbook_backup_service(),
                 "creator": get_creator_service(),
+                "creator_summary": get_creator_summary_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),
                 "campaign_creator": get_campaign_creator_service(),

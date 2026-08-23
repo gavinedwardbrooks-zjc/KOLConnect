@@ -568,6 +568,32 @@
           </div>
         </div>
 
+        <div class="section-card creator-ai-summary-card detail-panel" data-detail-panel="overview" id="creator-ai-summary-card">
+          <div class="creator-ai-summary-heading">
+            <div>
+              <div class="creator-ai-summary-title-row">
+                <h2>AI 达人摘要</h2>
+                <span class="creator-ai-mock-badge" id="creator-ai-mock-badge">AI Mock</span>
+              </div>
+              <p class="hint" id="creator-ai-summary-disclosure">当前为本地规则生成，未连接真实 AI</p>
+            </div>
+            <button class="soft-btn" type="button" id="creator-ai-summary-generate">生成摘要</button>
+          </div>
+          <p class="creator-ai-summary-status" id="creator-ai-summary-status">点击“生成摘要”查看本地确定性分析。</p>
+          <div class="creator-ai-summary-content" id="creator-ai-summary-content" hidden>
+            <div class="creator-ai-summary-grid">
+              <section><h3>基础资料</h3><dl id="creator-ai-summary-profile"></dl></section>
+              <section><h3>表现数据</h3><dl id="creator-ai-summary-performance"></dl></section>
+              <section><h3>数据状态</h3><p id="creator-ai-summary-data-status">--</p></section>
+              <section><h3>数据更新时间</h3><p id="creator-ai-summary-freshness">--</p></section>
+            </div>
+            <div class="creator-ai-summary-notes">
+              <section><h3>事实摘要</h3><ul id="creator-ai-summary-observations"></ul></section>
+              <section><h3>数据限制</h3><ul id="creator-ai-summary-limitations"></ul></section>
+            </div>
+          </div>
+        </div>
+
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
           <div class="creator-campaign-section-heading">
             <div>

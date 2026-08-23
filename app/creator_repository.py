@@ -1260,6 +1260,46 @@ class CreatorRepository:
         }
 
     @_synchronized
+    def getCreatorSummarySourceData(self, creator_id: str) -> dict[str, Any]:
+        """Read only the safe factual inputs required by CreatorSummaryService."""
+        creator_id = str(creator_id or "").strip()
+        workbook = self._load_workbook()
+        creator = self._creator_row(workbook["Creators"], creator_id)
+        if not creator:
+            raise ValueError("未找到达人分析记录。")
+        insight = self._creator_row(workbook["Insights"], creator_id)
+        snapshots = self._snapshots_from_workbook(workbook, creator_id)
+        campaign_creator_count = sum(
+            str(row.get("creator_id") or "") == creator_id
+            for row in self._rows(workbook["CampaignCreators"])
+        )
+        return {
+            "creator": {
+                field: creator.get(field)
+                for field in (
+                    "creator_id", "name", "platform", "profile_url", "followers",
+                    "country", "language", "content_category", "bio",
+                    "insight_level", "archived_at",
+                )
+            },
+            "insight": {
+                field: insight.get(field)
+                for field in ("average_views", "median_views", "stability")
+            },
+            "snapshots": [
+                {
+                    field: snapshot.get(field)
+                    for field in (
+                        "average_views", "median_views", "video_count",
+                        "creator_score", "insight_level", "captured_at",
+                    )
+                }
+                for snapshot in snapshots
+            ],
+            "campaign_creator_count": campaign_creator_count,
+        }
+
+    @_synchronized
     def getCreatorCooperations(self, creator_id: str, workbook=None) -> list[dict[str, Any]]:
         """Return one creator's cooperation history, latest contact first."""
         workbook = workbook or self._load_workbook()

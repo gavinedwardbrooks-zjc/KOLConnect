@@ -1852,6 +1852,24 @@ button {
   overflow-wrap: anywhere;
 }
 
+.creator-ai-summary-card { display: grid; gap: 14px; margin-bottom: 18px; }
+.creator-ai-summary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.creator-ai-summary-title-row { display: flex; align-items: center; gap: 9px; }
+.creator-ai-summary-title-row h2, .creator-ai-summary-card h3 { margin: 0; color: var(--text); }
+.creator-ai-summary-title-row h2 { font-size: 16px; }
+.creator-ai-summary-card h3 { font-size: 13px; }
+.creator-ai-mock-badge { border: 1px solid #c6d8cc; border-radius: 999px; padding: 3px 8px; background: #eef6f1; color: #386348; font-size: 11px; font-weight: 800; letter-spacing: 0.03em; }
+.creator-ai-summary-heading .hint { margin: 5px 0 0; }
+.creator-ai-summary-status { margin: 0; border-left: 3px solid var(--brand); padding: 8px 11px; background: var(--surface-muted); color: var(--muted); line-height: 1.5; }
+.creator-ai-summary-content { display: grid; gap: 16px; }
+.creator-ai-summary-grid, .creator-ai-summary-notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.creator-ai-summary-grid section, .creator-ai-summary-notes section { border-top: 1px solid var(--border); padding-top: 12px; }
+.creator-ai-summary-grid dl { display: grid; grid-template-columns: minmax(92px, 0.45fr) 1fr; gap: 7px 12px; margin: 9px 0 0; }
+.creator-ai-summary-grid dt { color: var(--muted); }
+.creator-ai-summary-grid dd { margin: 0; overflow-wrap: anywhere; }
+.creator-ai-summary-grid p { margin: 9px 0 0; color: var(--muted); line-height: 1.5; }
+.creator-ai-summary-notes ul { display: grid; gap: 6px; margin: 9px 0 0; padding-left: 18px; color: var(--muted); line-height: 1.45; }
+
 .creator-library-level {
   display: inline-block;
   margin: 0 0 12px;
@@ -2253,6 +2271,9 @@ button {
   .creator-library-detail-header {
     display: grid;
   }
+
+  .creator-ai-summary-heading { align-items: stretch; flex-direction: column; }
+  .creator-ai-summary-grid, .creator-ai-summary-notes { grid-template-columns: 1fr; }
 
   .dashboard-page-heading {
     align-items: stretch;
