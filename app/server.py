@@ -77,6 +77,7 @@ from services.campaign_creator_service import CampaignCreatorService
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
 from services.creator_summary_service import CreatorSummaryService
+from services.clean_reset_service import CleanResetService
 from services.task_service import TaskService
 from services.risk_service import RiskService
 from app_logging import log_error, log_event
@@ -100,22 +101,17 @@ from local_request_security import (
 )
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
-    account_identity_backfill_handler,
     analytics_handler,
     campaign_handler,
+    clean_reset_handler,
     creator_handler,
-    creator_identity_backfill_handler,
     dashboard_handler,
     feishu_sync_handler,
-    legacy_creator_cleanup_handler,
     settings_handler,
     task_handler,
     risk_handler,
 )
 from services.feishu_sync_service import FeishuSyncService
-from services.account_identity_backfill_service import AccountIdentityBackfillService
-from services.creator_identity_backfill_service import CreatorIdentityBackfillService
-from services.legacy_creator_cleanup_service import LegacyCreatorCleanupService
 
 
 APP_DIR = get_resource_dir()
@@ -211,10 +207,8 @@ HANDLERS = [
     dashboard_handler,
     risk_handler,
     campaign_handler,
-    creator_identity_backfill_handler,
-    account_identity_backfill_handler,
-    legacy_creator_cleanup_handler,
     feishu_sync_handler,
+    clean_reset_handler,
     settings_handler,
     creator_handler,
     task_handler,
@@ -1682,27 +1676,6 @@ def get_feishu_sync_service() -> FeishuSyncService:
     )
 
 
-def get_account_identity_backfill_service() -> AccountIdentityBackfillService:
-    return AccountIdentityBackfillService(
-        get_creator_repository(),
-        lambda: FeishuClient(get_four_table_feishu_config()),
-    )
-
-
-def get_creator_identity_backfill_service() -> CreatorIdentityBackfillService:
-    return CreatorIdentityBackfillService(
-        get_creator_repository(),
-        lambda: FeishuClient(get_four_table_feishu_config()),
-    )
-
-
-def get_legacy_creator_cleanup_service() -> LegacyCreatorCleanupService:
-    return LegacyCreatorCleanupService(
-        get_creator_repository(),
-        lambda: FeishuClient(get_four_table_feishu_config()),
-    )
-
-
 def get_task_port() -> TaskPort:
     """Build a stateless adapter for one task operation."""
     return TaskManagerAdapter(
@@ -1891,6 +1864,20 @@ def get_analytics_service() -> AnalyticsService:
 
 def get_workbook_backup_service() -> WorkbookBackupService:
     return WorkbookBackupService(_creator_library_workbook_path)
+
+
+def get_clean_reset_service() -> CleanResetService:
+    return CleanResetService(
+        _creator_library_workbook_path(),
+        settings_path=STATE_FILE,
+        data_protection_path=DATA_PROTECTION_FILE,
+        mail_messages_path=mail_sync_module.MAIL_MESSAGES_FILE,
+        tasks_dir=TASKS_DIR,
+        cache_invalidators=(
+            CREATOR_LIBRARY_CACHE.invalidate,
+            DASHBOARD_RESPONSE_CACHE.invalidate,
+        ),
+    )
 
 
 def import_task_results_to_creator_library(
@@ -2272,14 +2259,12 @@ class Handler(BaseHTTPRequestHandler):
                 "agency": get_agency_service(),
                 "analytics": get_analytics_service(),
                 "workbook_backup": get_workbook_backup_service(),
+                "clean_reset": get_clean_reset_service(),
                 "creator": get_creator_service(),
                 "creator_summary": get_creator_summary_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),
                 "feishu_sync": get_feishu_sync_service(),
-                "account_identity_backfill": get_account_identity_backfill_service(),
-                "creator_identity_backfill": get_creator_identity_backfill_service(),
-                "legacy_creator_cleanup": get_legacy_creator_cleanup_service(),
                 "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
                 "risk": get_risk_service(),

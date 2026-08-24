@@ -1080,12 +1080,97 @@ def _clean_creator_name(value: str, platform: str) -> str:
     elif platform == "YouTube":
         value = re.sub(r"\s*-\s*YouTube.*$", "", value, flags=re.I).strip()
         value = re.sub(r"\s*\|\s*YouTube.*$", "", value, flags=re.I).strip()
+    normalized = value.casefold()
     if value in {"Instagram", "TikTok", "YouTube"}:
+        return ""
+    if re.search(r"https?://|www\.", value, flags=re.I):
+        return ""
+    if any(marker in normalized for marker in (
+        "access denied",
+        "page not found",
+        "account not found",
+        "this page isn't available",
+        "this page is not available",
+        "tiktok - make your day",
+        "error 404",
+        "404 not found",
+    )):
         return ""
     return value
 
 
-def extract_creator_name(platform: str, page: str) -> str:
+def _instagram_target_username(target_url: str) -> str:
+    path = [unquote(part).strip() for part in urlparse(str(target_url or "")).path.split("/") if part.strip()]
+    if not path or path[0].casefold() in {"p", "reel", "reels", "stories", "explore"}:
+        return ""
+    return path[0].lstrip("@").casefold()
+
+
+def _iter_json_objects(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _iter_json_objects(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _iter_json_objects(child)
+
+
+def _script_json_payloads(raw: str):
+    candidates = [raw]
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if 0 <= start < end:
+        candidates.append(raw[start:end + 1])
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate = candidate.strip()
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            yield json.loads(candidate)
+        except (TypeError, json.JSONDecodeError):
+            continue
+
+
+def _instagram_target_name(page: str, target_url: str) -> str:
+    target_username = _instagram_target_username(target_url)
+    if not target_username:
+        return ""
+
+    soup = BeautifulSoup(page or "", "html.parser")
+    for script in soup.find_all("script"):
+        raw = script.string or script.get_text() or ""
+        if not raw.strip() or target_username not in raw.casefold():
+            continue
+        for payload in _script_json_payloads(raw):
+            for item in _iter_json_objects(payload):
+                username = next(
+                    (item.get(key) for key in ("username", "user_name", "owner_username") if item.get(key)),
+                    "",
+                )
+                if str(username).lstrip("@").casefold() != target_username:
+                    continue
+                for key in ("full_name", "fullName", "name"):
+                    cleaned = _clean_creator_name(str(item.get(key) or ""), "Instagram")
+                    if cleaned:
+                        return cleaned
+
+    target_marker = f"@{target_username}"
+    for candidate in (
+        _meta_content(page, "property", "og:title"),
+        _meta_content(page, "name", "title"),
+        _title_text(page),
+    ):
+        if target_marker in str(candidate or "").casefold():
+            cleaned = _clean_creator_name(candidate, "Instagram")
+            if cleaned:
+                return cleaned
+    return ""
+
+
+def extract_creator_name(platform: str, page: str, target_url: str = "") -> str:
     candidates: list[str] = []
     if platform == "TikTok":
         candidates.extend([
@@ -1095,12 +1180,7 @@ def extract_creator_name(platform: str, page: str) -> str:
             _title_text(page),
         ])
     elif platform == "Instagram":
-        candidates.extend([
-            _extract_json_string(page, [r'"full_name"\s*:\s*"([^"]+)"']),
-            _meta_content(page, "property", "og:title"),
-            _meta_content(page, "name", "title"),
-            _title_text(page),
-        ])
+        return _instagram_target_name(page, target_url)
     elif platform == "YouTube":
         candidates.extend([
             _extract_json_string(page, [r'"channelName"\s*:\s*"([^"]+)"', r'"ownerChannelName"\s*:\s*"([^"]+)"']),
@@ -1134,7 +1214,7 @@ def extract_latest_publish_date(text: str) -> str:
 def scrape_instagram(url: str, driver=None, session=None) -> dict:
     page, source = load_page_source_with_context(url, driver, session)
     emails, external = collect_page_emails_with_external_fallback("Instagram", page, session)
-    name = extract_creator_name("Instagram", page)
+    name = extract_creator_name("Instagram", page, url)
     latest_publish_date = extract_latest_publish_date(page)
     access_status, access_reason = detect_scrape_access("Instagram", page, source)
     return build_result(

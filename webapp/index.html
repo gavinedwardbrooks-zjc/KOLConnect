@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -1611,6 +1611,24 @@
           </div>
         </div>
 
+        <div class="section-card clean-reset-card" id="clean-reset-card">
+          <div class="section-title">高级 / 数据重置</div>
+          <p class="hint">此操作删除本地业务数据，但保留应用配置和数据结构。执行前会创建时间戳 Excel 备份，不会修改或同步飞书数据。</p>
+          <div class="danger-notice">该操作会清空 Creator、Account、分析快照、Campaign 等本机历史业务记录。请先预览并核对数量。</div>
+          <dl class="settings-backup-summary clean-reset-summary">
+            <div><dt>Creators</dt><dd id="clean-reset-creators">--</dd></div>
+            <div><dt>Accounts</dt><dd id="clean-reset-accounts">--</dd></div>
+            <div><dt>Videos</dt><dd id="clean-reset-videos">--</dd></div>
+            <div><dt>Snapshots</dt><dd id="clean-reset-snapshots">--</dd></div>
+            <div><dt>Campaigns</dt><dd id="clean-reset-campaigns">--</dd></div>
+          </dl>
+          <p class="hint">Chrome 配置：保留 · 邮箱配置：保留 · 飞书配置：保留 · Schema：保留</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="clean-reset-preview" type="button">预览清空内容</button>
+            <button class="danger-btn" id="clean-reset-execute" type="button" disabled>清空本地业务数据</button>
+          </div>
+          <p class="form-message" id="clean-reset-result" hidden></p>
+        </div>
         <div class="section-card" id="browser-mode-exit-card" hidden>
           <div class="section-title">浏览器模式</div>
           <p class="hint">关闭浏览器标签不会停止本机服务。完成使用后，请在这里安全退出 KOLConnect。</p>
@@ -1660,88 +1678,6 @@
           <p class="form-message" id="feishu-sync-result" hidden></p>
         </div>
 
-        <div class="section-card feishu-sync-card" id="feishu-account-backfill-card">
-          <div class="section-title">Account 身份认领（安全迁移）</div>
-          <p class="hint">仅认领已有飞书账号记录，不创建、不删除任何记录，也不会修改达人表。</p>
-          <div class="action-row">
-            <button class="secondary-btn" id="feishu-account-backfill-preview" type="button">生成预览</button>
-            <button class="primary-btn" id="feishu-account-backfill-execute" type="button" disabled>开始认领</button>
-          </div>
-          <dl class="settings-backup-summary feishu-sync-summary">
-            <div><dt>远端账号</dt><dd id="feishu-account-backfill-remote">--</dd></div>
-            <div><dt>可安全认领</dt><dd id="feishu-account-backfill-eligible">--</dd></div>
-            <div><dt>无需更新</dt><dd id="feishu-account-backfill-unchanged">--</dd></div>
-            <div><dt>未匹配</dt><dd id="feishu-account-backfill-unmatched">--</dd></div>
-            <div><dt>冲突</dt><dd id="feishu-account-backfill-conflicts">--</dd></div>
-          </dl>
-          <p class="form-message" id="feishu-account-backfill-result" hidden></p>
-          <details id="feishu-account-backfill-details" hidden>
-            <summary>查看认领明细</summary>
-            <div class="table-wrap">
-              <table class="data-table feishu-backfill-table">
-                <thead><tr><th>平台</th><th>主页</th><th>account_uid</th><th>creator_id</th><th>状态</th></tr></thead>
-                <tbody id="feishu-account-backfill-rows"></tbody>
-              </table>
-            </div>
-          </details>
-        </div>
-
-        <div class="section-card feishu-sync-card" id="feishu-creator-backfill-card">
-          <div class="section-title">Creator 身份认领（安全迁移）</div>
-          <p class="hint">仅供历史飞书数据迁移。只为双向关系完全一致的已有 Creator 补充 KOLConnect Creator ID；不会创建或删除 Creator，不修改业务字段、Account 记录或本地 Excel。正常新用户无需运行。</p>
-          <div class="action-row">
-            <button class="secondary-btn" id="feishu-creator-backfill-preview" type="button">预览 Creator 身份认领</button>
-            <button class="primary-btn" id="feishu-creator-backfill-execute" type="button" disabled>执行 Creator 身份认领</button>
-          </div>
-          <dl class="settings-backup-summary feishu-sync-summary">
-            <div><dt>远端 Creator</dt><dd id="feishu-creator-backfill-remote">--</dd></div>
-            <div><dt>Tier-A 可认领</dt><dd id="feishu-creator-backfill-eligible">--</dd></div>
-            <div><dt>已正确</dt><dd id="feishu-creator-backfill-unchanged">--</dd></div>
-            <div><dt>Tier-B 待人工</dt><dd id="feishu-creator-backfill-tier-b">--</dd></div>
-            <div><dt>歧义 / 未匹配</dt><dd id="feishu-creator-backfill-residual">--</dd></div>
-            <div><dt>冲突</dt><dd id="feishu-creator-backfill-conflicts">--</dd></div>
-            <div><dt>阻塞</dt><dd id="feishu-creator-backfill-blocked">--</dd></div>
-          </dl>
-          <p class="form-message" id="feishu-creator-backfill-result" hidden></p>
-          <details id="feishu-creator-backfill-details" hidden>
-            <summary>查看安全证据（最多 50 条）</summary>
-            <div class="table-wrap">
-              <table class="data-table feishu-backfill-table">
-                <thead><tr><th>Creator</th><th>creator_id</th><th>已验证账号</th><th>状态</th></tr></thead>
-                <tbody id="feishu-creator-backfill-rows"></tbody>
-              </table>
-            </div>
-          </details>
-        </div>
-
-        <div class="section-card feishu-sync-card" id="feishu-legacy-creator-cleanup-card">
-          <div class="section-title">历史未管理 Creator 清理</div>
-          <p class="hint">仅用于清理历史飞书遗留的 unmanaged Creator。不删除本地达人，不删除 Account，不影响已管理 Creator。正常新用户无需使用。</p>
-          <div class="action-row">
-            <button class="secondary-btn" id="feishu-legacy-creator-cleanup-preview" type="button">预览待清理记录</button>
-            <button class="danger-btn" id="feishu-legacy-creator-cleanup-execute" type="button" disabled>确认删除</button>
-          </div>
-          <dl class="settings-backup-summary feishu-sync-summary">
-            <div><dt>远端 Creator</dt><dd id="feishu-legacy-creator-cleanup-remote">--</dd></div>
-            <div><dt>已管理 Creator</dt><dd id="feishu-legacy-creator-cleanup-managed">--</dd></div>
-            <div><dt>未管理 Creator</dt><dd id="feishu-legacy-creator-cleanup-unmanaged">--</dd></div>
-            <div><dt>可安全删除</dt><dd id="feishu-legacy-creator-cleanup-eligible">--</dd></div>
-            <div><dt>有关系风险</dt><dd id="feishu-legacy-creator-cleanup-relation-risk">--</dd></div>
-            <div><dt>歧义</dt><dd id="feishu-legacy-creator-cleanup-ambiguous">--</dd></div>
-            <div><dt>阻塞</dt><dd id="feishu-legacy-creator-cleanup-blocked">--</dd></div>
-            <div><dt>冲突</dt><dd id="feishu-legacy-creator-cleanup-conflicts">--</dd></div>
-          </dl>
-          <p class="form-message" id="feishu-legacy-creator-cleanup-result" hidden></p>
-          <details id="feishu-legacy-creator-cleanup-details" hidden>
-            <summary>查看待清理明细</summary>
-            <div class="table-wrap">
-              <table class="data-table feishu-backfill-table">
-                <thead><tr><th>远端记录</th><th>达人名称</th><th>Legacy ID</th><th>关系分类</th><th>可删除</th></tr></thead>
-                <tbody id="feishu-legacy-creator-cleanup-rows"></tbody>
-              </table>
-            </div>
-          </details>
-        </div>
       </section>
 
       <section class="page workspace-narrow" data-page="logs">

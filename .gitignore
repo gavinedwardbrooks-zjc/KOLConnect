@@ -22,6 +22,7 @@ packaging/*.iconset/
 /.m3_0_p1_metadata_*/
 /.m4_*/
 /.m5_*/
+/.m7_1_clean_reset_test_runtime/
 *.exe
 *.dmg
 /release/

@@ -2,10 +2,7 @@
   "use strict";
 
   let resources = null;
-  let accountBackfillPreviewReady = false;
-  let creatorBackfillPreviewReady = false;
-  let legacyCreatorCleanupPreviewReady = false;
-  let legacyCreatorCleanupPreviewCount = 0;
+  let cleanResetPreview = null;
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -127,317 +124,60 @@
     }
   }
 
-  function backfillReasonLabel(item) {
-    const labels = {
-      MISSING_REMOTE_RECORD_ID: "缺少远端记录 ID",
-      MISSING_ACCOUNT_UID: "缺少 account_uid",
-      DUPLICATE_REMOTE_ACCOUNT_UID: "远端 account_uid 重复",
-      DUPLICATE_LOCAL_ACCOUNT_UID: "本地 account_uid 重复",
-      UNMATCHED_ACCOUNT_UID: "未匹配",
-      INVALID_LOCAL_CREATOR_ID: "本地 creator_id 无效",
-      CREATOR_ID_CONFLICT: "身份冲突",
-    };
-    return labels[item?.reason] || String(item?.reason || "已阻塞");
-  }
-
-  function appendBackfillCell(row, value) {
-    const cell = document.createElement("td");
-    cell.textContent = value || "--";
-    row.appendChild(cell);
-  }
-
-  function renderBackfillRows(data) {
-    const body = document.getElementById("feishu-account-backfill-rows");
-    const details = document.getElementById("feishu-account-backfill-details");
-    if (!body || !details) return;
-    body.textContent = "";
-    const rows = [
-      ...(Array.isArray(data?.candidates) ? data.candidates.map(item => ({ ...item, displayStatus: "可安全认领" })) : []),
-      ...(Array.isArray(data?.blocked) ? data.blocked.map(item => ({ ...item, displayStatus: backfillReasonLabel(item) })) : []),
-    ];
-    for (const item of rows) {
-      const row = document.createElement("tr");
-      appendBackfillCell(row, String(item.platform || ""));
-      appendBackfillCell(row, String(item.profile_url || ""));
-      appendBackfillCell(row, String(item.account_uid || ""));
-      const identity = item.reason === "CREATOR_ID_CONFLICT"
-        ? `远端 ${item.remote_creator_id || "--"} / 本地 ${item.local_creator_id || "--"}`
-        : String(item.creator_id || "");
-      appendBackfillCell(row, identity);
-      appendBackfillCell(row, item.displayStatus);
-      body.appendChild(row);
-    }
-    details.hidden = rows.length === 0;
-  }
-
-  function renderAccountBackfillResult(data, operation) {
+  function renderCleanResetResult(data, operation) {
     const summary = data?.summary || {};
-    setSyncText("feishu-account-backfill-remote", summary.remote_accounts);
-    setSyncText("feishu-account-backfill-eligible", summary.eligible);
-    setSyncText("feishu-account-backfill-unchanged", summary.unchanged);
-    setSyncText("feishu-account-backfill-unmatched", summary.unmatched);
-    setSyncText("feishu-account-backfill-conflicts", summary.conflicts);
-    renderBackfillRows(data);
-    const message = document.getElementById("feishu-account-backfill-result");
+    setSyncText("clean-reset-creators", summary.creators);
+    setSyncText("clean-reset-accounts", summary.accounts);
+    setSyncText("clean-reset-videos", summary.videos);
+    setSyncText("clean-reset-snapshots", summary.snapshots);
+    setSyncText("clean-reset-campaigns", summary.campaigns);
+    const message = document.getElementById("clean-reset-result");
     if (!message) return;
-    const status = String(data?.status || "failed");
     message.hidden = false;
-    message.dataset.status = status;
-    if (operation === "preview" && status === "success") {
-      message.textContent = `预览完成：可安全认领 ${summary.eligible || 0}，无需更新 ${summary.unchanged || 0}，未匹配 ${summary.unmatched || 0}，冲突 ${summary.conflicts || 0}。未写入飞书。`;
-    } else if (status === "success") {
-      message.textContent = `认领完成：成功 ${data.succeeded || 0}，无需更新 ${summary.unchanged || 0}，剩余 ${data.remaining || 0}。`;
-    } else if (status === "partial") {
-      message.textContent = `部分成功：已完成 ${data.succeeded || 0}，失败 ${data.failed || 0}，仍需处理 ${data.remaining || 0}。可重新生成预览后重试。`;
-    } else if (status === "blocked") {
-      message.textContent = `认领已阻塞：${data?.blocked_reason || "没有可安全自动认领的记录"}。冲突记录不会被覆盖。`;
+    message.dataset.status = String(data?.status || "failed");
+    if (operation === "preview" && data?.status === "success") {
+      message.textContent = "预览完成，尚未修改任何本地数据。确认数量后方可执行清空。";
+    } else if (data?.status === "success") {
+      message.textContent = `本地业务数据已清空。备份：${String(data?.backup?.filename || "--")}`;
     } else {
-      message.textContent = `认领失败：${data?.error_codes?.[0] || "FEISHU_ACCOUNT_BACKFILL_FAILED"}`;
+      const review = Array.isArray(data?.review_items) ? data.review_items.join("、") : "";
+      message.textContent = `操作未执行：${review || data?.error || "CLEAN_RESET_FAILED"}`;
     }
   }
 
-  async function runAccountBackfill(api, operation, options = {}) {
+  async function runCleanReset(api, operation, options = {}) {
     const preview = operation === "preview";
-    const button = document.getElementById(
-      preview ? "feishu-account-backfill-preview" : "feishu-account-backfill-execute",
-    );
+    const button = document.getElementById(preview ? "clean-reset-preview" : "clean-reset-execute");
     if (button) button.disabled = true;
     try {
-      const path = preview
-        ? "/api/feishu-sync/account-backfill/dry-run"
-        : "/api/feishu-sync/account-backfill/execute";
-      const data = await api.post(path, preview ? {} : { confirm: true }, options);
-      renderAccountBackfillResult(data, operation);
-      const execute = document.getElementById("feishu-account-backfill-execute");
-      accountBackfillPreviewReady = preview
+      const data = await api.post(
+        preview ? "/api/settings/clean-reset/preview" : "/api/settings/clean-reset/execute",
+        preview ? {} : { confirm: true },
+        options,
+      );
+      renderCleanResetResult(data, operation);
+      cleanResetPreview = preview
         && data?.status === "success"
-        && Number(data?.summary?.eligible || 0) > 0;
-      if (execute) execute.disabled = !accountBackfillPreviewReady;
+        && Array.isArray(data?.review_items)
+        && data.review_items.length === 0
+        ? data
+        : null;
+      const execute = document.getElementById("clean-reset-execute");
+      if (execute) execute.disabled = !cleanResetPreview;
       return data;
     } finally {
       if (button && preview) button.disabled = false;
     }
   }
-
-  function creatorBackfillReasonLabel(item) {
-    const labels = {
-      MISSING_REMOTE_RECORD_ID: "缺少远端记录 ID",
-      CREATOR_ID_CONFLICT: "Creator 身份冲突",
-      NO_RECIPROCAL_ACCOUNT_EVIDENCE: "无双向账号证据",
-      UNVERIFIED_REVERSE_ACCOUNT_RELATION: "关联账号未通过身份验证",
-      MISSING_FORWARD_RELATION: "缺少 Account → Creator 关系",
-      MISSING_REVERSE_RELATION: "缺少 Creator → Account 关系",
-      RECIPROCAL_RELATION_DISAGREEMENT: "双向关系不一致",
-      MULTIPLE_LOCAL_CREATOR_IDS: "关联到多个本地 Creator",
-      LOCAL_CREATOR_MULTIPLE_REMOTE_CREATORS: "一个本地 Creator 对应多个远端 Creator",
-    };
-    return labels[item?.reason] || String(item?.reason || "已阻塞");
-  }
-
-  function renderCreatorBackfillRows(data) {
-    const body = document.getElementById("feishu-creator-backfill-rows");
-    const details = document.getElementById("feishu-creator-backfill-details");
-    if (!body || !details) return;
-    body.textContent = "";
-    const rows = [
-      ...(Array.isArray(data?.candidates) ? data.candidates.map(item => ({ ...item, displayStatus: "Tier-A 可安全认领" })) : []),
-      ...(Array.isArray(data?.blocked) ? data.blocked.map(item => ({ ...item, displayStatus: creatorBackfillReasonLabel(item) })) : []),
-    ];
-    for (const item of rows) {
-      const row = document.createElement("tr");
-      appendBackfillCell(row, String(item.creator_name || item.remote_record_id || ""));
-      appendBackfillCell(row, String(item.creator_id || item.remote_creator_id || ""));
-      const accountEvidence = Array.isArray(item.accounts)
-        ? item.accounts.map(account => `${account.platform || "账号"}: ${account.account_uid || "--"}`).join("\n")
-        : "";
-      appendBackfillCell(row, accountEvidence);
-      appendBackfillCell(row, item.displayStatus);
-      body.appendChild(row);
-    }
-    details.hidden = rows.length === 0;
-  }
-
-  function renderCreatorBackfillResult(data, operation) {
-    const summary = data?.summary || {};
-    setSyncText("feishu-creator-backfill-remote", summary.remote_creators);
-    setSyncText("feishu-creator-backfill-eligible", summary.tier_a_eligible);
-    setSyncText("feishu-creator-backfill-unchanged", summary.already_correct);
-    setSyncText("feishu-creator-backfill-tier-b", summary.tier_b_manual_review);
-    setSyncText(
-      "feishu-creator-backfill-residual",
-      Number(summary.ambiguous || 0) + Number(summary.unmatched || 0),
-    );
-    setSyncText("feishu-creator-backfill-conflicts", summary.conflicts);
-    setSyncText("feishu-creator-backfill-blocked", summary.blocked);
-    renderCreatorBackfillRows(data);
-    const message = document.getElementById("feishu-creator-backfill-result");
-    if (!message) return;
-    const status = String(data?.status || "failed");
-    message.hidden = false;
-    message.dataset.status = status;
-    if (operation === "preview" && status === "success") {
-      message.textContent = `预览完成：Tier-A 可认领 ${summary.tier_a_eligible || 0}，已正确 ${summary.already_correct || 0}，Tier-B 待人工 ${summary.tier_b_manual_review || 0}，歧义 ${summary.ambiguous || 0}，未匹配 ${summary.unmatched || 0}。未写入飞书。`;
-    } else if (status === "success") {
-      message.textContent = `Creator 身份认领完成：成功 ${data.succeeded || 0}，剩余 ${data.remaining || 0}。请重新运行预览确认可认领数已收敛为 0。`;
-    } else if (status === "partial") {
-      message.textContent = `Creator 身份认领部分成功：已完成 ${data.succeeded || 0}，失败 ${data.failed || 0}，剩余 ${data.remaining || 0}。请重新预览后安全重试。`;
-    } else if (status === "blocked") {
-      message.textContent = `Creator 身份认领已阻塞：${data?.blocked_reason || "当前没有可安全自动认领的记录"}。不会覆盖冲突记录。`;
-    } else {
-      message.textContent = `Creator 身份认领失败：${data?.error_codes?.[0] || "FEISHU_CREATOR_BACKFILL_FAILED"}`;
-    }
-  }
-
-  async function runCreatorBackfill(api, operation, options = {}) {
-    const preview = operation === "preview";
-    const button = document.getElementById(
-      preview ? "feishu-creator-backfill-preview" : "feishu-creator-backfill-execute",
-    );
-    if (button) button.disabled = true;
-    try {
-      const path = preview
-        ? "/api/feishu-sync/creator-backfill/dry-run"
-        : "/api/feishu-sync/creator-backfill/execute";
-      const data = await api.post(path, preview ? {} : { confirm: true }, options);
-      renderCreatorBackfillResult(data, operation);
-      const execute = document.getElementById("feishu-creator-backfill-execute");
-      creatorBackfillPreviewReady = preview
-        && data?.status === "success"
-        && Number(data?.summary?.tier_a_eligible || 0) > 0;
-      if (execute) execute.disabled = !creatorBackfillPreviewReady;
-      return data;
-    } finally {
-      if (button && preview) button.disabled = false;
-    }
-  }
-
-  function cleanupRelationLabel(value) {
-    const labels = {
-      NO_RELATION: "无关系",
-      LEGACY_RELATION_ONLY: "仅历史关系",
-      ACTIVE_MANAGED_ACCOUNT_RELATION: "已管理 Account 关系",
-      AMBIGUOUS_RELATION: "歧义关系",
-    };
-    return labels[value] || String(value || "未知");
-  }
-
-  function compactRecordId(value) {
-    const text = String(value || "");
-    return text.length > 18 ? `${text.slice(0, 8)}…${text.slice(-6)}` : text;
-  }
-
-  function renderLegacyCreatorCleanupRows(data) {
-    const body = document.getElementById("feishu-legacy-creator-cleanup-rows");
-    const details = document.getElementById("feishu-legacy-creator-cleanup-details");
-    if (!body || !details) return;
-    body.textContent = "";
-    const targets = Array.isArray(data?.targets) ? data.targets : [];
-    for (const item of targets) {
-      const row = document.createElement("tr");
-      appendBackfillCell(row, compactRecordId(item?.remote_record_id));
-      appendBackfillCell(row, String(item?.display_name || ""));
-      appendBackfillCell(row, String(item?.legacy_id || ""));
-      appendBackfillCell(row, cleanupRelationLabel(item?.relation_status));
-      appendBackfillCell(row, item?.delete_eligible === true ? "是" : "否");
-      body.appendChild(row);
-    }
-    details.hidden = targets.length === 0;
-  }
-
-  function cleanupGatePassed(data) {
-    const gates = data?.gates;
-    const values = gates && typeof gates === "object" ? Object.values(gates) : [];
-    const targets = Array.isArray(data?.targets) ? data.targets : [];
-    return data?.status === "success"
-      && values.length > 0
-      && values.every(value => value === true)
-      && targets.length > 0
-      && targets.every(item => item?.delete_eligible === true);
-  }
-
-  function renderLegacyCreatorCleanupResult(data, operation) {
-    const summary = data?.summary || {};
-    const targets = Array.isArray(data?.targets) ? data.targets : [];
-    const relationRisk = targets.filter(item => item?.delete_eligible !== true).length;
-    const ambiguous = targets.filter(item => item?.relation_status === "AMBIGUOUS_RELATION").length;
-    const gates = data?.gates && typeof data.gates === "object" ? Object.values(data.gates) : [];
-    const failedGates = gates.filter(value => value !== true).length;
-    setSyncText("feishu-legacy-creator-cleanup-remote", summary.remote_creators);
-    setSyncText("feishu-legacy-creator-cleanup-managed", summary.managed_remote_creators);
-    setSyncText("feishu-legacy-creator-cleanup-unmanaged", summary.unmanaged_remote_creators);
-    setSyncText(
-      "feishu-legacy-creator-cleanup-eligible",
-      targets.filter(item => item?.delete_eligible === true).length,
-    );
-    setSyncText("feishu-legacy-creator-cleanup-relation-risk", relationRisk);
-    setSyncText("feishu-legacy-creator-cleanup-ambiguous", ambiguous);
-    setSyncText(
-      "feishu-legacy-creator-cleanup-blocked",
-      data?.status === "blocked" ? Math.max(1, failedGates) : failedGates,
-    );
-    setSyncText("feishu-legacy-creator-cleanup-conflicts", summary.identity_conflicts);
-    renderLegacyCreatorCleanupRows(data);
-
-    const message = document.getElementById("feishu-legacy-creator-cleanup-result");
-    if (!message) return;
-    const status = String(data?.status || "failed");
-    message.hidden = false;
-    message.dataset.status = status;
-    if (operation === "preview" && status === "success") {
-      message.textContent = cleanupGatePassed(data)
-        ? `预览完成：可安全删除 ${targets.length} 条。尚未删除任何飞书记录。`
-        : "预览未通过全部安全门槛，不会执行删除。";
-    } else if (status === "success") {
-      message.textContent = `清理完成：尝试 ${data.attempted || 0}，成功 ${data.succeeded || 0}，失败 ${data.failed || 0}，剩余 ${data.remaining || 0}。请重新运行：\n① 验证连接\n② M7.1 Dry Run`;
-    } else if (status === "partial") {
-      message.textContent = `清理部分完成：尝试 ${data.attempted || 0}，成功 ${data.succeeded || 0}，失败 ${data.failed || 0}，剩余 ${data.remaining || 0}。后续批次已停止，请重新预览。`;
-    } else if (status === "blocked") {
-      message.textContent = `清理已阻塞：${data?.blocked_reason || "CLEANUP_BLOCKED"}。未通过安全门槛，不会执行删除。`;
-    } else {
-      message.textContent = `清理失败：${data?.error_codes?.[0] || data?.blocked_reason || "FEISHU_LEGACY_CREATOR_CLEANUP_FAILED"}`;
-    }
-  }
-
-  async function runLegacyCreatorCleanup(api, operation, options = {}) {
-    const preview = operation === "preview";
-    const button = document.getElementById(
-      preview ? "feishu-legacy-creator-cleanup-preview" : "feishu-legacy-creator-cleanup-execute",
-    );
-    if (button) button.disabled = true;
-    try {
-      const path = preview
-        ? "/api/feishu-sync/legacy-creator-cleanup/preview"
-        : "/api/feishu-sync/legacy-creator-cleanup/execute";
-      const data = await api.post(path, preview ? {} : { confirm: true }, options);
-      renderLegacyCreatorCleanupResult(data, operation);
-      legacyCreatorCleanupPreviewReady = preview && cleanupGatePassed(data);
-      legacyCreatorCleanupPreviewCount = legacyCreatorCleanupPreviewReady
-        ? data.targets.length
-        : 0;
-      const execute = document.getElementById("feishu-legacy-creator-cleanup-execute");
-      if (execute) execute.disabled = !legacyCreatorCleanupPreviewReady;
-      return data;
-    } finally {
-      if (button && preview) button.disabled = false;
-    }
-  }
-
   const settingsPage = {
     async load() {
       resources?.cleanup();
       resources = global.KOLConnectPageResources.create();
-      accountBackfillPreviewReady = false;
-      creatorBackfillPreviewReady = false;
-      legacyCreatorCleanupPreviewReady = false;
-      legacyCreatorCleanupPreviewCount = 0;
+      cleanResetPreview = null;
       await reloadSettings();
       renderWorkbookPathCapability();
-      const execute = document.getElementById("feishu-account-backfill-execute");
-      if (execute) execute.disabled = true;
-      const creatorExecute = document.getElementById("feishu-creator-backfill-execute");
-      if (creatorExecute) creatorExecute.disabled = true;
-      const cleanupExecute = document.getElementById("feishu-legacy-creator-cleanup-execute");
-      if (cleanupExecute) cleanupExecute.disabled = true;
+      const resetExecute = document.getElementById("clean-reset-execute");
+      if (resetExecute) resetExecute.disabled = true;
     },
 
     bind() {
@@ -531,87 +271,38 @@
         }
       });
 
-      listen("feishu-account-backfill-preview", "click", async () => {
-        try {
-          await runAccountBackfill(api, "preview", { signal: resources.signal });
-        } catch (error) {
-          accountBackfillPreviewReady = false;
-          const execute = document.getElementById("feishu-account-backfill-execute");
-          if (execute) execute.disabled = true;
-          handleError(error);
-        }
-      });
-
-      listen("feishu-account-backfill-execute", "click", async () => {
-        if (!accountBackfillPreviewReady) return;
-        const confirmed = global.confirm(
-          "将仅更新飞书【达人账号表】中可确认的身份字段：\n\n"
-          + "• 账号唯一ID\n• KOLConnect Creator ID\n\n"
-          + "不会创建记录\n不会删除记录\n不会修改达人表\n不会修改业务数据\n\n继续吗？",
-        );
-        if (!confirmed) return;
-        try {
-          await runAccountBackfill(api, "execute", { signal: resources.signal });
-        } catch (error) {
-          handleError(error);
-        }
-      });
-
-      listen("feishu-creator-backfill-preview", "click", async () => {
-        try {
-          await runCreatorBackfill(api, "preview", { signal: resources.signal });
-        } catch (error) {
-          creatorBackfillPreviewReady = false;
-          const execute = document.getElementById("feishu-creator-backfill-execute");
-          if (execute) execute.disabled = true;
-          handleError(error);
-        }
-      });
-
-      listen("feishu-creator-backfill-execute", "click", async () => {
-        if (!creatorBackfillPreviewReady) return;
-        const confirmed = global.confirm(
-          "这是历史数据安全迁移，将仅更新飞书【Creator 表】中的 KOLConnect Creator ID。\n\n"
-          + "不会创建或删除 Creator\n不会修改 Creator 业务字段\n不会修改 Account\n不会修改本地 Excel\n\n继续吗？",
-        );
-        if (!confirmed) return;
-        try {
-          await runCreatorBackfill(api, "execute", { signal: resources.signal });
-        } catch (error) {
-          handleError(error);
-        }
-      });
-
-      listen("feishu-legacy-creator-cleanup-preview", "click", async () => {
-        legacyCreatorCleanupPreviewReady = false;
-        legacyCreatorCleanupPreviewCount = 0;
-        const execute = document.getElementById("feishu-legacy-creator-cleanup-execute");
+      listen("clean-reset-preview", "click", async () => {
+        cleanResetPreview = null;
+        const execute = document.getElementById("clean-reset-execute");
         if (execute) execute.disabled = true;
         try {
-          await runLegacyCreatorCleanup(api, "preview", { signal: resources.signal });
+          await runCleanReset(api, "preview", { signal: resources.signal });
         } catch (error) {
           handleError(error);
         }
       });
 
-      listen("feishu-legacy-creator-cleanup-execute", "click", async () => {
-        if (!legacyCreatorCleanupPreviewReady) return;
+      listen("clean-reset-execute", "click", async () => {
+        if (!cleanResetPreview) return;
+        const summary = cleanResetPreview.summary || {};
         const confirmed = global.confirm(
-          `将删除 ${legacyCreatorCleanupPreviewCount} 条历史 unmanaged Creator 飞书记录。\n\n`
-          + "不会删除本地 Excel，不会删除 Account，也不会删除已管理 Creator。\n\n确认继续吗？",
+          "将永久清空本机历史业务数据：\n\n"
+          + `Creators: ${summary.creators || 0}\nAccounts: ${summary.accounts || 0}\n`
+          + `Videos: ${summary.videos || 0}\nSnapshots: ${summary.snapshots || 0}\n`
+          + `Campaigns: ${summary.campaigns || 0}\n\n`
+          + "Chrome 配置：保留\n邮箱配置：保留\n飞书配置：保留\nSchema：保留\n\n"
+          + "执行前将创建可恢复的时间戳备份。确认继续吗？",
         );
         if (!confirmed) return;
-        legacyCreatorCleanupPreviewReady = false;
-        legacyCreatorCleanupPreviewCount = 0;
-        const execute = document.getElementById("feishu-legacy-creator-cleanup-execute");
+        cleanResetPreview = null;
+        const execute = document.getElementById("clean-reset-execute");
         if (execute) execute.disabled = true;
         try {
-          await runLegacyCreatorCleanup(api, "execute", { signal: resources.signal });
+          await runCleanReset(api, "execute", { signal: resources.signal });
         } catch (error) {
           handleError(error);
         }
       });
-
       listen("creator-library-backup-create", "click", async () => {
         const button = document.getElementById("creator-library-backup-create");
         if (button) button.disabled = true;

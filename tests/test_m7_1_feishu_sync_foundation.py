@@ -192,6 +192,38 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         self.assertEqual(1, result["local_archived_creator_count"])
         self.assertEqual([], self.client.create_calls)
 
+    def test_empty_local_and_remote_inventory_is_a_clean_noop(self):
+        service = FeishuSyncService(Source([], []), lambda: self.client)
+        result = service.dry_run()
+        self.assertEqual("success", result["status"])
+        self.assertEqual(0, result["creator_create_count"])
+        self.assertEqual(0, result["creator_update_count"])
+        self.assertEqual(0, result["creator_conflict_count"])
+        self.assertEqual(0, result["account_create_count"])
+        self.assertEqual(0, result["account_update_count"])
+        self.assertEqual(0, result["account_conflict_count"])
+        self.assertEqual(0, result["remote_unmanaged_count"])
+
+    def test_three_local_records_converge_against_empty_remote(self):
+        creators = [creator(f"creator-{index}", name=f"Creator {index}") for index in range(3)]
+        accounts = [
+            account(f"account-{index}", f"creator-{index}", profile_url=f"https://www.tiktok.com/@creator-{index}")
+            for index in range(3)
+        ]
+        service = FeishuSyncService(Source(creators, accounts), lambda: self.client)
+        first = service.dry_run()
+        self.assertEqual((3, 3), (first["creator_create_count"], first["account_create_count"]))
+        self.assertEqual((0, 0), (first["creator_update_count"], first["account_update_count"]))
+        self.assertEqual((0, 0), (first["creator_conflict_count"], first["account_conflict_count"]))
+        self.assertEqual(0, first["remote_unmanaged_count"])
+
+        synced = service.full_sync(confirm=True)
+        self.assertEqual("success", synced["status"])
+        converged = service.dry_run()
+        self.assertEqual((0, 0), (converged["creator_create_count"], converged["account_create_count"]))
+        self.assertEqual((0, 0), (converged["creator_update_count"], converged["account_update_count"]))
+        self.assertEqual((0, 0), (converged["creator_conflict_count"], converged["account_conflict_count"]))
+
     def test_explicit_privacy_whitelist_excludes_sensitive_fields(self):
         result = self.service.full_sync(confirm=True)
         self.assertEqual("success", result["status"])
