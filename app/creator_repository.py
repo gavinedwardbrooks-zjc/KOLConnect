@@ -287,6 +287,17 @@ class CreatorRepository:
         return accounts
 
     @_synchronized
+    def getCreatorInventoryRows(self) -> dict[str, list[dict[str, Any]]]:
+        """Return detached authoritative rows for identity-sensitive read operations."""
+        workbook = self._load_workbook()
+        return {
+            "creators": self._rows(workbook["Creators"]),
+            "accounts": self._rows(workbook["CreatorAccounts"]),
+            "insights": self._rows(workbook["Insights"]),
+            "snapshots": self._rows(workbook["CreatorSnapshots"]),
+        }
+
+    @_synchronized
     def getExistingCreatorAccountUids(self, account_uids: set[str]) -> set[str]:
         """Return only requested identities that already belong to a Creator."""
         requested = {str(value or "").strip() for value in account_uids if str(value or "").strip()}

@@ -40,6 +40,60 @@
     if (element) resources.listen(element, type, listener);
   }
 
+  function setSyncText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value ?? "--";
+  }
+
+  function renderSyncResult(data, operation) {
+    const status = String(data?.status || "failed");
+    const connectionLabel = data?.connection_ok === false
+      ? "配置异常"
+      : status === "failed"
+        ? "不可用"
+        : status === "blocked"
+          ? "需处理"
+          : "可用";
+    setSyncText("feishu-sync-connection", connectionLabel);
+    setSyncText("feishu-sync-local-creators", data?.local_creator_count);
+    setSyncText("feishu-sync-remote-creators", data?.remote_creator_count);
+    setSyncText("feishu-sync-create", data?.creator_create_count ?? data?.creator_created);
+    setSyncText("feishu-sync-update", data?.creator_update_count ?? data?.creator_updated);
+    setSyncText("feishu-sync-conflicts", data?.creator_conflict_count ?? data?.conflicts?.length ?? 0);
+    setSyncText("feishu-sync-unmanaged", data?.remote_unmanaged_count);
+    const message = document.getElementById("feishu-sync-result");
+    if (!message) return;
+    message.hidden = false;
+    message.dataset.status = status;
+    if (status === "success") {
+      message.textContent = operation === "full"
+        ? `同步完成：达人新增 ${data.creator_created || 0}、更新 ${data.creator_updated || 0}；账号新增 ${data.account_created || 0}、更新 ${data.account_updated || 0}。`
+        : operation === "validate" ? "连接与字段合同验证通过。" : "预检查完成，未写入飞书。";
+    } else if (status === "partial") {
+      message.textContent = `部分同步成功，失败记录 ${Number(data.creator_failed || 0) + Number(data.account_failed || 0)} 条，可修复后重新同步。`;
+    } else {
+      const reason = data?.blocked_reason || data?.error_codes?.[0] || "FEISHU_SYNC_FAILED";
+      message.textContent = `操作未执行：${reason}`;
+    }
+  }
+
+  async function runSyncOperation(api, operation, options = {}) {
+    const button = document.getElementById(`feishu-sync-${operation === "full" ? "full" : operation}`);
+    if (button) button.disabled = true;
+    try {
+      const path = operation === "validate"
+        ? "/api/feishu-sync/validate"
+        : operation === "dry-run"
+          ? "/api/feishu-sync/dry-run"
+          : "/api/feishu-sync/full-sync";
+      const data = await api.post(path, operation === "full" ? { confirm: true } : {}, options);
+      renderSyncResult(data, operation);
+      return data;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
   const settingsPage = {
     async load() {
       resources?.cleanup();
@@ -106,6 +160,34 @@
           }, { signal: resources.signal });
           app.showSaved("\u8fbe\u4eba\u5e93\u6587\u4ef6\u8bbe\u7f6e\u5df2\u4fdd\u5b58\u3002");
           await reloadSettings();
+        } catch (error) {
+          handleError(error);
+        }
+      });
+
+      listen("feishu-sync-validate", "click", async () => {
+        try {
+          await runSyncOperation(api, "validate", { signal: resources.signal });
+        } catch (error) {
+          handleError(error);
+        }
+      });
+
+      listen("feishu-sync-dry-run", "click", async () => {
+        try {
+          await runSyncOperation(api, "dry-run", { signal: resources.signal });
+        } catch (error) {
+          handleError(error);
+        }
+      });
+
+      listen("feishu-sync-full", "click", async () => {
+        const confirmed = global.confirm(
+          "KOLConnect / Excel 将保持为权威数据源。同步可能在飞书创建缺失记录并更新精确匹配记录；M7.1 不会删除任何飞书记录。确认继续吗？",
+        );
+        if (!confirmed) return;
+        try {
+          await runSyncOperation(api, "full", { signal: resources.signal });
         } catch (error) {
           handleError(error);
         }

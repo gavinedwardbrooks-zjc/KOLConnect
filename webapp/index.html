@@ -1636,6 +1636,29 @@
             <button class="primary-btn" id="feishu-save" data-i18n="saveFeishu">保存飞书配置</button>
           </div>
         </div>
+
+        <div class="section-card feishu-sync-card" id="feishu-sync-card">
+          <div class="section-title">飞书数据同步</div>
+          <p class="hint">KOLConnect / Excel 始终是权威数据源。M7.1 仅手动创建或更新匹配记录，不会删除飞书记录，也不会读取飞书修改写回本地。</p>
+          <div class="feishu-sync-state">
+            <span>连接状态</span>
+            <strong id="feishu-sync-connection">未验证</strong>
+          </div>
+          <div class="action-row">
+            <button class="secondary-btn" id="feishu-sync-validate" type="button">验证连接</button>
+            <button class="secondary-btn" id="feishu-sync-dry-run" type="button">预检查 / Dry Run</button>
+            <button class="primary-btn" id="feishu-sync-full" type="button">同步到飞书</button>
+          </div>
+          <dl class="settings-backup-summary feishu-sync-summary" id="feishu-sync-summary">
+            <div><dt>本地达人</dt><dd id="feishu-sync-local-creators">--</dd></div>
+            <div><dt>飞书达人</dt><dd id="feishu-sync-remote-creators">--</dd></div>
+            <div><dt>待新增</dt><dd id="feishu-sync-create">--</dd></div>
+            <div><dt>待更新</dt><dd id="feishu-sync-update">--</dd></div>
+            <div><dt>冲突</dt><dd id="feishu-sync-conflicts">--</dd></div>
+            <div><dt>未管理记录</dt><dd id="feishu-sync-unmanaged">--</dd></div>
+          </dl>
+          <p class="form-message" id="feishu-sync-result" hidden></p>
+        </div>
       </section>
 
       <section class="page workspace-narrow" data-page="logs">

@@ -434,6 +434,31 @@ body {
   margin: 0 0 12px;
 }
 
+.feishu-sync-state {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.feishu-sync-state strong {
+  color: var(--brand);
+}
+
+.feishu-sync-summary {
+  margin-top: 16px;
+}
+
+#feishu-sync-result[data-status="partial"],
+#feishu-sync-result[data-status="blocked"] {
+  color: var(--danger-dark);
+}
+
 .settings-backup-summary > div {
   display: grid;
   grid-template-columns: minmax(130px, 0.35fr) minmax(0, 1fr);
