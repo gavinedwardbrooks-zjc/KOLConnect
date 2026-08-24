@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Campaign data access for the Product-Campaign model."""
 
+import json
 import logging
 import re
 import uuid
@@ -14,7 +15,7 @@ from data_repository_base import ExcelDataRepository, utc_now
 
 
 CAMPAIGNS_HEADERS = [
-    "campaign_id", "product_id", "name", "country", "platform", "start_date",
+    "campaign_id", "product_id", "name", "country", "platform", "platforms", "start_date",
     "end_date", "owner", "status", "budget", "goal", "note", "created_at",
     "updated_at", "archived_at",
 ]
@@ -62,8 +63,48 @@ def migrate_legacy_campaign_archives(workbook) -> tuple[bool, list[dict[str, str
 
 
 class CampaignRepository(ExcelDataRepository):
+    SUPPORTED_PLATFORMS = ("TikTok", "Instagram", "YouTube")
+
     def __init__(self, workbook_path: Path) -> None:
         super().__init__(workbook_path)
+
+    @classmethod
+    def parse_platforms(cls, value: object, legacy: object = "") -> list[str]:
+        if isinstance(value, list):
+            candidates = value
+        else:
+            text = str(value or "").strip()
+            if text:
+                try:
+                    parsed = json.loads(text)
+                except (TypeError, ValueError):
+                    parsed = [part.strip() for part in text.split(",")]
+                candidates = parsed if isinstance(parsed, list) else []
+            else:
+                candidates = [legacy] if str(legacy or "").strip() else []
+        return [
+            platform
+            for platform in cls.SUPPORTED_PLATFORMS
+            if any(
+                str(item or "").strip().casefold() == platform.casefold()
+                for item in candidates
+            )
+        ]
+
+    @classmethod
+    def _platform_values(
+        cls, payload: dict[str, Any], existing: dict[str, Any] | None = None
+    ) -> tuple[str, str]:
+        existing = existing or {}
+        supplied = "platforms" in payload or "platform" in payload
+        platforms = cls.parse_platforms(
+            payload.get("platforms") if supplied else existing.get("platforms"),
+            payload.get("platform") if "platform" in payload else existing.get("platform"),
+        )
+        return (
+            platforms[0] if platforms else "",
+            json.dumps(platforms, ensure_ascii=False, separators=(",", ":")),
+        )
 
     def _require_product(self, workbook, product_id: object) -> str:
         product_id = self.require_text(product_id, "产品 ID")
@@ -98,8 +139,13 @@ class CampaignRepository(ExcelDataRepository):
     ) -> dict[str, Any]:
         campaign_id = str(campaign.get("campaign_id") or "")
         product_id = str(campaign.get("product_id") or "")
+        platforms = CampaignRepository.parse_platforms(
+            campaign.get("platforms"), campaign.get("platform")
+        )
         return {
             **campaign,
+            "platform": platforms[0] if platforms else "",
+            "platforms": platforms,
             "archived_at": str(campaign.get("archived_at") or "").strip() or None,
             "product_name": product_names.get(product_id, ""),
             "creators_count": creator_counts.get(campaign_id, 0),
@@ -141,12 +187,14 @@ class CampaignRepository(ExcelDataRepository):
         now = utc_now()
         with self.workbook(write=True) as workbook:
             product_id = self._require_product(workbook, payload.get("product_id"))
+            platform, platforms = self._platform_values(payload)
             campaign = {
                 "campaign_id": f"campaign_{uuid.uuid4().hex[:16]}",
                 "product_id": product_id,
                 "name": self.require_text(payload.get("name"), "Campaign 名称"),
                 "country": str(payload.get("country") or "").strip(),
-                "platform": str(payload.get("platform") or "").strip(),
+                "platform": platform,
+                "platforms": platforms,
                 "start_date": str(payload.get("start_date") or "").strip(),
                 "end_date": str(payload.get("end_date") or "").strip(),
                 "owner": str(payload.get("owner") or "").strip(),
@@ -159,7 +207,7 @@ class CampaignRepository(ExcelDataRepository):
                 "archived_at": None,
             }
             self.upsert_row(workbook["Campaigns"], "campaign_id", campaign["campaign_id"], campaign)
-        return campaign
+        return {**campaign, "platforms": self.parse_platforms(campaign["platforms"])}
 
     def getCampaigns(
         self,
@@ -264,10 +312,14 @@ class CampaignRepository(ExcelDataRepository):
             product_id = self._require_product(workbook, payload.get("product_id", existing.get("product_id")))
             updated = {**existing, "product_id": product_id, "updated_at": utc_now()}
             text_fields = (
-                "country", "platform", "start_date", "end_date", "owner", "status",
+                "country", "start_date", "end_date", "owner", "status",
                 "goal", "note",
             )
             updated["name"] = self.require_text(payload.get("name", existing.get("name")), "Campaign 名称")
+            if "platform" in payload or "platforms" in payload:
+                updated["platform"], updated["platforms"] = self._platform_values(
+                    payload, existing
+                )
             for field in text_fields:
                 if field in payload:
                     updated[field] = (
@@ -278,7 +330,11 @@ class CampaignRepository(ExcelDataRepository):
             if "budget" in payload:
                 updated["budget"] = self.optional_number(payload.get("budget"), "Campaign 预算")
             self.upsert_row(workbook["Campaigns"], "campaign_id", campaign_id, updated)
-        return {**updated, "archived_at": str(updated.get("archived_at") or "").strip() or None}
+        return {
+            **updated,
+            "platforms": self.parse_platforms(updated.get("platforms"), updated.get("platform")),
+            "archived_at": str(updated.get("archived_at") or "").strip() or None,
+        }
 
     @staticmethod
     def _require_iso_timestamp(value: object) -> str:

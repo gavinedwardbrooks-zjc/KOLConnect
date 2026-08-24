@@ -12,7 +12,9 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from feishu_client import FeishuClientError  # noqa: E402
 from services.feishu_sync_service import (  # noqa: E402
+    ACCOUNT_CREATOR_RELATION_FIELD,
     ACCOUNT_FIELDS,
+    CREATOR_ACCOUNT_RELATION_FIELD,
     CREATOR_FIELDS,
     FeishuSyncService,
 )
@@ -26,10 +28,16 @@ def schema(specs):
         "datetime": 5,
         "text": 1,
     }
-    return [
+    fields = [
         {"field_name": spec.remote_name, "type": preferred[spec.kind]}
         for spec in specs
     ]
+    relation_name = (
+        CREATOR_ACCOUNT_RELATION_FIELD if specs is CREATOR_FIELDS
+        else ACCOUNT_CREATOR_RELATION_FIELD
+    )
+    fields.append({"field_name": relation_name, "type": 18})
+    return fields
 
 
 class Source:

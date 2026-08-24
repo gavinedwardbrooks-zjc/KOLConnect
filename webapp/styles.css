@@ -957,6 +957,42 @@ button:disabled {
   background: var(--surface);
 }
 
+.campaign-platform-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.campaign-platform-field legend {
+  margin-bottom: 8px;
+}
+
+.campaign-choice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  min-height: 42px;
+  align-items: center;
+}
+
+.campaign-choice-list label,
+.campaign-planned-date-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.campaign-planned-dates-field,
+.campaign-planned-date-row {
+  display: grid;
+  gap: 8px;
+}
+
+.campaign-planned-date-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  margin-bottom: 8px;
+}
+
 .dashboard-visualization-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

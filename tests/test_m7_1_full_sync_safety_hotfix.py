@@ -14,7 +14,9 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from feishu_client import FeishuClientError  # noqa: E402
 from services.feishu_sync_service import (  # noqa: E402
+    ACCOUNT_CREATOR_RELATION_FIELD,
     ACCOUNT_FIELDS,
+    CREATOR_ACCOUNT_RELATION_FIELD,
     CREATOR_FIELDS,
     FeishuSyncService,
 )
@@ -78,8 +80,14 @@ class StatefulClient:
 
     def __init__(self):
         self.schemas = {
-            "creators": list(field_schema(CREATOR_FIELDS).values()),
-            "accounts": list(field_schema(ACCOUNT_FIELDS).values()),
+            "creators": [
+                *field_schema(CREATOR_FIELDS).values(),
+                {"field_name": CREATOR_ACCOUNT_RELATION_FIELD, "type": 18},
+            ],
+            "accounts": [
+                *field_schema(ACCOUNT_FIELDS).values(),
+                {"field_name": ACCOUNT_CREATOR_RELATION_FIELD, "type": 18},
+            ],
         }
         self.records = {"creators": [], "accounts": []}
         self.calls = []
@@ -153,7 +161,7 @@ class FullSyncSafetyHotfixTests(unittest.TestCase):
         result = self.service(source, client).full_sync(confirm=True)
         self.assertEqual("partial", result["status"])
         self.assertEqual("creator_create", result["phase"])
-        self.assertEqual((4, 2, 2, 8), (
+        self.assertEqual((4, 2, 2, 13), (
             result["attempted"], result["succeeded"], result["failed"], result["remaining"],
         ))
         self.assertEqual(2, client.call_counts[("create", "creators")])
@@ -171,7 +179,7 @@ class FullSyncSafetyHotfixTests(unittest.TestCase):
         result = self.service(source, client).full_sync(confirm=True)
         self.assertEqual("failed", result["status"])
         self.assertEqual(0, result["succeeded"])
-        self.assertEqual(2, result["remaining"])
+        self.assertEqual(3, result["remaining"])
 
     def test_creator_update_failure_stops_later_updates_and_account_phases(self):
         source = Source([creator(f"creator-{i}") for i in range(5)], [account("account-1", "creator-0")])

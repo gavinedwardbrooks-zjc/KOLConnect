@@ -2,16 +2,19 @@ from __future__ import annotations
 
 """Campaign-Creator relationship data access."""
 
+import json
 import uuid
+from datetime import date
 from pathlib import Path
 from typing import Any
 
 from data_repository_base import ExcelDataRepository, utc_now
+from campaign_repository import CampaignRepository
 
 
 CAMPAIGN_CREATORS_HEADERS = [
-    "id", "campaign_id", "creator_id", "account_id", "stage", "owner",
-    "creator_quote", "cost", "publish_links", "publish_date", "views", "likes",
+    "id", "campaign_id", "creator_id", "account_id", "account_ids", "stage", "owner",
+    "creator_quote", "cost", "publish_links", "publish_date", "planned_publish_dates", "views", "likes",
     "comments", "roi", "performance_note", "created_at", "updated_at",
     "archived_at",
 ]
@@ -27,19 +30,58 @@ class CampaignCreatorRepository(ExcelDataRepository):
     def __init__(self, workbook_path: Path) -> None:
         super().__init__(workbook_path)
 
+    @staticmethod
+    def _string_list(value: object, legacy: object = "") -> list[str]:
+        if isinstance(value, list):
+            candidates = value
+        else:
+            text = str(value or "").strip()
+            if text:
+                try:
+                    parsed = json.loads(text)
+                except (TypeError, ValueError):
+                    parsed = [text]
+                candidates = parsed if isinstance(parsed, list) else []
+            else:
+                candidates = [legacy] if str(legacy or "").strip() else []
+        result: list[str] = []
+        for item in candidates:
+            normalized = str(item or "").strip()
+            if normalized and normalized not in result:
+                result.append(normalized)
+        return result
+
+    @classmethod
+    def _date_list(
+        cls, value: object, legacy: object = "", *, strict: bool = True
+    ) -> list[str]:
+        result = cls._string_list(value, legacy)
+        valid: list[str] = []
+        for item in result:
+            try:
+                date.fromisoformat(item)
+            except ValueError as exc:
+                if strict:
+                    raise ValueError("计划发布日期必须为 YYYY-MM-DD 格式。") from exc
+                continue
+            valid.append(item)
+        return sorted(valid)
+
     def _validated_relations(
         self,
         workbook,
         campaign_id: object,
         creator_id: object,
-        account_id: object,
+        account_ids: object,
         *,
         current_id: str = "",
         allow_archived_duplicate: bool = False,
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str, list[str]]:
         campaign_id = self.require_text(campaign_id, "Campaign ID")
         creator_id = self.require_text(creator_id, "达人 ID")
-        account_id = self.require_text(account_id, "达人账号 ID")
+        normalized_account_ids = self._string_list(account_ids)
+        if not normalized_account_ids:
+            raise ValueError("至少选择一个达人账号。")
         campaign = self.row_by_key(workbook["Campaigns"], "campaign_id", campaign_id)
         if not campaign:
             raise ValueError("关联的 Campaign 不存在。")
@@ -47,11 +89,17 @@ class CampaignCreatorRepository(ExcelDataRepository):
             raise ValueError("关联的 Campaign 已归档。")
         if not self.row_by_key(workbook["Creators"], "creator_id", creator_id):
             raise ValueError("关联的达人不存在。")
-        account = self.row_by_key(workbook["CreatorAccounts"], "account_id", account_id)
-        if not account:
-            raise ValueError("关联的达人账号不存在。")
-        if str(account.get("creator_id") or "") != creator_id:
-            raise ValueError("达人账号不属于所选达人。")
+        campaign_platforms = CampaignRepository.parse_platforms(
+            campaign.get("platforms"), campaign.get("platform")
+        )
+        for account_id in normalized_account_ids:
+            account = self.row_by_key(workbook["CreatorAccounts"], "account_id", account_id)
+            if not account:
+                raise ValueError("关联的达人账号不存在。")
+            if str(account.get("creator_id") or "") != creator_id:
+                raise ValueError("达人账号不属于所选达人。")
+            if campaign_platforms and str(account.get("platform") or "") not in campaign_platforms:
+                raise ValueError("执行账号平台不属于 Campaign 目标平台。")
         for row in self.rows(workbook["CampaignCreators"]):
             if str(row.get("id") or "") == current_id:
                 continue
@@ -62,7 +110,7 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 if allow_archived_duplicate and str(row.get("archived_at") or "").strip():
                     continue
                 raise ValueError("该达人已加入此 Campaign。")
-        return campaign_id, creator_id, account_id
+        return campaign_id, creator_id, normalized_account_ids
 
     @staticmethod
     def _stage(value: object, *, default: str = "pending_contact") -> str:
@@ -106,10 +154,19 @@ class CampaignCreatorRepository(ExcelDataRepository):
     ) -> dict[str, Any]:
         creator = creators.get(str(record.get("creator_id") or ""), {})
         account = accounts.get(str(record.get("account_id") or ""), {})
+        account_ids = CampaignCreatorRepository._string_list(
+            record.get("account_ids"), record.get("account_id")
+        )
+        planned_dates = CampaignCreatorRepository._date_list(
+            record.get("planned_publish_dates"), record.get("publish_date"), strict=False
+        )
         agency_id = str(creator.get("agency_id") or "").strip()
         agency = agencies.get(agency_id, {})
         return {
             **record,
+            "account_ids": account_ids,
+            "execution_accounts": [accounts[item] for item in account_ids if item in accounts],
+            "planned_publish_dates": planned_dates,
             "archived_at": str(record.get("archived_at") or "").strip() or None,
             "creator_name": str(creator.get("name") or ""),
             "agency_id": agency_id or None,
@@ -121,7 +178,7 @@ class CampaignCreatorRepository(ExcelDataRepository):
     def _values(self, payload: dict[str, Any], existing: dict[str, Any] | None = None) -> dict[str, Any]:
         existing = existing or {}
         values = dict(existing)
-        for field in ("stage", "owner", "publish_date", "performance_note"):
+        for field in ("stage", "owner", "performance_note"):
             if field in payload or not existing:
                 values[field] = (
                     self._stage(payload.get(field, existing.get(field)))
@@ -144,6 +201,15 @@ class CampaignCreatorRepository(ExcelDataRepository):
             values["publish_links"] = self.publish_links_value(
                 payload.get("publish_links", existing.get("publish_links"))
             )
+        if "planned_publish_dates" in payload or "publish_date" in payload or not existing:
+            dates = self._date_list(
+                payload.get("planned_publish_dates"),
+                payload.get("publish_date", existing.get("publish_date")),
+            )
+            values["planned_publish_dates"] = json.dumps(
+                dates, ensure_ascii=False, separators=(",", ":")
+            )
+            values["publish_date"] = dates[0] if dates else ""
         return values
 
     def createCampaignCreator(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -151,11 +217,11 @@ class CampaignCreatorRepository(ExcelDataRepository):
             raise ValueError("Campaign 达人数据无效。")
         now = utc_now()
         with self.workbook(write=True) as workbook:
-            campaign_id, creator_id, account_id = self._validated_relations(
+            campaign_id, creator_id, account_ids = self._validated_relations(
                 workbook,
                 payload.get("campaign_id"),
                 payload.get("creator_id"),
-                payload.get("account_id"),
+                payload.get("account_ids", payload.get("account_id")),
                 allow_archived_duplicate=True,
             )
             archived_record = next(
@@ -177,7 +243,8 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 ),
                 "campaign_id": campaign_id,
                 "creator_id": creator_id,
-                "account_id": account_id,
+                "account_id": account_ids[0],
+                "account_ids": json.dumps(account_ids, ensure_ascii=False, separators=(",", ":")),
                 "created_at": (
                     str(archived_record.get("created_at") or now)
                     if archived_record
@@ -227,7 +294,9 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 if str(row.get("campaign_id") or "") == campaign_id
                 and str(row.get("creator_id") or "")
             }
-            campaign_platform = str(campaign.get("platform") or "").strip().casefold()
+            campaign_platforms = CampaignRepository.parse_platforms(
+                campaign.get("platforms"), campaign.get("platform")
+            )
             results: list[dict[str, str]] = []
             for creator_id in creator_ids:
                 creator = creators.get(creator_id)
@@ -246,16 +315,19 @@ class CampaignCreatorRepository(ExcelDataRepository):
                         "error": "该达人暂无可用社交账号。",
                     })
                     continue
-                account = next(
-                    (
-                        item
-                        for item in accounts
-                        if campaign_platform
-                        and str(item.get("platform") or "").strip().casefold()
-                        == campaign_platform
-                    ),
-                    accounts[0],
-                )
+                eligible_accounts = [
+                    item for item in accounts
+                    if not campaign_platforms
+                    or str(item.get("platform") or "") in campaign_platforms
+                ]
+                if not eligible_accounts:
+                    results.append({
+                        "creator_id": creator_id,
+                        "status": "failed",
+                        "error": "达人没有符合 Campaign 平台的账号。",
+                    })
+                    continue
+                account = eligible_accounts[0]
                 existing = relations_by_creator.get(creator_id)
                 if existing and not str(existing.get("archived_at") or "").strip():
                     results.append({
@@ -275,6 +347,9 @@ class CampaignCreatorRepository(ExcelDataRepository):
                     "campaign_id": campaign_id,
                     "creator_id": creator_id,
                     "account_id": str(account.get("account_id") or ""),
+                    "account_ids": json.dumps(
+                        [str(account.get("account_id") or "")], ensure_ascii=False
+                    ),
                     "created_at": (
                         str(existing.get("created_at") or now) if existing else now
                     ),
@@ -331,11 +406,17 @@ class CampaignCreatorRepository(ExcelDataRepository):
             existing = self.row_by_key(workbook["CampaignCreators"], "id", record_id)
             if not existing:
                 raise ValueError("Campaign 达人记录不存在。")
-            campaign_id, creator_id, account_id = self._validated_relations(
+            if "account_ids" in payload:
+                requested_account_ids = payload.get("account_ids")
+            elif "account_id" in payload:
+                requested_account_ids = [payload.get("account_id")]
+            else:
+                requested_account_ids = existing.get("account_ids") or existing.get("account_id")
+            campaign_id, creator_id, account_ids = self._validated_relations(
                 workbook,
                 payload.get("campaign_id", existing.get("campaign_id")),
                 payload.get("creator_id", existing.get("creator_id")),
-                payload.get("account_id", existing.get("account_id")),
+                requested_account_ids,
                 current_id=record_id,
             )
             updated = {
@@ -343,7 +424,8 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 "id": record_id,
                 "campaign_id": campaign_id,
                 "creator_id": creator_id,
-                "account_id": account_id,
+                "account_id": account_ids[0],
+                "account_ids": json.dumps(account_ids, ensure_ascii=False, separators=(",", ":")),
                 "created_at": existing.get("created_at") or utc_now(),
                 "updated_at": utc_now(),
             }

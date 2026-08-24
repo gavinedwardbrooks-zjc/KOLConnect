@@ -843,7 +843,7 @@
             </label>
             <div class="review-toolbar-actions">
               <button class="soft-btn" id="review-refresh" data-i18n="reviewRefresh">刷新任务</button>
-              <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描飞书表缺失邮箱</button>
+              <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描达人库缺失邮箱</button>
               <button class="soft-btn" id="review-view-analysis" hidden>达人分析</button>
               <button class="soft-btn" id="review-retry-failed">重新抓取异常记录</button>
             </div>
@@ -1264,15 +1264,16 @@
                   <option value="completed">Completed</option>
                 </select>
               </label>
-              <label class="field">
-                <span>平台</span>
-                <select id="campaign-platform">
-                  <option value="">不限平台</option>
-                  <option value="TikTok">TikTok</option>
-                  <option value="Instagram">Instagram</option>
-                  <option value="YouTube">YouTube</option>
-                </select>
-              </label>
+              <fieldset class="field campaign-platform-field">
+                <legend>平台</legend>
+                <input id="campaign-platform" type="hidden" value="">
+                <div class="campaign-choice-list" id="campaign-platform-options">
+                  <label><input id="campaign-platform-any" type="checkbox" value="" checked>不限平台</label>
+                  <label><input type="checkbox" data-campaign-platform value="TikTok">TikTok</label>
+                  <label><input type="checkbox" data-campaign-platform value="Instagram">Instagram</label>
+                  <label><input type="checkbox" data-campaign-platform value="YouTube">YouTube</label>
+                </div>
+              </fieldset>
               <label class="field">
                 <span>国家/地区</span>
                 <input id="campaign-country" type="text" autocomplete="country-name">
@@ -1421,9 +1422,10 @@
                   </label>
                   <label class="field">
                     <span>执行账号 *</span>
-                    <select id="campaign-creator-account-id" required disabled>
+                    <select id="campaign-creator-account-id" multiple required disabled size="3">
                       <option value="">请先选择达人</option>
                     </select>
+                    <small class="hint">可选择多个符合 Campaign 平台的账号。</small>
                   </label>
                   <label class="field">
                     <span>合作阶段</span>
@@ -1446,10 +1448,15 @@
                     <span>实际成本</span>
                     <input id="campaign-creator-cost" type="number" min="0" step="0.01">
                   </label>
-                  <label class="field">
-                    <span>发布日期</span>
-                    <input id="campaign-creator-publish-date" type="date">
-                  </label>
+                  <div class="field campaign-planned-dates-field">
+                    <span>计划发布日期</span>
+                    <div id="campaign-planned-date-list">
+                      <div class="campaign-planned-date-row">
+                        <input id="campaign-creator-publish-date" data-planned-publish-date type="date">
+                      </div>
+                    </div>
+                    <button class="soft-btn compact-btn" id="campaign-planned-date-add" type="button">+ 添加日期</button>
+                  </div>
                 </div>
 
                 <div class="campaign-form-subsection" data-campaign-section="execution-data">
@@ -1724,6 +1731,10 @@
             <div><dt>待更新</dt><dd id="feishu-sync-update">--</dd></div>
             <div><dt>冲突</dt><dd id="feishu-sync-conflicts">--</dd></div>
             <div><dt>未管理记录</dt><dd id="feishu-sync-unmanaged">--</dd></div>
+            <div><dt>关系待建立</dt><dd id="feishu-sync-relation-add">--</dd></div>
+            <div><dt>关系待更新</dt><dd id="feishu-sync-relation-update">--</dd></div>
+            <div><dt>关系待移除</dt><dd id="feishu-sync-relation-remove">--</dd></div>
+            <div><dt>关系冲突</dt><dd id="feishu-sync-relation-conflicts">--</dd></div>
           </dl>
           <p class="form-message" id="feishu-sync-result" hidden></p>
         </div>

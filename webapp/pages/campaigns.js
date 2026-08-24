@@ -110,7 +110,10 @@
       archiveCell.appendChild(archiveStatus);
       row.appendChild(archiveCell);
 
-      row.appendChild(createCell(String(campaign.platform || "--")));
+      const platformLabel = Array.isArray(campaign.platforms) && campaign.platforms.length
+        ? campaign.platforms.join("、")
+        : String(campaign.platform || "不限平台");
+      row.appendChild(createCell(platformLabel));
       row.appendChild(createCell(formatBudget(campaign.budget)));
       row.appendChild(createCell(String(campaign.start_date || "--")));
       row.appendChild(createCell(String(campaign.end_date || "--")));
@@ -138,6 +141,45 @@
     option.value = value;
     option.textContent = label;
     select.appendChild(option);
+  }
+
+  function platformCheckboxes() {
+    return Array.from(document.querySelectorAll("[data-campaign-platform]"));
+  }
+
+  function selectedPlatforms() {
+    const checkboxes = platformCheckboxes();
+    if (!checkboxes.length) {
+      const legacy = String(element("campaign-platform")?.value || "").trim();
+      return legacy ? [legacy] : [];
+    }
+    return checkboxes.filter(input => input.checked).map(input => input.value);
+  }
+
+  function setSelectedPlatforms(values) {
+    const selected = new Set(Array.isArray(values) ? values : []);
+    const checkboxes = platformCheckboxes();
+    checkboxes.forEach(input => { input.checked = selected.has(input.value); });
+    const any = element("campaign-platform-any");
+    if (any) any.checked = selected.size === 0;
+    if (element("campaign-platform")) {
+      element("campaign-platform").value = [...selected][0] || "";
+    }
+  }
+
+  function handlePlatformSelection(event) {
+    if (event.target?.id === "campaign-platform-any" && event.target.checked) {
+      setSelectedPlatforms([]);
+      return;
+    }
+    if (event.target?.id === "campaign-platform-any") {
+      setSelectedPlatforms(selectedPlatforms());
+      return;
+    }
+    if (event.target?.dataset?.campaignPlatform !== undefined) {
+      const values = selectedPlatforms();
+      setSelectedPlatforms(values);
+    }
   }
 
   function renderProductOptions() {
@@ -233,7 +275,7 @@
     element("campaign-name").value = "";
     element("campaign-product-id").value = "";
     element("campaign-status").value = "draft";
-    element("campaign-platform").value = "";
+    setSelectedPlatforms([]);
     element("campaign-country").value = "";
     element("campaign-country").disabled = false;
     element("campaign-country-edit-note").hidden = true;
@@ -265,7 +307,9 @@
     element("campaign-name").value = String(campaign.name || "");
     element("campaign-product-id").value = String(campaign.product_id || "");
     element("campaign-status").value = String(campaign.status || "draft");
-    element("campaign-platform").value = String(campaign.platform || "");
+    setSelectedPlatforms(
+      Array.isArray(campaign.platforms) ? campaign.platforms : [campaign.platform].filter(Boolean),
+    );
     element("campaign-country").value = String(campaign.country || "");
     element("campaign-country").disabled = true;
     element("campaign-country-edit-note").hidden = false;
@@ -293,11 +337,13 @@
   }
 
   function campaignPayload() {
+    const platforms = selectedPlatforms();
     return {
       name: element("campaign-name").value.trim(),
       product_id: element("campaign-product-id").value,
       status: element("campaign-status").value || "draft",
-      platform: element("campaign-platform").value,
+      platform: platforms[0] || "",
+      platforms,
       budget: element("campaign-budget").value.trim(),
       start_date: element("campaign-start-date").value,
       end_date: element("campaign-end-date").value,
@@ -399,6 +445,7 @@
       listen("campaign-status-filter", "change", loadCampaigns);
       listen("campaign-include-archived", "change", loadCampaigns);
       listen("campaign-date-filter-apply", "click", loadCampaigns);
+      listen("campaign-platform-options", "change", handlePlatformSelection);
     },
 
     unbind() {

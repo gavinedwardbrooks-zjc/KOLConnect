@@ -384,8 +384,8 @@ Object.assign(I18N.zh, {
     taskTypeScrape: "抓取任务",
     manualSupplement: "补充抓取信息",
     taskTypeEmailRecheck: "缺失邮箱补全",
-    reviewScanMissingEmail: "扫描飞书表缺失邮箱",
-    reviewScanMissingEmailConfirm: "将读取达人账号表并创建缺失邮箱补全任务，是否继续？",
+    reviewScanMissingEmail: "扫描达人库缺失邮箱",
+    reviewScanMissingEmailConfirm: "将扫描本地达人库账号并创建缺失邮箱补全任务，是否继续？",
     reviewScanMissingEmailResult: "已扫描 {scanned} 个账号，创建补全任务 {created} 条，跳过 {skipped} 条。",
     taskEmailFound: "已补全邮箱",
     taskEmailFailed: "未补全邮箱"
@@ -411,7 +411,7 @@ Object.assign(I18N.en, {
     manualSupplement: "Supplement crawl data",
     taskTypeEmailRecheck: "Missing email recheck",
     reviewScanMissingEmail: "Scan missing account emails",
-    reviewScanMissingEmailConfirm: "Read the account table and create a missing-email recheck task?",
+    reviewScanMissingEmailConfirm: "Scan local Creator Library accounts and create a missing-email recheck task?",
     reviewScanMissingEmailResult: "Scanned {scanned} accounts, created {created} recheck rows, skipped {skipped}.",
     taskEmailFound: "Emails found",
     taskEmailFailed: "Emails not found"

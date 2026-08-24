@@ -14,6 +14,9 @@ CREATOR_ID_FIELD = "KOLConnect Creator ID"
 ACCOUNT_UID_FIELD = "账号唯一ID"
 ACCOUNT_CREATOR_ID_FIELD = "KOLConnect Creator ID"
 LEGACY_CREATOR_RELATION_FIELD = "达人"
+CREATOR_ACCOUNT_RELATION_FIELD = "社媒账号"
+ACCOUNT_CREATOR_RELATION_FIELD = "达人"
+RELATION_FIELD_TYPE = 18
 
 
 class CreatorInventorySource(Protocol):
@@ -148,6 +151,11 @@ class FeishuSyncService:
             "account_updated": 0,
             "account_unchanged": plan["account_unchanged_count"],
             "account_failed": 0,
+            "relation_added": 0,
+            "relation_updated": 0,
+            "relation_removed": 0,
+            "relation_unchanged": plan["relation_unchanged_count"],
+            "relation_failed": 0,
             "conflicts": list(plan["conflicts"]),
             "warnings": list(plan["warnings"]),
             "error_codes": [],
@@ -159,12 +167,14 @@ class FeishuSyncService:
             "remaining": (
                 len(plan["creator_creates"]) + len(plan["creator_updates"])
                 + len(plan["account_creates"]) + len(plan["account_updates"])
+                + plan["relation_update_count"]
             ),
             "error_code": "",
             "retry_after": "",
         }
 
         creator_record_ids = dict(plan["remote_creator_record_ids"])
+        account_record_ids = dict(plan["remote_account_record_ids"])
         failure = self._execute_creates(
             client,
             client.creator_table_id,
@@ -198,6 +208,7 @@ class FeishuSyncService:
             synced_at,
             result,
             entity="account",
+            record_id_index=account_record_ids,
         )
         if failure:
             return self._stop_after_failure(result, failure)
@@ -214,10 +225,23 @@ class FeishuSyncService:
         if failure:
             return self._stop_after_failure(result, failure)
 
-        failed = result["creator_failed"] + result["account_failed"]
+        result["phase"] = "relation_update"
+        failure = self._execute_relations(
+            client,
+            plan["relation_targets"],
+            creator_record_ids,
+            account_record_ids,
+            plan,
+            result,
+        )
+        if failure:
+            return self._stop_after_failure(result, failure)
+
+        failed = result["creator_failed"] + result["account_failed"] + result["relation_failed"]
         changed = (
             result["creator_created"] + result["creator_updated"]
             + result["account_created"] + result["account_updated"]
+            + result["relation_updated"]
         )
         if failed:
             result["status"] = "partial" if changed else "failed"
@@ -253,6 +277,11 @@ class FeishuSyncService:
             "account_update_count": 0,
             "account_unchanged_count": 0,
             "account_conflict_count": 0,
+            "relation_add_count": 0,
+            "relation_update_count": 0,
+            "relation_remove_count": 0,
+            "relation_unchanged_count": 0,
+            "relation_conflict_count": 0,
             "remote_unmanaged_count": 0,
             "duplicate_identity_count": 0,
             "blocked_reason": "",
@@ -366,6 +395,11 @@ class FeishuSyncService:
                 else:
                     account_unchanged += 1
 
+        remote_account_ids = dict(remote["account_index"])
+        relation_plan = self._build_relation_plan(
+            local, remote, remote_creator_ids, remote_account_ids
+        )
+
         unmanaged_creator_ids = {
             item["record_id"] for item in remote["unmanaged_creators"]
         } - {item["record_id"] for item in legacy_matches.values()}
@@ -377,6 +411,11 @@ class FeishuSyncService:
             "account_create_count": len(account_creates),
             "account_update_count": len(account_updates),
             "account_unchanged_count": account_unchanged,
+            "relation_add_count": relation_plan["add_count"],
+            "relation_update_count": relation_plan["update_count"],
+            "relation_remove_count": relation_plan["remove_count"],
+            "relation_unchanged_count": relation_plan["unchanged_count"],
+            "relation_conflict_count": len(relation_plan["conflicts"]),
             "remote_unmanaged_count": len(unmanaged_creator_ids) + len(remote["unmanaged_accounts"]),
             "blocked_reason": "",
             "warnings": sorted(set(base["warnings"] + (["REMOTE_UNMANAGED_RECORDS_PRESENT"] if unmanaged_creator_ids or remote["unmanaged_accounts"] else []))),
@@ -388,6 +427,9 @@ class FeishuSyncService:
             "account_creates": account_creates,
             "account_updates": account_updates,
             "remote_creator_record_ids": remote_creator_ids,
+            "remote_account_record_ids": remote_account_ids,
+            "relation_targets": relation_plan["targets"],
+            "remote_inventory": remote,
             "payload_safety": self._payload_safety_summary(
                 creator_updates,
                 account_updates,
@@ -547,6 +589,76 @@ class FeishuSyncService:
             matches[creator_id] = record
         return matches, conflicts
 
+    @classmethod
+    def _remote_record_id(cls, value: Any) -> str:
+        if isinstance(value, dict):
+            return cls._text(value.get("record_id"))
+        return cls._text(value)
+
+    def _build_relation_plan(
+        self,
+        local: dict[str, Any],
+        remote: dict[str, Any],
+        creator_records: dict[str, Any],
+        account_records: dict[str, Any],
+    ) -> dict[str, Any]:
+        targets: dict[str, list[str]] = {}
+        for account_uid, account in local["accounts"].items():
+            creator_id = self._text(account.get("creator_id"))
+            if creator_id:
+                targets.setdefault(creator_id, []).append(account_uid)
+        for values in targets.values():
+            values.sort()
+
+        managed_remote_accounts = {
+            self._remote_record_id(record)
+            for record in remote["account_index"].values()
+            if self._remote_record_id(record)
+        }
+        add_count = remove_count = unchanged_count = update_count = 0
+        conflicts: list[dict[str, str]] = []
+        for creator_id, account_uids in targets.items():
+            creator_record_id = self._remote_record_id(creator_records.get(creator_id))
+            remote_creator = remote["creator_index"].get(creator_id)
+            current = set(self._relation_ids(
+                (remote_creator or {}).get("fields", {}).get(CREATOR_ACCOUNT_RELATION_FIELD)
+            ))
+            desired = {
+                self._remote_record_id(account_records.get(uid))
+                for uid in account_uids
+                if self._remote_record_id(account_records.get(uid))
+            }
+            pending = sum(not self._remote_record_id(account_records.get(uid)) for uid in account_uids)
+            add_count += len(desired - current) + pending
+            remove_count += len((current & managed_remote_accounts) - desired)
+            unchanged_count += len(current & desired)
+            if pending or (current & managed_remote_accounts) != desired:
+                update_count += 1
+            if creator_record_id and len(desired) + pending != len(account_uids):
+                conflicts.append({
+                    "entity_type": "relation",
+                    "identity": creator_id,
+                    "reason": "missing_remote_account_identity",
+                })
+        for creator_id, remote_creator in remote["creator_index"].items():
+            if creator_id in targets:
+                continue
+            current = set(self._relation_ids(
+                (remote_creator.get("fields") or {}).get(CREATOR_ACCOUNT_RELATION_FIELD)
+            ))
+            obsolete = current & managed_remote_accounts
+            if obsolete:
+                remove_count += len(obsolete)
+                update_count += 1
+        return {
+            "targets": targets,
+            "add_count": add_count,
+            "remove_count": remove_count,
+            "unchanged_count": unchanged_count,
+            "update_count": update_count,
+            "conflicts": conflicts,
+        }
+
     def _plan_item(
         self,
         identity: str,
@@ -670,6 +782,130 @@ class FeishuSyncService:
                 }
         return None
 
+    def _execute_relations(
+        self,
+        client: FeishuClient,
+        targets: dict[str, list[str]],
+        creator_records: dict[str, Any],
+        account_records: dict[str, Any],
+        plan: dict[str, Any],
+        result: dict[str, Any],
+    ) -> dict[str, str] | None:
+        remote = plan["remote_inventory"]
+        managed_account_record_ids = {
+            self._remote_record_id(record)
+            for record in remote["account_index"].values()
+            if self._remote_record_id(record)
+        }
+        creator_updates: list[dict[str, Any]] = []
+        account_updates: list[dict[str, Any]] = []
+        for creator_id, account_uids in targets.items():
+            creator_record_id = self._remote_record_id(creator_records.get(creator_id))
+            desired_account_ids = sorted({
+                self._remote_record_id(account_records.get(uid))
+                for uid in account_uids
+                if self._remote_record_id(account_records.get(uid))
+            })
+            if not creator_record_id or len(desired_account_ids) != len(account_uids):
+                result["relation_failed"] += 1
+                result["failed"] += 1
+                result["failed_entities"].append({
+                    "entity_type": "relation",
+                    "identity": creator_id,
+                    "error_code": "RELATION_IDENTITY_UNAVAILABLE",
+                })
+                return {"phase": "relation_update", "error_code": "RELATION_IDENTITY_UNAVAILABLE"}
+
+            remote_creator = remote["creator_index"].get(creator_id) or {}
+            current_creator_ids = set(self._relation_ids(
+                (remote_creator.get("fields") or {}).get(CREATOR_ACCOUNT_RELATION_FIELD)
+            ))
+            preserved_unmanaged = current_creator_ids - managed_account_record_ids
+            desired_creator_ids = sorted(preserved_unmanaged | set(desired_account_ids))
+            if current_creator_ids != set(desired_creator_ids):
+                creator_updates.append({
+                    "record_id": creator_record_id,
+                    "fields": {CREATOR_ACCOUNT_RELATION_FIELD: desired_creator_ids},
+                })
+
+            for account_uid in account_uids:
+                account_record_id = self._remote_record_id(account_records.get(account_uid))
+                remote_account = remote["account_index"].get(account_uid) or {}
+                current_creator_links = set(self._relation_ids(
+                    (remote_account.get("fields") or {}).get(ACCOUNT_CREATOR_RELATION_FIELD)
+                ))
+                if current_creator_links != {creator_record_id}:
+                    account_updates.append({
+                        "record_id": account_record_id,
+                        "fields": {ACCOUNT_CREATOR_RELATION_FIELD: [creator_record_id]},
+                    })
+
+        target_account_uids = {
+            account_uid for account_uids in targets.values() for account_uid in account_uids
+        }
+        managed_creator_record_ids = {
+            self._remote_record_id(record)
+            for record in remote["creator_index"].values()
+            if self._remote_record_id(record)
+        } | {
+            self._remote_record_id(record)
+            for record in creator_records.values()
+            if self._remote_record_id(record)
+        }
+        for creator_id, remote_creator in remote["creator_index"].items():
+            if creator_id in targets:
+                continue
+            record_id = self._remote_record_id(remote_creator)
+            current = set(self._relation_ids(
+                (remote_creator.get("fields") or {}).get(CREATOR_ACCOUNT_RELATION_FIELD)
+            ))
+            desired = sorted(current - managed_account_record_ids)
+            if current != set(desired):
+                creator_updates.append({
+                    "record_id": record_id,
+                    "fields": {CREATOR_ACCOUNT_RELATION_FIELD: desired},
+                })
+        for account_uid, remote_account in remote["account_index"].items():
+            if account_uid in target_account_uids:
+                continue
+            record_id = self._remote_record_id(remote_account)
+            current = set(self._relation_ids(
+                (remote_account.get("fields") or {}).get(ACCOUNT_CREATOR_RELATION_FIELD)
+            ))
+            desired = sorted(current - managed_creator_record_ids)
+            if current != set(desired):
+                account_updates.append({
+                    "record_id": record_id,
+                    "fields": {ACCOUNT_CREATOR_RELATION_FIELD: desired},
+                })
+
+        for table_id, updates in (
+            (client.creator_table_id, creator_updates),
+            (client.account_table_id, account_updates),
+        ):
+            for batch in self._chunks(updates, client.batch_size):
+                result["attempted"] += len(batch)
+                try:
+                    updated = client.batch_update(table_id, batch)
+                    if len(updated) != len(batch):
+                        raise FeishuClientError("REMOTE_ERROR", "飞书关系更新结果数量不一致。")
+                except FeishuClientError as exc:
+                    result["relation_failed"] += len(batch)
+                    result["failed"] += len(batch)
+                    result["error_codes"].append(exc.code)
+                    return {
+                        "phase": "relation_update",
+                        "error_code": exc.code,
+                        "retry_after": exc.retry_after,
+                    }
+                result["relation_updated"] += len(batch)
+                result["succeeded"] += len(batch)
+                result["remaining"] = max(0, result["remaining"] - len(batch))
+
+        result["relation_added"] = plan["relation_add_count"]
+        result["relation_removed"] = plan["relation_remove_count"]
+        return None
+
     def _payload_with_sync(
         self,
         payload: dict[str, Any],
@@ -739,6 +975,19 @@ class FeishuSyncService:
                         "field": spec.remote_name,
                         "actual_type": field_type,
                     })
+        for table, schema, field_name in (
+            ("creator", creator_schema, CREATOR_ACCOUNT_RELATION_FIELD),
+            ("account", account_schema, ACCOUNT_CREATOR_RELATION_FIELD),
+        ):
+            field = schema.get(field_name)
+            if field is None:
+                missing.append({"table": table, "field": field_name})
+            elif int(field.get("type") or 0) != RELATION_FIELD_TYPE:
+                incompatible.append({
+                    "table": table,
+                    "field": field_name,
+                    "actual_type": int(field.get("type") or 0),
+                })
         return missing, incompatible, warnings
 
     def _encode_payload(
@@ -956,6 +1205,8 @@ class FeishuSyncService:
             "creator_create_count", "creator_update_count", "creator_unchanged_count",
             "creator_conflict_count", "account_create_count", "account_update_count",
             "account_unchanged_count", "account_conflict_count", "remote_unmanaged_count",
+            "relation_add_count", "relation_update_count", "relation_remove_count",
+            "relation_unchanged_count", "relation_conflict_count",
             "duplicate_identity_count", "blocked_reason", "warnings", "conflicts",
             "error_codes", "missing_fields", "incompatible_fields",
             "payload_safety",

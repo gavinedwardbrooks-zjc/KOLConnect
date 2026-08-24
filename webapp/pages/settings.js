@@ -88,13 +88,17 @@
     setSyncText("feishu-sync-update", data?.creator_update_count ?? data?.creator_updated);
     setSyncText("feishu-sync-conflicts", data?.creator_conflict_count ?? data?.conflicts?.length ?? 0);
     setSyncText("feishu-sync-unmanaged", data?.remote_unmanaged_count);
+    setSyncText("feishu-sync-relation-add", data?.relation_add_count ?? data?.relation_added);
+    setSyncText("feishu-sync-relation-update", data?.relation_update_count ?? data?.relation_updated);
+    setSyncText("feishu-sync-relation-remove", data?.relation_remove_count ?? data?.relation_removed);
+    setSyncText("feishu-sync-relation-conflicts", data?.relation_conflict_count ?? 0);
     const message = document.getElementById("feishu-sync-result");
     if (!message) return;
     message.hidden = false;
     message.dataset.status = status;
     if (status === "success") {
       message.textContent = operation === "full"
-        ? `同步完成：达人新增 ${data.creator_created || 0}、更新 ${data.creator_updated || 0}；账号新增 ${data.account_created || 0}、更新 ${data.account_updated || 0}。`
+        ? `同步完成：达人新增 ${data.creator_created || 0}、更新 ${data.creator_updated || 0}；账号新增 ${data.account_created || 0}、更新 ${data.account_updated || 0}；关系更新 ${data.relation_updated || 0}。`
         : operation === "validate" ? "连接与字段合同验证通过。" : "预检查完成，未写入飞书。";
     } else if (status === "partial") {
       message.textContent = `同步部分完成，失败记录 ${Number(data.creator_failed || 0) + Number(data.account_failed || 0)} 条；后续批次已停止，可修复后重新同步。`;
