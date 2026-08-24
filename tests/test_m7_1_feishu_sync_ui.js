@@ -128,7 +128,8 @@ async function run() {
   const full = calls.find(call => call.url.endsWith("full-sync"));
   assert.equal(full.payload.confirm, true);
   assert.deepEqual(Object.keys(full.payload), ["confirm"]);
-  assert.match(elements.get("feishu-sync-result").textContent, /部分同步成功/);
+  assert.match(elements.get("feishu-sync-result").textContent, /同步部分完成/);
+  assert.match(elements.get("feishu-sync-result").textContent, /后续批次已停止/);
   assert.doesNotMatch(elements.get("feishu-sync-result").textContent, /secret|token/i);
   console.log("M7.1 Feishu sync settings UI: OK");
 }

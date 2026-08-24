@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import math
 from typing import Any, Callable, Protocol
 
 from feishu_client import FeishuClient, FeishuClientError
@@ -151,10 +152,20 @@ class FeishuSyncService:
             "warnings": list(plan["warnings"]),
             "error_codes": [],
             "failed_entities": [],
+            "phase": "creator_create",
+            "attempted": 0,
+            "succeeded": 0,
+            "failed": 0,
+            "remaining": (
+                len(plan["creator_creates"]) + len(plan["creator_updates"])
+                + len(plan["account_creates"]) + len(plan["account_updates"])
+            ),
+            "error_code": "",
+            "retry_after": "",
         }
 
         creator_record_ids = dict(plan["remote_creator_record_ids"])
-        self._execute_creates(
+        failure = self._execute_creates(
             client,
             client.creator_table_id,
             plan["creator_creates"],
@@ -164,7 +175,10 @@ class FeishuSyncService:
             entity="creator",
             record_id_index=creator_record_ids,
         )
-        self._execute_updates(
+        if failure:
+            return self._stop_after_failure(result, failure)
+        result["phase"] = "creator_update"
+        failure = self._execute_updates(
             client,
             client.creator_table_id,
             plan["creator_updates"],
@@ -173,7 +187,10 @@ class FeishuSyncService:
             result,
             entity="creator",
         )
-        self._execute_creates(
+        if failure:
+            return self._stop_after_failure(result, failure)
+        result["phase"] = "account_create"
+        failure = self._execute_creates(
             client,
             client.account_table_id,
             plan["account_creates"],
@@ -182,7 +199,10 @@ class FeishuSyncService:
             result,
             entity="account",
         )
-        self._execute_updates(
+        if failure:
+            return self._stop_after_failure(result, failure)
+        result["phase"] = "account_update"
+        failure = self._execute_updates(
             client,
             client.account_table_id,
             plan["account_updates"],
@@ -191,6 +211,8 @@ class FeishuSyncService:
             result,
             entity="account",
         )
+        if failure:
+            return self._stop_after_failure(result, failure)
 
         failed = result["creator_failed"] + result["account_failed"]
         changed = (
@@ -199,6 +221,8 @@ class FeishuSyncService:
         )
         if failed:
             result["status"] = "partial" if changed else "failed"
+        result["phase"] = "completed"
+        result["remaining"] = 0
         result["error_codes"] = sorted(set(result["error_codes"]))
         result["completed_at"] = self._now()
         return result
@@ -294,6 +318,8 @@ class FeishuSyncService:
         creator_creates: list[dict[str, Any]] = []
         creator_updates: list[dict[str, Any]] = []
         creator_unchanged = 0
+        creator_omitted_missing = 0
+        creator_remote_nonempty_preserved = 0
         remote_creator_ids = dict(remote["creator_index"])
         for creator_id, canonical in local["creators"].items():
             record = remote["creator_index"].get(creator_id)
@@ -304,16 +330,22 @@ class FeishuSyncService:
             )
             if item["action"] == "create":
                 creator_creates.append(item)
-            elif item["action"] == "update":
-                creator_updates.append(item)
-                remote_creator_ids[creator_id] = item["record_id"]
             else:
-                creator_unchanged += 1
+                creator_omitted_missing += len(item.get("omitted_fields") or [])
+                creator_remote_nonempty_preserved += len(
+                    item.get("preserved_remote_fields") or []
+                )
+                if item["action"] == "update":
+                    creator_updates.append(item)
+                else:
+                    creator_unchanged += 1
                 remote_creator_ids[creator_id] = item["record_id"]
 
         account_creates: list[dict[str, Any]] = []
         account_updates: list[dict[str, Any]] = []
         account_unchanged = 0
+        account_omitted_missing = 0
+        account_remote_nonempty_preserved = 0
         for account_uid, canonical in local["accounts"].items():
             item = self._plan_item(
                 account_uid,
@@ -324,10 +356,15 @@ class FeishuSyncService:
             )
             if item["action"] == "create":
                 account_creates.append(item)
-            elif item["action"] == "update":
-                account_updates.append(item)
             else:
-                account_unchanged += 1
+                account_omitted_missing += len(item.get("omitted_fields") or [])
+                account_remote_nonempty_preserved += len(
+                    item.get("preserved_remote_fields") or []
+                )
+                if item["action"] == "update":
+                    account_updates.append(item)
+                else:
+                    account_unchanged += 1
 
         unmanaged_creator_ids = {
             item["record_id"] for item in remote["unmanaged_creators"]
@@ -351,6 +388,14 @@ class FeishuSyncService:
             "account_creates": account_creates,
             "account_updates": account_updates,
             "remote_creator_record_ids": remote_creator_ids,
+            "payload_safety": self._payload_safety_summary(
+                creator_updates,
+                account_updates,
+                creator_omitted_missing=creator_omitted_missing,
+                creator_remote_nonempty_preserved=creator_remote_nonempty_preserved,
+                account_omitted_missing=account_omitted_missing,
+                account_remote_nonempty_preserved=account_remote_nonempty_preserved,
+            ),
             "completed_at": self._now(),
         })
         return base
@@ -510,21 +555,44 @@ class FeishuSyncService:
         specs: tuple[FieldSpec, ...],
         schema: dict[str, dict[str, Any]],
     ) -> dict[str, Any]:
-        desired = self._encode_payload(canonical, specs, schema, include_sync=False)
         if remote is None:
-            return {"identity": identity, "action": "create", "canonical": canonical, "payload": desired, "schema": schema}
-        remote_fields = remote.get("fields") or {}
-        changed = any(
-            not self._equivalent(remote_fields.get(name), value, schema[name], self._spec_by_name(specs, name))
-            for name, value in desired.items()
+            desired = self._encode_payload(
+                canonical, specs, schema, include_sync=False, for_update=False
+            )
+            return {
+                "identity": identity, "action": "create", "canonical": canonical,
+                "payload": desired, "schema": schema,
+            }
+        desired = self._encode_payload(
+            canonical, specs, schema, include_sync=False, for_update=True
         )
+        remote_fields = remote.get("fields") or {}
+        changed_fields = [
+            name for name, value in desired.items()
+            if not self._equivalent(
+                remote_fields.get(name), value, schema[name],
+                self._spec_by_name(specs, name),
+            )
+        ]
+        omitted_fields = [
+            spec.remote_name for spec in specs
+            if spec.key != "last_synced_at"
+            and spec.remote_name in schema
+            and spec.remote_name not in desired
+        ]
+        preserved_remote_fields = [
+            name for name in omitted_fields if self._field_text(remote_fields.get(name))
+        ]
         return {
             "identity": identity,
             "record_id": self._text(remote.get("record_id")),
-            "action": "update" if changed else "unchanged",
+            "action": "update" if changed_fields else "unchanged",
             "canonical": canonical,
             "payload": desired,
             "schema": schema,
+            "changed_fields": changed_fields,
+            "omitted_fields": omitted_fields,
+            "preserved_remote_fields": preserved_remote_fields,
         }
 
     def _execute_creates(
@@ -538,22 +606,31 @@ class FeishuSyncService:
         *,
         entity: str,
         record_id_index: dict[str, dict[str, Any]] | None = None,
-    ) -> None:
+    ) -> dict[str, str] | None:
         for batch in self._chunks(items, client.batch_size):
             payloads = [
                 self._payload_with_sync(item["payload"], synced_at, specs, item["schema"])
                 for item in batch
             ]
+            result["attempted"] += len(batch)
             try:
                 created = client.batch_create(table_id, payloads)
                 if len(created) != len(batch):
                     raise FeishuClientError("REMOTE_ERROR", "飞书创建结果数量不一致。")
                 result[f"{entity}_created"] += len(batch)
+                result["succeeded"] += len(batch)
+                result["remaining"] -= len(batch)
                 if record_id_index is not None:
                     for item, remote in zip(batch, created):
                         record_id_index[item["identity"]] = remote
             except FeishuClientError as exc:
                 self._record_batch_failure(result, entity, batch, exc)
+                return {
+                    "phase": f"{entity}_create",
+                    "error_code": exc.code,
+                    "retry_after": exc.retry_after,
+                }
+        return None
 
     def _execute_updates(
         self,
@@ -565,7 +642,7 @@ class FeishuSyncService:
         result: dict[str, Any],
         *,
         entity: str,
-    ) -> None:
+    ) -> dict[str, str] | None:
         for batch in self._chunks(items, client.batch_size):
             updates = [
                 {
@@ -576,11 +653,22 @@ class FeishuSyncService:
                 }
                 for item in batch
             ]
+            result["attempted"] += len(batch)
             try:
-                client.batch_update(table_id, updates)
+                updated = client.batch_update(table_id, updates)
+                if len(updated) != len(batch):
+                    raise FeishuClientError("REMOTE_ERROR", "飞书更新结果数量不一致。")
                 result[f"{entity}_updated"] += len(batch)
+                result["succeeded"] += len(batch)
+                result["remaining"] -= len(batch)
             except FeishuClientError as exc:
                 self._record_batch_failure(result, entity, batch, exc)
+                return {
+                    "phase": f"{entity}_update",
+                    "error_code": exc.code,
+                    "retry_after": exc.retry_after,
+                }
+        return None
 
     def _payload_with_sync(
         self,
@@ -601,12 +689,28 @@ class FeishuSyncService:
         result: dict[str, Any], entity: str, batch: list[dict[str, Any]], exc: FeishuClientError
     ) -> None:
         result[f"{entity}_failed"] += len(batch)
+        result["failed"] += len(batch)
         result["error_codes"].append(exc.code)
         remaining = max(0, FeishuSyncService.DETAIL_LIMIT - len(result["failed_entities"]))
         result["failed_entities"].extend(
             {"entity_type": entity, "identity": item["identity"], "error_code": exc.code}
             for item in batch[:remaining]
         )
+
+    def _stop_after_failure(
+        self, result: dict[str, Any], failure: dict[str, str]
+    ) -> dict[str, Any]:
+        result["phase"] = failure["phase"]
+        result["error_code"] = failure["error_code"]
+        result["retry_after"] = failure.get("retry_after", "")
+        result["status"] = "partial" if result["succeeded"] else "failed"
+        result["warnings"] = sorted(set(
+            list(result.get("warnings") or [])
+            + ["FULL_SYNC_STOPPED_AFTER_BATCH_FAILURE"]
+        ))
+        result["error_codes"] = sorted(set(result["error_codes"]))
+        result["completed_at"] = self._now()
+        return result
 
     def _validate_schema(
         self,
@@ -644,6 +748,7 @@ class FeishuSyncService:
         schema: dict[str, dict[str, Any]],
         *,
         include_sync: bool,
+        for_update: bool = False,
     ) -> dict[str, Any]:
         payload: dict[str, Any] = {}
         for spec in specs:
@@ -652,10 +757,32 @@ class FeishuSyncService:
             field = schema.get(spec.remote_name)
             if field is None:
                 continue
-            payload[spec.remote_name] = self._encode_value(
-                canonical.get(spec.key, ""), spec, field
-            )
+            value = canonical.get(spec.key, "")
+            if for_update and not self._update_value_available(value, spec):
+                continue
+            if not for_update and spec.kind == "number" and self._number(value) == "":
+                if self._text(value):
+                    continue
+            payload[spec.remote_name] = self._encode_value(value, spec, field)
         return payload
+
+    def _update_value_available(self, value: Any, spec: FieldSpec) -> bool:
+        if spec.key in {"creator_id", "account_uid"}:
+            return bool(self._text(value))
+        if spec.kind == "boolean":
+            return isinstance(value, bool)
+        if spec.kind == "number":
+            return self._number(value) != ""
+        if spec.kind == "datetime":
+            return self._milliseconds(value) != ""
+        text = self._text(value)
+        if not text:
+            return False
+        if spec.key == "insight_level" and text.casefold() in {
+            "--", "n/a", "na", "none", "null",
+        }:
+            return False
+        return True
 
     def _encode_value(self, value: Any, spec: FieldSpec, field: dict[str, Any]) -> Any:
         field_type = int(field.get("type") or 0)
@@ -797,6 +924,8 @@ class FeishuSyncService:
             number = float(text)
         except ValueError:
             return ""
+        if not math.isfinite(number):
+            return ""
         return int(number) if number.is_integer() else number
 
     @staticmethod
@@ -829,8 +958,35 @@ class FeishuSyncService:
             "account_unchanged_count", "account_conflict_count", "remote_unmanaged_count",
             "duplicate_identity_count", "blocked_reason", "warnings", "conflicts",
             "error_codes", "missing_fields", "incompatible_fields",
+            "payload_safety",
         )
         return {key: plan.get(key) for key in public_keys}
+
+    @staticmethod
+    def _payload_safety_summary(
+        creator_updates: list[dict[str, Any]],
+        account_updates: list[dict[str, Any]],
+        *,
+        creator_omitted_missing: int,
+        creator_remote_nonempty_preserved: int,
+        account_omitted_missing: int,
+        account_remote_nonempty_preserved: int,
+    ) -> dict[str, Any]:
+        return {
+            "creator_update_records": len(creator_updates),
+            "creator_business_fields_changing": sum(
+                len(item.get("changed_fields") or []) for item in creator_updates
+            ),
+            "creator_missing_fields_omitted": creator_omitted_missing,
+            "creator_remote_nonempty_values_preserved": creator_remote_nonempty_preserved,
+            "account_update_records": len(account_updates),
+            "account_business_fields_changing": sum(
+                len(item.get("changed_fields") or []) for item in account_updates
+            ),
+            "account_missing_fields_omitted": account_omitted_missing,
+            "account_remote_nonempty_values_preserved": account_remote_nonempty_preserved,
+            "destructive_empty_overwrites": 0,
+        }
 
     def _now(self) -> str:
         return self._now_provider().astimezone(timezone.utc).replace(

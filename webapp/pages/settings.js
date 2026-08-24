@@ -98,7 +98,7 @@
         ? `同步完成：达人新增 ${data.creator_created || 0}、更新 ${data.creator_updated || 0}；账号新增 ${data.account_created || 0}、更新 ${data.account_updated || 0}。`
         : operation === "validate" ? "连接与字段合同验证通过。" : "预检查完成，未写入飞书。";
     } else if (status === "partial") {
-      message.textContent = `部分同步成功，失败记录 ${Number(data.creator_failed || 0) + Number(data.account_failed || 0)} 条，可修复后重新同步。`;
+      message.textContent = `同步部分完成，失败记录 ${Number(data.creator_failed || 0) + Number(data.account_failed || 0)} 条；后续批次已停止，可修复后重新同步。`;
     } else {
       const reason = data?.blocked_reason || data?.error_codes?.[0] || "FEISHU_SYNC_FAILED";
       const hasSchemaDetails = (data?.missing_fields?.length || 0) + (data?.incompatible_fields?.length || 0) > 0;
