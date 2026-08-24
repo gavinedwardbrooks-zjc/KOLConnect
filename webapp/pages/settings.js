@@ -3,6 +3,7 @@
 
   let resources = null;
   let accountBackfillPreviewReady = false;
+  let creatorBackfillPreviewReady = false;
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -216,15 +217,110 @@
     }
   }
 
+  function creatorBackfillReasonLabel(item) {
+    const labels = {
+      MISSING_REMOTE_RECORD_ID: "缺少远端记录 ID",
+      CREATOR_ID_CONFLICT: "Creator 身份冲突",
+      NO_RECIPROCAL_ACCOUNT_EVIDENCE: "无双向账号证据",
+      UNVERIFIED_REVERSE_ACCOUNT_RELATION: "关联账号未通过身份验证",
+      MISSING_FORWARD_RELATION: "缺少 Account → Creator 关系",
+      MISSING_REVERSE_RELATION: "缺少 Creator → Account 关系",
+      RECIPROCAL_RELATION_DISAGREEMENT: "双向关系不一致",
+      MULTIPLE_LOCAL_CREATOR_IDS: "关联到多个本地 Creator",
+      LOCAL_CREATOR_MULTIPLE_REMOTE_CREATORS: "一个本地 Creator 对应多个远端 Creator",
+    };
+    return labels[item?.reason] || String(item?.reason || "已阻塞");
+  }
+
+  function renderCreatorBackfillRows(data) {
+    const body = document.getElementById("feishu-creator-backfill-rows");
+    const details = document.getElementById("feishu-creator-backfill-details");
+    if (!body || !details) return;
+    body.textContent = "";
+    const rows = [
+      ...(Array.isArray(data?.candidates) ? data.candidates.map(item => ({ ...item, displayStatus: "Tier-A 可安全认领" })) : []),
+      ...(Array.isArray(data?.blocked) ? data.blocked.map(item => ({ ...item, displayStatus: creatorBackfillReasonLabel(item) })) : []),
+    ];
+    for (const item of rows) {
+      const row = document.createElement("tr");
+      appendBackfillCell(row, String(item.creator_name || item.remote_record_id || ""));
+      appendBackfillCell(row, String(item.creator_id || item.remote_creator_id || ""));
+      const accountEvidence = Array.isArray(item.accounts)
+        ? item.accounts.map(account => `${account.platform || "账号"}: ${account.account_uid || "--"}`).join("\n")
+        : "";
+      appendBackfillCell(row, accountEvidence);
+      appendBackfillCell(row, item.displayStatus);
+      body.appendChild(row);
+    }
+    details.hidden = rows.length === 0;
+  }
+
+  function renderCreatorBackfillResult(data, operation) {
+    const summary = data?.summary || {};
+    setSyncText("feishu-creator-backfill-remote", summary.remote_creators);
+    setSyncText("feishu-creator-backfill-eligible", summary.tier_a_eligible);
+    setSyncText("feishu-creator-backfill-unchanged", summary.already_correct);
+    setSyncText("feishu-creator-backfill-tier-b", summary.tier_b_manual_review);
+    setSyncText(
+      "feishu-creator-backfill-residual",
+      Number(summary.ambiguous || 0) + Number(summary.unmatched || 0),
+    );
+    setSyncText("feishu-creator-backfill-conflicts", summary.conflicts);
+    setSyncText("feishu-creator-backfill-blocked", summary.blocked);
+    renderCreatorBackfillRows(data);
+    const message = document.getElementById("feishu-creator-backfill-result");
+    if (!message) return;
+    const status = String(data?.status || "failed");
+    message.hidden = false;
+    message.dataset.status = status;
+    if (operation === "preview" && status === "success") {
+      message.textContent = `预览完成：Tier-A 可认领 ${summary.tier_a_eligible || 0}，已正确 ${summary.already_correct || 0}，Tier-B 待人工 ${summary.tier_b_manual_review || 0}，歧义 ${summary.ambiguous || 0}，未匹配 ${summary.unmatched || 0}。未写入飞书。`;
+    } else if (status === "success") {
+      message.textContent = `Creator 身份认领完成：成功 ${data.succeeded || 0}，剩余 ${data.remaining || 0}。请重新运行预览确认可认领数已收敛为 0。`;
+    } else if (status === "partial") {
+      message.textContent = `Creator 身份认领部分成功：已完成 ${data.succeeded || 0}，失败 ${data.failed || 0}，剩余 ${data.remaining || 0}。请重新预览后安全重试。`;
+    } else if (status === "blocked") {
+      message.textContent = `Creator 身份认领已阻塞：${data?.blocked_reason || "当前没有可安全自动认领的记录"}。不会覆盖冲突记录。`;
+    } else {
+      message.textContent = `Creator 身份认领失败：${data?.error_codes?.[0] || "FEISHU_CREATOR_BACKFILL_FAILED"}`;
+    }
+  }
+
+  async function runCreatorBackfill(api, operation, options = {}) {
+    const preview = operation === "preview";
+    const button = document.getElementById(
+      preview ? "feishu-creator-backfill-preview" : "feishu-creator-backfill-execute",
+    );
+    if (button) button.disabled = true;
+    try {
+      const path = preview
+        ? "/api/feishu-sync/creator-backfill/dry-run"
+        : "/api/feishu-sync/creator-backfill/execute";
+      const data = await api.post(path, preview ? {} : { confirm: true }, options);
+      renderCreatorBackfillResult(data, operation);
+      const execute = document.getElementById("feishu-creator-backfill-execute");
+      creatorBackfillPreviewReady = preview
+        && data?.status === "success"
+        && Number(data?.summary?.tier_a_eligible || 0) > 0;
+      if (execute) execute.disabled = !creatorBackfillPreviewReady;
+      return data;
+    } finally {
+      if (button && preview) button.disabled = false;
+    }
+  }
+
   const settingsPage = {
     async load() {
       resources?.cleanup();
       resources = global.KOLConnectPageResources.create();
       accountBackfillPreviewReady = false;
+      creatorBackfillPreviewReady = false;
       await reloadSettings();
       renderWorkbookPathCapability();
       const execute = document.getElementById("feishu-account-backfill-execute");
       if (execute) execute.disabled = true;
+      const creatorExecute = document.getElementById("feishu-creator-backfill-execute");
+      if (creatorExecute) creatorExecute.disabled = true;
     },
 
     bind() {
@@ -339,6 +435,31 @@
         if (!confirmed) return;
         try {
           await runAccountBackfill(api, "execute", { signal: resources.signal });
+        } catch (error) {
+          handleError(error);
+        }
+      });
+
+      listen("feishu-creator-backfill-preview", "click", async () => {
+        try {
+          await runCreatorBackfill(api, "preview", { signal: resources.signal });
+        } catch (error) {
+          creatorBackfillPreviewReady = false;
+          const execute = document.getElementById("feishu-creator-backfill-execute");
+          if (execute) execute.disabled = true;
+          handleError(error);
+        }
+      });
+
+      listen("feishu-creator-backfill-execute", "click", async () => {
+        if (!creatorBackfillPreviewReady) return;
+        const confirmed = global.confirm(
+          "这是历史数据安全迁移，将仅更新飞书【Creator 表】中的 KOLConnect Creator ID。\n\n"
+          + "不会创建或删除 Creator\n不会修改 Creator 业务字段\n不会修改 Account\n不会修改本地 Excel\n\n继续吗？",
+        );
+        if (!confirmed) return;
+        try {
+          await runCreatorBackfill(api, "execute", { signal: resources.signal });
         } catch (error) {
           handleError(error);
         }

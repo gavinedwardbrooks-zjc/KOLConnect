@@ -1685,6 +1685,34 @@
             </div>
           </details>
         </div>
+
+        <div class="section-card feishu-sync-card" id="feishu-creator-backfill-card">
+          <div class="section-title">Creator 身份认领（安全迁移）</div>
+          <p class="hint">仅供历史飞书数据迁移。只为双向关系完全一致的已有 Creator 补充 KOLConnect Creator ID；不会创建或删除 Creator，不修改业务字段、Account 记录或本地 Excel。正常新用户无需运行。</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="feishu-creator-backfill-preview" type="button">预览 Creator 身份认领</button>
+            <button class="primary-btn" id="feishu-creator-backfill-execute" type="button" disabled>执行 Creator 身份认领</button>
+          </div>
+          <dl class="settings-backup-summary feishu-sync-summary">
+            <div><dt>远端 Creator</dt><dd id="feishu-creator-backfill-remote">--</dd></div>
+            <div><dt>Tier-A 可认领</dt><dd id="feishu-creator-backfill-eligible">--</dd></div>
+            <div><dt>已正确</dt><dd id="feishu-creator-backfill-unchanged">--</dd></div>
+            <div><dt>Tier-B 待人工</dt><dd id="feishu-creator-backfill-tier-b">--</dd></div>
+            <div><dt>歧义 / 未匹配</dt><dd id="feishu-creator-backfill-residual">--</dd></div>
+            <div><dt>冲突</dt><dd id="feishu-creator-backfill-conflicts">--</dd></div>
+            <div><dt>阻塞</dt><dd id="feishu-creator-backfill-blocked">--</dd></div>
+          </dl>
+          <p class="form-message" id="feishu-creator-backfill-result" hidden></p>
+          <details id="feishu-creator-backfill-details" hidden>
+            <summary>查看安全证据（最多 50 条）</summary>
+            <div class="table-wrap">
+              <table class="data-table feishu-backfill-table">
+                <thead><tr><th>Creator</th><th>creator_id</th><th>已验证账号</th><th>状态</th></tr></thead>
+                <tbody id="feishu-creator-backfill-rows"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
       </section>
 
       <section class="page workspace-narrow" data-page="logs">

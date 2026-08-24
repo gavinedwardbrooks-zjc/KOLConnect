@@ -478,7 +478,9 @@ class FeishuSyncService:
             fields = account.get("fields") or {}
             account_uid = self._field_text(fields.get(ACCOUNT_UID_FIELD))
             local_creator_id = (local["accounts"].get(account_uid) or {}).get("creator_id")
-            for record_id in self._relation_ids(fields.get(LEGACY_CREATOR_RELATION_FIELD)):
+            for record_id in self._legacy_relation_ids(
+                fields.get(LEGACY_CREATOR_RELATION_FIELD)
+            ):
                 linked.setdefault(record_id, []).append(local_creator_id or None)
 
         matches: dict[str, dict[str, Any]] = {}
@@ -743,6 +745,29 @@ class FeishuSyncService:
 
     @staticmethod
     def _relation_ids(value: Any) -> list[str]:
+        result: list[str] = []
+
+        def collect(item: Any, *, explicit: bool = False) -> None:
+            if isinstance(item, dict):
+                if "record_id" in item:
+                    collect(item.get("record_id"), explicit=True)
+                if "record_ids" in item:
+                    collect(item.get("record_ids"), explicit=True)
+                return
+            if isinstance(item, (list, tuple)):
+                for nested in item:
+                    collect(nested, explicit=explicit)
+                return
+            identity = FeishuSyncService._text(item)
+            if identity and (explicit or isinstance(value, (str, int))) and identity not in result:
+                result.append(identity)
+
+        collect(value, explicit=isinstance(value, (list, tuple)))
+        return result
+
+    @staticmethod
+    def _legacy_relation_ids(value: Any) -> list[str]:
+        """Preserve the frozen M7.1 one-way legacy matching contract."""
         items = value if isinstance(value, list) else [value]
         result: list[str] = []
         for item in items:

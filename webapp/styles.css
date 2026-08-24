@@ -458,16 +458,21 @@ body {
 #feishu-sync-result[data-status="blocked"],
 #feishu-account-backfill-result[data-status="partial"],
 #feishu-account-backfill-result[data-status="blocked"],
-#feishu-account-backfill-result[data-status="failed"] {
+#feishu-account-backfill-result[data-status="failed"],
+#feishu-creator-backfill-result[data-status="partial"],
+#feishu-creator-backfill-result[data-status="blocked"],
+#feishu-creator-backfill-result[data-status="failed"] {
   color: var(--danger-dark);
 }
 
 #feishu-sync-result,
-#feishu-account-backfill-result {
+#feishu-account-backfill-result,
+#feishu-creator-backfill-result {
   white-space: pre-line;
 }
 
-#feishu-account-backfill-details { margin-top: 14px; }
+#feishu-account-backfill-details,
+#feishu-creator-backfill-details { margin-top: 14px; }
 
 .feishu-backfill-table td {
   max-width: 280px;
