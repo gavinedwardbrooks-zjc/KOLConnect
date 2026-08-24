@@ -12,6 +12,7 @@
   let creatorId = "";
   let detail = null;
   let creatorCampaigns = [];
+  let selectedAccountKey = "";
   let lifecycleId = 0;
 
   function element(id) {
@@ -55,6 +56,96 @@
     if (freshness.status === "fresh") return `最新（${days} 天前）`;
     if (freshness.status === "update_recommended") return `建议更新（${days} 天前）`;
     return `数据过期（${days} 天前）`;
+  }
+
+  function accountKey(account) {
+    return String(account?.account_id || account?.account_uid || account?.profile_url || "");
+  }
+
+  function accountIdentity(account) {
+    const username = String(account?.username || "").trim();
+    if (username) return username.startsWith("@") ? username : `@${username}`;
+    try {
+      const url = new URL(String(account?.profile_url || ""));
+      return url.pathname.replace(/^\/+|\/+$/g, "") || url.hostname;
+    } catch (_error) {
+      return String(account?.profile_url || account?.account_uid || "账号");
+    }
+  }
+
+  function accountSnapshot(data, account) {
+    const uid = String(account?.account_uid || "");
+    if (!uid) return null;
+    return (Array.isArray(data?.snapshots) ? data.snapshots : []).find(
+      snapshot => String(snapshot?.account_uid || "") === uid,
+    ) || null;
+  }
+
+  function selectedAccount(data) {
+    const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
+    return accounts.find(account => accountKey(account) === selectedAccountKey) || null;
+  }
+
+  function resolveDefaultAccount(data) {
+    const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
+    const params = pageContext?.params || {};
+    const preferred = String(params.accountId || params.account_id || params.profileUrl || "");
+    const recordUid = String(data?.record?.account_uid || "");
+    const recordPlatform = String(data?.record?.platform || "").trim().toLowerCase();
+    const account = (preferred && accounts.find(item => (
+      String(item?.account_id || "") === preferred
+      || String(item?.profile_url || "") === preferred
+    ))) || (recordUid && accounts.find(item => String(item?.account_uid || "") === recordUid))
+      || accounts.find(item => String(item?.platform || "").trim().toLowerCase() === recordPlatform)
+      || accounts[0];
+    selectedAccountKey = accountKey(account);
+  }
+
+  function accountFreshness(timestamp) {
+    if (!timestamp) return { status: "unknown", days: null };
+    const captured = new Date(timestamp);
+    if (Number.isNaN(captured.getTime())) return { status: "unknown", days: null };
+    const days = Math.max(0, Math.floor((Date.now() - captured.getTime()) / 86400000));
+    return {
+      status: days <= 7 ? "fresh" : days <= 30 ? "update_recommended" : "stale",
+      days,
+    };
+  }
+
+  function renderAccountSwitcher(data) {
+    const container = element("creator-account-options");
+    const empty = element("creator-account-empty");
+    const accounts = Array.isArray(data?.accounts) ? data.accounts : [];
+    setText("creator-account-count", `${accounts.length} 个`);
+    if (empty) empty.hidden = accounts.length !== 0;
+    if (!container) return;
+    container.replaceChildren(...accounts.map(account => {
+      const button = document.createElement("button");
+      const key = accountKey(account);
+      button.type = "button";
+      button.className = "creator-account-option";
+      button.dataset.creatorAccountKey = key;
+      button.setAttribute("role", "tab");
+      button.setAttribute("aria-selected", String(key === selectedAccountKey));
+      if (key === selectedAccountKey) button.classList.add("active");
+      const platform = document.createElement("span");
+      platform.textContent = String(account?.platform || "未知平台");
+      const identity = document.createElement("strong");
+      identity.textContent = accountIdentity(account);
+      const followers = document.createElement("small");
+      followers.textContent = `粉丝 ${formatMetric(account?.followers)}`;
+      button.append(platform, identity, followers);
+      return button;
+    }));
+  }
+
+  function handleAccountSwitch(event) {
+    const button = event.target.closest("[data-creator-account-key]");
+    if (!button || !detail) return;
+    const key = String(button.dataset.creatorAccountKey || "");
+    if (!key || key === selectedAccountKey) return;
+    selectedAccountKey = key;
+    render(detail);
   }
 
   function renderList(id, items, emptyText) {
@@ -320,29 +411,62 @@
     const insight = analysis.creator_insight || {};
     const trend = data.trend || {};
     const archived = Boolean(record.archived_at);
+    const account = selectedAccount(data);
+    const snapshot = accountSnapshot(data, account);
+    const hasAccount = Boolean(account);
+    const accountFollowers = hasAccount
+      ? (account.followers || snapshot?.followers || "")
+      : (record.followers || creator.followers || "");
+    const accountAverageViews = hasAccount ? snapshot?.average_views : videoAnalysis.average_views;
+    const accountMedianViews = hasAccount ? snapshot?.median_views : videoAnalysis.median_views;
+    const accountAnalyzedAt = snapshot?.captured_at || account?.last_scrape_time || "";
+    const accountUpdatedAt = hasAccount
+      ? (account?.updated_at || account?.last_scrape_time || "")
+      : record.data_updated_at;
+    const accountSource = hasAccount
+      ? (account?.data_source || snapshot?.source || "--")
+      : (record.source || "--");
+    const selectedIsLegacyPrimary = hasAccount
+      && String(account?.platform || "").trim().toLowerCase()
+        === String(record.platform || "").trim().toLowerCase();
+    const displayedPlatform = hasAccount ? account?.platform : creator.platform;
+    const displayedProfileUrl = hasAccount
+      ? (account?.profile_url || (selectedIsLegacyPrimary ? record.profile_url : ""))
+      : creator.profile_url;
+    const displayedAnalyzedAt = hasAccount
+      ? accountAnalyzedAt
+      : (record.last_analysis_time || record.analysis_time);
+
+    renderAccountSwitcher(data);
 
     setText(
       "creator-library-detail-summary",
-      `${record.creator_name || "未命名达人"} · ${record.platform || "--"} · ${record.profile_url || "--"}`,
+      `${record.creator_name || "未命名达人"} · ${displayedPlatform || "--"} · ${displayedProfileUrl || "--"}`,
     );
     setText("creator-library-detail-level", record.insight_level || "insufficient");
     setText(
       "creator-library-data-meta",
-      `数据更新时间：${formatTime(record.data_updated_at)} · 来源：${record.source || "--"} · 最近分析时间：${formatTime(record.last_analysis_time || record.analysis_time)}`,
+      `数据更新时间：${formatTime(accountUpdatedAt)} · 来源：${accountSource} · 最近分析时间：${formatTime(displayedAnalyzedAt)}`,
     );
-    setText("creator-library-freshness", formatFreshness(trend.freshness));
+    setText(
+      "creator-library-freshness",
+      formatFreshness(hasAccount && accountAnalyzedAt ? accountFreshness(accountAnalyzedAt) : trend.freshness),
+    );
     renderDefinitionList(element("creator-library-basic"), [
-      ["达人名称", creator.creator_name],
-      ["平台", creator.platform],
-      ["主页链接", creator.profile_url],
-      ["粉丝数", creator.followers],
-      ["内容类型", analysis.content_category],
-      ["简介", creator.bio],
+      ["达人名称", record.creator_name || creator.creator_name],
+      ["平台", displayedPlatform],
+      ["账号", account ? accountIdentity(account) : ""],
+      ["主页链接", displayedProfileUrl],
+      ["粉丝数", accountFollowers],
+      ["国家/地区", record.country],
+      ["语言", record.language],
+      ["内容类型", record.content_category || analysis.content_category],
+      ["简介", record.bio || creator.bio],
     ]);
     renderDefinitionList(element("creator-library-video-metrics"), [
       ["样本数量", formatMetric(videoAnalysis.sample_size)],
-      ["平均播放", formatMetric(videoAnalysis.average_views)],
-      ["中位播放", formatMetric(videoAnalysis.median_views)],
+      ["平均播放", formatMetric(accountAverageViews)],
+      ["中位播放", formatMetric(accountMedianViews)],
       ["最高播放", formatMetric(videoAnalysis.max_views)],
       ["最低播放", formatMetric(videoAnalysis.min_views)],
       ["播放稳定性", formatMetric(videoAnalysis.view_stability)],
@@ -399,6 +523,7 @@
     if (detailResult.status === "rejected") throw detailResult.reason;
     const data = detailResult.value;
     detail = data;
+    resolveDefaultAccount(data);
     if (campaignsResult.status === "fulfilled") {
       creatorCampaigns = Array.isArray(campaignsResult.value.campaigns) ? campaignsResult.value.campaigns : [];
       renderCreatorCampaigns();
@@ -606,6 +731,7 @@
       listen("creator-library-detail-archive", "click", () => changeArchiveState().catch(showError));
       listen("creator-library-detail-add-campaign", "click", () => openCampaignModal().catch(showError));
       listen("creator-library-detail-task", "click", () => openCollaborationTask().catch(showError));
+      listen("creator-account-options", "click", handleAccountSwitch);
       listen("creator-ai-summary-generate", "click", () => generateAISummary().catch(showError));
       listen("creator-campaigns-body", "click", handleCampaignAction);
       listen("creator-edit-modal-close", "click", closeEditModal);
@@ -627,6 +753,7 @@
       creatorId = "";
       detail = null;
       creatorCampaigns = [];
+      selectedAccountKey = "";
       closeEditModal();
     },
   };

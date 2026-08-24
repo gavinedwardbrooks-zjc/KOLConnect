@@ -120,6 +120,8 @@ async function run() {
     created_at: "2026-08-01T00:00:00Z",
     archived_at: null,
   };
+  let campaignFailure = null;
+  let missingPublishFailure = false;
   let relations = [{
     id: "relation_one",
     campaign_id: "campaign_one",
@@ -155,6 +157,7 @@ async function run() {
     async get(url, options = {}) {
       calls.push({ method: "GET", url, signal: options.signal });
       if (url === "/api/campaigns/campaign_one") {
+        if (campaignFailure) throw campaignFailure;
         if (!campaign) {
           const error = new Error("CAMPAIGN_NOT_FOUND");
           error.status = 404;
@@ -164,6 +167,7 @@ async function run() {
       }
       if (url === "/api/campaigns/campaign_one/creators") return { campaign_creators: clone(relations) };
       if (url === "/api/campaigns/campaign_one/missing-publish-links") {
+        if (missingPublishFailure) throw new Error("optional publishing data unavailable");
         return { missing_publish_links: [] };
       }
       if (url === "/api/creator-library") return { records: clone(creators) };
@@ -271,6 +275,15 @@ async function run() {
   assert.equal(elements.get("campaign-detail-content").hidden, false);
   assert.equal(elements.get("campaign-creator-add-open").disabled, false);
 
+  missingPublishFailure = true;
+  await registeredPage.load({ campaignId: "campaign_one" });
+  assert.equal(elements.get("campaign-detail-error").hidden, true);
+  assert.equal(elements.get("campaign-detail-content").hidden, false);
+  assert.equal(elements.get("campaign-missing-publish-empty").textContent, "缺失发布信息暂不可用，请稍后重试。");
+  missingPublishFailure = false;
+  await registeredPage.load({ campaignId: "campaign_one" });
+  assert.equal(elements.get("campaign-missing-publish-empty").textContent, "暂无缺失发布信息。");
+
   const originalRelations = relations;
   relations = [];
   [
@@ -287,6 +300,14 @@ async function run() {
 
   registeredPage.bind();
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 1);
+  campaignFailure = Object.assign(new Error("server details unavailable"), { status: 500 });
+  await elements.get("campaign-detail-retry").dispatch("click");
+  assert.equal(elements.get("campaign-detail-error").hidden, false);
+  assert.equal(elements.get("campaign-detail-content").hidden, false);
+  campaignFailure = null;
+  await elements.get("campaign-detail-retry").dispatch("click");
+  assert.equal(elements.get("campaign-detail-error").hidden, true);
+  calls.splice(0);
   await elements.get("campaign-creator-add-open").dispatch("click");
   assert.equal(calls.splice(0)[0].url, "/api/creator-library");
   elements.get("campaign-creator-id").value = "creator_two";
@@ -384,6 +405,12 @@ async function run() {
   assert.doesNotMatch(source, /\bfetch\s*\(/, "page must use api-client rather than direct fetch");
   assert.match(source, /Promise\.all\s*\(/, "initial detail requests should run in parallel");
   assert.match(source, /error\?\.status === 404/, "not-found must remain distinct from a load error");
+  const styles = fs.readFileSync(path.join(root, "webapp/styles.css"), "utf8");
+  const spec = fs.readFileSync(path.join(root, "packaging/spec/KOLConnect.spec"), "utf8");
+  const html = fs.readFileSync(path.join(root, "webapp/index.html"), "utf8");
+  assert.match(styles, /\.campaign-detail-error\[hidden\]\s*\{\s*display:\s*none/);
+  assert.match(spec, /PROJECT_ROOT\s*\/\s*"webapp"/);
+  assert.match(html, /<script src="pages\/campaign-detail\.js"><\/script>/);
   assert.match(campaignsSource, /createAction\("detail"/, "Campaign list must provide a detail action");
   assert.match(campaignsSource, /navigate\("campaign-detail",\s*\{\s*campaignId\s*\}\)/, "detail action must navigate with campaign id");
   assert.ok(notices.length >= 2, "add and edit should show saved feedback");

@@ -28,6 +28,7 @@
   let campaign = null;
   let relations = [];
   let missingPublishLinks = [];
+  let missingPublishError = "";
   let creators = [];
   let creatorsLoaded = false;
   let editingRelationId = null;
@@ -241,8 +242,11 @@
     const count = element("campaign-missing-publish-count");
     if (!body || !empty || !table || !count) return;
     body.replaceChildren();
-    count.textContent = `${missingPublishLinks.length} 条`;
-    empty.hidden = missingPublishLinks.length !== 0;
+    count.textContent = missingPublishError ? "--" : `${missingPublishLinks.length} 条`;
+    empty.textContent = missingPublishError
+      ? "缺失发布信息暂不可用，请稍后重试。"
+      : "暂无缺失发布信息。";
+    empty.hidden = missingPublishLinks.length !== 0 && !missingPublishError;
     table.hidden = missingPublishLinks.length === 0;
     missingPublishLinks.forEach(record => {
       const row = document.createElement("tr");
@@ -264,6 +268,7 @@
     campaignController = resources.createAbortController();
     relationsController = resources.createAbortController();
     setDetailState("loading");
+    missingPublishError = "";
 
     try {
       const [campaignData, relationsData, publishingData] = await Promise.all([
@@ -277,6 +282,7 @@
           signal: relationsController.signal,
         }).catch(error => {
           if (error?.name === "AbortError") throw error;
+          missingPublishError = "missing_publish_links_unavailable";
           return { missing_publish_links: [] };
         }),
       ]);
@@ -601,6 +607,7 @@
       campaign = null;
       relations = [];
       missingPublishLinks = [];
+      missingPublishError = "";
       creators = [];
       creatorsLoaded = false;
       accountCache.clear();

@@ -911,6 +911,52 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.campaign-detail-error[hidden] {
+  display: none;
+}
+
+.creator-account-switcher {
+  margin-bottom: 20px;
+}
+
+.creator-account-switcher-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.creator-account-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.creator-account-option {
+  display: grid;
+  gap: 3px;
+  min-width: 180px;
+  padding: 11px 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.creator-account-option span,
+.creator-account-option small {
+  color: var(--muted);
+}
+
+.creator-account-option.active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+  background: var(--surface);
+}
+
 .dashboard-visualization-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
