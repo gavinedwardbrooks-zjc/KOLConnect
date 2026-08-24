@@ -2,6 +2,7 @@
   "use strict";
 
   let resources = null;
+  let accountBackfillPreviewReady = false;
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -123,12 +124,107 @@
     }
   }
 
+  function backfillReasonLabel(item) {
+    const labels = {
+      MISSING_REMOTE_RECORD_ID: "缺少远端记录 ID",
+      MISSING_ACCOUNT_UID: "缺少 account_uid",
+      DUPLICATE_REMOTE_ACCOUNT_UID: "远端 account_uid 重复",
+      DUPLICATE_LOCAL_ACCOUNT_UID: "本地 account_uid 重复",
+      UNMATCHED_ACCOUNT_UID: "未匹配",
+      INVALID_LOCAL_CREATOR_ID: "本地 creator_id 无效",
+      CREATOR_ID_CONFLICT: "身份冲突",
+    };
+    return labels[item?.reason] || String(item?.reason || "已阻塞");
+  }
+
+  function appendBackfillCell(row, value) {
+    const cell = document.createElement("td");
+    cell.textContent = value || "--";
+    row.appendChild(cell);
+  }
+
+  function renderBackfillRows(data) {
+    const body = document.getElementById("feishu-account-backfill-rows");
+    const details = document.getElementById("feishu-account-backfill-details");
+    if (!body || !details) return;
+    body.textContent = "";
+    const rows = [
+      ...(Array.isArray(data?.candidates) ? data.candidates.map(item => ({ ...item, displayStatus: "可安全认领" })) : []),
+      ...(Array.isArray(data?.blocked) ? data.blocked.map(item => ({ ...item, displayStatus: backfillReasonLabel(item) })) : []),
+    ];
+    for (const item of rows) {
+      const row = document.createElement("tr");
+      appendBackfillCell(row, String(item.platform || ""));
+      appendBackfillCell(row, String(item.profile_url || ""));
+      appendBackfillCell(row, String(item.account_uid || ""));
+      const identity = item.reason === "CREATOR_ID_CONFLICT"
+        ? `远端 ${item.remote_creator_id || "--"} / 本地 ${item.local_creator_id || "--"}`
+        : String(item.creator_id || "");
+      appendBackfillCell(row, identity);
+      appendBackfillCell(row, item.displayStatus);
+      body.appendChild(row);
+    }
+    details.hidden = rows.length === 0;
+  }
+
+  function renderAccountBackfillResult(data, operation) {
+    const summary = data?.summary || {};
+    setSyncText("feishu-account-backfill-remote", summary.remote_accounts);
+    setSyncText("feishu-account-backfill-eligible", summary.eligible);
+    setSyncText("feishu-account-backfill-unchanged", summary.unchanged);
+    setSyncText("feishu-account-backfill-unmatched", summary.unmatched);
+    setSyncText("feishu-account-backfill-conflicts", summary.conflicts);
+    renderBackfillRows(data);
+    const message = document.getElementById("feishu-account-backfill-result");
+    if (!message) return;
+    const status = String(data?.status || "failed");
+    message.hidden = false;
+    message.dataset.status = status;
+    if (operation === "preview" && status === "success") {
+      message.textContent = `预览完成：可安全认领 ${summary.eligible || 0}，无需更新 ${summary.unchanged || 0}，未匹配 ${summary.unmatched || 0}，冲突 ${summary.conflicts || 0}。未写入飞书。`;
+    } else if (status === "success") {
+      message.textContent = `认领完成：成功 ${data.succeeded || 0}，无需更新 ${summary.unchanged || 0}，剩余 ${data.remaining || 0}。`;
+    } else if (status === "partial") {
+      message.textContent = `部分成功：已完成 ${data.succeeded || 0}，失败 ${data.failed || 0}，仍需处理 ${data.remaining || 0}。可重新生成预览后重试。`;
+    } else if (status === "blocked") {
+      message.textContent = `认领已阻塞：${data?.blocked_reason || "没有可安全自动认领的记录"}。冲突记录不会被覆盖。`;
+    } else {
+      message.textContent = `认领失败：${data?.error_codes?.[0] || "FEISHU_ACCOUNT_BACKFILL_FAILED"}`;
+    }
+  }
+
+  async function runAccountBackfill(api, operation, options = {}) {
+    const preview = operation === "preview";
+    const button = document.getElementById(
+      preview ? "feishu-account-backfill-preview" : "feishu-account-backfill-execute",
+    );
+    if (button) button.disabled = true;
+    try {
+      const path = preview
+        ? "/api/feishu-sync/account-backfill/dry-run"
+        : "/api/feishu-sync/account-backfill/execute";
+      const data = await api.post(path, preview ? {} : { confirm: true }, options);
+      renderAccountBackfillResult(data, operation);
+      const execute = document.getElementById("feishu-account-backfill-execute");
+      accountBackfillPreviewReady = preview
+        && data?.status === "success"
+        && Number(data?.summary?.eligible || 0) > 0;
+      if (execute) execute.disabled = !accountBackfillPreviewReady;
+      return data;
+    } finally {
+      if (button && preview) button.disabled = false;
+    }
+  }
+
   const settingsPage = {
     async load() {
       resources?.cleanup();
       resources = global.KOLConnectPageResources.create();
+      accountBackfillPreviewReady = false;
       await reloadSettings();
       renderWorkbookPathCapability();
+      const execute = document.getElementById("feishu-account-backfill-execute");
+      if (execute) execute.disabled = true;
     },
 
     bind() {
@@ -217,6 +313,32 @@
         if (!confirmed) return;
         try {
           await runSyncOperation(api, "full", { signal: resources.signal });
+        } catch (error) {
+          handleError(error);
+        }
+      });
+
+      listen("feishu-account-backfill-preview", "click", async () => {
+        try {
+          await runAccountBackfill(api, "preview", { signal: resources.signal });
+        } catch (error) {
+          accountBackfillPreviewReady = false;
+          const execute = document.getElementById("feishu-account-backfill-execute");
+          if (execute) execute.disabled = true;
+          handleError(error);
+        }
+      });
+
+      listen("feishu-account-backfill-execute", "click", async () => {
+        if (!accountBackfillPreviewReady) return;
+        const confirmed = global.confirm(
+          "将仅更新飞书【达人账号表】中可确认的身份字段：\n\n"
+          + "• 账号唯一ID\n• KOLConnect Creator ID\n\n"
+          + "不会创建记录\n不会删除记录\n不会修改达人表\n不会修改业务数据\n\n继续吗？",
+        );
+        if (!confirmed) return;
+        try {
+          await runAccountBackfill(api, "execute", { signal: resources.signal });
         } catch (error) {
           handleError(error);
         }

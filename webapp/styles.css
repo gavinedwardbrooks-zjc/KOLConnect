@@ -455,12 +455,23 @@ body {
 }
 
 #feishu-sync-result[data-status="partial"],
-#feishu-sync-result[data-status="blocked"] {
+#feishu-sync-result[data-status="blocked"],
+#feishu-account-backfill-result[data-status="partial"],
+#feishu-account-backfill-result[data-status="blocked"],
+#feishu-account-backfill-result[data-status="failed"] {
   color: var(--danger-dark);
 }
 
-#feishu-sync-result {
+#feishu-sync-result,
+#feishu-account-backfill-result {
   white-space: pre-line;
+}
+
+#feishu-account-backfill-details { margin-top: 14px; }
+
+.feishu-backfill-table td {
+  max-width: 280px;
+  overflow-wrap: anywhere;
 }
 
 .settings-backup-summary > div {

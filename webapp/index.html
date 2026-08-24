@@ -1659,6 +1659,32 @@
           </dl>
           <p class="form-message" id="feishu-sync-result" hidden></p>
         </div>
+
+        <div class="section-card feishu-sync-card" id="feishu-account-backfill-card">
+          <div class="section-title">Account 身份认领（安全迁移）</div>
+          <p class="hint">仅认领已有飞书账号记录，不创建、不删除任何记录，也不会修改达人表。</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="feishu-account-backfill-preview" type="button">生成预览</button>
+            <button class="primary-btn" id="feishu-account-backfill-execute" type="button" disabled>开始认领</button>
+          </div>
+          <dl class="settings-backup-summary feishu-sync-summary">
+            <div><dt>远端账号</dt><dd id="feishu-account-backfill-remote">--</dd></div>
+            <div><dt>可安全认领</dt><dd id="feishu-account-backfill-eligible">--</dd></div>
+            <div><dt>无需更新</dt><dd id="feishu-account-backfill-unchanged">--</dd></div>
+            <div><dt>未匹配</dt><dd id="feishu-account-backfill-unmatched">--</dd></div>
+            <div><dt>冲突</dt><dd id="feishu-account-backfill-conflicts">--</dd></div>
+          </dl>
+          <p class="form-message" id="feishu-account-backfill-result" hidden></p>
+          <details id="feishu-account-backfill-details" hidden>
+            <summary>查看认领明细</summary>
+            <div class="table-wrap">
+              <table class="data-table feishu-backfill-table">
+                <thead><tr><th>平台</th><th>主页</th><th>account_uid</th><th>creator_id</th><th>状态</th></tr></thead>
+                <tbody id="feishu-account-backfill-rows"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
       </section>
 
       <section class="page workspace-narrow" data-page="logs">

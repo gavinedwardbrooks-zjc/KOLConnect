@@ -297,6 +297,14 @@ class CreatorRepository:
             "snapshots": self._rows(workbook["CreatorSnapshots"]),
         }
 
+    def getCreatorAccountIdentityRows(self) -> dict[str, list[dict[str, Any]]]:
+        """Read only the authoritative identity sheets without migration or save hooks."""
+        with shared_storage_lock(), self.store.read_only_workbook() as workbook:
+            return {
+                "creators": self._rows(workbook["Creators"]),
+                "accounts": self._rows(workbook["CreatorAccounts"]),
+            }
+
     @_synchronized
     def getExistingCreatorAccountUids(self, account_uids: set[str]) -> set[str]:
         """Return only requested identities that already belong to a Creator."""

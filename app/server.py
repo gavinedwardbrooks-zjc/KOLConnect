@@ -100,6 +100,7 @@ from local_request_security import (
 )
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
+    account_identity_backfill_handler,
     analytics_handler,
     campaign_handler,
     creator_handler,
@@ -110,6 +111,7 @@ from http_handlers import (
     risk_handler,
 )
 from services.feishu_sync_service import FeishuSyncService
+from services.account_identity_backfill_service import AccountIdentityBackfillService
 
 
 APP_DIR = get_resource_dir()
@@ -200,7 +202,17 @@ MAIL_PROVIDER_PRESETS = {
     },
 }
 
-HANDLERS = [analytics_handler, dashboard_handler, risk_handler, campaign_handler, feishu_sync_handler, settings_handler, creator_handler, task_handler]
+HANDLERS = [
+    analytics_handler,
+    dashboard_handler,
+    risk_handler,
+    campaign_handler,
+    account_identity_backfill_handler,
+    feishu_sync_handler,
+    settings_handler,
+    creator_handler,
+    task_handler,
+]
 CREATOR_LIBRARY_CACHE = CreatorLibraryCache()
 DASHBOARD_RESPONSE_CACHE = DashboardResponseCache()
 
@@ -1664,6 +1676,13 @@ def get_feishu_sync_service() -> FeishuSyncService:
     )
 
 
+def get_account_identity_backfill_service() -> AccountIdentityBackfillService:
+    return AccountIdentityBackfillService(
+        get_creator_repository(),
+        lambda: FeishuClient(get_four_table_feishu_config()),
+    )
+
+
 def get_task_port() -> TaskPort:
     """Build a stateless adapter for one task operation."""
     return TaskManagerAdapter(
@@ -2238,6 +2257,7 @@ class Handler(BaseHTTPRequestHandler):
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),
                 "feishu_sync": get_feishu_sync_service(),
+                "account_identity_backfill": get_account_identity_backfill_service(),
                 "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
                 "risk": get_risk_service(),
