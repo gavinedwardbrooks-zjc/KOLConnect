@@ -1713,6 +1713,35 @@
             </div>
           </details>
         </div>
+
+        <div class="section-card feishu-sync-card" id="feishu-legacy-creator-cleanup-card">
+          <div class="section-title">历史未管理 Creator 清理</div>
+          <p class="hint">仅用于清理历史飞书遗留的 unmanaged Creator。不删除本地达人，不删除 Account，不影响已管理 Creator。正常新用户无需使用。</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="feishu-legacy-creator-cleanup-preview" type="button">预览待清理记录</button>
+            <button class="danger-btn" id="feishu-legacy-creator-cleanup-execute" type="button" disabled>确认删除</button>
+          </div>
+          <dl class="settings-backup-summary feishu-sync-summary">
+            <div><dt>远端 Creator</dt><dd id="feishu-legacy-creator-cleanup-remote">--</dd></div>
+            <div><dt>已管理 Creator</dt><dd id="feishu-legacy-creator-cleanup-managed">--</dd></div>
+            <div><dt>未管理 Creator</dt><dd id="feishu-legacy-creator-cleanup-unmanaged">--</dd></div>
+            <div><dt>可安全删除</dt><dd id="feishu-legacy-creator-cleanup-eligible">--</dd></div>
+            <div><dt>有关系风险</dt><dd id="feishu-legacy-creator-cleanup-relation-risk">--</dd></div>
+            <div><dt>歧义</dt><dd id="feishu-legacy-creator-cleanup-ambiguous">--</dd></div>
+            <div><dt>阻塞</dt><dd id="feishu-legacy-creator-cleanup-blocked">--</dd></div>
+            <div><dt>冲突</dt><dd id="feishu-legacy-creator-cleanup-conflicts">--</dd></div>
+          </dl>
+          <p class="form-message" id="feishu-legacy-creator-cleanup-result" hidden></p>
+          <details id="feishu-legacy-creator-cleanup-details" hidden>
+            <summary>查看待清理明细</summary>
+            <div class="table-wrap">
+              <table class="data-table feishu-backfill-table">
+                <thead><tr><th>远端记录</th><th>达人名称</th><th>Legacy ID</th><th>关系分类</th><th>可删除</th></tr></thead>
+                <tbody id="feishu-legacy-creator-cleanup-rows"></tbody>
+              </table>
+            </div>
+          </details>
+        </div>
       </section>
 
       <section class="page workspace-narrow" data-page="logs">
