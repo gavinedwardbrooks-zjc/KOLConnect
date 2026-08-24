@@ -104,8 +104,10 @@ class FeishuSyncService:
         if not error_codes:
             warnings.append("WRITE_PERMISSION_NOT_TESTED_WITHOUT_MUTATION")
         ready = not error_codes and not missing and not incompatible
+        blocked_reason = "FEISHU_SCHEMA_INVALID" if missing or incompatible else ""
         return {
             "status": "success" if ready else "blocked",
+            "blocked_reason": blocked_reason,
             "started_at": started_at,
             "completed_at": self._now(),
             "connection_ok": True,
@@ -237,7 +239,10 @@ class FeishuSyncService:
             "incompatible_fields": list(validation.get("incompatible_fields") or []),
         }
         if validation["status"] != "success":
-            base["blocked_reason"] = "FEISHU_SCHEMA_OR_CONNECTION_INVALID"
+            base["blocked_reason"] = (
+                validation.get("blocked_reason")
+                or "FEISHU_SCHEMA_OR_CONNECTION_INVALID"
+            )
             base["completed_at"] = self._now()
             return base
 

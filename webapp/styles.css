@@ -459,6 +459,10 @@ body {
   color: var(--danger-dark);
 }
 
+#feishu-sync-result {
+  white-space: pre-line;
+}
+
 .settings-backup-summary > div {
   display: grid;
   grid-template-columns: minmax(130px, 0.35fr) minmax(0, 1fr);

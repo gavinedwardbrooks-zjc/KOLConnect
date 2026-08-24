@@ -52,12 +52,32 @@ async function run() {
   const document = { getElementById: id => elements.get(id) || null };
   const calls = [];
   const confirmations = [false, true];
+  const validationResults = [
+    { status: "success", connection_ok: true },
+    {
+      status: "blocked", blocked_reason: "FEISHU_SCHEMA_INVALID",
+      missing_fields: [
+        { table: "creator", field: "KOLConnect Creator ID" },
+        { table: "creator", field: "内容类型" },
+        { table: "account", field: "最近同步时间" },
+      ],
+      incompatible_fields: [],
+    },
+    {
+      status: "blocked", blocked_reason: "FEISHU_SCHEMA_INVALID",
+      missing_fields: [],
+      incompatible_fields: [
+        { table: "account", field: "粉丝数", actual_type: 15 },
+      ],
+    },
+    { status: "failed" },
+  ];
   const window = {
     confirm: () => confirmations.shift(),
     KOLConnectAPI: {
       post: async (url, payload) => {
         calls.push({ url, payload });
-        if (url.endsWith("validate")) return { status: "success", connection_ok: true };
+        if (url.endsWith("validate")) return validationResults.shift();
         if (url.endsWith("dry-run")) return {
           status: "success", local_creator_count: 10, remote_creator_count: 8,
           creator_create_count: 2, creator_update_count: 1,
@@ -86,6 +106,17 @@ async function run() {
   sandbox.page.bind();
 
   await elements.get("feishu-sync-validate").click();
+  assert.match(elements.get("feishu-sync-result").textContent, /连接与字段合同验证通过/);
+  await elements.get("feishu-sync-validate").click();
+  const missingMessage = elements.get("feishu-sync-result").textContent;
+  assert.match(missingMessage, /飞书表结构需要补充/);
+  assert.match(missingMessage, /Creator 表缺少：[\s\S]*KOLConnect Creator ID[\s\S]*内容类型/);
+  assert.match(missingMessage, /Creator Account 表缺少：[\s\S]*最近同步时间/);
+  assert.doesNotMatch(missingMessage, /secret|token/i);
+  await elements.get("feishu-sync-validate").click();
+  assert.match(elements.get("feishu-sync-result").textContent, /Creator Account 表字段类型不兼容:[\s\S]*粉丝数/);
+  await elements.get("feishu-sync-validate").click();
+  assert.equal(elements.get("feishu-sync-result").textContent, "操作未执行：FEISHU_SYNC_FAILED");
   await elements.get("feishu-sync-dry-run").click();
   assert.equal(elements.get("feishu-sync-local-creators").textContent, 10);
   assert.equal(elements.get("feishu-sync-create").textContent, 2);

@@ -152,6 +152,7 @@ class FeishuSyncFoundationTests(unittest.TestCase):
                 self.client.schemas[table] = [item for item in current if item["field_name"] != field]
                 result = self.service.dry_run()
                 self.assertEqual("blocked", result["status"])
+                self.assertEqual("FEISHU_SCHEMA_INVALID", result["blocked_reason"])
                 self.assertIn({"table": "creator" if table == "creators" else "account", "field": field}, result["missing_fields"])
                 self.client.schemas[table] = current
 
@@ -160,6 +161,7 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         field["type"] = 2
         incompatible = self.service.validate_connection()
         self.assertEqual("blocked", incompatible["status"])
+        self.assertEqual("FEISHU_SCHEMA_INVALID", incompatible["blocked_reason"])
         self.assertEqual("KOLConnect Creator ID", incompatible["incompatible_fields"][0]["field"])
 
         original = self.client.list_fields

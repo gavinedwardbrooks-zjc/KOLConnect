@@ -45,6 +45,32 @@
     if (element) element.textContent = value ?? "--";
   }
 
+  function schemaTableLabel(table) {
+    return table === "creator" ? "Creator 表" : table === "account" ? "Creator Account 表" : "未知表";
+  }
+
+  function renderSchemaValidationDetails(data) {
+    const missing = Array.isArray(data?.missing_fields) ? data.missing_fields : [];
+    const incompatible = Array.isArray(data?.incompatible_fields) ? data.incompatible_fields : [];
+    const lines = ["飞书表结构需要补充"];
+    for (const table of ["creator", "account"]) {
+      const fields = missing
+        .filter(item => item?.table === table && item?.field)
+        .map(item => String(item.field));
+      if (fields.length) {
+        lines.push("", `${schemaTableLabel(table)}缺少：`, ...fields.map(field => `- ${field}`));
+      }
+    }
+    for (const table of ["creator", "account"]) {
+      const fields = incompatible.filter(item => item?.table === table && item?.field);
+      if (fields.length) {
+        lines.push("", `${schemaTableLabel(table)}字段类型不兼容:`);
+        lines.push(...fields.map(item => `- ${String(item.field)}（当前类型：${String(item.actual_type ?? "未知")}）`));
+      }
+    }
+    return lines.join("\n");
+  }
+
   function renderSyncResult(data, operation) {
     const status = String(data?.status || "failed");
     const connectionLabel = data?.connection_ok === false
@@ -73,7 +99,10 @@
       message.textContent = `部分同步成功，失败记录 ${Number(data.creator_failed || 0) + Number(data.account_failed || 0)} 条，可修复后重新同步。`;
     } else {
       const reason = data?.blocked_reason || data?.error_codes?.[0] || "FEISHU_SYNC_FAILED";
-      message.textContent = `操作未执行：${reason}`;
+      const hasSchemaDetails = (data?.missing_fields?.length || 0) + (data?.incompatible_fields?.length || 0) > 0;
+      message.textContent = reason === "FEISHU_SCHEMA_INVALID" && hasSchemaDetails
+        ? renderSchemaValidationDetails(data)
+        : `操作未执行：${reason}`;
     }
   }
 
