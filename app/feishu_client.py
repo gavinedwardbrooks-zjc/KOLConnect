@@ -122,6 +122,22 @@ class FeishuClient:
         )
         return list((data.get("data") or {}).get("records") or [])
 
+    def batch_delete(self, table_id: str, record_ids: Iterable[str]) -> list[dict[str, Any]]:
+        payload = [str(record_id or "").strip() for record_id in record_ids]
+        if not payload or any(not record_id for record_id in payload):
+            raise ValueError("Feishu record IDs must be non-empty.")
+        if len(payload) != len(set(payload)):
+            raise ValueError("Feishu record IDs must be unique.")
+        if len(payload) > self.batch_size:
+            raise ValueError("Feishu batch exceeds the configured batch size.")
+        data = self._request_json(
+            "POST",
+            f"{self._table_url(table_id)}/records/batch_delete",
+            json={"records": payload},
+            timeout=20,
+        )
+        return list((data.get("data") or {}).get("records") or [])
+
     def _list_paginated(self, url: str, *, item_key: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         page_token = ""

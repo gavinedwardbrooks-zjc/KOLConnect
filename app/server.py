@@ -107,6 +107,7 @@ from http_handlers import (
     creator_identity_backfill_handler,
     dashboard_handler,
     feishu_sync_handler,
+    legacy_creator_cleanup_handler,
     settings_handler,
     task_handler,
     risk_handler,
@@ -114,6 +115,7 @@ from http_handlers import (
 from services.feishu_sync_service import FeishuSyncService
 from services.account_identity_backfill_service import AccountIdentityBackfillService
 from services.creator_identity_backfill_service import CreatorIdentityBackfillService
+from services.legacy_creator_cleanup_service import LegacyCreatorCleanupService
 
 
 APP_DIR = get_resource_dir()
@@ -211,6 +213,7 @@ HANDLERS = [
     campaign_handler,
     creator_identity_backfill_handler,
     account_identity_backfill_handler,
+    legacy_creator_cleanup_handler,
     feishu_sync_handler,
     settings_handler,
     creator_handler,
@@ -1693,6 +1696,13 @@ def get_creator_identity_backfill_service() -> CreatorIdentityBackfillService:
     )
 
 
+def get_legacy_creator_cleanup_service() -> LegacyCreatorCleanupService:
+    return LegacyCreatorCleanupService(
+        get_creator_repository(),
+        lambda: FeishuClient(get_four_table_feishu_config()),
+    )
+
+
 def get_task_port() -> TaskPort:
     """Build a stateless adapter for one task operation."""
     return TaskManagerAdapter(
@@ -2269,6 +2279,7 @@ class Handler(BaseHTTPRequestHandler):
                 "feishu_sync": get_feishu_sync_service(),
                 "account_identity_backfill": get_account_identity_backfill_service(),
                 "creator_identity_backfill": get_creator_identity_backfill_service(),
+                "legacy_creator_cleanup": get_legacy_creator_cleanup_service(),
                 "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
                 "risk": get_risk_service(),

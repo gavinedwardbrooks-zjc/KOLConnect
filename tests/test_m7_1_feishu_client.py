@@ -102,10 +102,21 @@ class FeishuClientTests(unittest.TestCase):
         self.assertEqual("TRANSIENT_NETWORK_ERROR", caught.exception.code)
         self.assertNotIn("secret-value", str(caught.exception))
 
-    def test_no_remote_delete_capability_exists(self):
-        client = FeishuClient(CONFIG, transport=QueueTransport([]))
-        self.assertFalse(hasattr(client, "delete"))
-        self.assertFalse(hasattr(client, "batch_delete"))
+    def test_batch_delete_uses_exact_table_and_record_ids(self):
+        transport = QueueTransport([
+            Response({"code": 0, "tenant_access_token": "token"}),
+            Response({
+                "code": 0,
+                "data": {"records": [{"deleted": True, "record_id": "legacy-1"}]},
+            }),
+        ])
+        deleted = FeishuClient(CONFIG, transport=transport).batch_delete(
+            "creator-table", ["legacy-1"]
+        )
+        self.assertEqual(["legacy-1"], [item["record_id"] for item in deleted])
+        self.assertIn("/creator-table/records/batch_delete", transport.calls[1][1])
+        self.assertEqual({"records": ["legacy-1"]}, transport.calls[1][2]["json"])
+        self.assertFalse(hasattr(FeishuClient(CONFIG, transport=transport), "delete"))
 
 
 if __name__ == "__main__":
