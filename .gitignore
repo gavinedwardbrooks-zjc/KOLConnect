@@ -23,6 +23,8 @@ packaging/*.iconset/
 /.m4_*/
 /.m5_*/
 /.m7_1_clean_reset_test_runtime/
+/.m7_1e_merge_test_runtime/
+/.m7_1f_test_runtime/
 *.exe
 *.dmg
 /release/

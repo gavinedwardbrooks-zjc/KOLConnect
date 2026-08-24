@@ -383,7 +383,6 @@ Object.assign(I18N.zh, {
     taskTypeManual: "人工录入",
     taskTypeScrape: "抓取任务",
     manualSupplement: "补充抓取信息",
-    manualDirectSync: "直接同步到四表",
     taskTypeEmailRecheck: "缺失邮箱补全",
     reviewScanMissingEmail: "扫描飞书表缺失邮箱",
     reviewScanMissingEmailConfirm: "将读取达人账号表并创建缺失邮箱补全任务，是否继续？",
@@ -410,7 +409,6 @@ Object.assign(I18N.en, {
     taskTypeManual: "Manual entry",
     taskTypeScrape: "Scrape task",
     manualSupplement: "Supplement crawl data",
-    manualDirectSync: "Sync directly to four tables",
     taskTypeEmailRecheck: "Missing email recheck",
     reviewScanMissingEmail: "Scan missing account emails",
     reviewScanMissingEmailConfirm: "Read the account table and create a missing-email recheck task?",
@@ -444,9 +442,6 @@ Object.assign(I18N.zh, {
   reviewNoRecords: "该任务暂无抓取结果。",
   reviewSummary: "共 {count} 条结果，当前显示 {shown} 条。",
   reviewSaved: "审核结果已保存。",
-  reviewSyncFourTables: "同步有效结果到飞书表",
-  reviewSyncConfirm: "即将同步任务：{task}\n数据数量：{count}\n\n确认继续吗？",
-  reviewSyncResult: "创建达人：{creators}，创建账号：{accounts}，更新账号：{updated}，跳过：{skipped}，失败：{failed}。"
 });
 
 Object.assign(I18N.en, {
@@ -474,9 +469,6 @@ Object.assign(I18N.en, {
   reviewNoRecords: "This task has no scrape results yet.",
   reviewSummary: "{count} results total, showing {shown}.",
   reviewSaved: "Review result saved.",
-  reviewSyncFourTables: "Sync valid results to four tables",
-  reviewSyncConfirm: "Task: {task}\nRecords: {count}\n\nContinue with four-table sync?",
-  reviewSyncResult: "Created creators: {creators}, created accounts: {accounts}, updated accounts: {updated}, skipped: {skipped}, failed: {failed}."
 });
 
 const MAIL_PROVIDER_DEFAULTS = {
@@ -754,22 +746,7 @@ function renderTaskList() {
           showError(error);
         }
       });
-      const directSync = document.createElement("button");
-      directSync.type = "button";
-      directSync.className = "mini-btn";
-      directSync.textContent = t("manualDirectSync");
-      directSync.addEventListener("click", async event => {
-        event.stopPropagation();
-        if (!window.confirm(t("reviewSyncConfirm").replace("{task}", task.name || task.id).replace("{count}", String(task.total_links || 1)))) return;
-        try {
-          const data = await apiPost(`/api/tasks/${encodeURIComponent(task.id)}/sync-four-tables`, {});
-          showSaved(formatReviewSyncSummary(data));
-          await loadTaskList();
-        } catch (error) {
-          showError(error);
-        }
-      });
-      actions.append(supplement, directSync);
+      actions.appendChild(supplement);
     }
     if (task.status === "interrupted") {
       const recover = document.createElement("button");
@@ -1013,17 +990,6 @@ async function copyText(text) {
 
 function reviewField(record, field) {
   return String(record?.[field] ?? "");
-}
-
-function formatReviewSyncSummary(data) {
-  const summary = data?.sync_summary || {};
-  const detail = t("reviewSyncResult")
-    .replace("{creators}", summary.created_creators || 0)
-    .replace("{accounts}", summary.created_accounts || 0)
-    .replace("{updated}", summary.updated_accounts || 0)
-    .replace("{skipped}", summary.skipped || 0)
-    .replace("{failed}", summary.errors || 0);
-  return `${detail}\n成功同步：${summary.success_records || 0} 条，部分同步：${summary.partial_records || 0} 条，跳过异常：${summary.skipped_abnormal || 0} 条`;
 }
 
 function reviewFilteredRecords() {
@@ -1453,7 +1419,6 @@ async function loadReviewTasks() {
     state.review.taskId = "";
     select.add(new Option(t("reviewNoTasks"), ""));
     $("review-summary").textContent = t("reviewNoTasks");
-    setText("review-sync-summary", "");
     state.review.records = [];
     renderReviewResults();
     return;
@@ -1467,7 +1432,6 @@ async function loadReviewTasks() {
   state.review.taskId = select.value || tasks[0].id;
   if (select.value !== state.review.taskId) select.value = state.review.taskId;
   state.review.page = 1;
-  setText("review-sync-summary", "");
   await loadReviewResults();
 }
 
@@ -2153,7 +2117,6 @@ function bindEvents() {
     try {
       state.review.taskId = valueOf("review-task-select");
       state.review.page = 1;
-      setText("review-sync-summary", "");
       await loadReviewResults();
     } catch (error) {
       showError(error);
@@ -2222,40 +2185,6 @@ function bindEvents() {
       showError(error);
     }
   });
-  $("review-sync-four-tables").addEventListener("click", async () => {
-    const button = $("review-sync-four-tables");
-    try {
-      if (!state.review.taskId) {
-        throw new Error(t("reviewSelectTask"));
-      }
-      const partialCount = state.review.records.filter(
-        record => reviewField(record, "scrape_status") === "partial_success"
-      ).length;
-      if (partialCount && !window.confirm(`当前有 ${partialCount} 条部分成功记录，仍建议人工确认。是否继续同步？`)) return;
-      const confirmation = t("reviewSyncConfirm")
-        .replace("{task}", state.review.taskId)
-        .replace("{count}", state.review.records.length);
-      if (!window.confirm(confirmation)) return;
-
-      button.disabled = true;
-      const data = await apiPost(`/api/tasks/${encodeURIComponent(state.review.taskId)}/sync-four-tables`, {});
-      const summary = formatReviewSyncSummary(data);
-      const warnings = Array.isArray(data.sync_warnings) ? data.sync_warnings : [];
-      const message = warnings.length ? `${summary}\n${warnings.join("\n")}` : summary;
-      setText("review-sync-summary", message);
-      showSaved(message);
-    } catch (error) {
-      const responseData = error.responseData || {};
-      const syncErrors = Array.isArray(responseData.sync_errors) ? responseData.sync_errors : [];
-      if (syncErrors.length) {
-        setText("review-sync-summary", `${formatReviewSyncSummary(responseData)}\n${syncErrors.join("\n")}`);
-      }
-      showError(error);
-    } finally {
-      button.disabled = false;
-    }
-  });
-
   $("task-list-refresh").addEventListener("click", () => {
     loadTaskList().catch(showError);
   });

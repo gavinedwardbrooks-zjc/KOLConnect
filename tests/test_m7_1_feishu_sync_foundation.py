@@ -224,6 +224,40 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         self.assertEqual((0, 0), (converged["creator_update_count"], converged["account_update_count"]))
         self.assertEqual((0, 0), (converged["creator_conflict_count"], converged["account_conflict_count"]))
 
+    def test_one_creator_with_three_accounts_converges_idempotently(self):
+        accounts = [
+            account("account-youtube", platform="YouTube", profile_url="https://youtube.com/@creator-one"),
+            account("account-tiktok", platform="TikTok", profile_url="https://tiktok.com/@creator-one"),
+            account("account-instagram", platform="Instagram", profile_url="https://instagram.com/creator-one"),
+        ]
+        service = FeishuSyncService(Source([creator()], accounts), lambda: self.client)
+
+        first = service.dry_run()
+        self.assertEqual((1, 3), (first["creator_create_count"], first["account_create_count"]))
+        self.assertEqual((0, 0), (first["creator_update_count"], first["account_update_count"]))
+        self.assertEqual((0, 0), (first["creator_conflict_count"], first["account_conflict_count"]))
+
+        synced = service.full_sync(confirm=True)
+        self.assertEqual("success", synced["status"])
+        self.assertEqual(1, len(self.client.records["creators"]))
+        self.assertEqual(3, len(self.client.records["accounts"]))
+
+        converged = service.dry_run()
+        self.assertEqual((0, 0), (converged["creator_create_count"], converged["creator_update_count"]))
+        self.assertEqual((0, 0), (converged["account_create_count"], converged["account_update_count"]))
+        self.assertEqual((0, 0), (converged["creator_conflict_count"], converged["account_conflict_count"]))
+
+    def test_one_creator_with_two_accounts_plans_one_creator_without_conflict(self):
+        accounts = [
+            account("account-youtube", platform="YouTube", profile_url="https://youtube.com/@creator-one"),
+            account("account-tiktok", platform="TikTok", profile_url="https://tiktok.com/@creator-one"),
+        ]
+        result = FeishuSyncService(Source([creator()], accounts), lambda: self.client).dry_run()
+        self.assertEqual(1, result["creator_create_count"])
+        self.assertEqual(2, result["account_create_count"])
+        self.assertEqual(0, result["creator_conflict_count"])
+        self.assertEqual(0, result["account_conflict_count"])
+
     def test_explicit_privacy_whitelist_excludes_sensitive_fields(self):
         result = self.service.full_sync(confirm=True)
         self.assertEqual("success", result["status"])

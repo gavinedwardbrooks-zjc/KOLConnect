@@ -451,6 +451,7 @@
   let listController = null;
   let campaignModal = null;
   let deleteModal = null;
+  let mergeModal = null;
   let lifecycleId = 0;
   let filterRequestId = 0;
   const VIEW_MODE_STORAGE_KEY = "creator_library_view_mode";
@@ -730,6 +731,7 @@
       if (!archived) {
         moreMenu.appendChild(createAction("归档达人", "archive", creatorId, "soft-btn creator-card-action"));
       }
+      moreMenu.appendChild(createAction("合并达人", "merge", creatorId, "soft-btn creator-card-action"));
       moreMenu.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger creator-card-action"));
       moreActions.append(moreToggle, moreMenu);
       actions.append(primaryActions, moreActions);
@@ -807,6 +809,7 @@
           createAction("归档", "archive", creatorId, "soft-btn compact-btn"),
         );
       }
+      actions.appendChild(createAction("合并达人", "merge", creatorId, "soft-btn compact-btn"));
       actions.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger compact-btn"));
       row.appendChild(actions);
       body.appendChild(row);
@@ -1268,6 +1271,20 @@
             await loadRecords();
           },
         });
+      } else if (button.dataset.creatorAction === "merge") {
+        const record = libraryState().records.find(
+          item => String(item.creator_id || item.analysis_id || "") === creatorId,
+        );
+        if (!mergeModal) {
+          showError(new Error("达人合并功能未加载，请刷新页面后重试。"));
+          return;
+        }
+        await mergeModal.open(record, {
+          onMerged: async () => {
+            pageContext.state.creatorLibraryDetail = {};
+            await loadRecords();
+          },
+        });
       }
     } catch (error) {
       showError(error);
@@ -1334,6 +1351,7 @@
       renderPageSizeOptions();
       campaignModal = global.KOLConnectCreatorCampaignModal.create(context);
       deleteModal = global.KOLConnectCreatorDeleteModal.create(context);
+      mergeModal = global.KOLConnectCreatorMergeModal?.create(context) || null;
       await loadAgencyOptions().catch(() => {});
       await loadRecords();
     },
@@ -1341,6 +1359,7 @@
     bind() {
       campaignModal.bind();
       deleteModal.bind();
+      mergeModal?.bind();
       listen("creator-library-refresh", "click", () => loadRecords().catch(showError));
       listen("creator-library-card-view", "click", () => setViewMode("card").catch(showError));
       listen("creator-library-table-view", "click", () => setViewMode("table").catch(showError));
@@ -1381,11 +1400,13 @@
       filterRequestId += 1;
       campaignModal?.destroy();
       deleteModal?.destroy();
+      mergeModal?.destroy();
       pageContext?.resources.cleanup();
       pageContext = null;
       listController = null;
       campaignModal = null;
       deleteModal = null;
+      mergeModal = null;
     },
   };
 

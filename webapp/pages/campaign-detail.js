@@ -91,7 +91,7 @@
     const content = element("campaign-detail-content");
     if (loading) loading.hidden = state !== "loading";
     if (error) error.hidden = state !== "error";
-    if (content) content.hidden = state !== "loaded";
+    if (content) content.hidden = state !== "loaded" && !(state === "error" && campaign);
     if (message && element("campaign-detail-error-message")) {
       element("campaign-detail-error-message").textContent = message;
     }
@@ -238,8 +238,10 @@
     const body = element("campaign-missing-publish-body");
     const empty = element("campaign-missing-publish-empty");
     const table = element("campaign-missing-publish-table-wrap");
+    const count = element("campaign-missing-publish-count");
+    if (!body || !empty || !table || !count) return;
     body.replaceChildren();
-    element("campaign-missing-publish-count").textContent = `${missingPublishLinks.length} 条`;
+    count.textContent = `${missingPublishLinks.length} 条`;
     empty.hidden = missingPublishLinks.length !== 0;
     table.hidden = missingPublishLinks.length === 0;
     missingPublishLinks.forEach(record => {
@@ -294,10 +296,16 @@
       setDetailState("loaded");
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
-      campaign = null;
-      relations = [];
-      missingPublishLinks = [];
-      setDetailState("error", error.message || "Campaign 详情加载失败，请稍后重试。");
+      if (!campaign) {
+        relations = [];
+        missingPublishLinks = [];
+      }
+      setDetailState(
+        "error",
+        error?.status === 404
+          ? "Campaign 不存在或已删除。"
+          : "Campaign 详情加载失败，请稍后重试。",
+      );
     }
   }
 

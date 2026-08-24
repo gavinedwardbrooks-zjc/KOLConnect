@@ -49,8 +49,8 @@ function testWorkflowMarkup() {
   assert.match(reviewToolbar, /id="review-refresh"/);
   assert.match(reviewToolbar, /id="review-scan-missing-email"/);
   assert.match(reviewToolbar, /id="review-retry-failed"/);
-  assert.equal(count(reviewToolbar, 'class="primary-btn"'), 1);
-  assert.match(reviewToolbar, /id="review-sync-four-tables"/);
+  assert.equal(count(reviewToolbar, 'class="primary-btn"'), 0);
+  assert.doesNotMatch(reviewToolbar, /id="review-sync-four-tables"/);
 }
 
 class ClassList {

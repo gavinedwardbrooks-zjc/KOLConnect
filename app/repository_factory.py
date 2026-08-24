@@ -16,6 +16,7 @@ from product_repository import ProductRepository
 from repositories.agency_repository import AgencyRepository
 from repositories.creator_delete_impact_repository import CreatorDeleteImpactRepository
 from repositories.creator_hard_delete_repository import CreatorHardDeleteRepository
+from repositories.creator_merge_repository import CreatorMergeRepository
 from repositories.risk_repository import RiskRepository
 
 
@@ -46,6 +47,7 @@ class RepositoryFactory:
         self._agency: AgencyRepository | None = None
         self._creator_delete_impact: CreatorDeleteImpactRepository | None = None
         self._creator_hard_delete: CreatorHardDeleteRepository | None = None
+        self._creator_merge: CreatorMergeRepository | None = None
         self._product: ProductRepository | None = None
         self._campaign: CampaignRepository | None = None
         self._campaign_creator: CampaignCreatorRepository | None = None
@@ -105,6 +107,16 @@ class RepositoryFactory:
                 legacy_library_file=self.legacy_library_file,
             )
         return self._creator_hard_delete
+
+    def creator_merge(self, *, mail_messages_path: Path | None = None) -> CreatorMergeRepository:
+        if self._creator_merge is None:
+            self._creator_merge = CreatorMergeRepository(
+                self.store,
+                tasks_dir=self.tasks_dir,
+                mail_messages_path=mail_messages_path,
+                legacy_library_file=self.legacy_library_file,
+            )
+        return self._creator_merge
 
     def product(self) -> ProductRepository:
         if self._product is None:

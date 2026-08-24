@@ -3,6 +3,16 @@
 import re
 
 
+CAMPAIGN_NOT_FOUND = "CAMPAIGN_NOT_FOUND"
+
+
+def _campaign_repository_error(handler, exc: Exception) -> None:
+    if isinstance(exc, ValueError) and "Campaign 不存在" in str(exc):
+        handler._json({"ok": False, "error": CAMPAIGN_NOT_FOUND}, status=404)
+        return
+    handler._repository_error(exc)
+
+
 def handle(handler, request: dict, context: dict) -> bool:
     method = request["method"]
     path = request["path"]
@@ -62,7 +72,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             )
             handler._json({"ok": True, "campaign_creators": records})
         except (RuntimeError, ValueError) as exc:
-            handler._repository_error(exc)
+            _campaign_repository_error(handler, exc)
         return True
 
     campaign_match = re.fullmatch(r"/api/campaigns/([^/]+)", path)
@@ -71,7 +81,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         try:
             handler._json({"ok": True, "campaign": repositories["campaign"]().getCampaign(campaign_match.group(1))})
         except (RuntimeError, ValueError) as exc:
-            handler._repository_error(exc)
+            _campaign_repository_error(handler, exc)
         return True
 
     # POST /api/products → {"ok": true, "product": {...}}

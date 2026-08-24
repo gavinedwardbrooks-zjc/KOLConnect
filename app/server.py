@@ -72,6 +72,7 @@ from services.analytics_service import AnalyticsService
 from services.workbook_backup_service import WorkbookBackupService
 from services.creator_delete_impact_service import CreatorDeleteImpactService
 from services.creator_hard_delete_service import CreatorHardDeleteService
+from services.creator_merge_service import CreatorMergeService
 from services.creator_library_cache import CreatorLibraryCache
 from services.campaign_creator_service import CampaignCreatorService
 from services.dashboard_response_cache import DashboardResponseCache
@@ -1643,6 +1644,21 @@ def get_creator_hard_delete_service() -> CreatorHardDeleteService:
     )
 
 
+def get_creator_merge_repository():
+    factory = get_active_repository_factory() or _new_repository_factory()
+    return factory.creator_merge(mail_messages_path=mail_sync_module.MAIL_MESSAGES_FILE)
+
+
+def get_creator_merge_service() -> CreatorMergeService:
+    return CreatorMergeService(
+        get_creator_merge_repository,
+        cache_invalidators=(
+            CREATOR_LIBRARY_CACHE.invalidate,
+            DASHBOARD_RESPONSE_CACHE.invalidate,
+        ),
+    )
+
+
 def get_campaign_creator_service() -> CampaignCreatorService:
     return CampaignCreatorService(
         get_campaign_creator_repository,
@@ -2264,6 +2280,7 @@ class Handler(BaseHTTPRequestHandler):
                 "creator_summary": get_creator_summary_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),
+                "creator_merge": get_creator_merge_service(),
                 "feishu_sync": get_feishu_sync_service(),
                 "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
@@ -2295,7 +2312,6 @@ class Handler(BaseHTTPRequestHandler):
                 "test_smtp_login": test_smtp_login,
                 "start_scrape": start_scrape,
                 "stop_task": stop_task,
-                "sync_task_results_to_four_tables": sync_task_results_to_four_tables,
                 "utc_now": _utc_now,
             },
             "task_manager": task_manager,

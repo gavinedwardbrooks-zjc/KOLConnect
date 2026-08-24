@@ -34,7 +34,7 @@ function testCompactReviewAndCreatorLibraryToolbars() {
   const html = read("webapp/index.html");
   const css = read("webapp/styles.css");
   assert.match(html, /扫描飞书表缺失邮箱/);
-  assert.match(html, /同步有效结果到飞书表/);
+  assert.doesNotMatch(html, /同步有效结果到飞书表|review-sync-four-tables/);
   assert.match(css, /\.review-toolbar-actions[\s\S]*grid-column:\s*1 \/ -1/);
   assert.match(html, /class="creator-library-actions-left"/);
   assert.match(html, /class="creator-library-actions-right"/);

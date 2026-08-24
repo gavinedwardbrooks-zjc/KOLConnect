@@ -766,6 +766,46 @@
         </div>
       </div>
 
+      <div class="creator-delete-modal" id="creator-merge-modal" hidden>
+        <div class="creator-delete-modal-card creator-merge-modal-card" role="dialog" aria-modal="true" aria-labelledby="creator-merge-title">
+          <div class="creator-campaign-modal-heading">
+            <div>
+              <p class="eyebrow">Manual Identity Merge</p>
+              <h2 id="creator-merge-title">将 SECONDARY 合并到 PRIMARY</h2>
+            </div>
+            <button class="icon-btn" id="creator-merge-close" type="button" aria-label="关闭">×</button>
+          </div>
+          <div class="creator-merge-direction">
+            <section><span>主达人 · 保留</span><strong id="creator-merge-primary-name">--</strong><p id="creator-merge-primary-accounts">--</p></section>
+            <b aria-hidden="true">←</b>
+            <section><span>待合并达人 · 合并后删除</span><strong id="creator-merge-secondary-name">尚未选择</strong><p id="creator-merge-secondary-accounts">--</p></section>
+          </div>
+          <label class="field">
+            <span>搜索待合并达人</span>
+            <input id="creator-merge-search" type="search" placeholder="名称、用户名、平台或主页链接">
+          </label>
+          <div class="creator-merge-search-results" id="creator-merge-search-results"></div>
+          <dl class="settings-backup-summary creator-merge-summary">
+            <div><dt>Creator</dt><dd id="creator-merge-result-creators">--</dd></div>
+            <div><dt>Account</dt><dd id="creator-merge-result-accounts">--</dd></div>
+            <div><dt>合并后账号</dt><dd id="creator-merge-result-platforms">--</dd></div>
+          </dl>
+          <dl class="settings-backup-summary creator-merge-summary">
+            <div><dt>迁移账号</dt><dd id="creator-merge-count-accounts">--</dd></div>
+            <div><dt>视频</dt><dd id="creator-merge-count-videos">--</dd></div>
+            <div><dt>Snapshots</dt><dd id="creator-merge-count-snapshots">--</dd></div>
+            <div><dt>Campaign 关系</dt><dd id="creator-merge-count-campaigns">--</dd></div>
+          </dl>
+          <ul class="creator-delete-blockers" id="creator-merge-conflicts" hidden></ul>
+          <p class="form-message" id="creator-merge-message" hidden></p>
+          <div class="action-row creator-campaign-modal-actions">
+            <button class="soft-btn" id="creator-merge-cancel" type="button">取消</button>
+            <button class="soft-btn" id="creator-merge-preview" type="button" disabled>预览合并影响</button>
+            <button class="primary-btn danger" id="creator-merge-confirm" type="button" disabled>确认将 SECONDARY 合并到 PRIMARY</button>
+          </div>
+        </div>
+      </div>
+
       <section class="page workspace-narrow" data-page="review">
         <div class="page-header">
           <h1 data-i18n="reviewTitle">审核结果</h1>
@@ -794,11 +834,9 @@
               <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描飞书表缺失邮箱</button>
               <button class="soft-btn" id="review-view-analysis" hidden>达人分析</button>
               <button class="soft-btn" id="review-retry-failed">重新抓取异常记录</button>
-              <button class="primary-btn" id="review-sync-four-tables" data-i18n="reviewSyncFourTables">同步有效结果到飞书表</button>
             </div>
           </div>
           <p class="hint" id="review-summary">请选择一个已有任务。</p>
-          <p class="hint" id="review-sync-summary"></p>
         </div>
 
         <div class="section-card review-queue" id="review-queue" hidden>
@@ -1699,6 +1737,7 @@
   <script src="app.js"></script>
   <script src="vendor/chart.umd.min.js"></script>
   <script src="pages/dashboard.js"></script>
+  <script src="pages/creator-merge.js"></script>
   <script src="pages/creator-library.js"></script>
   <script src="pages/creator-library-detail.js"></script>
   <script src="pages/products.js"></script>

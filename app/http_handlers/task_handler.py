@@ -150,20 +150,6 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc))
         return True
 
-    task_sync_match = re.fullmatch(r"/api/tasks/([^/]+)/sync-four-tables", path)
-    # POST /api/tasks/{task_id}/sync-four-tables → 同步任务结果到飞书四表；{"ok": true, "task_id": "...", "record_count": 0, "sync_status": "success", "sync_summary": {...}, "sync_errors": [...], "sync_warnings": [...], "sync_skipped": [...]}
-    if task_sync_match:
-        request["get_payload"]()
-        try:
-            result = services["sync_task_results_to_four_tables"](task_sync_match.group(1))
-            if result["sync_status"] != "success":
-                handler._json({"ok": False, "error": "任务四表同步失败。", **result}, status=400)
-            else:
-                handler._ok(**result)
-        except (ValueError, RuntimeError) as exc:
-            handler._error(str(exc))
-        return True
-
     task_open_results_match = re.fullmatch(r"/api/tasks/([^/]+)/results/open", path)
     # POST /api/tasks/{task_id}/results/open → 在 Explorer 打开结果文件；{"ok": true}
     if task_open_results_match:

@@ -1766,6 +1766,22 @@ button {
 .creator-card-more-menu { position: absolute; z-index: 5; right: 0; bottom: calc(100% + 6px); display: grid; min-width: 112px; gap: 6px; padding: 7px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); }
 .creator-card-more:not([open]) .creator-card-more-menu { display: none; }
 .creator-card-more-menu .creator-card-action { text-align: left; }
+.creator-merge-modal-card { width: min(720px, calc(100vw - 32px)); }
+.creator-merge-direction { display: grid; grid-template-columns: 1fr auto 1fr; align-items: stretch; gap: 12px; margin: 14px 0; }
+.creator-merge-direction section { min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); }
+.creator-merge-direction section span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 11px; font-weight: 800; }
+.creator-merge-direction section strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.creator-merge-direction section p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+.creator-merge-direction > b { align-self: center; color: var(--accent); font-size: 22px; }
+.creator-merge-search-results { display: grid; max-height: 210px; gap: 6px; margin: 8px 0 14px; overflow-y: auto; }
+.creator-merge-search-result { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); text-align: left; }
+.creator-merge-search-result strong, .creator-merge-search-result span { display: block; }
+.creator-merge-search-result span { margin-top: 3px; color: var(--muted); font-size: 12px; }
+.creator-merge-summary { margin: 12px 0; }
+@media (max-width: 640px) {
+  .creator-merge-direction { grid-template-columns: 1fr; }
+  .creator-merge-direction > b { transform: rotate(90deg); justify-self: center; }
+}
 .creator-campaign-section-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
 .creator-campaign-section-heading h2 { margin-bottom: 4px; }
 .creator-campaign-table td:last-child { white-space: nowrap; }

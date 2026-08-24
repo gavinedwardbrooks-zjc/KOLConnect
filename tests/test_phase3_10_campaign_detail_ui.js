@@ -154,7 +154,14 @@ async function run() {
   const api = {
     async get(url, options = {}) {
       calls.push({ method: "GET", url, signal: options.signal });
-      if (url === "/api/campaigns/campaign_one") return { campaign: clone(campaign) };
+      if (url === "/api/campaigns/campaign_one") {
+        if (!campaign) {
+          const error = new Error("CAMPAIGN_NOT_FOUND");
+          error.status = 404;
+          throw error;
+        }
+        return { campaign: clone(campaign) };
+      }
       if (url === "/api/campaigns/campaign_one/creators") return { campaign_creators: clone(relations) };
       if (url === "/api/campaigns/campaign_one/missing-publish-links") {
         return { missing_publish_links: [] };
@@ -264,6 +271,20 @@ async function run() {
   assert.equal(elements.get("campaign-detail-content").hidden, false);
   assert.equal(elements.get("campaign-creator-add-open").disabled, false);
 
+  const originalRelations = relations;
+  relations = [];
+  [
+    "campaign-missing-publish-count", "campaign-missing-publish-empty",
+    "campaign-missing-publish-table-wrap", "campaign-missing-publish-body",
+  ].forEach(id => elements.delete(id));
+  await registeredPage.load({ campaignId: "campaign_one" });
+  assert.equal(elements.get("campaign-creator-count").textContent, "0 位达人");
+  assert.equal(elements.get("campaign-detail-error").hidden, true);
+  assert.equal(elements.get("campaign-detail-content").hidden, false);
+  relations = originalRelations.filter(item => item.id === "relation_one");
+  await registeredPage.load({ campaignId: "campaign_one" });
+  calls.splice(0);
+
   registeredPage.bind();
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 1);
   await elements.get("campaign-creator-add-open").dispatch("click");
@@ -320,6 +341,26 @@ async function run() {
 
   await registeredPage.unbind();
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 0);
+
+  campaign = null;
+  await registeredPage.load({ campaignId: "campaign_one" });
+  assert.equal(elements.get("campaign-detail-error").hidden, false);
+  assert.equal(elements.get("campaign-detail-error-message").textContent, "Campaign 不存在或已删除。");
+  [
+    "campaign-missing-publish-count", "campaign-missing-publish-empty",
+    "campaign-missing-publish-table-wrap", "campaign-missing-publish-body",
+  ].forEach(id => elements.set(id, new FakeElement(id)));
+  registeredPage.bind();
+  campaign = {
+    campaign_id: "campaign_one", product_name: "BlockBlast", name: "Restored",
+    status: "draft", archived_at: null,
+  };
+  relations = [];
+  await elements.get("campaign-detail-retry").dispatch("click");
+  assert.equal(elements.get("campaign-detail-title").textContent, "Restored");
+  assert.equal(elements.get("campaign-detail-content").hidden, false);
+  await registeredPage.unbind();
+  relations = originalRelations;
   campaign.archived_at = "2026-08-30T00:00:00Z";
   await registeredPage.load({ campaignId: "campaign_one" });
   registeredPage.bind();
@@ -342,6 +383,7 @@ async function run() {
   const campaignsSource = fs.readFileSync(path.join(root, "webapp/pages/campaigns.js"), "utf8");
   assert.doesNotMatch(source, /\bfetch\s*\(/, "page must use api-client rather than direct fetch");
   assert.match(source, /Promise\.all\s*\(/, "initial detail requests should run in parallel");
+  assert.match(source, /error\?\.status === 404/, "not-found must remain distinct from a load error");
   assert.match(campaignsSource, /createAction\("detail"/, "Campaign list must provide a detail action");
   assert.match(campaignsSource, /navigate\("campaign-detail",\s*\{\s*campaignId\s*\}\)/, "detail action must navigate with campaign id");
   assert.ok(notices.length >= 2, "add and edit should show saved feedback");

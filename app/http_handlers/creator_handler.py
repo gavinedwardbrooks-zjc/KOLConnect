@@ -5,6 +5,7 @@ import json
 
 from creator_batch_import import CreatorBatchImportError
 from services.creator_hard_delete_service import CreatorHardDeleteError
+from services.creator_merge_service import CreatorMergeError
 
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -21,6 +22,31 @@ def handle(handler, request: dict, context: dict) -> bool:
     agency_service = services["agency"]
     delete_impact_service = services["creator_delete_impact"]
     hard_delete_service = services["creator_hard_delete"]
+    if method == "POST" and path in {
+        "/api/creator-library/merge/preview",
+        "/api/creator-library/merge/execute",
+    }:
+        payload = request["get_payload"]()
+        merge_service = services["creator_merge"]
+        if not isinstance(payload, dict):
+            payload = {}
+        try:
+            if path.endswith("/preview"):
+                result = merge_service.preview(
+                    payload.get("primary_creator_id"),
+                    payload.get("secondary_creator_id"),
+                )
+            else:
+                result = merge_service.execute(
+                    payload.get("primary_creator_id"),
+                    payload.get("secondary_creator_id"),
+                    confirm=payload.get("confirm"),
+                    preview_fingerprint=payload.get("preview_fingerprint"),
+                )
+            handler._json({"ok": True, **result})
+        except CreatorMergeError as exc:
+            handler._json(exc.to_response(), status=exc.status)
+        return True
 
     # POST /api/creator-library/{creator_id}/cooperations → 拒绝新增 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
     # PATCH /api/creator-library/{creator_id}/cooperations → 拒绝修改 Legacy Cooperation；{"ok": false, "error": "请使用 Campaign 创建新的合作。"}
