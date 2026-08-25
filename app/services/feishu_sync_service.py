@@ -16,7 +16,12 @@ ACCOUNT_CREATOR_ID_FIELD = "KOLConnect Creator ID"
 LEGACY_CREATOR_RELATION_FIELD = "达人"
 CREATOR_ACCOUNT_RELATION_FIELD = "社媒账号"
 ACCOUNT_CREATOR_RELATION_FIELD = "达人"
-RELATION_FIELD_TYPE = 18
+LEGACY_RELATION_FIELD_TYPE = 18
+BIDIRECTIONAL_RELATION_FIELD_TYPE = 21
+RELATION_FIELD_TYPES = frozenset({
+    LEGACY_RELATION_FIELD_TYPE,
+    BIDIRECTIONAL_RELATION_FIELD_TYPE,
+})
 
 
 class CreatorInventorySource(Protocol):
@@ -100,7 +105,10 @@ class FeishuSyncService:
         creator_fields, creator_error = self._safe_fields(client, client.creator_table_id)
         account_fields, account_error = self._safe_fields(client, client.account_table_id)
         missing, incompatible, warnings = self._validate_schema(
-            creator_fields or {}, account_fields or {}
+            creator_fields or {},
+            account_fields or {},
+            creator_table_id=client.creator_table_id,
+            account_table_id=client.account_table_id,
         )
         error_codes = [
             error.code for error in (creator_error, account_error) if error is not None
@@ -952,6 +960,9 @@ class FeishuSyncService:
         self,
         creator_schema: dict[str, dict[str, Any]],
         account_schema: dict[str, dict[str, Any]],
+        *,
+        creator_table_id: str,
+        account_table_id: str,
     ) -> tuple[list[dict[str, str]], list[dict[str, Any]], list[str]]:
         missing: list[dict[str, str]] = []
         incompatible: list[dict[str, Any]] = []
@@ -975,20 +986,65 @@ class FeishuSyncService:
                         "field": spec.remote_name,
                         "actual_type": field_type,
                     })
-        for table, schema, field_name in (
-            ("creator", creator_schema, CREATOR_ACCOUNT_RELATION_FIELD),
-            ("account", account_schema, ACCOUNT_CREATOR_RELATION_FIELD),
+        for table, schema, field_name, target_table_id, require_multiple in (
+            (
+                "creator",
+                creator_schema,
+                CREATOR_ACCOUNT_RELATION_FIELD,
+                account_table_id,
+                True,
+            ),
+            (
+                "account",
+                account_schema,
+                ACCOUNT_CREATOR_RELATION_FIELD,
+                creator_table_id,
+                False,
+            ),
         ):
             field = schema.get(field_name)
             if field is None:
                 missing.append({"table": table, "field": field_name})
-            elif int(field.get("type") or 0) != RELATION_FIELD_TYPE:
+            else:
+                reason = self._relation_field_incompatibility(
+                    field,
+                    target_table_id=target_table_id,
+                    require_multiple=require_multiple,
+                )
+                if not reason:
+                    continue
                 incompatible.append({
                     "table": table,
                     "field": field_name,
                     "actual_type": int(field.get("type") or 0),
+                    "reason": reason,
                 })
         return missing, incompatible, warnings
+
+    @staticmethod
+    def _relation_field_incompatibility(
+        field: dict[str, Any],
+        *,
+        target_table_id: str,
+        require_multiple: bool,
+    ) -> str:
+        field_type = int(field.get("type") or 0)
+        if field_type not in RELATION_FIELD_TYPES:
+            return "unsupported_relation_type"
+
+        property_value = field.get("property")
+        property_data = property_value if isinstance(property_value, dict) else {}
+        linked_table_id = str(property_data.get("table_id") or "").strip()
+
+        # Older type-18 fixtures and API payloads did not always expose property.
+        # When Feishu does expose the target, it must still match the configured table.
+        if field_type == LEGACY_RELATION_FIELD_TYPE and not linked_table_id:
+            return ""
+        if linked_table_id != str(target_table_id or "").strip():
+            return "linked_table_mismatch"
+        if require_multiple and property_data.get("multiple") is not True:
+            return "multiple_records_required"
+        return ""
 
     def _encode_payload(
         self,

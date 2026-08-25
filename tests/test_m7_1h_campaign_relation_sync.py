@@ -139,9 +139,16 @@ class CampaignMultiValueTests(unittest.TestCase):
 
 def _schema(specs, relation_name):
     preferred = {"boolean": 7, "url": 15, "number": 2, "datetime": 5, "text": 1}
+    target_table_id = (
+        "accounts" if relation_name == CREATOR_ACCOUNT_RELATION_FIELD else "creators"
+    )
     return [
         {"field_name": spec.remote_name, "type": preferred[spec.kind]} for spec in specs
-    ] + [{"field_name": relation_name, "type": 18}]
+    ] + [{
+        "field_name": relation_name,
+        "type": 21,
+        "property": {"table_id": target_table_id, "multiple": True},
+    }]
 
 
 class Source:
