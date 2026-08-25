@@ -237,7 +237,9 @@ HANDLERS = [
     task_handler,
 ]
 CREATOR_LIBRARY_CACHE = CreatorLibraryCache()
-DASHBOARD_RESPONSE_CACHE = DashboardResponseCache()
+DASHBOARD_RESPONSE_CACHE = DashboardResponseCache(
+    build_event_logger=lambda message: log_event("DashboardCache", message)
+)
 ASSISTANT_SERVICE = None
 
 

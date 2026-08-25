@@ -14,6 +14,10 @@ from local_storage_lock import shared_storage_lock
 
 DashboardLoader = Callable[[], dict[str, Any]]
 UtcDateProvider = Callable[[], date]
+BuildEventLogger = Callable[[str], None]
+
+
+DASHBOARD_BUILD_MAX_ATTEMPTS = 3
 
 
 class DashboardResponseCacheUnstableBuild(RuntimeError):
@@ -31,10 +35,15 @@ class DashboardFingerprint:
 class DashboardResponseCache:
     """Serve immutable Dashboard payloads until the workbook or UTC day changes."""
 
-    def __init__(self, utc_date_provider: UtcDateProvider | None = None) -> None:
+    def __init__(
+        self,
+        utc_date_provider: UtcDateProvider | None = None,
+        build_event_logger: BuildEventLogger | None = None,
+    ) -> None:
         self._lock = RLock()
         self._entry: tuple[DashboardFingerprint, dict[str, Any]] | None = None
         self._utc_date_provider = utc_date_provider or self._current_utc_date
+        self._build_event_logger = build_event_logger
 
     def get_response(
         self, workbook_path: Path | str, loader: DashboardLoader
@@ -48,23 +57,22 @@ class DashboardResponseCache:
         # Keep the global order: shared storage lock, then the cache lock, then I/O.
         with shared_storage_lock():
             with self._lock:
-                fingerprint = self._fingerprint(path)
-                if self._is_current(fingerprint):
-                    return deepcopy(self._entry[1])  # type: ignore[index]
+                for attempt in range(1, DASHBOARD_BUILD_MAX_ATTEMPTS + 1):
+                    fingerprint = self._fingerprint(path)
+                    if self._is_current(fingerprint):
+                        return deepcopy(self._entry[1])  # type: ignore[index]
 
-                payload = loader()
-                after_build = self._fingerprint(path)
-                if after_build != fingerprint:
-                    # The first Dashboard read can create the workbook. Return that
-                    # response without caching it; the next read will use its stable
-                    # on-disk fingerprint.
-                    if fingerprint.mtime_ns == -1 and after_build.mtime_ns != -1:
+                    payload = loader()
+                    after_build = self._fingerprint(path)
+                    if after_build == fingerprint:
+                        self._entry = (after_build, deepcopy(payload))
                         return deepcopy(payload)
-                    raise DashboardResponseCacheUnstableBuild(
-                        "Dashboard workbook changed while building its response."
-                    )
-                self._entry = (after_build, deepcopy(payload))
-                return deepcopy(payload)
+
+                    self._record_generation_change(attempt, fingerprint, after_build)
+
+                raise DashboardResponseCacheUnstableBuild(
+                    "Dashboard workbook changed while building its response."
+                )
 
     def invalidate(self) -> None:
         """Discard the snapshot after a successfully committed relevant mutation."""
@@ -88,6 +96,29 @@ class DashboardResponseCache:
             mtime_ns=mtime_ns,
             size=size,
             utc_date=self._utc_date_provider().isoformat(),
+        )
+
+    def _record_generation_change(
+        self,
+        attempt: int,
+        before: DashboardFingerprint,
+        after: DashboardFingerprint,
+    ) -> None:
+        if self._build_event_logger is None:
+            return
+        action = (
+            "retry"
+            if attempt < DASHBOARD_BUILD_MAX_ATTEMPTS
+            else "fail"
+        )
+        self._build_event_logger(
+            "workbook generation changed during Dashboard build"
+            f" | attempt={attempt}/{DASHBOARD_BUILD_MAX_ATTEMPTS}"
+            f" | action={action}"
+            f" | before_mtime_ns={before.mtime_ns}"
+            f" | before_size={before.size}"
+            f" | after_mtime_ns={after.mtime_ns}"
+            f" | after_size={after.size}"
         )
 
     @staticmethod
