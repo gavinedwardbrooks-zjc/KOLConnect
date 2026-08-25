@@ -19,6 +19,7 @@ from runtime_paths import (
     json_backup_path,
     load_json_with_backup,
 )
+from feishu_relation import relation_record_ids
 
 DATA_DIR = get_app_data_dir()
 MAIL_MESSAGES_FILE = DATA_DIR / "mail_messages.json"
@@ -367,16 +368,7 @@ def _split_email_candidates(value: object) -> list[str]:
 
 def _relation_record_ids(value: object) -> list[str]:
     """Read Feishu relation values without inferring records from display text."""
-    values = value if isinstance(value, list) else [value]
-    record_ids: list[str] = []
-    for item in values:
-        if isinstance(item, dict):
-            record_id = str(item.get("record_id") or item.get("id") or "").strip()
-        else:
-            record_id = str(item or "").strip()
-        if record_id and record_id not in record_ids:
-            record_ids.append(record_id)
-    return record_ids
+    return relation_record_ids(value)
 
 
 def _four_table_access_token(config: dict) -> str:

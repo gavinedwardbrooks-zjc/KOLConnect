@@ -1,0 +1,320 @@
+openapi: 3.0.3
+info:
+  title: KOLConnect Local Integration API
+  version: 0.2.3
+  description: Localhost-only API. Existing legacy fields remain available during the M7.2 envelope transition.
+servers:
+  - url: http://127.0.0.1:8765
+paths:
+  /api/creator-library:
+    get:
+      summary: Search and page through Creators
+      parameters:
+        - {name: search, in: query, schema: {type: string}}
+        - {name: page, in: query, schema: {type: integer, minimum: 1}}
+        - {name: page_size, in: query, schema: {type: integer, minimum: 1}}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/creator-library/{creator_id}:
+    parameters:
+      - {$ref: '#/components/parameters/CreatorId'}
+    get:
+      summary: Get Creator detail
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      summary: Update editable Creator fields
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+    delete:
+      summary: Permanently delete a Creator after impact confirmation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm, preview_fingerprint]
+              properties:
+                confirm: {type: boolean, enum: [true]}
+                preview_fingerprint: {type: string}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/creator-library/{creator_id}/delete-impact:
+    get:
+      summary: Preview permanent-delete impact
+      parameters:
+        - {$ref: '#/components/parameters/CreatorId'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/creator-library/merge/preview:
+    post:
+      summary: Preview a manual Creator merge
+      requestBody: {$ref: '#/components/requestBodies/Merge'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/creator-library/merge/execute:
+    post:
+      summary: Execute a confirmed manual Creator merge
+      requestBody: {$ref: '#/components/requestBodies/Merge'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/campaigns:
+    get:
+      summary: List Campaigns
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+    post:
+      summary: Create a Campaign
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '201': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/campaigns/{campaign_id}:
+    parameters:
+      - {$ref: '#/components/parameters/CampaignId'}
+    get:
+      summary: Get Campaign detail
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '404': {$ref: '#/components/responses/Error'}
+    patch:
+      summary: Update or archive a Campaign
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+    delete:
+      summary: Delete a Campaign and its membership relations
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+  /api/campaigns/{campaign_id}/creators:
+    parameters:
+      - {$ref: '#/components/parameters/CampaignId'}
+    get:
+      summary: List Campaign Creator memberships
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+    post:
+      summary: Add one Creator account to a Campaign
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '201': {$ref: '#/components/responses/Success'}
+  /api/campaigns/{campaign_id}/creators/batch:
+    post:
+      summary: Add multiple Creators to a Campaign
+      parameters:
+        - {$ref: '#/components/parameters/CampaignId'}
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+  /api/campaign-creators/{campaign_creator_id}:
+    parameters:
+      - name: campaign_creator_id
+        in: path
+        required: true
+        schema: {type: string}
+    patch:
+      summary: Update a Campaign Creator membership
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+    delete:
+      summary: Remove a Creator from a Campaign
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+  /api/tasks:
+    get:
+      summary: List tasks
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+    post:
+      summary: Create a capture task
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/tasks/{task_id}/details:
+    get:
+      summary: Get task details
+      parameters:
+        - {$ref: '#/components/parameters/TaskId'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/tasks/{task_id}/results:
+    get:
+      summary: Get task results and review summary
+      parameters:
+        - {$ref: '#/components/parameters/TaskId'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+  /api/tasks/{task_id}/results/retry-failed:
+    post:
+      summary: Retry selected failed task results
+      parameters:
+        - {$ref: '#/components/parameters/TaskId'}
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+  /api/tasks/{task_id}/results/review:
+    post:
+      summary: Reject, approve, or edit-and-approve one task result
+      parameters:
+        - {$ref: '#/components/parameters/TaskId'}
+      requestBody: {$ref: '#/components/requestBodies/JsonObject'}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+  /api/feishu-sync/validate:
+    post:
+      summary: Validate Feishu authentication, tables, and field contracts without writes
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '500': {$ref: '#/components/responses/Error'}
+  /api/feishu-sync/dry-run:
+    post:
+      summary: Build a non-mutating Feishu synchronization plan
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '500': {$ref: '#/components/responses/Error'}
+  /api/feishu-sync/full-sync:
+    post:
+      summary: Execute the confirmed authoritative KOLConnect to Feishu sync
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirm]
+              properties:
+                confirm: {type: boolean, enum: [true]}
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+        '500': {$ref: '#/components/responses/Error'}
+  /api/assistant/capabilities:
+    get:
+      summary: List allowlisted local assistant capabilities
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+  /api/assistant/message:
+    post:
+      summary: Submit a natural-language message for grounded local execution or preview
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, session_id]
+              properties:
+                message: {type: string, minLength: 1, maxLength: 4000}
+                session_id: {type: string, minLength: 1, maxLength: 128}
+              additionalProperties: false
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+  /api/assistant/confirm:
+    post:
+      summary: Execute one short-lived session-bound assistant confirmation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmation_token, confirm, session_id]
+              properties:
+                confirmation_token: {type: string, pattern: '^confirm_'}
+                confirm: {type: boolean, enum: [true]}
+                session_id: {type: string, minLength: 1, maxLength: 128}
+              additionalProperties: false
+      responses:
+        '200': {$ref: '#/components/responses/Success'}
+        '400': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+components:
+  parameters:
+    CreatorId:
+      name: creator_id
+      in: path
+      required: true
+      schema: {type: string}
+      description: Stable KOLConnect Creator identity.
+    CampaignId:
+      name: campaign_id
+      in: path
+      required: true
+      schema: {type: string}
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema: {type: string}
+  requestBodies:
+    JsonObject:
+      required: true
+      content:
+        application/json:
+          schema: {type: object, additionalProperties: true}
+    Merge:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [primary_creator_id, secondary_creator_id]
+            properties:
+              primary_creator_id: {type: string}
+              secondary_creator_id: {type: string}
+              confirm: {type: boolean}
+              preview_fingerprint: {type: string}
+  schemas:
+    SuccessEnvelope:
+      type: object
+      required: [ok, data, trace_id]
+      properties:
+        ok: {type: boolean, enum: [true]}
+        data: {}
+        trace_id: {type: string, pattern: '^trace_[0-9a-f]{32}$'}
+      additionalProperties: true
+    ErrorEnvelope:
+      type: object
+      required: [ok, error, trace_id]
+      properties:
+        ok: {type: boolean, enum: [false]}
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            details: {}
+        trace_id: {type: string, pattern: '^trace_[0-9a-f]{32}$'}
+      additionalProperties: true
+  responses:
+    Success:
+      description: Successful response. Frozen legacy routes may also expose compatibility fields.
+      headers:
+        X-Trace-ID: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/SuccessEnvelope'}
+    Error:
+      description: Sanitized error response.
+      headers:
+        X-Trace-ID: {schema: {type: string}}
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/ErrorEnvelope'}

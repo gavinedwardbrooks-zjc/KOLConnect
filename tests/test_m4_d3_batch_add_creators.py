@@ -80,15 +80,16 @@ class BatchAddCreatorsTests(unittest.TestCase):
         result = self._batch(["creator_one", "creator_two", "missing_creator"])
 
         self.assertEqual(3, result["requested"])
-        self.assertEqual(2, result["added"])
-        self.assertEqual(1, result["failed"])
+        self.assertEqual(1, result["added"])
+        self.assertEqual(2, result["failed"])
         self.assertEqual(
-            ["added", "added", "failed"],
+            ["added", "failed", "failed"],
             [item["status"] for item in result["results"]],
         )
+        self.assertIn("Campaign", result["results"][1]["error"])
         self.assertEqual(1, self.invalidations)
         records = self.relations.getCampaignCreators(campaign_id=self.campaign["campaign_id"])
-        self.assertEqual({"creator_one", "creator_two"}, {row["creator_id"] for row in records})
+        self.assertEqual({"creator_one"}, {row["creator_id"] for row in records})
         self.assertEqual("account_one", next(row for row in records if row["creator_id"] == "creator_one")["account_id"])
 
     def test_duplicate_request_and_retry_are_idempotent(self) -> None:

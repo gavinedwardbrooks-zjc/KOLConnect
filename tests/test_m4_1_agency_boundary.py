@@ -170,7 +170,10 @@ class AgencyBoundaryHttpTests(unittest.TestCase):
             "GET", f"/api/local/agencies/{agency['agency_id']}"
         )
         self.assertEqual(200, status)
-        self.assertEqual({"ok", "agency", "contacts", "creators"}, set(detail))
+        self.assertEqual(
+            {"ok", "agency", "contacts", "creators", "trace_id"}, set(detail)
+        )
+        self.assertRegex(detail["trace_id"], r"^trace_[0-9a-f]{32}$")
         self.assertEqual(1, len(detail["contacts"]))
         self.assertEqual(1, len(detail["creators"]))
 
@@ -217,7 +220,8 @@ class AgencyBoundaryHttpTests(unittest.TestCase):
     def test_external_agency_contacts_remain_a_separate_compatibility_route(self) -> None:
         status, body = self.request("GET", "/api/agency-contacts")
         self.assertEqual(200, status)
-        self.assertEqual({"ok", "configured", "contacts"}, set(body))
+        self.assertEqual({"ok", "configured", "contacts", "trace_id"}, set(body))
+        self.assertRegex(body["trace_id"], r"^trace_[0-9a-f]{32}$")
         self.assertTrue(body["configured"])
         self.assertEqual("external-contact-1", body["contacts"][0]["record_id"])
 
@@ -228,9 +232,10 @@ class AgencyBoundaryHttpTests(unittest.TestCase):
         ):
             status, empty = self.request("GET", "/api/agency-contacts")
         self.assertEqual(200, status)
-        self.assertEqual(
-            {"ok": True, "configured": False, "contacts": []}, empty
-        )
+        self.assertEqual(True, empty["ok"])
+        self.assertEqual(False, empty["configured"])
+        self.assertEqual([], empty["contacts"])
+        self.assertRegex(empty["trace_id"], r"^trace_[0-9a-f]{32}$")
 
         with mock.patch.object(
             server,

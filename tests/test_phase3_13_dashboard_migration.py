@@ -251,9 +251,11 @@ class DashboardCampaignCreatorMigrationTests(unittest.TestCase):
                 "platform_distribution",
                 "creator_status_distribution",
                 "creator_growth_trend",
+                "trace_id",
             },
             set(payload),
         )
+        self.assertRegex(payload["trace_id"], r"^trace_[0-9a-f]{32}$")
         overview = payload["overview"]
         health_summary = payload["health_summary"]
         performance = payload["cooperation_performance"]

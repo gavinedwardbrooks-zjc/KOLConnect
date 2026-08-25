@@ -6,6 +6,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from runtime_paths import get_logs_dir
+from api_contract import get_trace_id
 
 
 LOGGER_NAME = "kolconnect"
@@ -35,11 +36,15 @@ def get_logger() -> logging.Logger:
 
 
 def log_event(category: str, message: str, *, level: int = logging.INFO) -> None:
-    get_logger().log(level, "[%s] %s", category, message)
+    trace_id = get_trace_id()
+    suffix = f" | trace_id={trace_id}" if trace_id else ""
+    get_logger().log(level, "[%s] %s%s", category, message, suffix)
 
 
 def log_error(category: str, message: str, exc: BaseException | None = None) -> None:
     if exc is None:
         log_event(category, message, level=logging.ERROR)
         return
-    get_logger().error("[%s] %s: %s", category, message, exc)
+    trace_id = get_trace_id()
+    suffix = f" | trace_id={trace_id}" if trace_id else ""
+    get_logger().error("[%s] %s: %s%s", category, message, exc, suffix)

@@ -1,21 +1,12 @@
 const assert = require("node:assert/strict");
-const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const path = require("node:path");
+const { run: runLifecycleIntegration } = require("./test_phase3_11_3_creator_library_lifecycle.js");
 
 const root = path.join(__dirname, "..");
 
 function read(relativePath) {
   return fs.readFileSync(path.join(root, relativePath), "utf8");
-}
-
-function runLifecycleIntegration() {
-  const result = spawnSync(
-    process.execPath,
-    [path.join(__dirname, "test_phase3_11_3_creator_library_lifecycle.js")],
-    { encoding: "utf8" },
-  );
-  assert.equal(result.status, 0, result.stderr || result.stdout);
 }
 
 function verifyIntegrationContract() {
@@ -35,6 +26,13 @@ function verifyIntegrationContract() {
   assert.match(html, /id="creator-campaigns-body"/);
 }
 
-runLifecycleIntegration();
-verifyIntegrationContract();
-console.log("Phase 3.11.5 Creator Campaign integration UI: OK");
+async function main() {
+  await runLifecycleIntegration();
+  verifyIntegrationContract();
+  console.log("Phase 3.11.5 Creator Campaign integration UI: OK");
+}
+
+main().catch(error => {
+  console.error(error);
+  process.exitCode = 1;
+});

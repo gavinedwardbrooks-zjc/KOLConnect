@@ -77,7 +77,14 @@ class FeishuSyncApiTests(unittest.TestCase):
         }
         feishu_sync_handler.handle(handler, request, self.context(Service()))
         self.assertEqual(400, handler.responses[0][0])
-        self.assertEqual("FEISHU_SYNC_CONFIRMATION_REQUIRED", handler.responses[0][1]["error"])
+        self.assertEqual(
+            "FEISHU_SYNC_CONFIRMATION_REQUIRED",
+            handler.responses[0][1]["error"]["code"],
+        )
+        self.assertEqual(
+            "FEISHU_SYNC_CONFIRMATION_REQUIRED",
+            handler.responses[0][1]["legacy_error"],
+        )
 
     def test_existing_local_host_and_origin_security_applies(self):
         path = "/api/feishu-sync/full-sync"

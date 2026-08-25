@@ -682,7 +682,11 @@ async function run() {
   console.log("Phase 3.11.3 Creator Library lifecycle migration: OK");
 }
 
-run().catch(error => {
-  console.error(error);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  run().catch(error => {
+    console.error(error);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { run };

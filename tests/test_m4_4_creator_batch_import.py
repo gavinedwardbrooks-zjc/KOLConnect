@@ -295,10 +295,12 @@ class CreatorBatchImportHttpTests(unittest.TestCase):
         ) as response:
             body = json.loads(response.read().decode("utf-8"))
             self.assertEqual(200, response.status)
+            self.assertEqual(True, body["ok"])
             self.assertEqual(
-                {"ok": True, "data": {"total_rows": 1, "created": 1, "skipped_existing": 0}},
-                body,
+                {"total_rows": 1, "created": 1, "skipped_existing": 0},
+                body["data"],
             )
+            self.assertRegex(body["trace_id"], r"^trace_[0-9a-f]{32}$")
 
         with self.request(
             "POST",

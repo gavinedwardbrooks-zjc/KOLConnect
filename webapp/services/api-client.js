@@ -36,9 +36,15 @@
     }
 
     if (!response.ok) {
-      const error = new Error(data?.error || `${method} ${url} failed`);
+      const structuredMessage = typeof data?.error === "object" ? data.error?.message : "";
+      const legacyMessage = typeof data?.error === "string" ? data.error : "";
+      const baseMessage = structuredMessage || legacyMessage || `${method} ${url} failed`;
+      const traceSuffix = data?.trace_id ? `\n\u9519\u8bef\u53c2\u8003\uff1a${data.trace_id}` : "";
+      const error = new Error(`${baseMessage}${traceSuffix}`);
       error.responseData = data;
       error.status = response.status;
+      error.code = typeof data?.error === "object" ? data.error?.code : "";
+      error.traceId = data?.trace_id || "";
       throw error;
     }
     return data;

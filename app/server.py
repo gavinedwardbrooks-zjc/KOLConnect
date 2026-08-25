@@ -79,9 +79,18 @@ from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
 from services.creator_summary_service import CreatorSummaryService
 from services.clean_reset_service import CleanResetService
+from services.assistant_service import AssistantService
+from services.assistant_provider import DeterministicAssistantProvider
 from services.task_service import TaskService
 from services.risk_service import RiskService
 from app_logging import log_error, log_event
+from api_contract import (
+    error_payload,
+    get_trace_id,
+    new_trace_id,
+    set_trace_id,
+    success_payload,
+)
 from openpyxl import load_workbook
 from runtime_paths import (
     get_app_data_dir,
@@ -103,6 +112,7 @@ from local_request_security import (
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
     analytics_handler,
+    assistant_handler,
     campaign_handler,
     clean_reset_handler,
     creator_handler,
@@ -204,6 +214,7 @@ MAIL_PROVIDER_PRESETS = {
 }
 
 HANDLERS = [
+    assistant_handler,
     analytics_handler,
     dashboard_handler,
     risk_handler,
@@ -216,6 +227,7 @@ HANDLERS = [
 ]
 CREATOR_LIBRARY_CACHE = CreatorLibraryCache()
 DASHBOARD_RESPONSE_CACHE = DashboardResponseCache()
+ASSISTANT_SERVICE = None
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
@@ -1896,6 +1908,103 @@ def get_clean_reset_service() -> CleanResetService:
     )
 
 
+def _assistant_search_creators(arguments: dict) -> list[dict]:
+    filters = {
+        key: arguments.get(key)
+        for key in ("country", "platform", "language", "content_category", "search")
+        if str(arguments.get(key) or "").strip()
+    }
+    include_archived = bool(arguments.get("include_archived"))
+    service = get_creator_service()
+    records: list[dict] = []
+    page = 1
+    while True:
+        result = service.get_creator_library(
+            include_archived=include_archived,
+            page=page,
+            page_size=100,
+            filters=filters,
+        )
+        records.extend(dict(item) for item in result.get("creators", []))
+        if page >= int(result.get("pages") or 0):
+            break
+        page += 1
+    return records
+
+
+def _assistant_campaign_detail(campaign_id: str) -> dict:
+    campaign = get_campaign_repository().getCampaign(campaign_id)
+    relations = get_campaign_creator_repository().getCampaignCreators(
+        campaign_id=campaign_id
+    )
+    return {"campaign": campaign, "campaign_creators": relations}
+
+
+def _assistant_create_capture_task(arguments: dict) -> dict:
+    url = str(arguments.get("url") or "").strip()
+    prepared = prepare_task_links([url], arguments.get("platform"))
+    if not prepared["normalized_links"]:
+        raise ValueError("没有符合目标平台的有效链接。")
+    task = get_task_service().create_scrape_task(
+        normalized_links=prepared["normalized_links"],
+        invalid_links=prepared["invalid_links"],
+        input_count=1,
+        name=arguments.get("name"),
+        target_platform=prepared["target_platform"],
+        platforms=prepared["platforms"],
+        platform_summary=prepared["platform_summary"],
+        filtered_links=prepared["filtered_links"],
+    )
+    return {"task": task, "invalid_links": prepared["invalid_links"]}
+
+
+def _assistant_daily_summary() -> dict:
+    dashboard = get_dashboard_data()
+    task_data = get_task_service().get_tasks()
+    tasks = list(task_data.get("tasks") or [])
+    statuses = {"pending": 0, "running": 0, "failed": 0}
+    for task in tasks:
+        status = str(task.get("status") or "")
+        if status in statuses:
+            statuses[status] += 1
+    overview = dict(dashboard.get("overview") or {})
+    return {
+        "creator_total": overview.get("total_creators"),
+        "new_creators_7d": overview.get("new_creators_7d"),
+        "active_campaign_count": len(
+            [
+                campaign
+                for campaign in get_campaign_repository().getCampaigns()
+                if str(campaign.get("status") or "") in {"sourcing", "running"}
+            ]
+        ),
+        "tasks": statuses,
+    }
+
+
+def get_assistant_service() -> AssistantService:
+    global ASSISTANT_SERVICE
+    if ASSISTANT_SERVICE is None:
+        ASSISTANT_SERVICE = AssistantService(
+            DeterministicAssistantProvider(),
+            {
+                "search_creators": _assistant_search_creators,
+                "get_creator_detail": lambda creator_id: get_creator_service().get_creator_detail(creator_id),
+                "list_campaigns": lambda arguments: get_campaign_repository().getCampaigns(
+                    status=str(arguments.get("status") or "")
+                ),
+                "get_campaign_detail": _assistant_campaign_detail,
+                "get_task_status": lambda task_id: get_task_service().get_task_details(task_id),
+                "feishu_sync_dry_run": lambda: get_feishu_sync_service().dry_run(),
+                "daily_summary": _assistant_daily_summary,
+                "create_capture_task": _assistant_create_capture_task,
+                "feishu_full_sync": lambda: get_feishu_sync_service().full_sync(confirm=True),
+            },
+            event_logger=lambda message: log_event("Assistant", message),
+        )
+    return ASSISTANT_SERVICE
+
+
 def import_task_results_to_creator_library(
     task_id: str,
     *,
@@ -2122,16 +2231,20 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def _json(self, data: dict, status: int = 200) -> None:
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        payload = dict(data)
+        payload.setdefault("trace_id", self._request_trace_id())
+        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Trace-ID", payload["trace_id"])
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
         if self.path.startswith("/api/"):
             outcome = "success" if status < 400 else "failed"
-            detail = str(data.get("error") or "") if isinstance(data, dict) else ""
+            error = payload.get("error")
+            detail = str(error.get("code") or "") if isinstance(error, dict) else str(error or "")
             log_event("API", f"{self.command} {urlparse(self.path).path} | {outcome} | status={status}{f' | {detail}' if detail else ''}")
 
     def _binary(self, data: bytes, content_type: str, filename: str) -> None:
@@ -2139,6 +2252,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
         self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Trace-ID", self._request_trace_id())
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
         self.wfile.write(data)
@@ -2153,6 +2267,36 @@ class Handler(BaseHTTPRequestHandler):
         _record_last_error(friendly_message)
         log_error("API", f"{self.command} {urlparse(self.path).path} | status={status} | {friendly_message}")
         self._json({"error": friendly_message}, status=status)
+
+    def _request_trace_id(self) -> str:
+        trace_id = get_trace_id()
+        if not trace_id:
+            trace_id = new_trace_id()
+            set_trace_id(trace_id)
+        return trace_id
+
+    def _api_success(self, data=None, *, legacy: dict | None = None, status: int = 200) -> None:
+        self._json(success_payload(data, legacy=legacy), status=status)
+
+    def _api_error(
+        self,
+        code: str,
+        message: str,
+        *,
+        status: int = 400,
+        details=None,
+        legacy: dict | None = None,
+    ) -> None:
+        friendly_message = _friendly_error_message(message)
+        _record_last_error(friendly_message)
+        log_error(
+            "API",
+            f"{self.command} {urlparse(self.path).path} | status={status} | code={code} | {friendly_message}",
+        )
+        self._json(
+            error_payload(code, friendly_message, details=details, legacy=legacy),
+            status=status,
+        )
 
     def _repository_error(self, exc: Exception) -> None:
         message = str(exc)
@@ -2169,6 +2313,7 @@ class Handler(BaseHTTPRequestHandler):
         self._ok()
 
     def _allow_local_request(self) -> bool:
+        set_trace_id(new_trace_id())
         port = int(self.server.server_port)
         if not allowed_host_header(self.headers.get("Host"), port):
             self._json({"error": "LOCAL_REQUEST_REJECTED"}, status=403)
@@ -2239,6 +2384,7 @@ class Handler(BaseHTTPRequestHandler):
             "method": self.command,
             "path": parsed.path,
             "query": query,
+            "trace_id": self._request_trace_id(),
             "payload": None,
             "get_payload": get_payload,
             "get_raw_body": get_raw_body,
@@ -2257,6 +2403,7 @@ class Handler(BaseHTTPRequestHandler):
             save_state(STATE)
 
         return {
+            "request": {"trace_id": self._request_trace_id()},
             "state": {
                 "get": get_state,
                 "save": save_current_state,
@@ -2273,6 +2420,7 @@ class Handler(BaseHTTPRequestHandler):
             "ports": {"agency": get_agency_repository, "task": get_task_port},
             "services": {
                 "agency": get_agency_service(),
+                "assistant": get_assistant_service(),
                 "analytics": get_analytics_service(),
                 "workbook_backup": get_workbook_backup_service(),
                 "clean_reset": get_clean_reset_service(),
