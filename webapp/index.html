@@ -1761,6 +1761,27 @@
           <p class="form-message" id="feishu-sync-result" hidden></p>
         </div>
 
+        <div class="section-card" id="feishu-chat-card">
+          <div class="section-title">飞书 AI 助手</div>
+          <p class="hint">通过飞书官方长连接接收文字消息，并复用现有 App ID / App Secret。助手只调用 KOLConnect 已授权能力；写操作仍需在同一会话中明确确认。</p>
+          <div class="feishu-sync-state">
+            <span>连接状态</span>
+            <strong id="feishu-chat-status">未启用</strong>
+          </div>
+          <dl class="settings-backup-summary" id="feishu-chat-summary">
+            <div><dt>传输方式</dt><dd id="feishu-chat-transport">飞书官方长连接</dd></div>
+            <div><dt>机器人</dt><dd id="feishu-chat-bot">未启用</dd></div>
+            <div><dt>最近连接</dt><dd id="feishu-chat-last-connected">--</dd></div>
+            <div><dt>最近错误</dt><dd id="feishu-chat-last-error">--</dd></div>
+          </dl>
+          <div class="action-row">
+            <button class="secondary-btn" id="feishu-chat-test" type="button">检查本机配置</button>
+            <button class="primary-btn" id="feishu-chat-enable" type="button">启用助手</button>
+            <button class="secondary-btn" id="feishu-chat-disable" type="button">停止助手</button>
+          </div>
+          <p class="form-message" id="feishu-chat-result" hidden></p>
+        </div>
+
       </section>
 
       <section class="page workspace-narrow" data-page="logs">

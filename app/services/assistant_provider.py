@@ -55,7 +55,11 @@ class DeterministicAssistantProvider:
         if campaign_id:
             return AssistantIntent("get_campaign_detail", {"campaign_id": campaign_id})
         if "campaign" in lowered or "活动" in text:
-            if any(term in text for term in ("有哪些", "列表", "进行中", "最近")):
+            asks_for_members = any(term in lowered for term in ("达人", "成员", "creator", "kol"))
+            if (
+                any(term in text for term in ("有哪些", "列表", "进行中", "最近"))
+                and not asks_for_members
+            ):
                 return AssistantIntent("list_campaigns", {"status": "running" if "进行中" in text else ""})
             name = re.sub(r"(?i)campaign", "", text)
             name = re.sub(r"(有哪些达人|现在|详情|是哪些平台|计划发布日期|看看)", "", name).strip(" ？?")

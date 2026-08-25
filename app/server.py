@@ -122,12 +122,14 @@ from http_handlers import (
     clean_reset_handler,
     creator_handler,
     dashboard_handler,
+    feishu_chat_handler,
     feishu_sync_handler,
     settings_handler,
     task_handler,
     risk_handler,
 )
 from services.feishu_sync_service import FeishuSyncService
+from services.feishu_chat_transport import FeishuChatTransport
 
 
 APP_DIR = get_resource_dir()
@@ -192,6 +194,7 @@ DEFAULT_STATE = {
         "account_table_id": "",
         "agency_table_id": "",
         "contact_table_id": "",
+        "chat_enabled": False,
     },
     "mail": {
         "accounts": [],
@@ -230,6 +233,7 @@ HANDLERS = [
     dashboard_handler,
     risk_handler,
     campaign_handler,
+    feishu_chat_handler,
     feishu_sync_handler,
     clean_reset_handler,
     settings_handler,
@@ -241,6 +245,7 @@ DASHBOARD_RESPONSE_CACHE = DashboardResponseCache(
     build_event_logger=lambda message: log_event("DashboardCache", message)
 )
 ASSISTANT_SERVICE = None
+FEISHU_CHAT_TRANSPORT = None
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
@@ -463,6 +468,7 @@ def normalize_state(raw: dict | None) -> dict:
             "contact_table_id",
         ):
             state["feishu"][key] = str(feishu.get(key) or "").strip()
+        state["feishu"]["chat_enabled"] = bool(feishu.get("chat_enabled"))
 
     if isinstance(raw.get("mail"), dict):
         state["mail"] = normalize_mail_state(raw["mail"])
@@ -2024,6 +2030,19 @@ def get_assistant_service() -> AssistantService:
     return ASSISTANT_SERVICE
 
 
+def get_feishu_chat_transport() -> FeishuChatTransport:
+    global FEISHU_CHAT_TRANSPORT
+    if FEISHU_CHAT_TRANSPORT is None:
+        FEISHU_CHAT_TRANSPORT = FeishuChatTransport(
+            get_four_table_feishu_config,
+            get_assistant_service,
+            trace_id_provider=new_trace_id,
+            event_logger=lambda message: log_event("FeishuChat", message),
+            error_logger=lambda message, exc: log_error("FeishuChat", message, exc),
+        )
+    return FEISHU_CHAT_TRANSPORT
+
+
 def import_task_results_to_creator_library(
     task_id: str,
     *,
@@ -2449,6 +2468,7 @@ class Handler(BaseHTTPRequestHandler):
                 "creator_hard_delete": get_creator_hard_delete_service(),
                 "creator_merge": get_creator_merge_service(),
                 "feishu_sync": get_feishu_sync_service(),
+                "feishu_chat": get_feishu_chat_transport(),
                 "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
                 "risk": get_risk_service(),
@@ -2605,6 +2625,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def run() -> None:
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    chat_transport = get_feishu_chat_transport()
     workbook_path = STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK
     log_event(
         "KOLConnect Start",
@@ -2615,7 +2636,13 @@ def run() -> None:
         and os.environ.get("KOLCONNECT_BROWSER") != "1"
     ):
         webbrowser.open(f"http://{HOST}:{PORT}/?v={int(time.time())}")
-    server.serve_forever()
+    if STATE.get("feishu", {}).get("chat_enabled"):
+        chat_transport.start()
+    try:
+        server.serve_forever()
+    finally:
+        chat_transport.close()
+        server.server_close()
 
 
 if __name__ == "__main__":

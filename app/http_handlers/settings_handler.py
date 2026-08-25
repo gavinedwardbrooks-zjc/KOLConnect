@@ -51,6 +51,7 @@ def handle(handler, request: dict, context: dict) -> bool:
                     "account_table_id": four_table_config["account_table_id"],
                     "agency_table_id": four_table_config["agency_table_id"],
                     "contact_table_id": four_table_config["contact_table_id"],
+                    "chat_enabled": bool(state["feishu"].get("chat_enabled")),
                 },
                 "creator_library": client_state.get("creator_library", {}),
                 "mail": client_state["mail"],
@@ -165,6 +166,9 @@ def handle(handler, request: dict, context: dict) -> bool:
                     continue
                 state["feishu"][key] = value
         state_access["normalize_and_save"]()
+        if state["feishu"].get("chat_enabled"):
+            services["feishu_chat"].stop()
+            services["feishu_chat"].start()
         handler._ok()
         return True
 

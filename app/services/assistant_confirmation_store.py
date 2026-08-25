@@ -67,6 +67,17 @@ class AssistantConfirmationStore:
             record.used = True
             return record
 
+    def discard(self, token: object, session_id: object) -> bool:
+        """Invalidate one pending confirmation without executing its operation."""
+        normalized_token = str(token or "").strip()
+        normalized_session = str(session_id or "").strip()
+        with self._lock:
+            record = self._records.get(normalized_token)
+            if record is None or record.used or record.session_id != normalized_session:
+                return False
+            record.used = True
+            return True
+
     @staticmethod
     def _hash(arguments: dict[str, Any]) -> str:
         payload = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

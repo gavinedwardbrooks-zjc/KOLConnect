@@ -26,7 +26,7 @@ hiddenimports = [
     "webdriver_manager.chrome",
 ]
 
-for package_name in ("webview", "selenium", "webdriver_manager"):
+for package_name in ("webview", "selenium", "webdriver_manager", "lark_oapi"):
     package_datas, package_binaries, package_hiddenimports = collect_all(package_name)
     datas += package_datas
     binaries += package_binaries

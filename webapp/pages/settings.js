@@ -3,6 +3,8 @@
 
   let resources = null;
   let cleanResetPreview = null;
+  let feishuChatPollGeneration = 0;
+  const FEISHU_CHAT_POLL_INTERVAL_MS = 1000;
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -44,6 +46,107 @@
   function setSyncText(id, value) {
     const element = document.getElementById(id);
     if (element) element.textContent = value ?? "--";
+  }
+
+  function renderFeishuChatStatus(data) {
+    const labels = {
+      disabled: "未启用",
+      connecting: "正在连接",
+      connected: "已连接",
+      error: "连接失败",
+    };
+    const state = String(data?.state || "disabled");
+    setSyncText("feishu-chat-status", labels[state] || "未知");
+    setSyncText("feishu-chat-transport", data?.transport === "long_connection" ? "飞书官方长连接" : "--");
+    setSyncText("feishu-chat-bot", data?.bot_enabled ? "已启用" : "未启用");
+    setSyncText("feishu-chat-last-connected", data?.last_connected_at || "--");
+    setSyncText("feishu-chat-last-error", data?.last_error_code || "--");
+
+    const enable = document.getElementById("feishu-chat-enable");
+    const disable = document.getElementById("feishu-chat-disable");
+    if (enable) enable.disabled = state === "connecting" || state === "connected";
+    if (disable) disable.disabled = state === "disabled";
+  }
+
+  async function loadFeishuChatStatus(api, options = {}) {
+    const data = await api.get("/api/feishu-chat/status", options);
+    renderFeishuChatStatus(data);
+    return data;
+  }
+
+  function stopFeishuChatPolling() {
+    feishuChatPollGeneration += 1;
+  }
+
+  function startFeishuChatPolling(api) {
+    const generation = ++feishuChatPollGeneration;
+    const poll = async () => {
+      if (!resources || resources.disposed || generation !== feishuChatPollGeneration) return;
+      try {
+        const data = await loadFeishuChatStatus(api, { signal: resources.signal });
+        if (generation !== feishuChatPollGeneration) return;
+        if (data?.state === "connecting") {
+          resources.setTimeout(poll, FEISHU_CHAT_POLL_INTERVAL_MS);
+          return;
+        }
+        if (data?.state === "error") renderFeishuChatResult(data, "status");
+      } catch (error) {
+        handleError(error);
+      }
+    };
+    resources.setTimeout(poll, FEISHU_CHAT_POLL_INTERVAL_MS);
+  }
+
+  function renderFeishuChatResult(data, operation) {
+    const message = document.getElementById("feishu-chat-result");
+    if (!message) return;
+    message.hidden = false;
+    const ok = operation === "test" ? data?.ok === true : data?.state !== "error";
+    message.dataset.status = ok ? "success" : "failed";
+    if (ok) {
+      message.textContent = operation === "test"
+        ? "本机配置与 SDK 检查通过。连接状态请以启用后的实时状态为准。"
+        : operation === "disable"
+          ? "飞书 AI 助手已停止。"
+          : data?.state === "connected"
+            ? "飞书 AI 助手已连接。"
+            : "飞书 AI 助手正在连接。";
+    } else {
+      const code = String(data?.error_code || data?.last_error_code || "LONG_CONNECTION_FAILED");
+      const guidance = {
+        INVALID_APP_CREDENTIALS: "请检查并重新保存 App ID / App Secret。",
+        FEISHU_CHAT_INVALID_CREDENTIALS: "请检查并重新保存 App ID / App Secret。",
+        SDK_NOT_AVAILABLE: "飞书官方 SDK 未安装或未包含在当前应用包中。",
+        BOT_CAPABILITY_NOT_ENABLED: "请在飞书开放平台启用机器人能力并发布应用。",
+        BOT_PERMISSION_MISSING: "请启用机器人发送消息权限并重新发布应用。",
+        FEISHU_CHAT_PERMISSION_DENIED: "请检查机器人消息权限并重新发布应用。",
+        EVENT_PERMISSION_MISSING: "请订阅消息接收事件并授予消息读取权限。",
+        FEISHU_CHAT_EVENT_CONFIGURATION_ERROR: "请检查长连接模式、消息事件订阅和机器人能力。",
+        FEISHU_CHAT_NETWORK_ERROR: "请检查本机网络、代理、防火墙和飞书服务状态。",
+        FEISHU_CHAT_CONNECT_TIMEOUT: "飞书长连接建立超时。请检查网络、飞书应用长连接配置及应用凭据后重试。",
+        FEISHU_CHAT_SDK_ERROR: "飞书官方 SDK 无法建立长连接，请查看安全日志后重试。",
+        LONG_CONNECTION_FAILED: "请检查网络、应用发布状态和飞书服务状态。",
+      };
+      message.textContent = `操作未完成：${code}\n${guidance[code] || "请查看运行日志中的 trace 信息。"}`;
+    }
+  }
+
+  async function runFeishuChatOperation(api, operation, options = {}) {
+    const button = document.getElementById(`feishu-chat-${operation}`);
+    if (button) button.disabled = true;
+    try {
+      const data = await api.post(`/api/feishu-chat/${operation}`, {}, options);
+      renderFeishuChatStatus(data);
+      renderFeishuChatResult(data, operation);
+      if (operation === "enable" && data?.state === "connecting") {
+        startFeishuChatPolling(api);
+      } else if (operation === "disable" || data?.state !== "connecting") {
+        stopFeishuChatPolling();
+      }
+      return data;
+    } finally {
+      if (button) button.disabled = false;
+    }
   }
 
   function schemaTableLabel(table) {
@@ -179,6 +282,17 @@
       resources = global.KOLConnectPageResources.create();
       cleanResetPreview = null;
       await reloadSettings();
+      if (typeof global.KOLConnectAPI?.get === "function") {
+        try {
+          const chatStatus = await loadFeishuChatStatus(
+            global.KOLConnectAPI,
+            { signal: resources.signal },
+          );
+          if (chatStatus?.state === "connecting") startFeishuChatPolling(global.KOLConnectAPI);
+        } catch (error) {
+          handleError(error);
+        }
+      }
       renderWorkbookPathCapability();
       const resetExecute = document.getElementById("clean-reset-execute");
       if (resetExecute) resetExecute.disabled = true;
@@ -275,6 +389,16 @@
         }
       });
 
+      for (const operation of ["test", "enable", "disable"]) {
+        listen(`feishu-chat-${operation}`, "click", async () => {
+          try {
+            await runFeishuChatOperation(api, operation, { signal: resources.signal });
+          } catch (error) {
+            handleError(error);
+          }
+        });
+      }
+
       listen("clean-reset-preview", "click", async () => {
         cleanResetPreview = null;
         const execute = document.getElementById("clean-reset-execute");
@@ -351,6 +475,7 @@
     },
 
     unbind() {
+      stopFeishuChatPolling();
       resources?.cleanup();
       resources = null;
     },

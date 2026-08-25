@@ -60,6 +60,10 @@ HTTP conventions are 200 for reads/updates, 201 for creates already using that c
 | GET | `/api/assistant/capabilities` | List allowlisted assistant intents | Read | M7.2 envelope |
 | POST | `/api/assistant/message` | Interpret and execute a grounded read or return write preview | Read/Preview | M7.2 envelope |
 | POST | `/api/assistant/confirm` | Execute one session-bound confirmed write | Confirmed Write | M7.2 envelope |
+| GET | `/api/feishu-chat/status` | Inspect optional Feishu Assistant transport state | Read | Internal Settings contract |
+| POST | `/api/feishu-chat/enable` | Enable the configured official long connection | Runtime control | Internal Settings contract |
+| POST | `/api/feishu-chat/disable` | Stop the optional long connection | Runtime control | Internal Settings contract |
+| POST | `/api/feishu-chat/test` | Check local credentials/SDK readiness without sending messages | Read-only check | Internal Settings contract |
 
 All routes are protected by the same local Host/Origin gate. Frontend and extension callers use many additional local UI routes; those remain internal product contracts and are intentionally not presented as an external integration surface.
 

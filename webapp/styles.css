@@ -456,12 +456,14 @@ body {
 
 #feishu-sync-result[data-status="partial"],
 #feishu-sync-result[data-status="blocked"],
+#feishu-chat-result[data-status="failed"],
 #clean-reset-result[data-status="blocked"],
 #clean-reset-result[data-status="failed"] {
   color: var(--danger-dark);
 }
 
 #feishu-sync-result,
+#feishu-chat-result,
 #clean-reset-result {
   white-space: pre-line;
 }

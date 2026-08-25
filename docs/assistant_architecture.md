@@ -6,10 +6,10 @@ The assistant is a localhost-only adapter over KOLConnect capabilities:
 
 `Feishu/OpenClaw -> assistant API -> allowlisted service tool -> KOLConnect service/repository/store`
 
-It has no workbook, filesystem, shell, SQL, generic HTTP, or credential tool. A
-remote Feishu bot transport is not included; OpenClaw must call the local API
-inside the existing trusted-host boundary. Exposing these endpoints remotely
-requires a separate authentication and webhook-signature design.
+It has no workbook, filesystem, shell, SQL, generic HTTP, or credential tool.
+M7.6 adds an optional Feishu long-connection transport that normalizes messages
+and delegates only to this same AssistantService boundary. It does not expose the
+localhost API remotely and does not add workbook or Bitable access to the bot.
 
 ## Provider and intents
 
@@ -55,3 +55,17 @@ safe candidates and require user selection.
 
 Do not retry a confirmation token. Reissue the original message for a fresh
 preview after expiry, restart, conflict, or uncertain write result.
+
+## Feishu chat transport
+
+The Feishu transport uses the official `lark-oapi` long connection and is disabled
+by default. Direct messages are accepted; group messages require an explicit bot
+mention. Session IDs bind direct chats to the chat and group chats to both chat
+and sender. Event/message IDs are deduplicated in a bounded ten-minute process
+cache. Only text is supported in M7.6.
+
+The transport never executes a write from natural-language text alone. A preview
+creates the existing five-minute, single-use confirmation token, and only a later
+`确认` or `confirm` message from the same session can execute it. `取消` consumes
+the pending token without execution. Restarting KOLConnect clears chat sessions,
+dedup state, and pending confirmations.
