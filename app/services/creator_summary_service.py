@@ -2,11 +2,11 @@ from __future__ import annotations
 
 """Deterministic, read-only Creator summary generation."""
 
-import math
-import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any, Protocol
+
+from domain.normalization import normalize_number
 
 
 class CreatorSummaryReader(Protocol):
@@ -159,18 +159,8 @@ class CreatorSummaryService:
 
     @staticmethod
     def _number(value: object) -> float | None:
-        if value is None or isinstance(value, bool):
-            return None
-        if isinstance(value, (int, float)):
-            number = float(value)
-            return number if math.isfinite(number) and number >= 0 else None
-        raw = str(value).strip().lower().replace(",", "")
-        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)\s*([kmb])?", raw)
-        if not match:
-            return None
-        multiplier = {"k": 1_000, "m": 1_000_000, "b": 1_000_000_000}.get(match.group(2) or "", 1)
-        number = float(match.group(1)) * multiplier
-        return number if math.isfinite(number) else None
+        number = normalize_number(value)
+        return float(number) if number is not None else None
 
     @staticmethod
     def _stored_value(value: object) -> object:

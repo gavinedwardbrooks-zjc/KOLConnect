@@ -6,6 +6,8 @@ from dataclasses import dataclass
 import re
 from typing import Any, Protocol
 
+from domain.normalization import extract_country, normalize_followers
+
 
 @dataclass(frozen=True)
 class AssistantIntent:
@@ -88,11 +90,9 @@ class DeterministicAssistantProvider:
         for platform in ("TikTok", "Instagram", "YouTube"):
             if platform.casefold() in text.casefold():
                 args["platform"] = platform
-        countries = ("巴西", "Brazil", "美国", "USA", "日本", "Japan")
-        for country in countries:
-            if country.casefold() in text.casefold():
-                args["country"] = country
-                break
+        country = extract_country(text)
+        if country:
+            args["country"] = country
         limit = re.search(r"(?:找|前|limit\s*)\s*(\d{1,3})\s*(?:个|位|条)?", text, re.IGNORECASE)
         if limit:
             args["limit"] = int(limit.group(1))
@@ -100,6 +100,12 @@ class DeterministicAssistantProvider:
         if follower_range:
             args["followers_min"] = int(float(follower_range.group(1)) * 10000)
             args["followers_max"] = int(float(follower_range.group(2)) * 10000)
+        else:
+            minimum = re.search(r"(?:至少|超过|大于|粉丝\s*(?:>=|>)?)\s*([0-9][0-9,.]*\s*[kKmMbB]?)", text)
+            if minimum:
+                value = normalize_followers(minimum.group(1))
+                if value is not None:
+                    args["followers_min"] = value
         category = re.search(r"(?:内容类型|类型|category)\s*(?:是|为|=)?\s*([\w\u4e00-\u9fff-]+)", text, re.IGNORECASE)
         if category:
             args["content_category"] = category.group(1)

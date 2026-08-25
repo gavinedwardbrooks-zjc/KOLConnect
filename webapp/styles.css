@@ -2011,6 +2011,8 @@ button {
 .creator-ai-summary-grid dd { margin: 0; overflow-wrap: anywhere; }
 .creator-ai-summary-grid p { margin: 9px 0 0; color: var(--muted); line-height: 1.5; }
 .creator-ai-summary-notes ul { display: grid; gap: 6px; margin: 9px 0 0; padding-left: 18px; color: var(--muted); line-height: 1.45; }
+.creator-intelligence-grid { margin-top: 2px; }
+.creator-intelligence-grid p { overflow-wrap: anywhere; }
 
 .creator-library-level {
   display: inline-block;

@@ -72,7 +72,8 @@ def handle(handler, request: dict, context: dict) -> bool:
                     key: query.get(key, [""])[0]
                     for key in (
                         "search", "platform", "country", "language", "content_category",
-                        "agency_id", "tag", "insight_level", "status",
+                        "agency_id", "tag", "ai_tag", "followers_min", "followers_max",
+                        "insight_level", "status",
                     )
                     if query.get(key, [""])[0]
                 },

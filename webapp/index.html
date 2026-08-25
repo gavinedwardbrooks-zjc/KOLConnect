@@ -438,6 +438,18 @@
               <select id="creator-library-tag"><option value="">全部标签</option></select>
             </label>
             <label class="field">
+              <span>AI Tag</span>
+              <select id="creator-library-ai-tag"><option value="">全部 AI Tags</option></select>
+            </label>
+            <label class="field">
+              <span>最少粉丝</span>
+              <input id="creator-library-followers-min" inputmode="numeric" placeholder="例如 100K">
+            </label>
+            <label class="field">
+              <span>最多粉丝</span>
+              <input id="creator-library-followers-max" inputmode="numeric" placeholder="例如 1M">
+            </label>
+            <label class="field">
               <span>Insight 等级</span>
               <select id="creator-library-level">
                 <option value="">全部等级</option>
@@ -602,6 +614,16 @@
             <div class="creator-ai-summary-notes">
               <section><h3>事实摘要</h3><ul id="creator-ai-summary-observations"></ul></section>
               <section><h3>数据限制</h3><ul id="creator-ai-summary-limitations"></ul></section>
+            </div>
+            <div class="creator-ai-summary-grid creator-intelligence-grid">
+              <section><h3>AI Tags</h3><p id="creator-intelligence-ai-tags">--</p></section>
+              <section><h3>Content Categories</h3><p id="creator-intelligence-categories">--</p></section>
+              <section><h3>Audience Signals</h3><dl id="creator-intelligence-audience"></dl></section>
+              <section><h3>Content Signals</h3><p id="creator-intelligence-content-signals">--</p></section>
+              <section><h3>Follower Band</h3><p id="creator-intelligence-follower-band">--</p></section>
+              <section><h3>Engagement Band</h3><p id="creator-intelligence-engagement-band">--</p></section>
+              <section><h3>Price Band</h3><p id="creator-intelligence-price-band">--</p></section>
+              <section><h3>Confidence</h3><p id="creator-intelligence-confidence">--</p></section>
             </div>
           </div>
         </div>

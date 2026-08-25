@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from domain.normalization import normalize_country, normalize_followers, normalize_tags
+
 from openpyxl.styles import Font
 
 from app_logging import log_event
@@ -51,7 +53,8 @@ CREATOR_LIBRARY_SORT_FIELDS = frozenset({
 })
 CREATOR_LIBRARY_FILTER_FIELDS = frozenset({
     "search", "platform", "country", "language", "content_category",
-    "agency_id", "tag", "insight_level", "status",
+    "agency_id", "tag", "ai_tag", "followers_min", "followers_max",
+    "insight_level", "status",
 })
 _PLATFORM_SORT_ORDER = {"instagram": 0, "tiktok": 1, "youtube": 2}
 
@@ -1004,13 +1007,29 @@ class CreatorRepository:
         if not normalized:
             return records
 
-        exact_fields = ("platform", "country", "language", "content_category", "agency_id", "insight_level")
+        country_filter = normalize_country(normalized.get("country")) if normalized.get("country") else None
+        followers_min = normalize_followers(normalized.get("followers_min"))
+        followers_max = normalize_followers(normalized.get("followers_max"))
+
+        exact_fields = ("platform", "language", "content_category", "agency_id", "insight_level")
 
         def matches(record: dict[str, Any]) -> bool:
             for field in exact_fields:
                 expected = normalized.get(field)
                 if expected and str(record.get(field) or "").strip().casefold() != expected.casefold():
                     return False
+            if normalized.get("country"):
+                record_country = normalize_country(record.get("country"))
+                if country_filter is not None:
+                    if record_country != country_filter:
+                        return False
+                elif str(record.get("country") or "").strip().casefold() != normalized["country"].casefold():
+                    return False
+            followers = normalize_followers(record.get("followers"))
+            if followers_min is not None and (followers is None or followers < followers_min):
+                return False
+            if followers_max is not None and (followers is None or followers > followers_max):
+                return False
             status = normalized.get("status")
             if status == "archived":
                 if not record.get("archived_at"):
@@ -1025,6 +1044,14 @@ class CreatorRepository:
                     if item.strip()
                 }
                 if tag.casefold() not in tags:
+                    return False
+            ai_tag = normalized.get("ai_tag")
+            if ai_tag:
+                ai_tags = {
+                    item.casefold()
+                    for item in cls._derived_ai_tags(record)
+                }
+                if ai_tag.casefold() not in ai_tags:
                     return False
             search = normalized.get("search")
             if search:
@@ -1060,7 +1087,23 @@ class CreatorRepository:
             "content_category": unique("content_category"),
             "agency_id": unique("agency_id"),
             "tag": tags,
+            "ai_tag": sorted({
+                tag
+                for record in records
+                for tag in CreatorRepository._derived_ai_tags(record)
+            }, key=str.casefold),
         }
+
+    @staticmethod
+    def _derived_ai_tags(record: dict[str, Any]) -> list[str]:
+        values = []
+        category = str(record.get("content_category") or "").strip()
+        platform = str(record.get("platform") or "").strip()
+        if category:
+            values.append(f"category:{category}")
+        if platform:
+            values.append(f"platform:{platform}")
+        return normalize_tags(values)
 
     @classmethod
     def _sort_creator_records(
@@ -1097,17 +1140,14 @@ class CreatorRepository:
 
     @staticmethod
     def _metric_sort_value(value: Any) -> float | None:
-        if value is None or value == "":
-            return None
-        raw = str(value).strip().lower().replace(",", "").replace(" ", "")
-        match = re.fullmatch(r"([+-]?[0-9]+(?:\.[0-9]+)?)([kmb]|万|亿)?", raw)
-        if not match:
-            try:
-                return float(raw)
-            except (TypeError, ValueError):
-                return None
-        multipliers = {"": 1, "k": 1e3, "m": 1e6, "b": 1e9, "万": 1e4, "亿": 1e8}
-        return float(match.group(1)) * multipliers[match.group(2) or ""]
+        number = normalize_followers(value)
+        if number is not None:
+            return float(number)
+        # Keep historical Chinese shorthand sorting compatibility outside the
+        # canonical import/storage contract.
+        raw = str(value or "").strip().replace(",", "").replace(" ", "")
+        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)(万|亿)", raw)
+        return float(match.group(1)) * {"万": 1e4, "亿": 1e8}[match.group(2)] if match else None
 
     @staticmethod
     def _localized_name_sort_key(value: str) -> bytes:
@@ -1316,6 +1356,41 @@ class CreatorRepository:
                 for snapshot in snapshots
             ],
             "campaign_creator_count": campaign_creator_count,
+        }
+
+    @_synchronized
+    def getCreatorIntelligenceSourceData(self, creator_id: str) -> dict[str, Any]:
+        """Return factual, detached inputs for deterministic intelligence."""
+        creator_id = str(creator_id or "").strip()
+        workbook = self._load_workbook()
+        creator = self._creator_row(workbook["Creators"], creator_id)
+        if not creator:
+            raise ValueError("未找到达人分析记录。")
+        metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
+        analysis = self._decode_analysis(metadata.get("analysis_json"))
+        return {
+            "creator": dict(creator),
+            "accounts": [
+                dict(row)
+                for row in self._rows(workbook["CreatorAccounts"])
+                if str(row.get("creator_id") or "") == creator_id
+            ],
+            "snapshots": [
+                dict(row)
+                for row in self._rows(workbook["CreatorSnapshots"])
+                if str(row.get("creator_id") or "") == creator_id
+            ],
+            "videos": [
+                dict(row)
+                for row in (analysis.get("videos") or [])
+                if isinstance(row, dict)
+            ],
+            "campaign_creators": [
+                dict(row)
+                for row in self._rows(workbook["CampaignCreators"])
+                if str(row.get("creator_id") or "") == creator_id
+                and not str(row.get("archived_at") or "").strip()
+            ],
         }
 
     @_synchronized

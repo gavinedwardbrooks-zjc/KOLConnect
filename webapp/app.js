@@ -217,10 +217,12 @@ Object.assign(I18N.zh, {
   mailTestConnection: "测试连接",
   mailDeleteAccount: "删除",
   mailProviderGmail: "Gmail",
+  mailProviderOutlook: "Outlook / Microsoft 365",
   mailProviderNetease: "网易邮箱",
   mailProviderAliyun: "阿里邮箱",
   mailProviderCustom: "自定义邮箱",
   mailTestSuccess: "IMAP 和 SMTP 登录测试通过。",
+  mailSaveSuccess: "邮箱配置保存成功。连接验证需单独执行。",
   mailInboxSyncTitle: "收件箱同步",
   mailInboxSyncHint: "仅手动同步启用邮箱的 INBOX，默认每个账户最近 20 封，不下载附件。",
   mailInboxSyncButton: "同步收件箱",
@@ -273,10 +275,12 @@ Object.assign(I18N.en, {
   mailTestConnection: "Test connection",
   mailDeleteAccount: "Delete account",
   mailProviderGmail: "Gmail",
+  mailProviderOutlook: "Outlook / Microsoft 365",
   mailProviderNetease: "NetEase",
   mailProviderAliyun: "Aliyun Mail",
   mailProviderCustom: "Custom",
   mailTestSuccess: "IMAP and SMTP logins both succeeded.",
+  mailSaveSuccess: "Mail configuration saved. Connection validation is a separate step.",
   mailInboxSyncTitle: "Inbox Sync",
   mailInboxSyncHint: "Manual sync only. Reads up to 20 recent INBOX messages per enabled account and skips attachments.",
   mailInboxSyncButton: "Sync inbox",
@@ -538,6 +542,12 @@ const state = {
     messages: [],
     page: 1,
     pageSize: 20
+  },
+  outlook: {
+    imap_host: "outlook.office365.com",
+    imap_port: "993",
+    smtp_host: "smtp.office365.com",
+    smtp_port: "587"
   }
 };
 
@@ -1652,6 +1662,7 @@ function getMailProviderOptions() {
     { value: "aliyun", label: t("mailProviderAliyun") },
     { value: "netease", label: t("mailProviderNetease") },
     { value: "gmail", label: t("mailProviderGmail") },
+    { value: "outlook", label: t("mailProviderOutlook") },
     { value: "custom", label: t("mailProviderCustom") }
   ];
 }
@@ -2060,7 +2071,7 @@ function renderCaptureMode() {
 
 async function saveMailConfiguration(payload) {
   await apiPost("/api/settings/mail", payload);
-  showSaved();
+  showSaved(t("mailSaveSuccess"));
   await loadState();
 }
 

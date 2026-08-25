@@ -195,8 +195,13 @@ def handle(handler, request: dict, context: dict) -> bool:
             {"accounts": [raw_account]}, state.get("mail")
         ).get("accounts", [])
         account = services["normalize_mail_account"](merged_test_accounts[0] if merged_test_accounts else None)
-        services["test_imap_login"](account)
-        services["test_smtp_login"](account)
+        try:
+            services["test_imap_login"](account)
+            services["test_smtp_login"](account)
+        except Exception as exc:
+            code = str(getattr(exc, "code", "MAIL_AUTH_FAILED"))
+            handler._api_error(code, str(exc), status=400)
+            return True
         handler._ok(imap_ok=True, smtp_ok=True)
         return True
 

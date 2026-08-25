@@ -11,6 +11,7 @@
   let campaignModal = null;
   let creatorId = "";
   let detail = null;
+  let intelligence = null;
   let creatorCampaigns = [];
   let selectedAccountKey = "";
   let lifecycleId = 0;
@@ -146,6 +147,7 @@
     if (!key || key === selectedAccountKey) return;
     selectedAccountKey = key;
     render(detail);
+    renderIntelligence(intelligence);
   }
 
   function renderList(id, items, emptyText) {
@@ -198,6 +200,7 @@
   function resetAISummary() {
     summaryController?.abort();
     summaryController = null;
+    intelligence = null;
     const button = element("creator-ai-summary-generate");
     if (button) {
       button.disabled = false;
@@ -211,10 +214,41 @@
       "creator-ai-summary-performance",
       "creator-ai-summary-observations",
       "creator-ai-summary-limitations",
+      "creator-intelligence-audience",
     ].forEach(id => element(id)?.replaceChildren());
+    [
+      "creator-intelligence-ai-tags", "creator-intelligence-categories",
+      "creator-intelligence-content-signals", "creator-intelligence-follower-band",
+      "creator-intelligence-engagement-band", "creator-intelligence-price-band",
+      "creator-intelligence-confidence",
+    ].forEach(id => setText(id, "--"));
+  }
+
+  function renderIntelligence(intelligence) {
+    if (!intelligence || typeof intelligence !== "object") return;
+    const account = selectedAccount(detail);
+    const accountSignal = (Array.isArray(intelligence.accounts) ? intelligence.accounts : []).find(
+      item => String(item?.account_uid || "") === String(account?.account_uid || ""),
+    );
+    setText("creator-intelligence-ai-tags", (intelligence.ai_tags || []).join(" · ") || "--");
+    setText("creator-intelligence-categories", (intelligence.content_categories || []).join(" · ") || "--");
+    renderDefinitionList(element("creator-intelligence-audience"), [
+      ["国家", intelligence.audience_signals?.country],
+      ["语言", intelligence.audience_signals?.language],
+      ["平台", (intelligence.audience_signals?.platforms || []).join(" · ")],
+    ]);
+    setText(
+      "creator-intelligence-content-signals",
+      (intelligence.content_signals || []).map(item => item?.value).filter(Boolean).join(" · ") || "--",
+    );
+    setText("creator-intelligence-follower-band", accountSignal?.follower_band || intelligence.follower_band || "unavailable");
+    setText("creator-intelligence-engagement-band", intelligence.engagement_band || "unavailable");
+    setText("creator-intelligence-price-band", intelligence.price_band || "unavailable");
+    setText("creator-intelligence-confidence", intelligence.confidence || "insufficient");
   }
 
   function renderAISummary(data) {
+    intelligence = data?.intelligence || null;
     const profile = data?.profile || {};
     const performance = data?.performance || {};
     const limitations = Array.isArray(data?.limitations) ? data.limitations : [];
@@ -247,6 +281,7 @@
       limitations.map(item => item?.message).filter(Boolean),
       "当前未发现额外数据限制。",
     );
+    renderIntelligence(intelligence);
     if (dataStatus === "insufficient") {
       setText("creator-ai-summary-status", "数据不足。当前缺少可用于表现分析的数据。");
     } else if (freshnessStatus === "stale") {

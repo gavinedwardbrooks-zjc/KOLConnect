@@ -523,6 +523,9 @@
       content_category: valueOf("creator-library-category"),
       agency_id: valueOf("creator-library-agency"),
       tag: valueOf("creator-library-tag"),
+      ai_tag: valueOf("creator-library-ai-tag"),
+      followers_min: valueOf("creator-library-followers-min").trim(),
+      followers_max: valueOf("creator-library-followers-max").trim(),
       insight_level: valueOf("creator-library-level"),
       status: valueOf("creator-library-status"),
     };
@@ -829,6 +832,7 @@
     renderOptions("creator-library-country", options.country || [], "全部国家/地区");
     renderOptions("creator-library-language", options.language || [], "全部语言");
     renderOptions("creator-library-tag", options.tag || [], "全部标签");
+    renderOptions("creator-library-ai-tag", options.ai_tag || [], "全部 AI Tags");
     const records = state.records;
     empty.hidden = records.length > 0;
     cards.hidden = state.viewMode !== "card" || records.length === 0;
@@ -1369,12 +1373,16 @@
         "creator-library-category",
         "creator-library-agency",
         "creator-library-tag",
+        "creator-library-ai-tag",
         "creator-library-level",
         "creator-library-status",
       ].forEach(id => listen(id, "change", () => {
         filterRequestId += 1;
         return changeFilters().catch(showError);
       }));
+      ["creator-library-followers-min", "creator-library-followers-max"].forEach(
+        id => listen(id, "input", scheduleSearchFilter),
+      );
       listen("creator-library-sort", "change", () => changeSort().catch(showError));
       listen("creator-library-page-size", "change", () => changePageSize().catch(showError));
       listen("creator-library-page-buttons", "click", event => handlePagination(event).catch(showError));

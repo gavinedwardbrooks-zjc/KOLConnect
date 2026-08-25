@@ -8,6 +8,8 @@ import re
 import threading
 from typing import Any, Callable
 
+from domain.normalization import normalize_country, normalize_number
+
 from services.assistant_confirmation_store import (
     AssistantConfirmationStore,
     ConfirmationError,
@@ -156,6 +158,9 @@ class AssistantService:
         return self._privacy_safe(result)
 
     def _search(self, arguments: dict[str, Any]) -> dict[str, Any]:
+        arguments = dict(arguments)
+        if arguments.get("country"):
+            arguments["country"] = normalize_country(arguments["country"]) or arguments["country"]
         rows = list(self._tool("search_creators")(arguments) or [])
         minimum = self._number(arguments.get("followers_min"))
         maximum = self._number(arguments.get("followers_max"))
@@ -256,18 +261,8 @@ class AssistantService:
 
     @staticmethod
     def _number(value: object) -> float | None:
-        if value in (None, ""):
-            return None
-        text = str(value).strip().replace(",", "")
-        multiplier = 1
-        if text.casefold().endswith("k"):
-            multiplier, text = 1000, text[:-1]
-        elif text.casefold().endswith("m"):
-            multiplier, text = 1000000, text[:-1]
-        try:
-            return float(text) * multiplier
-        except ValueError:
-            return None
+        number = normalize_number(value)
+        return float(number) if number is not None else None
 
     @classmethod
     def _creator_summary(cls, row: dict[str, Any]) -> dict[str, Any]:

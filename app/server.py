@@ -78,10 +78,15 @@ from services.campaign_creator_service import CampaignCreatorService
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
 from services.creator_summary_service import CreatorSummaryService
+from services.creator_intelligence_service import (
+    CreatorIntelligenceService,
+    CreatorIntelligenceSummaryFacade,
+)
 from services.clean_reset_service import CleanResetService
 from services.assistant_service import AssistantService
 from services.assistant_provider import DeterministicAssistantProvider
 from services.task_service import TaskService
+from services.mail_auth_service import classify_imap_error
 from services.risk_service import RiskService
 from app_logging import log_error, log_event
 from api_contract import (
@@ -211,6 +216,12 @@ MAIL_PROVIDER_PRESETS = {
         "smtp_host": "smtp.163.com",
         "smtp_port": "465",
     },
+    "outlook": {
+        "imap_host": "outlook.office365.com",
+        "imap_port": "993",
+        "smtp_host": "smtp.office365.com",
+        "smtp_port": "587",
+    },
 }
 
 HANDLERS = [
@@ -240,7 +251,7 @@ def normalize_mail_account(raw: dict | None) -> dict:
     preset = get_mail_provider_preset(provider)
     return {
         "name": str(raw.get("name") or "").strip(),
-        "provider": provider if provider in {"aliyun", "netease", "gmail", "custom"} else "custom",
+        "provider": provider if provider in {"aliyun", "netease", "gmail", "outlook", "custom"} else "custom",
         "email": str(raw.get("email") or "").strip(),
         "sender_name": str(raw.get("sender_name") or "").strip(),
         "imap_host": str(raw.get("imap_host") or preset.get("imap_host") or "").strip(),
@@ -348,7 +359,7 @@ def test_imap_login(account: dict) -> None:
                 client.starttls()
         client.login(username, password)
     except Exception as exc:
-        raise RuntimeError(f"IMAP 登录失败：{exc}") from exc
+        raise classify_imap_error(exc) from exc
     finally:
         if client is not None:
             try:
@@ -1693,8 +1704,11 @@ def get_creator_service() -> CreatorService:
     )
 
 
-def get_creator_summary_service() -> CreatorSummaryService:
-    return CreatorSummaryService(get_creator_repository)
+def get_creator_summary_service() -> CreatorIntelligenceSummaryFacade:
+    return CreatorIntelligenceSummaryFacade(
+        CreatorSummaryService(get_creator_repository),
+        CreatorIntelligenceService(get_creator_repository),
+    )
 
 
 def get_feishu_sync_service() -> FeishuSyncService:
@@ -1911,7 +1925,10 @@ def get_clean_reset_service() -> CleanResetService:
 def _assistant_search_creators(arguments: dict) -> list[dict]:
     filters = {
         key: arguments.get(key)
-        for key in ("country", "platform", "language", "content_category", "search")
+        for key in (
+            "country", "platform", "language", "content_category", "search",
+            "followers_min", "followers_max", "ai_tag",
+        )
         if str(arguments.get(key) or "").strip()
     }
     include_archived = bool(arguments.get("include_archived"))

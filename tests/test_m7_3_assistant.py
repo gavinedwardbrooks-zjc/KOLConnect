@@ -20,6 +20,7 @@ from services.assistant_provider import (  # noqa: E402
     MockAssistantProvider,
 )
 from services.assistant_service import AssistantService  # noqa: E402
+from domain.normalization import normalize_country  # noqa: E402
 
 
 class MutableClock:
@@ -37,7 +38,7 @@ class AssistantFoundationTests(unittest.TestCase):
         )
         self.assertEqual("search_creators", parsed.intent)
         self.assertEqual(
-            {"limit": 5, "followers_min": 100000, "followers_max": 500000, "country": "巴西", "platform": "TikTok"},
+            {"limit": 5, "followers_min": 100000, "followers_max": 500000, "country": "BR", "platform": "TikTok"},
             parsed.arguments,
         )
 
@@ -104,9 +105,11 @@ class AssistantServiceTests(unittest.TestCase):
     def _search(self, args):
         self.calls.append(("search_creators", args))
         rows = list(self.creators)
-        for key in ("platform", "country", "content_category"):
+        for key in ("platform", "content_category"):
             if args.get(key):
                 rows = [row for row in rows if str(row.get(key) or "").casefold() == str(args[key]).casefold()]
+        if args.get("country"):
+            rows = [row for row in rows if normalize_country(row.get("country")) == normalize_country(args["country"])]
         return rows
 
     def _dry_run(self):
