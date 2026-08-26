@@ -57,6 +57,8 @@ HTTP conventions are 200 for reads/updates, 201 for creates already using that c
 | POST | `/api/feishu-sync/validate` | Connection/schema validation | Read-only remote | Standard + compatibility |
 | POST | `/api/feishu-sync/dry-run` | Synchronization plan | Read-only remote | Standard + compatibility |
 | POST | `/api/feishu-sync/full-sync` | Confirmed business synchronization | Write | Standard + compatibility |
+| GET | `/api/feishu-delete-intents/status` | Inspect durable remote-delete lifecycle state | Read | Internal Settings/diagnostics contract |
+| POST | `/api/feishu-delete-intents/reconcile` | Confirmed bounded lifecycle reconciliation | Write | Internal Settings/diagnostics contract |
 | GET | `/api/assistant/capabilities` | List allowlisted assistant intents | Read | M7.2 envelope |
 | POST | `/api/assistant/message` | Interpret and execute a grounded read or return write preview | Read/Preview | M7.2 envelope |
 | POST | `/api/assistant/confirm` | Execute one session-bound confirmed write | Confirmed Write | M7.2 envelope |

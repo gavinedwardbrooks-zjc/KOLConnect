@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from excel_workbook_store import ExcelWorkbookStore
+from storage.sqlite_workbook_store import SQLiteWorkbookStore
 from runtime_paths import atomic_write_json
 from local_storage_lock import (
     LOCAL_STORAGE_MUTATION_LOCK,
@@ -95,10 +96,15 @@ class StagedDeleteTransaction:
                 raise RuntimeError("Workbook backup is not allowed in this phase.")
             if manifest.get("workbook_backup"):
                 raise RuntimeError("Workbook backup already exists for this transaction.")
-            backup = self.root / "backups" / "workbook.xlsx"
+            storage_kind = (
+                "sqlite" if getattr(store, "is_sqlite_authority", False) else "excel"
+            )
+            suffix = ".db" if storage_kind == "sqlite" else ".xlsx"
+            backup = self.root / "backups" / f"business_store{suffix}"
             store.create_transaction_backup(backup)
             manifest["workbook_backup"] = str(backup)
             manifest["workbook_target"] = str(store.workbook_path)
+            manifest["storage_kind"] = storage_kind
             self._write_manifest(manifest)
             return backup
 
@@ -179,7 +185,12 @@ class StagedDeleteTransaction:
             workbook_backup = str(manifest.get("workbook_backup") or "")
             workbook_target = str(manifest.get("workbook_target") or "")
             if workbook_backup and workbook_target:
-                ExcelWorkbookStore(Path(workbook_target)).restore_transaction_backup(
+                store_class = (
+                    SQLiteWorkbookStore
+                    if manifest.get("storage_kind") == "sqlite"
+                    else ExcelWorkbookStore
+                )
+                store_class(Path(workbook_target)).restore_transaction_backup(
                     Path(workbook_backup)
                 )
             manifest["phase"] = "ROLLED_BACK"

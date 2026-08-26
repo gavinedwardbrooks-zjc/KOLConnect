@@ -323,8 +323,20 @@ def run_browser(
             return
 
 
+def check_sqlite_runtime() -> None:
+    """Validate the packaged SQLite engine without starting application services."""
+    from storage.sqlite_runtime import require_safe_sqlite_runtime
+
+    version = require_safe_sqlite_runtime()
+    if sys.stdout is not None:
+        print(f"SQLITE_RUNTIME={version}")
+
+
 def main(argv: list[str] | None = None) -> None:
     arguments = list(sys.argv[1:] if argv is None else argv)
+    if "--sqlite-runtime-check" in arguments:
+        check_sqlite_runtime()
+        return
     get_logs_dir()
     if "--scraper-worker" in arguments:
         run_scraper_worker()

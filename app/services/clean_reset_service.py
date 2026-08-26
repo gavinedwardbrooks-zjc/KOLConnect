@@ -9,7 +9,7 @@ import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 from openpyxl import load_workbook
 
@@ -36,6 +36,7 @@ class CleanResetService:
         data_protection_path: Path,
         mail_messages_path: Path,
         tasks_dir: Path,
+        store_provider: Callable[[], Any] | None = None,
         cache_invalidators: tuple[Callable[[], None], ...] = (),
         now_provider: Callable[[], datetime] | None = None,
     ) -> None:
@@ -44,11 +45,12 @@ class CleanResetService:
         self.data_protection_path = Path(data_protection_path)
         self.mail_messages_path = Path(mail_messages_path)
         self.tasks_dir = Path(tasks_dir)
+        self.store_provider = store_provider
         self.cache_invalidators = cache_invalidators
         self.now_provider = now_provider or (lambda: datetime.now(timezone.utc))
 
     def preview(self) -> dict:
-        store = ExcelWorkbookStore(self.workbook_path)
+        store = self._store()
         try:
             with store.read_only_workbook() as workbook:
                 actual_sheets = set(workbook.sheetnames)
@@ -76,7 +78,7 @@ class CleanResetService:
         ]
         return {
             "status": "blocked" if review_items else "success",
-            "workbook": self.workbook_path.name,
+            "workbook": Path(store.workbook_path).name,
             "backup_required": True,
             "clear_sheets": rows,
             "preserve_sheets": preserved,
@@ -108,15 +110,23 @@ class CleanResetService:
             raise ValueError("CLEAN_RESET_CONFIRMATION_REQUIRED")
 
         with shared_storage_lock():
+            store = self._store()
+            active_path = Path(store.workbook_path)
             preview = self.preview()
             if preview["status"] != "success":
                 raise CleanResetError("CLEAN_RESET_SCHEMA_REVIEW_REQUIRED")
 
             timestamp = self.now_provider().astimezone(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-            backup_dir = self.workbook_path.parent / "backups"
+            sqlite_authority = bool(getattr(store, "is_sqlite_authority", False))
+            backup_dir = (
+                active_path.parent.parent / "backups" / "database"
+                if sqlite_authority
+                else active_path.parent / "backups"
+            )
             backup_dir.mkdir(parents=True, exist_ok=True)
+            backup_suffix = ".db" if sqlite_authority else active_path.suffix
             workbook_backup = self._unique_path(
-                backup_dir / f"{self.workbook_path.stem}_before_clean_reset_{timestamp}{self.workbook_path.suffix}"
+                backup_dir / f"{active_path.stem}_before_clean_reset_{timestamp}{backup_suffix}"
             )
             support_backup_dir = self._unique_path(backup_dir / f"clean_reset_{timestamp}")
             support_backup_dir.mkdir(parents=True, exist_ok=False)
@@ -126,7 +136,7 @@ class CleanResetService:
             tasks_backup: Path | None = None
             workbook_saved = False
             try:
-                self._copy_and_validate_workbook(workbook_backup)
+                self._copy_and_validate_workbook(workbook_backup, store)
                 for source in (self.data_protection_path, self.mail_messages_path):
                     destination = support_backup_dir / source.name
                     if source.is_file():
@@ -140,16 +150,12 @@ class CleanResetService:
                     self.tasks_dir.replace(tasks_backup)
                     self.tasks_dir.mkdir(parents=True, exist_ok=True)
 
-                workbook = load_workbook(self.workbook_path)
-                try:
+                with store.workbook(write=True) as workbook:
                     for name in BUSINESS_SHEETS:
                         sheet = workbook[name]
                         if sheet.max_row > 1:
                             sheet.delete_rows(2, sheet.max_row - 1)
-                    ExcelWorkbookStore(self.workbook_path).save(workbook)
-                    workbook_saved = True
-                finally:
-                    workbook.close()
+                workbook_saved = True
 
                 atomic_write_json(self.data_protection_path, {})
                 atomic_write_json(
@@ -158,7 +164,8 @@ class CleanResetService:
                 )
                 self._refresh_json_backup(self.data_protection_path)
                 self._refresh_json_backup(self.mail_messages_path)
-                shutil.copy2(self.workbook_path, self.workbook_path.with_suffix(".xlsx.bak"))
+                if not sqlite_authority:
+                    shutil.copy2(active_path, active_path.with_suffix(".xlsx.bak"))
 
                 verified = self.preview()
                 remaining = sum(verified["clear_sheets"].values())
@@ -168,7 +175,7 @@ class CleanResetService:
                     raise CleanResetError("CLEAN_RESET_SETTINGS_CHANGED")
             except Exception:
                 if workbook_saved or workbook_backup.is_file():
-                    ExcelWorkbookStore(self.workbook_path).restore_transaction_backup(workbook_backup)
+                    store.restore_transaction_backup(workbook_backup)
                 for target, backup in json_backups.items():
                     if backup and backup.is_file():
                         self._restore_file_backup(target, backup)
@@ -250,15 +257,25 @@ class CleanResetService:
                 return candidate
         raise CleanResetError("CLEAN_RESET_BACKUP_NAME_EXHAUSTED")
 
-    def _copy_and_validate_workbook(self, destination: Path) -> None:
-        if not self.workbook_path.is_file():
+    def _copy_and_validate_workbook(self, destination: Path, store: Any) -> None:
+        active_path = Path(store.workbook_path)
+        if not active_path.is_file():
             raise CleanResetError("CLEAN_RESET_WORKBOOK_MISSING")
-        shutil.copy2(self.workbook_path, destination)
+        store.create_transaction_backup(destination)
+        if getattr(store, "is_sqlite_authority", False):
+            return
         try:
             load_workbook(destination, read_only=True).close()
         except Exception as exc:
             destination.unlink(missing_ok=True)
             raise CleanResetError("CLEAN_RESET_BACKUP_INVALID") from exc
+
+    def _store(self):
+        return (
+            self.store_provider()
+            if self.store_provider is not None
+            else ExcelWorkbookStore(self.workbook_path)
+        )
 
     @staticmethod
     def _restore_file_backup(target: Path, backup: Path) -> None:

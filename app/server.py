@@ -107,6 +107,7 @@ from runtime_paths import (
     scraper_worker_command,
 )
 from local_storage_lock import shared_storage_lock
+from staged_delete_transaction import recover_pending_delete_transactions
 from feishu_client import FeishuClient
 from local_request_security import (
     MUTATING_METHODS,
@@ -123,6 +124,7 @@ from http_handlers import (
     creator_handler,
     dashboard_handler,
     feishu_chat_handler,
+    feishu_delete_handler,
     feishu_sync_handler,
     settings_handler,
     task_handler,
@@ -130,6 +132,10 @@ from http_handlers import (
 )
 from services.feishu_sync_service import FeishuSyncService
 from services.feishu_chat_transport import FeishuChatTransport
+from services.feishu_delete_intent_service import (
+    FeishuDeleteIntentStore,
+    FeishuDeleteReconciliationService,
+)
 
 
 APP_DIR = get_resource_dir()
@@ -234,6 +240,7 @@ HANDLERS = [
     risk_handler,
     campaign_handler,
     feishu_chat_handler,
+    feishu_delete_handler,
     feishu_sync_handler,
     clean_reset_handler,
     settings_handler,
@@ -1672,6 +1679,7 @@ def get_creator_hard_delete_service() -> CreatorHardDeleteService:
         lambda exc: log_error("CreatorDelete", "永久删除失败", exc),
         creator_library_cache_invalidator=CREATOR_LIBRARY_CACHE.invalidate,
         dashboard_response_cache_invalidator=DASHBOARD_RESPONSE_CACHE.invalidate,
+        feishu_delete_intent_store=FeishuDeleteIntentStore(DATA_DIR),
     )
 
 
@@ -1724,6 +1732,22 @@ def get_feishu_sync_service() -> FeishuSyncService:
         get_creator_repository(),
         lambda: FeishuClient(get_four_table_feishu_config()),
     )
+
+
+def get_feishu_delete_reconciliation_service() -> FeishuDeleteReconciliationService:
+    return FeishuDeleteReconciliationService(
+        FeishuDeleteIntentStore(DATA_DIR),
+        lambda: FeishuClient(get_four_table_feishu_config()),
+    )
+
+
+def _recover_feishu_delete_intents_on_startup() -> None:
+    """Recover local delete state, then perform one bounded lifecycle pass."""
+    try:
+        recover_pending_delete_transactions(DATA_DIR)
+        get_feishu_delete_reconciliation_service().reconcile(max_intents=10)
+    except Exception as exc:
+        log_error("FeishuDelete", "飞书删除意图启动恢复失败", exc)
 
 
 def get_task_port() -> TaskPort:
@@ -1878,7 +1902,7 @@ def _creator_library_workbook_path() -> Path:
 
 
 def _new_repository_factory() -> RepositoryFactory:
-    return RepositoryFactory.for_path(
+    return RepositoryFactory.for_runtime(
         _creator_library_workbook_path(),
         legacy_analysis_dir=CREATOR_ANALYSIS_DIR,
         legacy_library_file=CREATOR_LIBRARY_FILE,
@@ -1913,7 +1937,12 @@ def get_analytics_service() -> AnalyticsService:
 
 
 def get_workbook_backup_service() -> WorkbookBackupService:
-    return WorkbookBackupService(_creator_library_workbook_path)
+    return WorkbookBackupService(
+        _creator_library_workbook_path,
+        store_provider=lambda: (
+            get_active_repository_factory() or _new_repository_factory()
+        ).store,
+    )
 
 
 def get_clean_reset_service() -> CleanResetService:
@@ -1923,6 +1952,9 @@ def get_clean_reset_service() -> CleanResetService:
         data_protection_path=DATA_PROTECTION_FILE,
         mail_messages_path=mail_sync_module.MAIL_MESSAGES_FILE,
         tasks_dir=TASKS_DIR,
+        store_provider=lambda: (
+            get_active_repository_factory() or _new_repository_factory()
+        ).store,
         cache_invalidators=(
             CREATOR_LIBRARY_CACHE.invalidate,
             DASHBOARD_RESPONSE_CACHE.invalidate,
@@ -2098,7 +2130,7 @@ def get_dashboard_data() -> dict:
         }
 
     return DASHBOARD_RESPONSE_CACHE.get_response(
-        creator_repository.workbook_path, build_response
+        creator_repository.store, build_response
     )
 
 
@@ -2468,6 +2500,7 @@ class Handler(BaseHTTPRequestHandler):
                 "creator_hard_delete": get_creator_hard_delete_service(),
                 "creator_merge": get_creator_merge_service(),
                 "feishu_sync": get_feishu_sync_service(),
+                "feishu_delete_reconciliation": get_feishu_delete_reconciliation_service(),
                 "feishu_chat": get_feishu_chat_transport(),
                 "campaign_creator": get_campaign_creator_service(),
                 "task": get_task_service(),
@@ -2638,6 +2671,11 @@ def run() -> None:
         webbrowser.open(f"http://{HOST}:{PORT}/?v={int(time.time())}")
     if STATE.get("feishu", {}).get("chat_enabled"):
         chat_transport.start()
+    threading.Thread(
+        target=_recover_feishu_delete_intents_on_startup,
+        name="kolconnect-feishu-delete-recovery",
+        daemon=True,
+    ).start()
     try:
         server.serve_forever()
     finally:

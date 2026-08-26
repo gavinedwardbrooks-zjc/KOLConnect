@@ -29,6 +29,7 @@ from services.creator_hard_delete_service import (  # noqa: E402
     CreatorHardDeleteError,
     CreatorHardDeleteService,
 )
+from services.feishu_delete_intent_service import FeishuDeleteIntentStore  # noqa: E402
 from staged_delete_transaction import StagedDeleteTransaction  # noqa: E402
 
 
@@ -93,12 +94,14 @@ class CreatorHardDeleteTests(unittest.TestCase):
             self.factory.creator_delete_impact
         )
         self.errors: list[BaseException] = []
+        self.intent_store = FeishuDeleteIntentStore(self.runtime_dir)
         self.service = CreatorHardDeleteService(
             lambda: self.impact_service,
             self.factory.creator_hard_delete,
             lambda: self.runtime_dir,
             self.errors.append,
             lock_timeout=2,
+            feishu_delete_intent_store=self.intent_store,
         )
 
     def tearDown(self) -> None:
@@ -144,6 +147,43 @@ class CreatorHardDeleteTests(unittest.TestCase):
             callback()
         self.assertEqual(code, caught.exception.code)
         return caught.exception
+
+    def test_successful_local_delete_promotes_durable_remote_intent(self) -> None:
+        self.seed_creator("creator_remote_intent")
+        self.append("CreatorAccounts", {
+            "account_id": "account_remote_intent",
+            "creator_id": "creator_remote_intent",
+            "account_uid": "uid_remote_intent",
+            "platform": "TikTok",
+        })
+        result = self.delete(
+            "creator_remote_intent",
+            self.preview("creator_remote_intent")["preview_fingerprint"],
+        )
+        intents = self.intent_store.list()
+        self.assertTrue(result["deleted"])
+        self.assertEqual(1, len(intents))
+        self.assertEqual("pending_remote", intents[0]["status"])
+        self.assertEqual("creator_remote_intent", intents[0]["creator_id"])
+        self.assertEqual(["uid_remote_intent"], intents[0]["account_uids"])
+
+    def test_failed_local_delete_aborts_remote_intent(self) -> None:
+        self.seed_creator("creator_failed_intent")
+        preview = self.preview("creator_failed_intent")
+        with mock.patch.object(
+            self.factory.creator_hard_delete(),
+            "delete_workbook_resources",
+            side_effect=RuntimeError("synthetic local failure"),
+        ):
+            self.assert_error(
+                "CREATOR_DELETE_FAILED",
+                lambda: self.delete(
+                    "creator_failed_intent", preview["preview_fingerprint"]
+                ),
+            )
+        intents = self.intent_store.list()
+        self.assertEqual(1, len(intents))
+        self.assertEqual("aborted", intents[0]["status"])
 
     def test_request_contract_requires_literal_confirmation_and_fingerprint(self) -> None:
         self.seed_creator("creator_contract")

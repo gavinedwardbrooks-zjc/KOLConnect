@@ -185,6 +185,8 @@ class FeishuClient:
             raise FeishuClientError("RATE_LIMITED", "飞书请求频率受限。", retry_after)
         if status == 409:
             raise FeishuClientError("REMOTE_CONFLICT", "飞书记录发生冲突。")
+        if status == 404:
+            raise FeishuClientError("NOT_FOUND", "飞书记录不存在。")
         if status >= 500:
             raise FeishuClientError("TRANSIENT_REMOTE_ERROR", "飞书服务暂时不可用。")
         if status >= 400:

@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Mapping
 
 from local_storage_lock import LOCAL_STORAGE_MUTATION_LOCK, shared_storage_lock
+from runtime_paths import atomic_write_bytes
 
 
 TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
@@ -446,13 +447,7 @@ class TaskRepository:
 
     @staticmethod
     def _atomic_write_bytes(path: Path, data: bytes) -> None:
-        with shared_storage_lock():
-            temp_path = path.with_suffix(f"{path.suffix}.tmp")
-            try:
-                temp_path.write_bytes(data)
-                temp_path.replace(path)
-            finally:
-                temp_path.unlink(missing_ok=True)
+        atomic_write_bytes(path, data)
 
     def _paths(self, task_id: str) -> dict[str, Path]:
         task_id = self._validate_task_id(task_id)

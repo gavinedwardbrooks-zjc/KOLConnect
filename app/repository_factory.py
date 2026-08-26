@@ -18,6 +18,16 @@ from repositories.creator_delete_impact_repository import CreatorDeleteImpactRep
 from repositories.creator_hard_delete_repository import CreatorHardDeleteRepository
 from repositories.creator_merge_repository import CreatorMergeRepository
 from repositories.risk_repository import RiskRepository
+from storage.authority import resolve_runtime_authority
+from storage.paths import SQLiteStoragePaths
+from storage.sqlite_workbook_store import SQLiteWorkbookStore
+from storage.sqlite_creator_repository import SQLiteCreatorRepository
+from storage.sqlite_campaign_repositories import (
+    SQLiteCampaignCreatorRepository,
+    SQLiteCampaignRepository,
+    SQLiteProductRepository,
+)
+from storage.sqlite_dashboard_repository import SQLiteDashboardRepository
 
 
 _ACTIVE_FACTORY: ContextVar[RepositoryFactory | None] = ContextVar(
@@ -72,9 +82,45 @@ class RepositoryFactory:
             data_protection_file=data_protection_file,
         )
 
+    @classmethod
+    def for_runtime(
+        cls,
+        workbook_path: Path,
+        *,
+        storage_paths: SQLiteStoragePaths | None = None,
+        bootstrap_new_install: bool = False,
+        legacy_analysis_dir: Path | None = None,
+        legacy_library_file: Path | None = None,
+        tasks_dir: Path | None = None,
+        data_protection_file: Path | None = None,
+    ) -> RepositoryFactory:
+        paths = storage_paths or SQLiteStoragePaths.for_app_data()
+        authority = resolve_runtime_authority(
+            paths,
+            workbook_path,
+            bootstrap_new_install=bootstrap_new_install,
+        )
+        store = (
+            SQLiteWorkbookStore(authority.database_path)
+            if authority.kind == "sqlite" and authority.database_path is not None
+            else ExcelWorkbookStore(authority.workbook_path)
+        )
+        return cls(
+            store,
+            legacy_analysis_dir=legacy_analysis_dir,
+            legacy_library_file=legacy_library_file,
+            tasks_dir=tasks_dir,
+            data_protection_file=data_protection_file,
+        )
+
     def creator(self) -> CreatorRepository:
         if self._creator is None:
-            self._creator = CreatorRepository(
+            repository_type = (
+                SQLiteCreatorRepository
+                if isinstance(self.store, SQLiteWorkbookStore)
+                else CreatorRepository
+            )
+            self._creator = repository_type(
                 self.store,
                 self.legacy_analysis_dir,
                 self.legacy_library_file,
@@ -120,17 +166,32 @@ class RepositoryFactory:
 
     def product(self) -> ProductRepository:
         if self._product is None:
-            self._product = ProductRepository(self.store)
+            repository_type = (
+                SQLiteProductRepository
+                if isinstance(self.store, SQLiteWorkbookStore)
+                else ProductRepository
+            )
+            self._product = repository_type(self.store)
         return self._product
 
     def campaign(self) -> CampaignRepository:
         if self._campaign is None:
-            self._campaign = CampaignRepository(self.store)
+            repository_type = (
+                SQLiteCampaignRepository
+                if isinstance(self.store, SQLiteWorkbookStore)
+                else CampaignRepository
+            )
+            self._campaign = repository_type(self.store)
         return self._campaign
 
     def campaign_creator(self) -> CampaignCreatorRepository:
         if self._campaign_creator is None:
-            self._campaign_creator = CampaignCreatorRepository(self.store)
+            repository_type = (
+                SQLiteCampaignCreatorRepository
+                if isinstance(self.store, SQLiteWorkbookStore)
+                else CampaignCreatorRepository
+            )
+            self._campaign_creator = repository_type(self.store)
         return self._campaign_creator
 
     def risk(self) -> RiskRepository:
@@ -146,7 +207,9 @@ class RepositoryFactory:
     ) -> DashboardRepository:
         if self._dashboard is None:
             creator = creator_repository or self.creator()
-            if campaign_creator_repository is None and campaign_repository is None:
+            if isinstance(self.store, SQLiteWorkbookStore):
+                self._dashboard = SQLiteDashboardRepository(creator)
+            elif campaign_creator_repository is None and campaign_repository is None:
                 self._dashboard = DashboardRepository(creator)
             else:
                 self._dashboard = DashboardRepository(

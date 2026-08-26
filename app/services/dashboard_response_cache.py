@@ -30,6 +30,7 @@ class DashboardFingerprint:
     mtime_ns: int
     size: int
     utc_date: str
+    generation: str = ""
 
 
 class DashboardResponseCache:
@@ -46,10 +47,9 @@ class DashboardResponseCache:
         self._build_event_logger = build_event_logger
 
     def get_response(
-        self, workbook_path: Path | str, loader: DashboardLoader
+        self, storage_source: Any, loader: DashboardLoader
     ) -> dict[str, Any]:
-        path = Path(workbook_path)
-        fingerprint = self._fingerprint(path)
+        fingerprint = self._fingerprint(storage_source)
         with self._lock:
             if self._is_current(fingerprint):
                 return deepcopy(self._entry[1])  # type: ignore[index]
@@ -58,12 +58,12 @@ class DashboardResponseCache:
         with shared_storage_lock():
             with self._lock:
                 for attempt in range(1, DASHBOARD_BUILD_MAX_ATTEMPTS + 1):
-                    fingerprint = self._fingerprint(path)
+                    fingerprint = self._fingerprint(storage_source)
                     if self._is_current(fingerprint):
                         return deepcopy(self._entry[1])  # type: ignore[index]
 
                     payload = loader()
-                    after_build = self._fingerprint(path)
+                    after_build = self._fingerprint(storage_source)
                     if after_build == fingerprint:
                         self._entry = (after_build, deepcopy(payload))
                         return deepcopy(payload)
@@ -82,8 +82,18 @@ class DashboardResponseCache:
     def _is_current(self, fingerprint: DashboardFingerprint) -> bool:
         return self._entry is not None and self._entry[0] == fingerprint
 
-    def _fingerprint(self, workbook_path: Path) -> DashboardFingerprint:
+    def _fingerprint(self, storage_source: Any) -> DashboardFingerprint:
+        workbook_path = Path(getattr(storage_source, "workbook_path", storage_source))
         resolved = workbook_path.expanduser().resolve()
+        revision_reader = getattr(storage_source, "business_revision", None)
+        if callable(revision_reader):
+            return DashboardFingerprint(
+                path=str(resolved),
+                mtime_ns=0,
+                size=0,
+                utc_date=self._utc_date_provider().isoformat(),
+                generation=f"sqlite:{revision_reader()}",
+            )
         try:
             stat = resolved.stat()
             mtime_ns = stat.st_mtime_ns

@@ -428,6 +428,7 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
             },
             "structural_ids": {
                 "account_ids": sorted(account_ids),
+                "account_uids": sorted(account_uids),
                 "snapshot_ids": sorted(snapshot_ids),
                 "campaign_relation_ids": sorted(relation_ids),
                 "cooperation_ids": sorted(cooperation_ids),

@@ -6,13 +6,17 @@ from PyInstaller.utils.hooks import collect_all
 PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
 APP_DIR = PROJECT_ROOT / "app"
 PACKAGING_DIR = PROJECT_ROOT / "packaging"
+SQLITE_DLL = PACKAGING_DIR / "vendor" / "sqlite" / "windows-x64" / "sqlite3.dll"
+
+if not SQLITE_DLL.is_file():
+    raise SystemExit(f"Pinned SQLite runtime is missing: {SQLITE_DLL}")
 
 datas = [
     (str(PROJECT_ROOT / "webapp"), "webapp"),
     (str(PROJECT_ROOT / "assets"), "assets"),
     (str(PROJECT_ROOT / "chrome_extension"), "chrome_extension"),
 ]
-binaries = []
+binaries = [(str(SQLITE_DLL), ".")]
 hiddenimports = ['webview.platforms.edgechromium', 'selenium.webdriver', 'selenium.webdriver.chrome', 'selenium.webdriver.chrome.webdriver', 'webdriver_manager', 'webdriver_manager.chrome']
 tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
@@ -37,6 +41,12 @@ a = Analysis(
     noarchive=False,
     optimize=0,
 )
+# PyInstaller also discovers the interpreter's sqlite3.dll. Keep exactly the
+# pinned WAL-safe runtime in the one-file archive.
+a.binaries = type(a.binaries)(
+    item for item in a.binaries if Path(item[0]).name.lower() != "sqlite3.dll"
+)
+a.binaries.append(("sqlite3.dll", str(SQLITE_DLL), "BINARY"))
 pyz = PYZ(a.pure)
 
 exe = EXE(

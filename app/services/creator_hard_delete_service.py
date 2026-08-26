@@ -15,6 +15,7 @@ from staged_delete_transaction import (
     StagedDeleteTransaction,
     list_blocking_delete_transactions,
 )
+from services.feishu_delete_intent_service import FeishuDeleteIntentStore
 
 
 class CreatorHardDeleteError(RuntimeError):
@@ -57,6 +58,7 @@ class CreatorHardDeleteService:
         lock_timeout: float | None = None,
         creator_library_cache_invalidator: CacheInvalidator | None = None,
         dashboard_response_cache_invalidator: CacheInvalidator | None = None,
+        feishu_delete_intent_store: FeishuDeleteIntentStore | None = None,
     ) -> None:
         self._impact_service_provider = impact_service_provider
         self._repository_provider = repository_provider
@@ -65,6 +67,7 @@ class CreatorHardDeleteService:
         self._lock_timeout = lock_timeout
         self._creator_library_cache_invalidator = creator_library_cache_invalidator
         self._dashboard_response_cache_invalidator = dashboard_response_cache_invalidator
+        self._feishu_delete_intent_store = feishu_delete_intent_store
 
     def delete_creator(
         self,
@@ -120,6 +123,7 @@ class CreatorHardDeleteService:
         plan = assessment["plan"]
         repository = self._repository_provider()
         transaction = StagedDeleteTransaction(runtime_data_dir, creator_id)
+        intent_id = ""
         prepared = False
         committed = False
         try:
@@ -134,6 +138,17 @@ class CreatorHardDeleteService:
                 raise UnsafeCreatorDeletePlan("Hard-delete preflight failed.")
 
             protected_state = repository.capture_protected_state(creator_id, plan)
+            if self._feishu_delete_intent_store is not None:
+                intent = self._feishu_delete_intent_store.prepare(
+                    local_delete_operation_id=transaction.transaction_id,
+                    creator_id=creator_id,
+                    account_uids=list(
+                        assessment.get("snapshot", {}).get("structural_ids", {}).get(
+                            "account_uids", []
+                        )
+                    ),
+                )
+                intent_id = str(intent["intent_id"])
             transaction.prepare()
             prepared = True
             transaction.backup_workbook(repository.store)
@@ -153,6 +168,8 @@ class CreatorHardDeleteService:
             )
             transaction.transition("COMMITTED")
             committed = True
+            if intent_id:
+                self._feishu_delete_intent_store.promote_committed(intent_id)
             cleanup = transaction.finalize_cleanup()
             result = {"creator_id": creator_id, "deleted": True}
             if cleanup["phase"] == "CLEANUP_PENDING":
@@ -165,6 +182,11 @@ class CreatorHardDeleteService:
                     transaction.rollback()
                 except Exception as rollback_exc:
                     self._log_error_safe(rollback_exc)
+            if intent_id and not committed:
+                try:
+                    self._feishu_delete_intent_store.abort(intent_id)
+                except Exception as intent_exc:
+                    self._log_error_safe(intent_exc)
             if committed:
                 return {
                     "creator_id": creator_id,

@@ -18,6 +18,11 @@ if (-not (Test-Path -LiteralPath $specFile)) {
   throw "PyInstaller spec is missing: $specFile"
 }
 
+& python (Join-Path $root "scripts\check_sqlite_runtime.py")
+if ($LASTEXITCODE -ne 0) {
+  throw "SQLite runtime safety gate failed."
+}
+
 $pyInstallerArgs = @(
   "-m", "PyInstaller", "--noconfirm", "--clean",
   "--workpath", $workPath,

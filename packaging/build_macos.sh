@@ -68,6 +68,8 @@ if [[ ! -f "${SPEC_FILE}" ]]; then
   exit 1
 fi
 
+python "${PROJECT_ROOT}/scripts/check_sqlite_runtime.py"
+
 WIDTH="$(sips -g pixelWidth "${SOURCE_ICON}" 2>/dev/null | awk '/pixelWidth/ {print $2}')"
 HEIGHT="$(sips -g pixelHeight "${SOURCE_ICON}" 2>/dev/null | awk '/pixelHeight/ {print $2}')"
 if [[ ! "${WIDTH}" =~ ^[0-9]+$ || ! "${HEIGHT}" =~ ^[0-9]+$ ]]; then

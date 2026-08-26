@@ -84,10 +84,7 @@ def atomic_write_json(path: Path, data: Any) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         backup_path = json_backup_path(path)
         serialized = json.dumps(data, ensure_ascii=False, indent=2)
-        fd, raw_temp_path = tempfile.mkstemp(
-            prefix=f"{path.name}.", suffix=".tmp", dir=path.parent
-        )
-        temp_path = Path(raw_temp_path)
+        fd, temp_path = _open_sibling_temp(path)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as handle:
                 handle.write(serialized)
@@ -107,8 +104,39 @@ def atomic_write_json(path: Path, data: Any) -> None:
                 temp_path.unlink()
 
 
+def atomic_write_bytes(path: Path, data: bytes) -> None:
+    """Atomically replace a file with complete bytes on the same filesystem."""
+    if not isinstance(data, bytes):
+        raise TypeError("atomic_write_bytes data must be bytes")
+    with shared_storage_lock():
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temp_path = _open_sibling_temp(path)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+            _replace_file(temp_path, path)
+        finally:
+            if temp_path.exists():
+                temp_path.unlink()
+
+
+def _open_sibling_temp(path: Path) -> tuple[int, Path]:
+    fd, raw_temp_path = tempfile.mkstemp(
+        prefix=f"{path.name}.", suffix=".tmp", dir=path.parent
+    )
+    return fd, Path(raw_temp_path)
+
+
 def _replace_json_file(temp_path: Path, path: Path) -> None:
     """Replace a JSON file, tolerating only transient Windows sharing denial."""
+    _replace_file(temp_path, path)
+
+
+def _replace_file(temp_path: Path, path: Path) -> None:
+    """Replace a file, tolerating only transient Windows sharing denial."""
     for retry_index in range(WINDOWS_REPLACE_MAX_RETRIES):
         try:
             os.replace(temp_path, path)
