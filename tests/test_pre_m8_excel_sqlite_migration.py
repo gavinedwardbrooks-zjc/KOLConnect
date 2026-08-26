@@ -208,6 +208,36 @@ class ExcelSQLiteMigrationTests(unittest.TestCase):
                 "SELECT creator_quote FROM campaign_creators WHERE id='relation_1'"
             ).fetchone()[0])
 
+    def test_compact_follower_values_from_legacy_workbook_migrate(self) -> None:
+        workbook = load_workbook(self.workbook)
+        creator_headers = [cell.value for cell in workbook["Creators"][1]]
+        account_headers = [cell.value for cell in workbook["CreatorAccounts"][1]]
+        workbook["Creators"].cell(
+            row=2, column=creator_headers.index("followers") + 1, value="1.14M"
+        )
+        workbook["CreatorAccounts"].cell(
+            row=2, column=account_headers.index("followers") + 1, value="627.6K"
+        )
+        workbook.save(self.workbook)
+        workbook.close()
+
+        result = ExcelToSQLiteMigrator(self.paths).migrate(self.workbook)
+
+        factory = SQLiteConnectionFactory(result.staged_database_path)
+        with factory.read_connection() as connection:
+            self.assertEqual(
+                1_140_000,
+                connection.execute(
+                    "SELECT followers FROM creators WHERE creator_id='creator_0000'"
+                ).fetchone()[0],
+            )
+            self.assertEqual(
+                627_600,
+                connection.execute(
+                    "SELECT followers FROM creator_accounts WHERE account_uid='account_0000_0'"
+                ).fetchone()[0],
+            )
+
     def test_empty_and_older_supported_shape_migrate(self) -> None:
         empty = self.root / "empty.xlsx"
         build_fixture(empty, creator_count=0, include_campaign=False, snapshot_count=0)

@@ -14,6 +14,7 @@ import uuid
 
 from openpyxl import load_workbook
 
+from domain.normalization import normalize_number
 from runtime_paths import atomic_write_json, load_json_with_backup
 from storage.connection import SQLiteConnectionFactory
 from storage.errors import (
@@ -156,9 +157,11 @@ def _number(value: object, *, integer: bool, field: str) -> int | float | None:
     try:
         number = float(text.replace(",", ""))
     except ValueError as exc:
-        raise SQLiteMigrationError(f"Invalid numeric value for {field}.") from exc
+        number = normalize_number(text, integer=integer)
+        if number is None:
+            raise SQLiteMigrationError(f"Invalid numeric value for {field}.") from exc
     if integer:
-        if not number.is_integer():
+        if not float(number).is_integer():
             raise SQLiteMigrationError(f"Invalid integer value for {field}.")
         return int(number)
     return number
