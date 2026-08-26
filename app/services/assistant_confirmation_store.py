@@ -78,6 +78,16 @@ class AssistantConfirmationStore:
             record.used = True
             return True
 
+    def discard_intent(self, intent: str) -> int:
+        """Invalidate unused confirmations for one narrowly scoped operation."""
+        count = 0
+        with self._lock:
+            for record in self._records.values():
+                if record.intent == intent and not record.used:
+                    record.used = True
+                    count += 1
+        return count
+
     @staticmethod
     def _hash(arguments: dict[str, Any]) -> str:
         payload = json.dumps(arguments, ensure_ascii=False, sort_keys=True, separators=(",", ":"))

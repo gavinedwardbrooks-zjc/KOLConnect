@@ -517,3 +517,15 @@ READY_FOR_P0_C_ARCHITECTURE_REVIEW = NO_ALREADY_APPROVED
 
 M8 product implementation must not start until human review and explicit
 production SQLite migration acceptance. Batch 3 did not migrate real data.
+
+## Production Migration Enablement Addendum
+
+The missing production-facing activation capability is now implemented as a
+localhost Settings-only, prepare/confirm workflow with source-hash protection,
+validated backup, single-use session confirmation, cancellation, crash recovery,
+and strict canonical-root enforcement. This closes the engineering enablement gap
+without executing a real migration.
+
+`REAL_SQLITE_MIGRATION_EXECUTED = NO` and
+`REAL_PRODUCTION_SQLITE_ACTIVATION = NO`. M8 remains blocked until the user runs
+and accepts the documented production migration procedure.

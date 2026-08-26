@@ -1690,6 +1690,25 @@
           </div>
         </div>
 
+        <div class="section-card storage-migration-card" id="storage-migration-card">
+          <div class="section-title">本地数据存储升级</div>
+          <p class="hint">将本地业务数据从 Excel 迁移到 SQLite。原 Excel 会保留且不会删除；确认后 SQLite 将成为唯一运行数据源。</p>
+          <dl class="settings-backup-summary">
+            <div><dt>当前数据源</dt><dd id="storage-migration-authority">--</dd></div>
+            <div><dt>迁移状态</dt><dd id="storage-migration-status">--</dd></div>
+            <div><dt>备份</dt><dd id="storage-migration-backup">--</dd></div>
+            <div><dt>Migration ID</dt><dd id="storage-migration-id">--</dd></div>
+          </dl>
+          <div class="action-row">
+            <button class="secondary-btn" id="storage-migration-check" type="button">检查迁移</button>
+            <button class="primary-btn" id="storage-migration-prepare" type="button">开始准备</button>
+            <button class="primary-btn" id="storage-migration-confirm" type="button" disabled>确认迁移到 SQLite</button>
+            <button class="soft-btn" id="storage-migration-cancel" type="button" disabled>取消</button>
+            <button class="secondary-btn" id="storage-migration-recover" type="button" hidden>恢复已确认迁移</button>
+          </div>
+          <p class="form-message" id="storage-migration-result" hidden></p>
+        </div>
+
         <div class="section-card clean-reset-card" id="clean-reset-card">
           <div class="section-title">高级 / 数据重置</div>
           <p class="hint">此操作删除本地业务数据，但保留应用配置和数据结构。执行前会创建时间戳 Excel 备份，不会修改或同步飞书数据。</p>

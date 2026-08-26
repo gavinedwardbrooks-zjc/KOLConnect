@@ -42,6 +42,7 @@ MIGRATION_PHASES = (
     "data_imported",
     "validated",
     "ready_for_activation",
+    "activation_authorized",
     "database_activated",
     "authority_activated",
     "completed",
@@ -281,15 +282,26 @@ class MigrationResult:
     semantic_digest: str
 
 
+@dataclass(frozen=True)
+class ProductionActivationAuthorization:
+    migration_id: str
+    source_sha256: str
+    confirmed_at: str
+
+
 class ExcelToSQLiteMigrator:
     def __init__(
         self,
         paths: SQLiteStoragePaths,
         *,
         failure_injector: Callable[[str], None] | None = None,
+        production_root_provider: Callable[[], Path] | None = None,
     ) -> None:
         self.paths = paths
         self.failure_injector = failure_injector
+        self.production_root_provider = production_root_provider or (
+            lambda: SQLiteStoragePaths.for_app_data().app_data_dir
+        )
 
     def _inject(self, phase: str) -> None:
         if self.failure_injector is not None:
@@ -524,7 +536,7 @@ class ExcelToSQLiteMigrator:
         *,
         inject_after_database_activation: bool = False,
     ) -> Path:
-        production_root = SQLiteStoragePaths.for_app_data().app_data_dir.resolve()
+        production_root = Path(self.production_root_provider()).resolve()
         if self.paths.app_data_dir.resolve() == production_root:
             raise SQLiteActivationError("Production SQLite activation is disabled in Batch 1.")
         manifest, _source = load_json_with_backup(result.manifest_path)
@@ -540,6 +552,105 @@ class ExcelToSQLiteMigrator:
             raise SQLiteActivationError("Injected activation interruption.")
         self._activate_marker(result.migration_id, final_path, result.manifest_path, manifest)
         return final_path
+
+    def activate_production(
+        self,
+        result: MigrationResult,
+        *,
+        source_workbook: Path,
+        authorization: ProductionActivationAuthorization,
+    ) -> Path:
+        """Publish a prepared production database after explicit authorization."""
+        self._require_production_root()
+        if authorization.migration_id != result.migration_id:
+            raise SQLiteActivationError("Production activation authorization mismatch.")
+        if authorization.source_sha256 != result.source_sha256_before:
+            raise SQLiteActivationError("Production activation source authorization mismatch.")
+        if resolve_authority(self.paths) != "legacy_excel":
+            raise SQLiteActivationError("Production authority is not legacy Excel.")
+        manifest = self._ready_manifest(result)
+        source_workbook = Path(source_workbook)
+        if not source_workbook.is_file() or _sha256(source_workbook) != result.source_sha256_before:
+            raise SQLiteActivationError("SQLITE_MIGRATION_SOURCE_CHANGED")
+        self._validate_staged_database(result.staged_database_path)
+        final_path = self.paths.database_path
+        if final_path.exists():
+            raise SQLiteActivationError("Production target database already exists.")
+        manifest["activation_state"] = "authorized"
+        manifest["confirmed_at"] = authorization.confirmed_at
+        self._write_manifest(result.manifest_path, manifest, "activation_authorized")
+        os.replace(result.staged_database_path, final_path)
+        manifest["activation_state"] = "database_activated"
+        self._write_manifest(result.manifest_path, manifest, "database_activated")
+        self._activate_marker(result.migration_id, final_path, result.manifest_path, manifest)
+        if resolve_authority(self.paths) != "sqlite_active":
+            raise SQLiteActivationError("Production SQLite authority verification failed.")
+        return final_path
+
+    def recover_production_activation(self, migration_id: str) -> Path:
+        """Complete only an activation whose database publication commit point passed."""
+        self._require_production_root()
+        manifest_path = self.paths.migration_manifest_path(migration_id)
+        manifest, _source = load_json_with_backup(manifest_path)
+        if not isinstance(manifest, dict) or str(manifest.get("migration_id")) != migration_id:
+            raise SQLiteActivationError("Interrupted production activation cannot be proven.")
+        phase = str(manifest.get("phase") or "")
+        if phase == "completed" and resolve_authority(self.paths) == "sqlite_active":
+            return self.paths.database_path
+        if phase == "activation_authorized":
+            staged_path = self.paths.staged_database_path(migration_id)
+            if self.paths.database_path.is_file() and not staged_path.exists():
+                self._validate_staged_database(self.paths.database_path)
+                manifest["activation_state"] = "database_activated"
+                self._write_manifest(manifest_path, manifest, "database_activated")
+                phase = "database_activated"
+            elif staged_path.is_file() and not self.paths.database_path.exists():
+                manifest["activation_state"] = "inactive"
+                self._write_manifest(manifest_path, manifest, "ready_for_activation")
+                raise SQLiteActivationError("Production activation did not cross commit point.")
+            else:
+                raise SQLiteActivationError("Interrupted production activation is ambiguous.")
+        if phase not in {"database_activated", "authority_activated"}:
+            raise SQLiteActivationError("Interrupted production activation cannot be proven.")
+        self._validate_staged_database(self.paths.database_path)
+        if phase == "database_activated":
+            self._activate_marker(migration_id, self.paths.database_path, manifest_path, manifest)
+        else:
+            self._write_manifest(manifest_path, manifest, "completed")
+        if resolve_authority(self.paths) != "sqlite_active":
+            raise SQLiteActivationError("Recovered production authority is invalid.")
+        return self.paths.database_path
+
+    def _require_production_root(self) -> None:
+        canonical = Path(self.production_root_provider()).resolve()
+        if self.paths.app_data_dir.resolve() != canonical:
+            raise SQLiteActivationError("Production activation requires the canonical app data root.")
+
+    def _ready_manifest(self, result: MigrationResult) -> dict[str, object]:
+        manifest, _source = load_json_with_backup(result.manifest_path)
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("phase") != "ready_for_activation"
+            or str(manifest.get("migration_id") or "") != result.migration_id
+            or str(manifest.get("source_sha256") or "") != result.source_sha256_before
+        ):
+            raise SQLiteActivationError("Staged production migration is not ready.")
+        return manifest
+
+    @staticmethod
+    def _validate_staged_database(path: Path) -> None:
+        if not Path(path).is_file():
+            raise SQLiteActivationError("Staged production database is missing.")
+        try:
+            factory = SQLiteConnectionFactory(Path(path))
+            with factory.read_connection() as connection:
+                if schema_version(connection) > CURRENT_SCHEMA_VERSION:
+                    raise SQLiteSchemaUnsupportedError("Staged schema is newer than supported.")
+                validate_schema(connection)
+        except SQLiteSchemaUnsupportedError:
+            raise
+        except Exception as exc:
+            raise SQLiteActivationError("Staged production database is invalid.") from exc
 
     def recover_synthetic_activation(self, migration_id: str) -> Path:
         manifest_path = self.paths.migration_manifest_path(migration_id)
@@ -562,6 +673,7 @@ class ExcelToSQLiteMigrator:
             "activated_at": _utc_now(),
         }
         atomic_write_json(self.paths.authority_marker_path, marker)
+        self._inject("authority_marker_written")
         manifest["activation_state"] = "authority_activated"
         self._write_manifest(manifest_path, manifest, "authority_activated")
         self._write_manifest(manifest_path, manifest, "completed")

@@ -271,6 +271,37 @@ SQLite engineering C0-C12 is complete. Real production migration and authority
 activation remain explicitly unauthorized and require human review plus a separate
 production acceptance instruction. `M8_ENTRY = BLOCKED` until that review occurs.
 
+## 19. Controlled Production Migration Enablement
+
+The local Settings application now exposes a two-stage migration workflow:
+
+1. preparation validates the legacy authority and source workbook, records its
+   SHA256, creates and validates a migration-bound backup, imports to a staged
+   database, validates schema and semantic parity, and issues a short-lived,
+   session-bound, single-use confirmation token;
+2. explicit confirmation revalidates the source hash, manifest, staged database,
+   schema, migration ID, authority, and token before publishing the database and
+   atomically selecting SQLite authority.
+
+Synthetic and production activation remain separate APIs. Production activation
+requires the canonical application data root. Tests inject an isolated fake
+canonical root and never access the real `%APPDATA%/KOLConnect` directory.
+
+The activation commit point is successful publication of the validated staged DB
+plus persistence of manifest phase `database_activated`. Before that point,
+recovery never activates automatically. After it, recovery may safely complete
+the authority marker and manifest. If the marker is already active and the DB is
+valid, recovery only completes the manifest. Invalid DB/schema states fail closed.
+
+Cancel invalidates the confirmation, removes only the staged DB, retains the
+migration backup, leaves the workbook unchanged, and keeps `legacy_excel` authority.
+Assistant and Feishu Chat do not expose migration operations. Mutation endpoints
+require an explicit same-origin localhost Origin in addition to the global Host
+check.
+
+Real migration remains unexecuted. The later user procedure is documented in
+`docs/pre_m8_real_sqlite_migration_acceptance.md`.
+
 ## 18. Safety Status
 
 ```text

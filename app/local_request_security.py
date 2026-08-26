@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 MUTATING_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 EXTENSION_MUTATION_PATHS = frozenset({"/api/extension/import"})
 RUNTIME_SHUTDOWN_PATH = "/api/runtime/shutdown"
+STORAGE_MIGRATION_PREFIX = "/api/settings/storage-migration/"
 
 
 def allowed_host_header(host_header: object, port: int) -> bool:
@@ -18,7 +19,7 @@ def allowed_host_header(host_header: object, port: int) -> bool:
 def allowed_mutation_origin(origin_header: object, path: str, port: int) -> bool:
     origin = str(origin_header or "").strip()
     if not origin:
-        return True
+        return not path.startswith(STORAGE_MIGRATION_PREFIX)
     try:
         parsed = urlparse(origin)
         origin_port = parsed.port

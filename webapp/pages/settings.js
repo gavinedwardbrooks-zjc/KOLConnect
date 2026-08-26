@@ -3,8 +3,10 @@
 
   let resources = null;
   let cleanResetPreview = null;
+  let storageMigrationPreview = null;
   let feishuChatPollGeneration = 0;
   const FEISHU_CHAT_POLL_INTERVAL_MS = 1000;
+  const storageMigrationSession = `settings-${global.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -276,11 +278,63 @@
       if (button && preview) button.disabled = false;
     }
   }
+
+  function renderStorageMigration(data) {
+    const authority = String(data?.authority || "legacy_excel");
+    const labels = { legacy_excel: "Excel", sqlite_active: "SQLite", migration_error: "迁移错误", unsupported_schema: "不支持的 Schema" };
+    setSyncText("storage-migration-authority", labels[authority] || authority);
+    setSyncText("storage-migration-status", data?.migration_status || data?.status || "--");
+    setSyncText("storage-migration-id", data?.migration_id || "--");
+    setSyncText("storage-migration-backup", data?.backup?.filename || (data?.backup_ready ? "已创建" : "--"));
+    const message = document.getElementById("storage-migration-result");
+    if (message) {
+      message.hidden = false;
+      message.dataset.status = data?.status === "success" || data?.status === "ready_for_activation" ? "success" : String(data?.status || "");
+      if (data?.status === "ready_for_activation") {
+        const counts = data.counts || {};
+        message.textContent = `准备完成：Creators ${counts.creators || 0}，Accounts ${counts.creator_accounts || 0}，Campaigns ${counts.campaigns || 0}。请核对后明确确认。`;
+      } else if (authority === "sqlite_active") {
+        message.textContent = "SQLite 已启用。旧 Excel 已保留为迁移前文件；实时数据请通过导出生成。";
+      } else if (data?.status === "cancelled") {
+        message.textContent = "迁移已取消，当前数据源仍为 Excel。";
+      } else if (data?.error) {
+        message.textContent = `操作未执行：${String(data.error)}`;
+      } else {
+        message.textContent = data?.migration_required ? "检测到旧 Excel，可在确认后准备迁移。" : "当前不需要迁移。";
+      }
+    }
+    const prepared = data?.status === "ready_for_activation" && data?.confirmation_token;
+    storageMigrationPreview = prepared ? data : null;
+    const confirm = document.getElementById("storage-migration-confirm");
+    const cancel = document.getElementById("storage-migration-cancel");
+    const prepare = document.getElementById("storage-migration-prepare");
+    const recover = document.getElementById("storage-migration-recover");
+    if (confirm) confirm.disabled = !prepared;
+    if (cancel) cancel.disabled = !prepared;
+    if (prepare) prepare.disabled = authority === "sqlite_active";
+    if (recover) recover.hidden = data?.migration_status !== "activation_recovery_required";
+  }
+
+  async function loadStorageMigrationStatus(api, options = {}) {
+    const data = await api.get("/api/settings/storage-migration/status", options);
+    renderStorageMigration(data);
+    return data;
+  }
+
+  async function postStorageMigration(api, operation, payload = {}) {
+    const data = await api.post(`/api/settings/storage-migration/${operation}`, {
+      session_id: storageMigrationSession,
+      ...payload,
+    }, { signal: resources.signal });
+    renderStorageMigration(data);
+    return data;
+  }
   const settingsPage = {
     async load() {
       resources?.cleanup();
       resources = global.KOLConnectPageResources.create();
       cleanResetPreview = null;
+      storageMigrationPreview = null;
       await reloadSettings();
       if (typeof global.KOLConnectAPI?.get === "function") {
         try {
@@ -289,6 +343,7 @@
             { signal: resources.signal },
           );
           if (chatStatus?.state === "connecting") startFeishuChatPolling(global.KOLConnectAPI);
+          await loadStorageMigrationStatus(global.KOLConnectAPI, { signal: resources.signal });
         } catch (error) {
           handleError(error);
         }
@@ -408,6 +463,42 @@
         } catch (error) {
           handleError(error);
         }
+      });
+      listen("storage-migration-check", "click", async () => {
+        try { await loadStorageMigrationStatus(api, { signal: resources.signal }); } catch (error) { handleError(error); }
+      });
+      listen("storage-migration-prepare", "click", async () => {
+        storageMigrationPreview = null;
+        try { await postStorageMigration(api, "prepare"); } catch (error) { handleError(error); }
+      });
+      listen("storage-migration-confirm", "click", async () => {
+        if (!storageMigrationPreview) return;
+        const confirmed = global.confirm("将把本地业务数据从 Excel 迁移到 SQLite。\n原 Excel 会保留，不会删除。\n迁移完成后 SQLite 将成为唯一运行数据源。\n\n确认迁移吗？");
+        if (!confirmed) return;
+        const preview = storageMigrationPreview;
+        storageMigrationPreview = null;
+        try {
+          await postStorageMigration(api, "confirm", {
+            confirm: true,
+            migration_id: preview.migration_id,
+            confirmation_token: preview.confirmation_token,
+          });
+        } catch (error) { handleError(error); }
+      });
+      listen("storage-migration-cancel", "click", async () => {
+        if (!storageMigrationPreview) return;
+        const preview = storageMigrationPreview;
+        storageMigrationPreview = null;
+        try {
+          await postStorageMigration(api, "cancel", {
+            migration_id: preview.migration_id,
+            confirmation_token: preview.confirmation_token,
+          });
+        } catch (error) { handleError(error); }
+      });
+      listen("storage-migration-recover", "click", async () => {
+        const migrationId = document.getElementById("storage-migration-id")?.textContent || "";
+        try { await postStorageMigration(api, "recover", { migration_id: migrationId }); } catch (error) { handleError(error); }
       });
 
       listen("clean-reset-execute", "click", async () => {

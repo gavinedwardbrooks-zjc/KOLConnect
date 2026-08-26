@@ -127,6 +127,7 @@ from http_handlers import (
     feishu_delete_handler,
     feishu_sync_handler,
     settings_handler,
+    storage_migration_handler,
     task_handler,
     risk_handler,
 )
@@ -136,6 +137,8 @@ from services.feishu_delete_intent_service import (
     FeishuDeleteIntentStore,
     FeishuDeleteReconciliationService,
 )
+from services.production_migration_service import ProductionMigrationService
+from storage.paths import SQLiteStoragePaths
 
 
 APP_DIR = get_resource_dir()
@@ -243,6 +246,7 @@ HANDLERS = [
     feishu_delete_handler,
     feishu_sync_handler,
     clean_reset_handler,
+    storage_migration_handler,
     settings_handler,
     creator_handler,
     task_handler,
@@ -253,6 +257,7 @@ DASHBOARD_RESPONSE_CACHE = DashboardResponseCache(
 )
 ASSISTANT_SERVICE = None
 FEISHU_CHAT_TRANSPORT = None
+PRODUCTION_MIGRATION_SERVICE = None
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
@@ -1962,6 +1967,18 @@ def get_clean_reset_service() -> CleanResetService:
     )
 
 
+def get_production_migration_service() -> ProductionMigrationService:
+    global PRODUCTION_MIGRATION_SERVICE
+    if PRODUCTION_MIGRATION_SERVICE is None:
+        paths = SQLiteStoragePaths.for_app_data(DATA_DIR)
+        PRODUCTION_MIGRATION_SERVICE = ProductionMigrationService(
+            paths,
+            _creator_library_workbook_path,
+            production_root_provider=lambda: DATA_DIR,
+        )
+    return PRODUCTION_MIGRATION_SERVICE
+
+
 def _assistant_search_creators(arguments: dict) -> list[dict]:
     filters = {
         key: arguments.get(key)
@@ -2494,6 +2511,7 @@ class Handler(BaseHTTPRequestHandler):
                 "analytics": get_analytics_service(),
                 "workbook_backup": get_workbook_backup_service(),
                 "clean_reset": get_clean_reset_service(),
+                "storage_migration": get_production_migration_service(),
                 "creator": get_creator_service(),
                 "creator_summary": get_creator_summary_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
