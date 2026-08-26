@@ -149,6 +149,7 @@ class FeishuChatTransport:
         self._connection: Connection | None = None
         self._chat_service: FeishuChatService | None = None
         self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="feishu-assistant")
+        self._executor_closed = False
         self._pending_slots = threading.BoundedSemaphore(16)
         self._lock = threading.RLock()
 
@@ -219,6 +220,10 @@ class FeishuChatTransport:
         return self.status()
 
     def close(self) -> None:
+        with self._lock:
+            if self._executor_closed:
+                return
+            self._executor_closed = True
         self.stop()
         self._executor.shutdown(wait=True, cancel_futures=True)
 

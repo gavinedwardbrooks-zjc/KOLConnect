@@ -37,10 +37,24 @@ BACKUP_KEEP_COUNT = 10
 _LOCALHOST_OPENER = build_opener(ProxyHandler({}))
 
 
-@dataclass(frozen=True)
+@dataclass
 class LocalRuntime:
     server_module: ModuleType
     server_thread: threading.Thread
+    _shutdown_requested: bool = False
+
+    def shutdown(self, timeout: float = 10.0) -> bool:
+        """Request the shared server cleanup path and wait for port ownership to end."""
+        if not self._shutdown_requested:
+            self._shutdown_requested = True
+            request_shutdown = getattr(self.server_module, "request_runtime_shutdown", None)
+            if callable(request_shutdown):
+                request_shutdown()
+        if self.server_thread is threading.current_thread():
+            return False
+        self.server_thread.join(timeout=max(0.0, float(timeout)))
+        is_alive = getattr(self.server_thread, "is_alive", None)
+        return not callable(is_alive) or not is_alive()
 
 
 def window_state_path() -> Path:
@@ -103,7 +117,7 @@ def _is_effectively_maximized(width: int, height: int) -> bool:
     return width >= screen_width - 8 and height >= screen_height - 8
 
 
-def install_window_state_handlers(window: object) -> None:
+def install_window_state_handlers(window: object, *, on_close=None) -> None:
     """Persist only normal, usable dimensions and never a maximized display size."""
     state = {"maximized": False}
     save_lock = threading.Lock()
@@ -129,10 +143,15 @@ def install_window_state_handlers(window: object) -> None:
         state["maximized"] = False
         save_current_size(window)
 
+    def close_application(window: object, *_event_args: object) -> None:
+        save_current_size(window)
+        if on_close is not None:
+            on_close()
+
     window.events.resized += save_current_size
     window.events.maximized += mark_maximized
     window.events.restored += mark_restored
-    window.events.closing += save_current_size
+    window.events.closing += close_application
 
 
 def server_is_ready() -> bool:
@@ -282,12 +301,19 @@ def start_local_runtime(
         server_module.STATE.get("creator_library", {}).get("workbook_path")
         or server_module.DEFAULT_CREATOR_LIBRARY_WORKBOOK
     )
-    backup_creator_library(workbook_path)
+    from storage.migration import resolve_authority
+    from storage.paths import SQLiteStoragePaths
+
+    storage_paths = SQLiteStoragePaths.for_app_data(server_module.DATA_DIR)
+    if resolve_authority(storage_paths) != "sqlite_active":
+        backup_creator_library(workbook_path)
+    else:
+        log_event("Launcher", "SQLite authority active; skipped legacy Excel startup backup.")
     return LocalRuntime(server_module=server_module, server_thread=thread)
 
 
 def run_desktop() -> None:
-    start_local_runtime("desktop")
+    runtime = start_local_runtime("desktop")
 
     import webview
     from desktop_file_bridge import DesktopFileBridge
@@ -304,8 +330,11 @@ def run_desktop() -> None:
         js_api=desktop_file_bridge,
     )
     desktop_file_bridge.bind_window(window)
-    install_window_state_handlers(window)
-    webview.start()
+    install_window_state_handlers(window, on_close=runtime.shutdown)
+    try:
+        webview.start()
+    finally:
+        runtime.shutdown()
 
 
 def run_browser(
@@ -320,7 +349,7 @@ def run_browser(
         try:
             runtime.server_thread.join()
         except KeyboardInterrupt:
-            return
+            runtime.shutdown()
 
 
 def check_sqlite_runtime() -> None:

@@ -2421,11 +2421,7 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "LOCAL_REQUEST_REJECTED"}, status=403)
             return True
         self._ok(shutting_down=True)
-        threading.Thread(
-            target=self.server.shutdown,
-            name="kolconnect-browser-shutdown",
-            daemon=True,
-        ).start()
+        request_runtime_shutdown()
         return True
 
     def _normalize_save_state_and_ok(self) -> None:
@@ -2674,8 +2670,35 @@ class Handler(BaseHTTPRequestHandler):
             return self._error("接口不存在。", status=404)
 
 
+_RUNTIME_SERVER_LOCK = threading.RLock()
+_RUNTIME_SERVER = None
+_RUNTIME_SHUTDOWN_THREAD: threading.Thread | None = None
+
+
+def request_runtime_shutdown() -> bool:
+    """Idempotently stop the active local server through one lifecycle path."""
+    global _RUNTIME_SHUTDOWN_THREAD
+    with _RUNTIME_SERVER_LOCK:
+        server = _RUNTIME_SERVER
+        if server is None:
+            return False
+        if _RUNTIME_SHUTDOWN_THREAD and _RUNTIME_SHUTDOWN_THREAD.is_alive():
+            return True
+        _RUNTIME_SHUTDOWN_THREAD = threading.Thread(
+            target=server.shutdown,
+            name="kolconnect-runtime-shutdown",
+            daemon=True,
+        )
+        _RUNTIME_SHUTDOWN_THREAD.start()
+        return True
+
+
 def run() -> None:
+    global _RUNTIME_SERVER, _RUNTIME_SHUTDOWN_THREAD
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    with _RUNTIME_SERVER_LOCK:
+        _RUNTIME_SERVER = server
+        _RUNTIME_SHUTDOWN_THREAD = None
     chat_transport = get_feishu_chat_transport()
     workbook_path = STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK
     log_event(
@@ -2699,6 +2722,10 @@ def run() -> None:
     finally:
         chat_transport.close()
         server.server_close()
+        with _RUNTIME_SERVER_LOCK:
+            if _RUNTIME_SERVER is server:
+                _RUNTIME_SERVER = None
+                _RUNTIME_SHUTDOWN_THREAD = None
 
 
 if __name__ == "__main__":

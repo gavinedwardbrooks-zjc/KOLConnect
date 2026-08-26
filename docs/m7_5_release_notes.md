@@ -47,15 +47,15 @@ Release version: `0.2.3`
 
 ## Build
 
-- Path: `release/KOLConnect_v0.2.3.exe`
-- Built: `2026-08-25 12:04:43 +08:00`
-- Size: `72,994,766` bytes
+- Canonical Windows format: portable ONEDIR ZIP.
+- Directory: `release/KOLConnect_v0.2.3/`
+- Executable: `release/KOLConnect_v0.2.3/KOLConnect_v0.2.3.exe`
+- Distribution archive: `release/KOLConnect_v0.2.3.zip`
+- Extract and retain the complete folder; the EXE is not a standalone distribution.
 - File version: `0.2.3.0`
 - Product version: `0.2.3`
-- SHA256: `1C7513402708204D6184A1A152FFAE4CECE1437C074611C6A4B5EB3F3F04A7EF`
-- Archive inspection confirmed the packaged M7 services and current webapp
-  assets, including normalization, Creator Intelligence, Assistant, Feishu
-  Sync, Creator Detail, and Campaign Detail resources.
+- Application data and SQLite authority remain under `%APPDATA%\KOLConnect`;
+  the executable directory contains runtime files only.
 
 ## M7.5a Dashboard Concurrency Hotfix
 

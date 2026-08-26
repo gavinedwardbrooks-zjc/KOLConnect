@@ -61,13 +61,15 @@ Screenshots will be added for the Creator Library, Campaign Detail, risk cards, 
 
 ### Windows
 
-Download the Windows release EXE from the project release assets, then run it locally. On first launch, KOLConnect creates its local application data under:
+Download `KOLConnect_v0.2.3.zip`, extract the entire `KOLConnect_v0.2.3` folder, and run `KOLConnect_v0.2.3.exe` inside that folder. The Windows release is a portable ONEDIR package: do not move or run the EXE without its adjacent `_internal` runtime directory. On first launch, KOLConnect creates its local application data under:
 
 ```text
 %APPDATA%\KOLConnect
 ```
 
 This directory contains local settings, logs, task data, and the default Creator Library workbook. Back up operational workbooks before migration or large batch changes.
+
+To upgrade, close KOLConnect, extract the complete new release folder, and launch its EXE. Do not merge old and new `_internal` directories. User data remains under `%APPDATA%\KOLConnect` and is not stored in the release folder.
 
 ### Chrome Extension
 

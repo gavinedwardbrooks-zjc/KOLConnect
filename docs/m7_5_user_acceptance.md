@@ -5,7 +5,8 @@ checks. Do not run destructive operations without reviewing the displayed plan.
 
 ## Windows Package
 
-- [ ] Start the newly built `KOLConnect_v0.2.3.exe`.
+- [ ] Extract the complete `KOLConnect_v0.2.3.zip` archive.
+- [ ] Start `KOLConnect_v0.2.3\KOLConnect_v0.2.3.exe`; do not run the EXE without its adjacent `_internal` directory.
 - [ ] Confirm the local UI loads and Settings reports version `0.2.3`.
 - [ ] Open Dashboard immediately after startup and confirm no
       `Dashboard workbook changed while building its response` error appears.

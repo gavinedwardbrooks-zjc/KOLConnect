@@ -32,12 +32,16 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn(f'VERSION="v{CURRENT_VERSION}"', macos_build)
 
         artifacts = (
-            f"KOLConnect_v{CURRENT_VERSION}.exe",
+            f"KOLConnect_v{CURRENT_VERSION}.zip",
             f"KOLConnect_v{CURRENT_VERSION}_mac_arm64.dmg",
             f"KOLConnect_v{CURRENT_VERSION}_mac_intel.dmg",
         )
         for artifact in artifacts:
             self.assertIn(artifact, workflow)
+
+        self.assertIn('RELEASE_FORMAT = ONEDIR', windows_build)
+        self.assertIn('$releaseDirectory', windows_build)
+        self.assertIn('$releaseZip', windows_build)
 
         self.assertIn("actions/download-artifact@v4", workflow)
         self.assertIn("merge-multiple: true", workflow)

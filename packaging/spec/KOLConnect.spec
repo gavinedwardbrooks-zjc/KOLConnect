@@ -7,6 +7,7 @@ PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
 APP_DIR = PROJECT_ROOT / "app"
 PACKAGING_DIR = PROJECT_ROOT / "packaging"
 SQLITE_DLL = PACKAGING_DIR / "vendor" / "sqlite" / "windows-x64" / "sqlite3.dll"
+RELEASE_NAME = "KOLConnect_v0.2.3"
 
 if not SQLITE_DLL.is_file():
     raise SystemExit(f"Pinned SQLite runtime is missing: {SQLITE_DLL}")
@@ -25,7 +26,10 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('webdriver_manager')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 tmp_ret = collect_all('lark_oapi')
-datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# All SDK modules remain hidden imports in the PYZ. Avoid also extracting the
+# same 10k+ Python sources as individual data entries.
+datas += [item for item in tmp_ret[0] if not item[0].lower().endswith('.py')]
+binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 
 a = Analysis(
@@ -42,7 +46,7 @@ a = Analysis(
     optimize=0,
 )
 # PyInstaller also discovers the interpreter's sqlite3.dll. Keep exactly the
-# pinned WAL-safe runtime in the one-file archive.
+# pinned WAL-safe runtime in the packaged application.
 a.binaries = type(a.binaries)(
     item for item in a.binaries if Path(item[0]).name.lower() != "sqlite3.dll"
 )
@@ -52,10 +56,9 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
-    name='KOLConnect',
+    exclude_binaries=True,
+    name=RELEASE_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -70,4 +73,14 @@ exe = EXE(
     entitlements_file=None,
     version=str(PACKAGING_DIR / "windows_version_info.txt"),
     icon=[str(PROJECT_ROOT / "assets" / "KOLConnect.ico")],
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name=RELEASE_NAME,
 )

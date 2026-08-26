@@ -38,7 +38,9 @@ def _fake_server(workbook: Path | None = None):
     return SimpleNamespace(
         STATE={"creator_library": {"workbook_path": str(workbook)}},
         DEFAULT_CREATOR_LIBRARY_WORKBOOK=workbook,
+        DATA_DIR=Path("C:/Data"),
         run=lambda: None,
+        request_runtime_shutdown=lambda: True,
         _record_last_error=lambda _message: None,
     )
 
@@ -76,7 +78,7 @@ class BrowserModeStartupTests(unittest.TestCase):
             browser.assert_called_once_with()
             desktop.assert_not_called()
 
-    def test_browser_and_desktop_share_server_readiness_and_backup_path(self) -> None:
+    def test_browser_and_desktop_share_server_readiness_and_legacy_backup_path(self) -> None:
         workbook = Path("C:/Data/Creator_Library.xlsx")
         fake_server = _fake_server(workbook)
         created_threads: list[_FakeThread] = []
@@ -94,6 +96,7 @@ class BrowserModeStartupTests(unittest.TestCase):
                 mock.patch.object(launcher, "wait_for_server", return_value=True) as readiness,
                 mock.patch.object(launcher.threading, "Thread", side_effect=create_thread),
                 mock.patch.object(launcher, "backup_creator_library") as backup,
+                mock.patch("storage.migration.resolve_authority", return_value="legacy_excel"),
             ):
                 runtime = launcher.start_local_runtime(mode, server_module=fake_server)
                 self.assertIs(fake_server, runtime.server_module)
@@ -216,7 +219,7 @@ class BrowserModeShutdownTests(unittest.TestCase):
         self.assertIn('path != "/api/runtime/shutdown"', source)
         self.assertIn('os.environ.get("KOLCONNECT_BROWSER") != "1"', source)
         response_position = source.index("self._ok(shutting_down=True)")
-        shutdown_position = source.index("target=self.server.shutdown")
+        shutdown_position = source.index("request_runtime_shutdown()", response_position)
         self.assertLess(response_position, shutdown_position)
         self.assertIn("if not self._allow_local_request():", source)
 

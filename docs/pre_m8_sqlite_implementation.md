@@ -142,7 +142,7 @@ The medium smoke fixture contains 500 Creators and 2,500 Creator/Video snapshots
 
 ## 12. Packaging Strategy
 
-Windows packages the pinned SQLite 3.53.1 library. The build fails before PyInstaller if the runtime gate does not pass. The packaged diagnostic validates the engine without opening the application database. macOS retains its platform SQLite library only when it satisfies the same fixed-version policy.
+Windows packages the pinned SQLite 3.53.1 library in the canonical portable ONEDIR release. The build fails before PyInstaller if the runtime gate does not pass, verifies that the release contains exactly one matching `sqlite3.dll`, and publishes a ZIP containing one versioned top-level folder. Users must retain the EXE and its adjacent `_internal` directory together. The executable directory is never the data authority; runtime data remains under `%APPDATA%\KOLConnect`. macOS retains its platform SQLite library only when it satisfies the same fixed-version policy.
 
 ## 13. Batch 2 Runtime Repository Cutover
 
@@ -301,6 +301,14 @@ check.
 
 Real migration remains unexecuted. The later user procedure is documented in
 `docs/pre_m8_real_sqlite_migration_acceptance.md`.
+
+## Runtime lifecycle after cutover
+
+- Desktop window close and Browser Mode exit use the same idempotent server shutdown coordinator.
+- Shutdown stops Feishu Chat, closes its executor, closes the HTTP server, and lets the launcher join the server thread so the localhost port is released.
+- A launcher `finally` block repeats the same safe shutdown request if the native window exits unexpectedly.
+- With `sqlite_active` authority, startup skips the synchronous legacy Excel backup. Legacy Excel authority retains the existing startup backup behavior.
+- The preserved migration-era workbook remains untouched and is not consulted as live runtime authority.
 
 ## 18. Safety Status
 

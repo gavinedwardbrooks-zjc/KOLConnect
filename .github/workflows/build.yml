@@ -27,18 +27,22 @@ jobs:
       - name: Verify and hash Windows artifact
         shell: pwsh
         run: |
-          $path = "release/KOLConnect_v0.2.3.exe"
-          if (-not (Test-Path -LiteralPath $path)) { throw "Missing $path" }
-          $artifact = Get-Item -LiteralPath $path
-          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $path).Hash
-          Write-Host "SHA-256: $hash"
+          $directory = "release/KOLConnect_v0.2.3"
+          $exe = "$directory/KOLConnect_v0.2.3.exe"
+          $zip = "release/KOLConnect_v0.2.3.zip"
+          if (-not (Test-Path -LiteralPath $directory -PathType Container)) { throw "Missing $directory" }
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing $exe" }
+          if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw "Missing $zip" }
+          $artifact = Get-Item -LiteralPath $zip
+          $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash
+          Write-Host "ZIP SHA-256: $hash"
           try {
             @(
               "## Windows artifact"
               ""
               "| File | Size (bytes) | Platform | Architecture | SHA-256 |"
               "|---|---:|---|---|---|"
-              "| $($artifact.Name) | $($artifact.Length) | Windows | x64 | ``$hash`` |"
+              "| $($artifact.Name) | $($artifact.Length) | Windows ONEDIR ZIP | x64 | ``$hash`` |"
             ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
           } catch {
             Write-Warning "Unable to write GitHub Step Summary: $($_.Exception.Message)"
@@ -46,7 +50,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KOLConnect-windows-x64
-          path: release/KOLConnect_v0.2.3.exe
+          path: release/KOLConnect_v0.2.3.zip
           if-no-files-found: error
           retention-days: 30
 

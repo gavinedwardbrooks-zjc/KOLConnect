@@ -1,8 +1,8 @@
 #define AppName "KOL联系助手"
 #define AppVersion "0.2.3"
 #define AppPublisher "KOL Connect"
-#define AppExeName "KOLConnect.exe"
-#define AppSourceExeName "KOLConnect_v0.2.3.exe"
+#define AppExeName "KOLConnect_v0.2.3.exe"
+#define AppSourceDirName "KOLConnect_v0.2.3"
 
 [Setup]
 AppId={{C0F5B829-BD30-4A1F-83C9-455AE6DB8489}
@@ -24,7 +24,7 @@ UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#AppExeName}
 
 [Files]
-Source: "{#SourcePath}\..\..\release\{#AppSourceExeName}"; DestDir: "{app}"; DestName: "{#AppExeName}"; Flags: ignoreversion
+Source: "{#SourcePath}\..\..\release\{#AppSourceDirName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"

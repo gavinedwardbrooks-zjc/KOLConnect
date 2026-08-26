@@ -80,6 +80,8 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("webview.platforms.edgechromium", windows_spec)
         self.assertIn("windows_version_info.txt", windows_spec)
         self.assertIn("KOLConnect.ico", windows_spec)
+        self.assertIn("exclude_binaries=True", windows_spec)
+        self.assertIn("COLLECT(", windows_spec)
         self.assertIn("webview.platforms.cocoa", mac_spec)
         self.assertIn("KOLConnect.icns", mac_spec)
         self.assertIn("KOLConnect.icns", intel_spec)
