@@ -1,7 +1,11 @@
-# Feishu Chat Assistant Setup
+# Feishu Chat Assistant Setup (Current Supplement)
+
+> This document covers the optional Chat Assistant only. Use
+> [Feishu setup](feishu_setup.md) as the canonical configuration guide for
+> Bitable sync and Chat together.
 
 M7.6 uses the official Feishu long connection. It does not expose a public
-webhook and does not change the KOLConnect/Excel authoritative-data contract.
+webhook and does not change the KOLConnect SQLite authoritative-data contract.
 
 ## Application strategy
 
