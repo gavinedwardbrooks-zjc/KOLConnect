@@ -45,6 +45,14 @@
     if (target) target.textContent = value;
   }
 
+  function formatMoneyTotal(total, totalsByCurrency, unknownTotal) {
+    const groups = Object.entries(totalsByCurrency || {})
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([currency, amount]) => `${currency} ${formatNumber(amount)}`);
+    if (unknownTotal != null) groups.push(`未标币种 ${formatNumber(unknownTotal)}`);
+    return groups.length ? groups.join(" · ") : formatNumber(total);
+  }
+
   function formatPercent(value) {
     if (value == null || value === "") return "--";
     const number = Number(value);
@@ -166,10 +174,18 @@
     setText("dashboard-new-creators", formatNumber(overview.new_creators_7d));
     setText("dashboard-discovered", formatNumber(overview.discovered_count));
     setText("dashboard-cooperating", formatNumber(overview.cooperating_count));
-    setText("dashboard-spend", formatNumber(overview.cooperation_spend));
+    setText("dashboard-spend", formatMoneyTotal(
+      overview.cooperation_spend,
+      overview.cooperation_spend_by_currency,
+      overview.cooperation_spend_unknown_currency,
+    ));
     setText("dashboard-average-roi", formatNumber(overview.average_roi));
     setText("dashboard-campaigns", formatNumber(cooperation.total_campaigns));
-    setText("dashboard-total-cost", formatNumber(cooperation.total_cost));
+    setText("dashboard-total-cost", formatMoneyTotal(
+      cooperation.total_cost,
+      cooperation.cost_totals_by_currency,
+      cooperation.cost_unknown_currency_total,
+    ));
     setText("dashboard-total-views", formatNumber(cooperation.total_views));
     setText("dashboard-cooperation-roi", formatNumber(cooperation.average_roi));
     renderHealthSummary(data?.health_summary);
@@ -236,7 +252,11 @@
       setText(`platform-${platform}-likes`, formatNumber(row.likes_total || 0));
       setText(`platform-${platform}-comments`, formatNumber(row.comments_total || 0));
       setText(`platform-${platform}-engagement`, formatPercent(row.visible_engagement_rate));
-      setText(`platform-${platform}-cost`, formatNumber(row.cost_total || 0));
+      setText(`platform-${platform}-cost`, formatMoneyTotal(
+        row.cost_total,
+        row.cost_totals_by_currency,
+        row.cost_unknown_currency_total,
+      ));
       setText(`platform-${platform}-roi`, row.recorded_roi_average == null ? "--" : formatNumber(row.recorded_roi_average));
       chartRows.push({ label, row });
     });

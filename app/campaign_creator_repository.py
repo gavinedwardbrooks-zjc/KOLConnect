@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Campaign-Creator relationship data access."""
 
+import hashlib
 import json
 import uuid
 from datetime import date
@@ -10,11 +11,19 @@ from typing import Any
 
 from data_repository_base import ExcelDataRepository, utc_now
 from campaign_repository import CampaignRepository
+from domain.money import apply_quote_contract
+from domain.publication import (
+    normalize_publication_url,
+    normalize_utc_timestamp,
+    platforms_compatible,
+    publication_platform,
+)
 
 
 CAMPAIGN_CREATORS_HEADERS = [
     "id", "campaign_id", "creator_id", "account_id", "account_ids", "stage", "owner",
-    "creator_quote", "cost", "publish_links", "publish_date", "planned_publish_dates", "views", "likes",
+    "quote_currency", "quote_unit_amount", "quote_quantity", "quote_unit",
+    "creator_quote", "cost", "cost_currency", "publish_links", "publications", "publish_date", "planned_publish_dates", "views", "likes",
     "comments", "roi", "performance_note", "created_at", "updated_at",
     "archived_at",
 ]
@@ -66,6 +75,100 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 continue
             valid.append(item)
         return sorted(valid)
+
+    @classmethod
+    def _publication_records(cls, record: dict[str, Any]) -> list[dict[str, Any]]:
+        raw = record.get("publications")
+        if isinstance(raw, str) and raw.strip():
+            try:
+                raw = json.loads(raw)
+            except (TypeError, ValueError):
+                raw = []
+        if isinstance(raw, list):
+            records = [dict(item) for item in raw if isinstance(item, dict)]
+            if records:
+                return records
+        relation_id = str(record.get("id") or "")
+        result = []
+        for link in cls._string_list(record.get("publish_links")):
+            identity = hashlib.sha256(f"{relation_id}|{link}".encode("utf-8")).hexdigest()[:24]
+            result.append({
+                "publication_id": f"publication_legacy_{identity}",
+                "actual_publish_url": link,
+                "actual_account_id": "",
+                "platform": publication_platform(link),
+                "actual_published_at": "",
+                "observed_at": "",
+                "video_id": "",
+                "source": "legacy",
+            })
+        return result
+
+    @classmethod
+    def _validated_publications(
+        cls, workbook, creator_id: str, relation_id: str, payload: dict[str, Any],
+        existing: dict[str, Any], now: str,
+    ) -> tuple[str, str]:
+        explicit = "publications" in payload
+        if explicit:
+            raw = payload.get("publications")
+            if not isinstance(raw, list):
+                raise ValueError("实际发布内容必须为列表。")
+        elif "publish_links" in payload:
+            raw = [{"actual_publish_url": link, "source": "legacy"}
+                   for link in cls._string_list(payload.get("publish_links"))]
+        else:
+            raw = cls._publication_records(existing)
+        accounts = {
+            str(row.get("account_id") or ""): row
+            for row in cls.rows(workbook["CreatorAccounts"])
+            if str(row.get("account_id") or "")
+        }
+        previous = {
+            normalize_publication_url(item.get("actual_publish_url")): item
+            for item in cls._publication_records(existing)
+            if str(item.get("actual_publish_url") or "").strip()
+        }
+        records: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for item in raw:
+            if not isinstance(item, dict):
+                raise ValueError("实际发布内容记录无效。")
+            url = normalize_publication_url(item.get("actual_publish_url") or item.get("publish_url"))
+            if url in seen:
+                continue
+            seen.add(url)
+            old = previous.get(url, {})
+            account_id = str(item.get("actual_account_id") or old.get("actual_account_id") or "").strip()
+            account = accounts.get(account_id) if account_id else None
+            if account_id and (not account or str(account.get("creator_id") or "") != creator_id):
+                raise ValueError("实际发布账号不属于所选达人。")
+            inferred = publication_platform(url)
+            if account and not platforms_compatible(account.get("platform"), inferred):
+                raise ValueError("实际发布账号平台与发布链接不一致。")
+            publication_id = str(item.get("publication_id") or old.get("publication_id") or "").strip()
+            if not publication_id:
+                digest = hashlib.sha256(f"{relation_id}|{url}".encode("utf-8")).hexdigest()[:24]
+                publication_id = f"publication_{digest}"
+            source = str(item.get("source") or old.get("source") or ("manual" if explicit else "legacy")).strip()
+            records.append({
+                "publication_id": publication_id,
+                "actual_publish_url": url,
+                "actual_account_id": account_id,
+                "platform": str(item.get("platform") or old.get("platform") or inferred or (account or {}).get("platform") or "").strip(),
+                "actual_published_at": normalize_utc_timestamp(
+                    item.get("actual_published_at", old.get("actual_published_at")), "实际发布时间"
+                ),
+                "observed_at": normalize_utc_timestamp(
+                    item.get("observed_at", old.get("observed_at") or (now if explicit else "")), "观察时间"
+                ),
+                "video_id": str(item.get("video_id") or old.get("video_id") or "").strip(),
+                "source": source,
+            })
+        return (
+            json.dumps(records, ensure_ascii=False, separators=(",", ":")),
+            json.dumps([item["actual_publish_url"] for item in records], ensure_ascii=False, separators=(",", ":")),
+        )
 
     def _validated_relations(
         self,
@@ -162,11 +265,16 @@ class CampaignCreatorRepository(ExcelDataRepository):
         )
         agency_id = str(creator.get("agency_id") or "").strip()
         agency = agencies.get(agency_id, {})
+        publications = CampaignCreatorRepository._publication_records(record)
+        for publication in publications:
+            account_id = str(publication.get("actual_account_id") or "")
+            publication["actual_account"] = accounts.get(account_id) if account_id else None
         return {
             **record,
             "account_ids": account_ids,
             "execution_accounts": [accounts[item] for item in account_ids if item in accounts],
             "planned_publish_dates": planned_dates,
+            "publications": publications,
             "archived_at": str(record.get("archived_at") or "").strip() or None,
             "creator_name": str(creator.get("name") or ""),
             "agency_id": agency_id or None,
@@ -185,9 +293,8 @@ class CampaignCreatorRepository(ExcelDataRepository):
                     if field == "stage"
                     else str(payload.get(field, existing.get(field)) or "").strip()
                 )
+        values.update(apply_quote_contract(payload, existing))
         for field, label, integer in (
-            ("creator_quote", "达人报价", False),
-            ("cost", "合作成本", False),
             ("views", "播放量", True),
             ("likes", "点赞数", True),
             ("comments", "评论数", True),
@@ -197,10 +304,6 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 values[field] = self.optional_number(
                     payload.get(field, existing.get(field)), label, integer=integer
                 )
-        if "publish_links" in payload or not existing:
-            values["publish_links"] = self.publish_links_value(
-                payload.get("publish_links", existing.get("publish_links"))
-            )
         if "planned_publish_dates" in payload or "publish_date" in payload or not existing:
             dates = self._date_list(
                 payload.get("planned_publish_dates"),
@@ -253,6 +356,11 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 "updated_at": now,
                 "archived_at": "",
             }
+            publications, links = self._validated_publications(
+                workbook, creator_id, record["id"], payload, archived_record or {}, now
+            )
+            record["publications"] = publications
+            record["publish_links"] = links
             self.upsert_row(workbook["CampaignCreators"], "id", record["id"], record)
             creators, accounts, agencies = self._display_indexes(workbook)
         return self._campaign_creator_response(record, creators, accounts, agencies)
@@ -429,6 +537,11 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 "created_at": existing.get("created_at") or utc_now(),
                 "updated_at": utc_now(),
             }
+            publications, links = self._validated_publications(
+                workbook, creator_id, record_id, payload, existing, str(updated["updated_at"])
+            )
+            updated["publications"] = publications
+            updated["publish_links"] = links
             self.upsert_row(workbook["CampaignCreators"], "id", record_id, updated)
             creators, accounts, agencies = self._display_indexes(workbook)
         return self._campaign_creator_response(updated, creators, accounts, agencies)

@@ -48,3 +48,19 @@ HTTP fixtures remain responsible for `shutdown()`, `server_close()`, and joining
 their server/background threads. Tests that configure the application logger
 close and remove their handlers. After those fixture cleanups, the outer sandbox
 restores environment and tempfile state and removes its unique runtime directory.
+
+## Manual Diagnostic Artifacts
+
+The canonical test runner does not create repository-root diagnostic or packaged
+acceptance trees. The following paths are manual, non-authoritative scratch output
+and are ignored so that they cannot be staged accidentally:
+
+- `.pre_m8_diag_direct/`
+- `.pre_m8_diag_fixed/`
+- `KOLConnect_acceptance/`
+- `packaging/.startup-diag-dist-onedir/`
+- `packaging/.startup-diag-dist-onedir-optimized/`
+
+These rules do not ignore `packaging/`, release configuration, application source,
+or canonical build scripts. Retaining a manual artifact is permitted for diagnosis;
+it is never test evidence unless the relevant acceptance record explicitly says so.

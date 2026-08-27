@@ -82,8 +82,10 @@ async function run() {
     "campaign-detail-overview", "campaign-detail-goal", "campaign-detail-readonly",
     "campaign-creator-count", "campaign-creator-add-open", "campaign-creator-form-card",
     "campaign-creator-form-title", "campaign-creator-form", "campaign-creator-id",
-    "campaign-creator-account-id", "campaign-creator-stage", "campaign-creator-quote",
-    "campaign-creator-cost", "campaign-creator-publish-links", "campaign-creator-publish-date",
+    "campaign-creator-account-id", "campaign-creator-stage", "campaign-creator-quote-currency",
+    "campaign-creator-quote-unit-amount", "campaign-creator-quote-quantity",
+    "campaign-creator-quote-unit", "campaign-creator-quote", "campaign-creator-cost",
+    "campaign-creator-cost-currency", "campaign-creator-publish-links", "campaign-creator-publish-date",
     "campaign-creator-views", "campaign-creator-likes", "campaign-creator-comments",
     "campaign-creator-roi", "campaign-creator-performance-note", "campaign-creator-form-error",
     "campaign-creator-form-save", "campaign-creator-form-cancel", "campaign-creator-empty",
@@ -133,8 +135,13 @@ async function run() {
     account_platform: "TikTok",
     account_url: "https://www.tiktok.com/@ana",
     stage: "executing",
+    quote_currency: "USD",
+    quote_unit_amount: 250,
+    quote_quantity: 2,
+    quote_unit: "video",
     creator_quote: 500,
     cost: 400,
+    cost_currency: "USD",
     publish_links: JSON.stringify(["https://www.tiktok.com/@ana/video/1"]),
     publish_date: "2026-08-10",
     views: 10000,
@@ -315,13 +322,19 @@ async function run() {
   assert.equal(calls.splice(0)[0].url, "/api/creator-library/creator_two");
   elements.get("campaign-creator-account-id").value = "account_two";
   elements.get("campaign-creator-stage").value = "quoted";
-  elements.get("campaign-creator-quote").value = "650";
+  elements.get("campaign-creator-quote-currency").value = "USD";
+  elements.get("campaign-creator-quote-unit-amount").value = "100";
+  elements.get("campaign-creator-quote-quantity").value = "2";
+  elements.get("campaign-creator-quote-unit").value = "video";
+  await elements.get("campaign-creator-quote-quantity").dispatch("input");
   await elements.get("campaign-creator-form").dispatch("submit");
   const addCalls = calls.splice(0);
   const postCall = addCalls.find(call => call.method === "POST");
   assert.equal(postCall.url, "/api/campaigns/campaign_one/creators");
   assert.equal(postCall.payload.creator_id, "creator_two");
   assert.equal(postCall.payload.account_id, "account_two");
+  assert.equal(postCall.payload.creator_quote, "200");
+  assert.equal(postCall.payload.quote_currency, "USD");
   assert.equal(relations.length, 2);
 
   const editButton = findAction(elements.get("campaign-creator-list-body"), "edit", "relation_one");
@@ -329,8 +342,13 @@ async function run() {
   await elements.get("campaign-creator-list-body").dispatch("click", { target: editButton });
   elements.get("campaign-creator-account-id").value = "account_one";
   elements.get("campaign-creator-stage").value = "completed";
-  elements.get("campaign-creator-quote").value = "700";
-  elements.get("campaign-creator-cost").value = "450";
+  elements.get("campaign-creator-quote-currency").value = "BRL";
+  elements.get("campaign-creator-quote-unit-amount").value = "500";
+  elements.get("campaign-creator-quote-quantity").value = "3";
+  elements.get("campaign-creator-quote-unit").value = "video";
+  await elements.get("campaign-creator-quote-quantity").dispatch("input");
+  elements.get("campaign-creator-cost").value = "1400";
+  elements.get("campaign-creator-cost-currency").value = "BRL";
   elements.get("campaign-creator-publish-links").value = "https://www.tiktok.com/@ana/video/2";
   elements.get("campaign-creator-publish-date").value = "2026-08-20";
   elements.get("campaign-creator-views").value = "12000";
@@ -344,8 +362,13 @@ async function run() {
   assert.equal(patchCall.url, "/api/campaign-creators/relation_one");
   assert.equal(patchCall.payload.stage, "completed");
   assert.equal(patchCall.payload.account_id, "account_one");
-  assert.equal(patchCall.payload.creator_quote, "700");
-  assert.equal(patchCall.payload.cost, "450");
+  assert.equal(patchCall.payload.creator_quote, "1500");
+  assert.equal(patchCall.payload.quote_currency, "BRL");
+  assert.equal(patchCall.payload.quote_unit_amount, "500");
+  assert.equal(patchCall.payload.quote_quantity, "3");
+  assert.equal(patchCall.payload.quote_unit, "video");
+  assert.equal(patchCall.payload.cost, "1400");
+  assert.equal(patchCall.payload.cost_currency, "BRL");
   assert.deepEqual(patchCall.payload.publish_links, ["https://www.tiktok.com/@ana/video/2"]);
   assert.equal(patchCall.payload.publish_date, "2026-08-20");
   assert.equal(patchCall.payload.views, "12000");

@@ -1,5 +1,12 @@
 # M7.4a Microsoft OAuth2 Mail Authentication Proposal
 
+> **DEPRECATED_REFERENCE_ONLY**
+>
+> Microsoft OAuth2 is not part of the current supported KOLConnect mail contract. Current support
+> is standard IMAP/SMTP with password or app-password authentication where the provider permits it.
+> Any future Microsoft OAuth2 work is a new product feature; this document is retained only as
+> historical design reference.
+
 ## Decision
 
 KOLConnect currently validates IMAP with username/password `LOGIN`. Microsoft may disable that

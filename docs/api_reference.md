@@ -6,6 +6,19 @@ KOLConnect serves its API on `127.0.0.1`. The server validates the `Host` header
 
 `Creator_Library.xlsx` and task artifacts remain authoritative. Integrations must call KOLConnect APIs through handler -> service -> repository boundaries; they must never edit the workbook directly.
 
+## HTTP application coordinator boundary
+
+Existing Campaign and Settings handlers are supported application coordinators.
+A handler may validate the HTTP contract, invoke repositories or services supplied
+by the request-scoped composition root, coordinate one use case, invalidate a cache
+after a successful mutation, and translate the result into an HTTP response.
+
+A handler must not import or manipulate workbook/SQLite/file storage directly,
+bypass repository transaction rules, duplicate domain normalization, persist data
+outside an injected persistence interface, or coordinate unrelated domains. This
+is the formal boundary for the existing Campaign and Settings implementation; a
+service class is required only when a use case cannot remain within these limits.
+
 ## Response contract
 
 New or touched integration APIs use:
@@ -68,6 +81,47 @@ HTTP conventions are 200 for reads/updates, 201 for creates already using that c
 | POST | `/api/feishu-chat/test` | Check local credentials/SDK readiness without sending messages | Read-only check | Internal Settings contract |
 
 All routes are protected by the same local Host/Origin gate. Frontend and extension callers use many additional local UI routes; those remain internal product contracts and are intentionally not presented as an external integration surface.
+
+## Campaign monetary contract
+
+CampaignCreator create/update responses preserve the legacy `creator_quote` and
+`cost` totals and may additionally expose:
+
+- `quote_currency`: uppercase three-letter currency identity.
+- `quote_unit_amount`: recorded amount per pricing unit.
+- `quote_quantity`: positive integer deliverable count.
+- `quote_unit`: one of `video`, `post`, `reel`, `short`, `story`, `package`, or `other`.
+- `cost_currency`: currency identity for the confirmed/payable total `cost`.
+
+When structured quote fields are populated, `creator_quote` is computed as
+`quote_unit_amount * quote_quantity`; a contradictory supplied total is rejected.
+`cost` remains the confirmed/payable total and defaults to the quote currency when
+the workflow supplies a structured quote without a separate cost currency.
+
+Legacy rows containing only `creator_quote` or `cost` remain valid and do not gain
+an invented currency, quantity, or unit. Currency-aware Dashboard and Analytics
+responses retain their existing scalar fields, add grouped currency totals, and
+set the scalar to `null` rather than summing unlike currencies. No exchange-rate
+conversion is performed.
+
+## Campaign publication contract
+
+CampaignCreator responses preserve `publish_links` as a compatibility alias and expose
+`publications`, one record per actual deliverable. Each record contains `publication_id`,
+`actual_publish_url`, nullable `actual_account_id`, `platform`, nullable
+`actual_published_at`, independent `observed_at`, optional `video_id`, and `source`.
+Planning remains separate in `account_ids` and `planned_publish_dates`; planned or observed times
+are never promoted to actual publication time.
+
+## Creator export name contract
+
+`POST /api/creator-library/export` emits one workbook row per selected
+`creator_id`, not one row per Creator Account. The legacy `name` column is the
+canonical Creator-level `creator_name` used by the Creator Library read model.
+Platform-specific account `username` values are not substituted into that column,
+including when one merged Creator owns multiple accounts or an account username is
+blank. The legacy header remains unchanged so the generated workbook continues to
+be accepted by the existing import parser.
 
 Assistant endpoints accept no arbitrary tool name, URL target, filesystem path,
 or raw intent execution. `message` requires a bounded `session_id`. Confirmations

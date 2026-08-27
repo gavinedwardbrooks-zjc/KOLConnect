@@ -49,7 +49,7 @@ KOLConnect Assistant is the active AI runtime. Feishu long-connection chat is th
 
 The included Chrome extension provides browser-assisted capture foundations; results depend on the target platform and the page state available to the browser.
 
-- TikTok passive-capture foundation for page-originated content-list responses.
+- TikTok page analysis utilities; the historical passive network-import pipeline is retained only as experimental reference and is not enabled in production.
 - Instagram public-profile and related API capture support.
 - YouTube Shorts metrics support.
 

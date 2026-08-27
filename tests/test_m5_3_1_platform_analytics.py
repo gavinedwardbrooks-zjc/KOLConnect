@@ -212,6 +212,21 @@ class PlatformAnalyticsTests(unittest.TestCase):
         self.assertEqual(400, youtube["cost_total"])
         self.assertEqual(2, youtube["recorded_roi_average"])
 
+    def test_mixed_cost_currencies_are_grouped_without_scalar_sum(self):
+        result = self.analytics(
+            [creator("one", "TikTok")],
+            [
+                relation("one", campaign_id="usd", cost=200, cost_currency="USD"),
+                relation("one", campaign_id="brl", cost=1000, cost_currency="BRL"),
+            ],
+        )
+        tiktok = self.platform(result, "tiktok")
+        self.assertIsNone(tiktok["cost_total"])
+        self.assertEqual(
+            {"BRL": 1000.0, "USD": 200.0}, tiktok["cost_totals_by_currency"]
+        )
+        self.assertTrue(tiktok["cost_multiple_currencies"])
+
     def test_zero_denominators_and_no_roi_are_null(self):
         result = self.analytics(
             [creator("one", "Instagram")],
@@ -256,7 +271,9 @@ class PlatformAnalyticsTests(unittest.TestCase):
                 "platform", "creator_count", "followers_average", "followers_median",
                 "campaign_creator_count", "published_count", "publish_rate",
                 "views_total", "likes_total", "comments_total",
-                "visible_engagement_rate", "cost_total", "recorded_roi_average",
+                "visible_engagement_rate", "cost_total", "cost_totals_by_currency",
+                "cost_unknown_currency_total", "cost_multiple_currencies",
+                "recorded_roi_average",
             },
             set(handler.response["platforms"][0]),
         )

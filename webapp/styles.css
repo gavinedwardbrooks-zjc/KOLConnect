@@ -940,7 +940,7 @@ button:disabled {
   gap: 3px;
   min-width: 180px;
   padding: 11px 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 14px;
   background: var(--surface-soft);
   color: var(--ink);
@@ -982,6 +982,86 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 7px;
+}
+
+.campaign-publication-list {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0;
+}
+
+.campaign-account-picker {
+  position: relative;
+}
+
+.campaign-account-picker summary {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  list-style: none;
+}
+
+.campaign-account-picker summary::-webkit-details-marker { display: none; }
+.campaign-account-picker summary::after { content: "▾"; color: var(--muted); }
+.campaign-account-picker[open] summary { border-color: var(--primary); }
+.campaign-account-picker.is-disabled summary { color: var(--muted); cursor: default; }
+
+.campaign-account-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  display: grid;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.campaign-account-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.campaign-account-option:hover { background: var(--surface-muted); }
+.campaign-account-option.is-selected {
+  color: var(--primary-dark);
+  background: var(--brand-soft);
+  font-weight: 700;
+}
+.campaign-account-option input { accent-color: var(--primary-dark); }
+
+.campaign-publication-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 2fr) minmax(160px, 1fr) minmax(190px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+@media (max-width: 900px) {
+  .campaign-publication-row {
+    grid-template-columns: 1fr;
+  }
 }
 
 .campaign-planned-dates-field,

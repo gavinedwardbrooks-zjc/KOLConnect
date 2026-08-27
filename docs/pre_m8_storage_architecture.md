@@ -182,7 +182,9 @@ campaign_creator_planned_dates, campaign_creator_publish_links
 cooperations, agencies, agency_contacts, follow_up_logs
 ```
 
-No PublishedContent, tracking scheduler, recommendation, currency, persistent AI tag, task-document, mail, settings, or Feishu-delete-intent table is introduced.
+No parallel PublishedContent table, tracking scheduler, recommendation, persistent AI tag,
+task-document, mail, settings, or Feishu-delete-intent table is introduced. Actual publications
+evolve the existing `campaign_creator_publish_links` child table in schema v3.
 
 ## 12. Table-by-Table Design
 
@@ -202,16 +204,30 @@ No PublishedContent, tracking scheduler, recommendation, currency, persistent AI
 | `products` | `product_id TEXT PK` | name required; company, note, timestamps/archive nullable | Source `Products`. |
 | `campaigns` | `campaign_id TEXT PK`; FK product RESTRICT | Preserve current name, country, legacy platform, dates, owner, status, nullable budget/goal/note/timestamps | Source `Campaigns`; no M8 Published Content fields. |
 | `campaign_platforms` | `(campaign_id, ordinal) PK`; FK campaign | validated platform value; unique per campaign | Source `Campaigns.platforms`; legacy `platform` remains export fallback. |
-| `campaign_creators` | `id TEXT PK`; FKs campaign/creator | stage, owner, nullable quote/cost, publish_date, metrics, ROI, note, timestamps/archive | Source `CampaignCreators`; one row per Campaign/Creator remains enforced by a partial unique active index. |
+| `campaign_creators` | `id TEXT PK`; FKs campaign/creator | stage, owner, nullable quote currency/unit amount/quantity/unit/total, nullable total cost/currency, publish_date, metrics, ROI, note, timestamps/archive | Source `CampaignCreators`; one row per Campaign/Creator remains enforced by a partial unique active index. |
 | `campaign_creator_accounts` | `(campaign_creator_id, ordinal) PK`; FK relation/account | account_uid, unique within relation | Normalizes current `account_ids`; ordinal 0 supplies legacy `account_id` projection. |
 | `campaign_creator_planned_dates` | `(campaign_creator_id, ordinal) PK` | ISO date, unique within relation | Normalizes `planned_publish_dates`; export recreates ordered JSON. |
-| `campaign_creator_publish_links` | `(campaign_creator_id, ordinal) PK` | non-empty URL/text | Normalizes `publish_links`; missing-link queries use `NOT EXISTS`. |
+| `campaign_creator_publish_links` | `(campaign_creator_id, ordinal) PK`; unique `publication_id`; optional FK `actual_account_uid` | normalized URL, platform, actual published time, observed time, optional video ID, source | One row per actual deliverable; legacy links retain unknown account/time and `publish_links` compatibility. |
 | `cooperations` | `cooperation_id TEXT PK`; FK creator | Preserve all legacy price/performance/result/note fields | Legacy read/write compatibility until separately retired; not merged into CampaignCreators. |
 | `agencies` | `agency_id TEXT PK` | Preserve current agency/contact-cycle fields; `resource_files` remains validated JSON TEXT | Source `Agencies`. |
 | `agency_contacts` | `contact_id TEXT PK`; FK agency | Preserve position/contact/status/source/timestamps | Source `AgencyContacts`. |
 | `follow_up_logs` | `follow_up_id TEXT PK` | polymorphic object_type/object_id, contact/stage/timing/owner fields | Source `FollowUpLogs`; polymorphic target validated by service, not an invalid multi-table FK. |
 
-Current `creator_quote`, `cost`, and `roi` remain nullable `REAL` values for compatibility and are explicitly non-financial-grade. Missing values remain NULL, never zero. M8.5 may migrate to exact minor-unit amounts plus currency; no currency behavior is introduced here.
+Schema v2 adds nullable `quote_currency`, `quote_unit_amount`, `quote_quantity`,
+`quote_unit`, and `cost_currency` while preserving nullable `creator_quote`, `cost`,
+and `roi` `REAL` compatibility columns. Structured quotes enforce
+`creator_quote = quote_unit_amount * quote_quantity`; quantity is a positive integer
+and the pricing unit uses the bounded product vocabulary. Legacy total-only rows
+remain NULL for the new fields rather than receiving invented values.
+
+Currency identity uses uppercase three-letter codes. Aggregates may sum only rows
+within the same known currency. Mixed known currencies, or known plus unidentified
+legacy amounts, suppress the scalar total and expose grouped totals. No exchange
+rate, conversion, invoice, tax, payment, or accounting subsystem is implied.
+
+An active schema-v1 SQLite authority is backed up under `backups/database/` before
+the transactional v1-to-v2 column migration. The backup is validated against its
+source schema version; ordinary backups continue to require the current schema.
 
 ## 13. Index Plan
 
@@ -232,6 +248,21 @@ Current `creator_quote`, `cost`, and `roi` remain nullable `REAL` values for com
 | Analysis lookup | PK creator_id; optional unique task_id when non-empty after migration validation |
 
 Every index must be justified with `EXPLAIN QUERY PLAN` during implementation. Avoid redundant single-column indexes already covered by composite prefixes.
+
+### VideoSnapshot retention contract
+
+`video_snapshots` is historical time-series data. Distinct CreatorSnapshot captures
+are intentionally retained; the runtime does not prune them by age. Rewriting the
+same snapshot replaces that snapshot's child rows, and
+`video_snapshot_id = <snapshot_id>:<video_id>` prevents duplicate identity within a
+capture. The video/time and creator/time indexes are the supported latest/history
+query paths.
+
+The current private/local product scale is bounded by the demonstrated large
+benchmark of 100,000 VideoSnapshot rows, where latest and history queries remained
+approximately four milliseconds. Retention or partitioning is reconsidered only
+after observed production scale or measured query performance exceeds that proven
+boundary; no speculative TTL or background pruning is part of the current design.
 
 ## 14. Foreign Keys
 
@@ -260,7 +291,7 @@ Every index must be justified with `EXPLAIN QUERY PLAN` during implementation. A
 | Campaign `platforms` | Normalize child table | Filtered/joined and integrity-sensitive. |
 | CampaignCreator `account_ids` | Normalize junction table | Must enforce Account ownership and support multi-account joins. |
 | `planned_publish_dates` | Normalize ordered child table | Queried by date and requires date validation. |
-| `publish_links` | Normalize ordered child table | Missing-link/risk queries and future content linkage need indexed existence. |
+| `publish_links` / `publications` | Evolve ordered child table | URL compatibility remains while actual account/time/source are explicit. |
 | Creator `tags` | Normalize user-tag table | Search/filter semantics; exact raw tag remains preserved. |
 | `_AnalysisData.analysis_json` | Keep validated JSON TEXT | Opaque full analysis payload with compatibility value; not queried field-by-field in v1. |
 | Agency `resource_files` | Keep validated JSON TEXT | Small opaque list, not a relational query path. |
@@ -496,7 +527,8 @@ Mail/task code must stop reading stale Excel through incidental helpers after cu
 
 ## 33. M8 Future Compatibility
 
-- M8.3 `PublishedContent` may later reference Campaign, CampaignCreator, CreatorAccount, and/or Video through stable IDs; no table is created now.
+- Actual Campaign publications now reference CampaignCreator and optionally CreatorAccount through
+  stable IDs. A Video row is not required; optional future linkage remains additive.
 - Current Videos use `(creator_id, video_url)` because no stable Videos-sheet ID exists. Future content identity must be separately frozen rather than inferred during migration.
 - M8.5 may replace approximate nullable quote/cost fields with exact amount-minor and currency columns through a numbered migration. No currency default is invented.
 - Existing raw country/language/category remain preserved; canonical normalization stays a projection unless a later migration explicitly separates raw and canonical values.

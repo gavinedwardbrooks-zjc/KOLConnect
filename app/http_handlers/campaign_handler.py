@@ -187,6 +187,7 @@ def handle(handler, request: dict, context: dict) -> bool:
                 {
                     "stage",
                     "cost",
+                    "cost_currency",
                     "views",
                     "roi",
                     "performance_note",

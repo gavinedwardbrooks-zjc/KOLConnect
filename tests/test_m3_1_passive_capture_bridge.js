@@ -326,25 +326,9 @@ async function testManifestWiring() {
   const manifestPath = path.join(__dirname, "..", "chrome_extension", "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   assert.equal(manifest.version, "0.2.3");
-  const isolated = manifest.content_scripts.find((entry) => (
-    entry.run_at === "document_start"
-    && !entry.world
-    && entry.js.includes("content/passive_capture_bridge.js")
-  ));
-  const main = manifest.content_scripts.find((entry) => (
-    entry.run_at === "document_start"
-    && entry.world === "MAIN"
-    && entry.js.includes("capture/passive_capture_main.js")
-  ));
-  assert.ok(isolated);
-  assert.ok(main);
-  const expectedMatches = [
-    "https://tiktok.com/*",
-    "https://www.tiktok.com/*",
-    "https://m.tiktok.com/*",
-  ];
-  assert.deepEqual(isolated.matches, expectedMatches);
-  assert.deepEqual(main.matches, expectedMatches);
+  const activeScripts = manifest.content_scripts.flatMap(entry => entry.js || []);
+  assert.equal(activeScripts.includes("content/passive_capture_bridge.js"), false);
+  assert.equal(activeScripts.includes("capture/passive_capture_main.js"), false);
   assert.equal(manifest.permissions.includes("webRequest"), false);
 }
 

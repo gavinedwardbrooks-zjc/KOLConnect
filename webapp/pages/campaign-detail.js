@@ -62,6 +62,13 @@
     return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(number);
   }
 
+  function formatMoney(value, currency) {
+    const amount = formatNumber(value);
+    if (amount === "--") return amount;
+    const code = String(currency || "").trim().toUpperCase();
+    return code ? `${code} ${amount}` : amount;
+  }
+
   function safeHttpUrl(value) {
     try {
       const url = new URL(String(value || ""));
@@ -208,8 +215,8 @@
       const stage = String(relation.stage || "pending_contact");
       stageCell.appendChild(createBadge(STAGE_LABELS[stage] || stage, stage));
       row.appendChild(stageCell);
-      row.appendChild(createCell(formatNumber(relation.creator_quote)));
-      row.appendChild(createCell(formatNumber(relation.cost)));
+      row.appendChild(createCell(formatMoney(relation.creator_quote, relation.quote_currency)));
+      row.appendChild(createCell(formatMoney(relation.cost, relation.cost_currency)));
       appendLinksCell(row, relation.publish_links);
       row.appendChild(createCell(formatNumber(relation.views)));
       row.appendChild(createCell(formatNumber(relation.roi)));
@@ -378,23 +385,70 @@
 
   function renderAccountOptions(accounts, selectedIds = []) {
     const select = element("campaign-creator-account-id");
+    const picker = element("campaign-account-picker");
+    const optionsContainer = element("campaign-account-options");
     const selected = new Set(
       Array.isArray(selectedIds) ? selectedIds.map(String) : [String(selectedIds || "")],
     );
     const eligible = eligibleAccounts(accounts);
     select.replaceChildren();
-    appendOption(select, "", eligible.length ? "请选择一个或多个执行账号" : "该达人暂无符合平台的账号");
+    optionsContainer?.replaceChildren();
     eligible.forEach(account => {
       const platform = account.platform || "未知平台";
       const profile = account.username
         ? `@${String(account.username).replace(/^@/, "")}`
         : account.profile_url || account.account_uid || account.account_id || "";
-      appendOption(select, String(account.account_id || ""), `${platform} · ${profile}`);
+      const accountId = String(account.account_id || "");
+      const labelText = `${platform} · ${profile}`;
+      appendOption(select, accountId, labelText);
       const option = select.options?.[select.options.length - 1];
-      if (option) option.selected = selected.has(String(account.account_id || ""));
+      if (option) option.selected = selected.has(accountId);
+      if (optionsContainer) {
+        const label = document.createElement("label");
+        label.className = "campaign-account-option";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.value = accountId;
+        checkbox.checked = selected.has(accountId);
+        checkbox.addEventListener("change", () => {
+          if (option) option.selected = checkbox.checked;
+          label.className = `campaign-account-option${checkbox.checked ? " is-selected" : ""}`;
+          updateAccountSelectionSummary();
+        });
+        const text = document.createElement("span");
+        text.textContent = labelText;
+        label.className = `campaign-account-option${checkbox.checked ? " is-selected" : ""}`;
+        label.append(checkbox, text);
+        optionsContainer.appendChild(label);
+      }
     });
     if (!Array.isArray(selectedIds) && selectedIds) select.value = String(selectedIds);
     select.disabled = eligible.length === 0;
+    if (picker) {
+      picker.classList.toggle("is-disabled", eligible.length === 0);
+      if (!eligible.length) picker.open = false;
+    }
+    updateAccountSelectionSummary(eligible.length);
+  }
+
+  function updateAccountSelectionSummary(eligibleCount = null) {
+    const select = element("campaign-creator-account-id");
+    const summary = element("campaign-account-summary");
+    if (!summary) return;
+    const selected = Array.from(select?.selectedOptions || []);
+    if (selected.length === 1) {
+      summary.textContent = `已选择：${selected[0].textContent || selected[0].text || selected[0].value}`;
+    } else if (selected.length > 1) {
+      summary.textContent = `已选择 ${selected.length} 个账号`;
+    } else {
+      const count = eligibleCount == null ? Number(select?.options?.length || 0) : eligibleCount;
+      summary.textContent = count ? "请选择计划发布账号" : "该达人暂无符合平台的账号";
+    }
+  }
+
+  function handleAccountPickerClickOutside(event) {
+    const picker = element("campaign-account-picker");
+    if (picker?.open && !picker.contains(event.target)) picker.open = false;
   }
 
   async function loadAccounts(creatorId, selectedId = "") {
@@ -434,9 +488,15 @@
 
   function resetFormValues() {
     element("campaign-creator-stage").value = "pending_contact";
+    element("campaign-creator-quote-currency").value = "";
+    element("campaign-creator-quote-unit-amount").value = "";
+    element("campaign-creator-quote-quantity").value = "";
+    element("campaign-creator-quote-unit").value = "";
     element("campaign-creator-quote").value = "";
     element("campaign-creator-cost").value = "";
+    element("campaign-creator-cost-currency").value = "";
     element("campaign-creator-publish-links").value = "";
+    setPublicationRows([]);
     setPlannedDates([]);
     element("campaign-creator-views").value = "";
     element("campaign-creator-likes").value = "";
@@ -469,6 +529,14 @@
 
   function assignFormValue(id, value) {
     element(id).value = value === "" || value == null ? "" : String(value);
+  }
+
+  function updateStructuredQuoteTotal() {
+    const amount = Number(element("campaign-creator-quote-unit-amount").value);
+    const quantity = Number(element("campaign-creator-quote-quantity").value);
+    element("campaign-creator-quote").value = (
+      Number.isFinite(amount) && amount >= 0 && Number.isInteger(quantity) && quantity > 0
+    ) ? String(amount * quantity) : "";
   }
 
   function createPlannedDateRow(value = "", removable = true) {
@@ -520,6 +588,76 @@
     return select?.value ? [String(select.value)] : [];
   }
 
+  function createPublicationRow(publication = {}) {
+    const row = document.createElement("div");
+    row.className = "campaign-publication-row";
+    row.dataset.publicationRow = "";
+
+    const url = document.createElement("input");
+    url.type = "url";
+    url.placeholder = "https://...";
+    url.value = publication.actual_publish_url || "";
+    url.dataset.publicationUrl = "";
+
+    const account = document.createElement("select");
+    account.dataset.publicationAccount = "";
+    appendOption(account, "", "实际账号未知");
+    const creatorId = String(element("campaign-creator-id")?.value || "");
+    (accountCache.get(creatorId) || []).forEach(item => {
+      const accountId = String(item.account_id || "");
+      appendOption(account, accountId, `${item.platform || "未知平台"} · ${item.username || item.profile_url || accountId}`);
+    });
+    account.value = publication.actual_account_id || "";
+
+    const publishedAt = document.createElement("input");
+    publishedAt.type = "datetime-local";
+    publishedAt.value = String(publication.actual_published_at || "").replace(/Z$/, "");
+    publishedAt.dataset.publicationPublishedAt = "";
+
+    const observed = document.createElement("small");
+    observed.className = "hint";
+    observed.textContent = publication.observed_at
+      ? `记录于 ${publication.observed_at}`
+      : "保存时记录观察时间";
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "soft-btn compact-btn";
+    remove.dataset.removePublication = "";
+    remove.textContent = "移除";
+    row.dataset.publicationId = publication.publication_id || "";
+    row.append(url, account, publishedAt, observed, remove);
+    return row;
+  }
+
+  function setPublicationRows(publications) {
+    const list = element("campaign-publication-list");
+    if (!list) return;
+    const values = Array.isArray(publications) ? publications : [];
+    list.replaceChildren(...values.map(createPublicationRow));
+  }
+
+  function publicationPayload() {
+    const list = element("campaign-publication-list");
+    const rows = list?.querySelectorAll?.("[data-publication-row]");
+    if (!rows) {
+      return parsePublishLinks(element("campaign-creator-publish-links").value).map(url => ({
+        actual_publish_url: url,
+        actual_account_id: "",
+        actual_published_at: "",
+        observed_at: "",
+        source: "legacy",
+      }));
+    }
+    return [...rows].map(row => ({
+      publication_id: row.dataset.publicationId || "",
+      actual_publish_url: row.querySelector?.("[data-publication-url]")?.value?.trim() || "",
+      actual_account_id: row.querySelector?.("[data-publication-account]")?.value || "",
+      actual_published_at: row.querySelector?.("[data-publication-published-at]")?.value || "",
+      source: "manual",
+    })).filter(item => item.actual_publish_url);
+  }
+
   async function openEditForm(relationId) {
     if (isArchived()) return;
     const relation = relations.find(item => String(item.id) === String(relationId));
@@ -533,8 +671,13 @@
     creatorSelect.value = String(relation.creator_id || "");
     creatorSelect.disabled = true;
     assignFormValue("campaign-creator-stage", relation.stage || "pending_contact");
+    assignFormValue("campaign-creator-quote-currency", relation.quote_currency);
+    assignFormValue("campaign-creator-quote-unit-amount", relation.quote_unit_amount);
+    assignFormValue("campaign-creator-quote-quantity", relation.quote_quantity);
+    assignFormValue("campaign-creator-quote-unit", relation.quote_unit);
     assignFormValue("campaign-creator-quote", relation.creator_quote);
     assignFormValue("campaign-creator-cost", relation.cost);
+    assignFormValue("campaign-creator-cost-currency", relation.cost_currency);
     assignFormValue("campaign-creator-publish-links", parsePublishLinks(relation.publish_links).join("\n"));
     setPlannedDates(
       Array.isArray(relation.planned_publish_dates)
@@ -551,6 +694,7 @@
       relation.creator_id,
       Array.isArray(relation.account_ids) ? relation.account_ids : relation.account_id,
     );
+    setPublicationRows(Array.isArray(relation.publications) ? relation.publications : []);
   }
 
   function showFormError(message) {
@@ -562,13 +706,20 @@
   function formPayload() {
     const accountIds = selectedAccountIds();
     const dates = plannedDates();
+    const publications = publicationPayload();
     return {
       account_id: accountIds[0] || "",
       account_ids: accountIds,
       stage: element("campaign-creator-stage").value || "pending_contact",
+      quote_currency: element("campaign-creator-quote-currency").value.trim().toUpperCase(),
+      quote_unit_amount: element("campaign-creator-quote-unit-amount").value.trim(),
+      quote_quantity: element("campaign-creator-quote-quantity").value.trim(),
+      quote_unit: element("campaign-creator-quote-unit").value,
       creator_quote: element("campaign-creator-quote").value.trim(),
       cost: element("campaign-creator-cost").value.trim(),
-      publish_links: parsePublishLinks(element("campaign-creator-publish-links").value),
+      cost_currency: element("campaign-creator-cost-currency").value.trim().toUpperCase(),
+      publications,
+      publish_links: publications.map(item => item.actual_publish_url),
       publish_date: dates[0] || "",
       planned_publish_dates: dates,
       views: element("campaign-creator-views").value.trim(),
@@ -631,6 +782,15 @@
       return;
     }
     const remove = event.target?.closest?.("[data-remove-planned-date]");
+    if (remove) remove.parentElement?.remove();
+  }
+
+  function handlePublicationClick(event) {
+    if (event.target?.id === "campaign-publication-add") {
+      element("campaign-publication-list")?.appendChild(createPublicationRow());
+      return;
+    }
+    const remove = event.target?.closest?.("[data-remove-publication]");
     if (remove) remove.parentElement?.remove();
   }
 
@@ -717,9 +877,14 @@
       listen("campaign-creator-form-cancel", "click", closeCreatorForm);
       listen("campaign-creator-form", "submit", saveRelation);
       listen("campaign-creator-id", "change", handleCreatorChange);
+      listen("campaign-creator-quote-unit-amount", "input", updateStructuredQuoteTotal);
+      listen("campaign-creator-quote-quantity", "input", updateStructuredQuoteTotal);
       listen("campaign-planned-date-add", "click", handlePlannedDateClick);
       listen("campaign-planned-date-list", "click", handlePlannedDateClick);
+      listen("campaign-publication-add", "click", handlePublicationClick);
+      listen("campaign-publication-list", "click", handlePublicationClick);
       listen("campaign-creator-list-body", "click", handleListAction);
+      if (document?.addEventListener) resources.listen(document, "click", handleAccountPickerClickOutside);
     },
 
     unbind() {

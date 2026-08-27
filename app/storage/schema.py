@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from storage.errors import SQLiteSchemaUnsupportedError
 
 
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 3
 
 
 SCHEMA_V1_SQL = r"""
@@ -231,8 +231,13 @@ CREATE TABLE campaign_creators (
     account_id TEXT,
     stage TEXT,
     owner TEXT,
+    quote_currency TEXT,
+    quote_unit_amount REAL,
+    quote_quantity INTEGER,
+    quote_unit TEXT,
     creator_quote REAL,
     cost REAL,
+    cost_currency TEXT,
     publish_date TEXT,
     views INTEGER,
     likes INTEGER,
@@ -294,6 +299,24 @@ CREATE INDEX idx_campaign_creators_stage_archive ON campaign_creators(stage, arc
 CREATE INDEX idx_follow_up_object ON follow_up_logs(object_type, object_id, created_at DESC);
 """
 
+SCHEMA_V2_COLUMNS = (
+    ("quote_currency", "TEXT"),
+    ("quote_unit_amount", "REAL"),
+    ("quote_quantity", "INTEGER"),
+    ("quote_unit", "TEXT"),
+    ("cost_currency", "TEXT"),
+)
+
+SCHEMA_V3_PUBLICATION_COLUMNS = (
+    ("publication_id", "TEXT"),
+    ("actual_account_uid", "TEXT REFERENCES creator_accounts(account_uid) ON DELETE RESTRICT"),
+    ("platform", "TEXT"),
+    ("published_at", "TEXT"),
+    ("observed_at", "TEXT"),
+    ("video_id", "TEXT"),
+    ("source", "TEXT"),
+)
+
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -328,26 +351,89 @@ def apply_schema_migrations(connection, *, migration_reference: str = "") -> int
         )
     if current == CURRENT_SCHEMA_VERSION:
         return current
-    if current != 0:
-        raise SQLiteSchemaUnsupportedError("SQLite schema migration path is unavailable.")
-    created_at = utc_now()
-    try:
-        connection.executescript("BEGIN IMMEDIATE;\n" + SCHEMA_V1_SQL)
-        connection.executemany(
-            "INSERT INTO storage_metadata(key, value) VALUES (?, ?)",
-            (
-                ("schema_version", str(CURRENT_SCHEMA_VERSION)),
-                ("created_at", created_at),
-                ("migration_version", "excel-to-sqlite-v1"),
-                ("migration_reference", migration_reference),
-                ("application_compatibility", "pre-m8-c0-c3"),
-                ("business_revision", "0"),
-            ),
-        )
-        connection.commit()
-    except Exception:
-        connection.rollback()
-        raise
+    if current == 0:
+        created_at = utc_now()
+        try:
+            connection.executescript("BEGIN IMMEDIATE;\n" + SCHEMA_V1_SQL)
+            connection.executemany(
+                "INSERT INTO storage_metadata(key, value) VALUES (?, ?)",
+                (
+                    ("schema_version", "1"),
+                    ("created_at", created_at),
+                    ("migration_version", "excel-to-sqlite-v1"),
+                    ("migration_reference", migration_reference),
+                    ("application_compatibility", "pre-m8-c0-c3"),
+                    ("business_revision", "0"),
+                ),
+            )
+            connection.commit()
+            current = 1
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 1:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(campaign_creators)")
+            }
+            for column, data_type in SCHEMA_V2_COLUMNS:
+                if column not in existing:
+                    connection.execute(
+                        f"ALTER TABLE campaign_creators ADD COLUMN {column} {data_type}"
+                    )
+            connection.execute(
+                "UPDATE storage_metadata SET value=? WHERE key='schema_version'", ("2",)
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key, value) VALUES (?, ?)",
+                ("application_compatibility", "pre-m8-item-7-multicurrency"),
+            )
+            connection.commit()
+            current = 2
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 2:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(campaign_creator_publish_links)")
+            }
+            for column, data_type in SCHEMA_V3_PUBLICATION_COLUMNS:
+                if column not in existing:
+                    connection.execute(
+                        f"ALTER TABLE campaign_creator_publish_links ADD COLUMN {column} {data_type}"
+                    )
+            rows = connection.execute(
+                "SELECT campaign_creator_id, position, publish_link FROM campaign_creator_publish_links"
+            ).fetchall()
+            import hashlib
+            for campaign_creator_id, position, publish_link in rows:
+                identity = hashlib.sha256(
+                    f"{campaign_creator_id}|{publish_link}".encode("utf-8")
+                ).hexdigest()[:24]
+                connection.execute(
+                    "UPDATE campaign_creator_publish_links SET publication_id=?, source='legacy' "
+                    "WHERE campaign_creator_id=? AND position=?",
+                    (f"publication_legacy_{identity}", campaign_creator_id, position),
+                )
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_campaign_publication_identity "
+                "ON campaign_creator_publish_links(publication_id)"
+            )
+            connection.execute(
+                "UPDATE storage_metadata SET value=? WHERE key='schema_version'", ("3",)
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key, value) VALUES (?, ?)",
+                ("application_compatibility", "pre-m8-item-12-publications"),
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
     return CURRENT_SCHEMA_VERSION
 
 

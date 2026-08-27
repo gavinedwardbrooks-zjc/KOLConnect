@@ -117,14 +117,16 @@ Special decision B: `SUPERSEDED`. A custom auto-match subsystem should not be im
 
 ## 10. M3.1 TikTok
 
-Status: `PARTIAL`.
+Original audit status: `PARTIAL`. Subsequent status: `CLOSED_BY_DESIGN_DECISION`.
 
 - Passive MAIN-world capture protocol, bridge, sanitized item-list parser, fixture, and focused tests exist.
 - Authoritative fixture: `tests/fixtures/tiktok/item_list_normal.json`; it is a sanitized, structure-preserving observed `/api/post/item_list/` sample.
 - Parser coverage includes video identity, title/description, create time, play/like/comment/share counts, and missing-vs-zero semantics.
 - No complete production subscriber/import path from the passive bridge into the normal capture pipeline was found.
 
-Special decision A: `REVIVE`, but only at the M8.3 published-content trigger. The current parser/fixture should be retained; runtime integration must be explicitly completed or the subsystem removed before M8.3 acceptance. It does not block M8.0 architecture work.
+Subsequent product decision: the old M3.1 contract is retired. Production manifest wiring is
+disabled; parser/fixture/bridge artifacts remain experimental reference. Any passive capture V2 is
+a new post-M8 project documented separately.
 
 ## 11. M3.4 / T3
 
@@ -136,15 +138,23 @@ Evidence covers task-result field enrichment, bundled Creator/Account writes, on
 
 ## 12. M3.5 Quote / Cost
 
-Status: `PARTIAL`.
+Status: `DONE` for the PRE-M8 monetary identity and pricing-composition scope.
 
-Current `CampaignCreators` has `creator_quote` and `cost`, and the Campaign UI can record both. It has no currency, quote type, quotation date, approved-by, negotiation history, or durable quote-note contract. No historical quote-management service or normalized cross-currency statistics exists.
+`CampaignCreators` persists `quote_currency`, `quote_unit_amount`,
+`quote_quantity`, `quote_unit`, total `creator_quote`, total `cost`, and
+`cost_currency`. Structured quotes enforce total = unit amount x positive integer
+quantity. Legacy total-only rows remain readable without invented currency,
+quantity, or unit. Currency-aware aggregation groups known currencies and suppresses
+the scalar total when unlike or known/unknown currency groups coexist. FX conversion,
+accounting, approval, negotiation history, and payment processing remain explicit
+non-goals rather than hidden quote-contract debt.
 
 Current production data contains 2 rows with `creator_quote` and 2 rows with `cost`; both lack currency.
 
 `ZERO_QUOTE_ROWS_EXPECTED = NO`
 
-Special decision D: `MUST_FIX_BEFORE_M8_5`. Freeze quote/cost semantics and add currency before monetary analytics. This does not block M8.0-M8.4.
+Special decision D: `CLOSED`. Quote/cost semantics and currency identity are frozen;
+mixed-currency silent aggregation is prohibited without introducing FX.
 
 ## 13. Creator / Account Identity
 
@@ -245,15 +255,22 @@ Core status: `DONE`.
 
 Campaign detail safely supports empty/optional data, stale Creator references, multi-account Creator selection, one relation per Creator, and create-to-detail round trips. CampaignCreators retain account IDs and planned publish dates.
 
-Actual published-content account/date tracking is `EXPLICITLY_DEFERRED` to M8.3. Reopen when M8.3 requires per-publication identity and observed publication timestamps; current M8.0-M8.2 contracts do not depend on it.
+Actual publication engineering is complete in schema v3: one record per deliverable with stable
+publication identity, optional actual CreatorAccount, actual published timestamp, independent
+observation timestamp, legacy-link compatibility, and distinct planned fields. Packaged manual UI
+acceptance remains pending.
 
 ## 25. Desktop Save As
 
-Status: `ENGINEERING_DONE_USER_ACCEPTANCE_PENDING`.
+Status: `DONE`.
 
-The pywebview bridge restricts writes to user-selected `.xlsx` paths, sanitizes suggested names, strictly decodes base64, reports cancellation/failure, and preserves browser Blob fallback. Unit/frontend coverage exists. A real packaged Windows Save As dialog and actual-path confirmation still require user acceptance.
+The pywebview bridge restricts writes to user-selected `.xlsx` paths, sanitizes suggested names, strictly decodes base64, reports cancellation/failure, and preserves browser Blob fallback. Unit/frontend coverage exists.
 
-Special decision I: `USER_ACCEPTANCE_ONLY`; no known code defect.
+The user subsequently accepted all four packaged Windows cases: template Save As,
+Creator export Save As, cancellation, and a path containing Chinese characters and
+spaces. No known code or acceptance gap remains.
+
+Special decision I: `CLOSED`.
 
 ## 26. Dashboard Cold Start
 
@@ -280,19 +297,23 @@ Special decision F: `TRIGGERED`. A read index/persistence architecture, expected
 
 ## 28. VideoSnapshot Scale Readiness
 
-Status: `PARTIAL` and operationally `NOT_READY` for M8.4 scale.
+Status: `CLOSED_BY_DESIGN_DECISION`.
 
-Video snapshots are idempotently replaced per snapshot ID, but no production retention/pruning policy was found. Repository operations still rebuild/scan workbook data. The large fixture reached exactly 100,000 VideoSnapshots and read paths already exceeded thresholds; timing triggers, rather than row count alone, formally require the scale redesign.
-
-Reopen before M8.4. Required decisions: retention horizon, deduplication key, indexed query model, migration/rollback, and bounded append/query benchmarks.
+VideoSnapshot is retained historical time-series data. Same-snapshot children are
+deterministically replaced, identity and latest/history indexes are explicit, and
+the 100,000-row SQLite benchmark establishes the current local-product boundary.
+No speculative TTL is required; retention is reconsidered only after measured
+production scale or query evidence crosses that boundary.
 
 ## 29. Test Infrastructure
 
-Status: `PARTIAL`.
+Status: `DONE` for the repository hygiene contract.
 
 The canonical `scripts/run_python_tests.py` isolates APPDATA, LOCALAPPDATA, TEMP/TMP/TMPDIR, locks, settings, backups, and runtime state. It does not leak production paths in the observed run. Raw direct unittest commands remain unreliable in the managed Windows environment, and many historical ignored fixture directories have permission-denied cleanup residue.
 
-Special decision J: `CLOSED` for production-path isolation. Cleanup hygiene remains debt, but `STILL_LEAKING_PRODUCTION_PATHS = NO`.
+Special decision J: `CLOSED`. Canonical production-path isolation is mandatory,
+and the known manual diagnostic/acceptance paths are narrowly ignored and
+documented without hiding source or release configuration.
 
 The audit benchmark directory could not be removed because managed policy rejected the verified recursive target. It is untracked, not a product artifact, and must be excluded from any commit.
 
@@ -318,11 +339,11 @@ No build was performed by this audit.
 
 ## 32. Outlook
 
-Status: `EXPLICITLY_DEFERRED`.
+Status: `CLOSED_BY_DESIGN_DECISION`.
 
-Current mail authentication uses configured IMAP login. OAuth2 is not implemented. Reopen when Microsoft/Outlook rejects Basic authentication in a supported deployment or product acceptance explicitly requires OAuth2. M8 Creator/Campaign/analytics work does not depend on OAuth2.
-
-Special decision E: `DEFER`.
+Current mail authentication is standard IMAP/SMTP password or app-password authentication where
+the provider permits it. Microsoft OAuth2 and guaranteed Outlook/Microsoft 365 compatibility are
+not current product contracts. Future OAuth2 work is a new feature, not PRE-M8 legacy debt.
 
 ## 33. Security
 
@@ -397,15 +418,15 @@ The former full-Python TaskRepository failure was a real Windows product race an
 
 | Decision | Result | Reason |
 |---|---|---|
-| A. TikTok M3.1 | REVIVE | Reopen only at M8.3; fixture/parser are valid, runtime integration is incomplete |
+| A. TikTok M3.1 | RETIRED | Old incomplete production wiring disabled; retained artifacts are experimental reference for a new post-M8 V2 project |
 | B. ChromeDriver Auto Match | SUPERSEDED | webdriver-manager is the supported implementation |
 | C. Hard Delete Propagation | CLOSED_BEFORE_M8 | Durable intent, recovery, retry, reconciliation, progress, and safe status are implemented and tested |
-| D. M3.5 Quote Management | MUST_FIX_BEFORE_M8_5 | Quote/cost exist, but currency and historical semantics do not |
-| E. Microsoft OAuth2 | DEFER | Reopen on supported-provider Basic-auth rejection or explicit requirement |
+| D. M3.5 Quote Management | CLOSED | Currency, unit amount, quantity, pricing unit, total quote, and total cost semantics are implemented without FX |
+| E. Microsoft OAuth2 | CLOSED_BY_DESIGN_DECISION | Not part of current mail contract; future OAuth2 is a new feature |
 | F. SQLite | TRIGGERED | Medium reads/writes exceed formal thresholds |
 | G. Feishu Chat | ENGINEERING_DONE | Current package/logs and prior real acceptance support closure |
 | H. M2.6 Architecture | SAFE_FOR_M8 | Frozen port boundaries are complete; broader handler debt is trigger-scoped |
-| I. Desktop Save As | USER_ACCEPTANCE_ONLY | Unit/UI engineering complete; packaged dialog needs manual acceptance |
+| I. Desktop Save As | CLOSED | Unit/UI engineering plus four packaged Windows acceptance cases pass |
 | J. Test infrastructure | CLOSED | Canonical runner isolates production paths; cleanup hygiene remains |
 | K. Historical M7.1d Gavin cleanup | SUPERSEDED_BY_CLEAN_RESET | Legacy product UI/routes retired |
 
@@ -417,35 +438,31 @@ The former full-Python TaskRepository failure was a real Windows product race an
 | 2 | Feishu permanent-delete propagation | DONE | P0 | NO | Closed: durable intent/outbox, recovery, idempotent retry, progress, status, and reconciliation |
 | 3 | Excel scale/read-index architecture | C0_C12_ENGINEERING_COMPLETE | P0 | NO | Human review, then separately authorize production migration acceptance |
 | 4 | Dashboard packaged cold acceptance | CLOSED | P1 | NO | Closed by current ONEDIR portability plus real Windows manual acceptance: Dashboard usable, normal close exited and released port 8765 |
-| 5 | Desktop Save As acceptance | ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | P2 | NO | User validates template/export Save As and actual path in packaged Windows app |
-| 6 | M3.1 passive TikTok runtime integration | PARTIAL | P1 | NO | Reopen at M8.3; connect bridge output to authoritative capture flow or remove subsystem |
-| 7 | M3.5 quote/currency contract | PARTIAL | P1 | NO | Complete before M8.5 monetary analytics |
-| 8 | VideoSnapshot retention/index strategy | PARTIAL | P1 | NO | Complete before M8.4 tracking scale |
-| 9 | Test artifact cleanup hygiene | PARTIAL | P2 | NO | Eliminate ACL-leaking fixtures and prove cleanup in normal Windows CI/local runs |
-| 10 | Campaign/settings service-boundary debt | EXPLICITLY_DEFERRED | P2 | NO | Reopen when affected handlers are modified |
+| 5 | Desktop Save As acceptance | CLOSED | P2 | NO | User accepted packaged template, export, cancellation, and Chinese/space-path Save As cases |
+| 6 | M3.1 passive TikTok runtime integration | CLOSED_BY_DESIGN_DECISION | P1 | NO | Production manifest wiring retired; experimental components retained for post-M8 V2 revalidation |
+| 7 | M3.5 quote/currency contract | CLOSED | P1 | NO | Monetary identity and pricing composition implemented; FX remains out of scope |
+| 8 | VideoSnapshot retention/index strategy | CLOSED_BY_DESIGN_DECISION | P1 | NO | Retain historical time series at the demonstrated local-product scale |
+| 9 | Test artifact cleanup hygiene | CLOSED | P2 | NO | Canonical sandbox self-cleans and narrow manual diagnostic paths are ignored/documented |
+| 10 | Campaign/settings service-boundary debt | CLOSED_BY_DESIGN_DECISION | P2 | NO | Existing injected application-coordinator boundary is documented and contract-tested |
 | 11 | OpenClaw deployed runtime | CLOSED_BY_DESIGN_DECISION | P2 | NO | OpenClaw retired; Assistant + Feishu transport is canonical and requires no OpenClaw deployment |
-| 12 | Actual published-content account/date model | EXPLICITLY_DEFERRED | P1 | NO | Reopen at M8.3 |
-| 13 | Microsoft OAuth2 | EXPLICITLY_DEFERRED | P2 | NO | Reopen on provider rejection or explicit product requirement |
+| 12 | Actual published-content account/date model | PARTIALLY_CLOSED | P1 | YES | Engineering complete with schema v3/API/UI/tests; packaged manual UI acceptance pending |
+| 13 | Microsoft OAuth2 | CLOSED_BY_DESIGN_DECISION | P2 | NO | Current contract is standard IMAP/SMTP; future OAuth2 is a new feature |
 | 14 | Dead legacy backfill/cleanup modules | CLOSED | P3 | NO | Six runtime modules and three legacy-only tests removed after zero-dependency audit |
 
 ## 42. M8 Blockers
 
-No P0 engineering blocker remains. Real production migration is not complete or
-authorized; M8 remains blocked pending human review and explicit migration
-acceptance.
+Under the current strict zero-legacy-debt gate, M8 remains blocked only by item #12 manual
+acceptance. Items #1-#11, #13, and #14 are closed. Storage item #3 is closed
+by its separately accepted production migration work and is not reopened here.
 
-## 43. Non-Blocking Deferred Items
+## 43. Remaining Unresolved Items
 
-- M3.1 TikTok passive runtime: reopen at M8.3 if network-only published metrics are required.
-- M3.5 quote/currency: reopen before M8.5 monetary analytics.
-- VideoSnapshot retention/index detail: reopen before M8.4 tracking.
-- Campaign/settings service boundaries: reopen when those handlers are touched.
-- OAuth2: reopen on provider Basic-auth rejection or explicit support requirement.
-- Actual publication account/date model: reopen at M8.3.
+- Actual publication account/date model: engineering complete; packaged manual UI acceptance pending.
 
 ## 44. User Acceptance Queue
 
-1. Packaged Windows Desktop Save As for template and Creator export, including actual saved path.
+No PRE-M8 Save As acceptance remains. The user accepted template, Creator export,
+cancellation, and Chinese/space-path behavior in the packaged Windows application.
 Feishu Chat is not listed because current runtime connection logs and prior real chat acceptance provide closure evidence. No Full Sync is required for this audit.
 
 ## 45. Final Legacy Matrix
@@ -456,11 +473,11 @@ Feishu Chat is not listed because current runtime connection logs and prior real
 | L02 | Shared lock and atomic JSON | DONE | lock/runtime_paths code and tests | P0 | NO | Keep contract |
 | L03 | Task document atomic bytes | DONE | Hardened shared atomic writer; 8/8 focused and two 669-test full runs | P0 | NO | Keep contract |
 | L04 | M2.6 task/creator boundaries | DONE | ports/adapters/static tests | P0 | NO | Keep contract |
-| L05 | Campaign/settings handler boundaries | EXPLICITLY_DEFERRED | direct factory/module wiring | P2 | NO | Reopen on touch |
+| L05 | Campaign/settings handler boundaries | CLOSED_BY_DESIGN_DECISION | injected application-coordinator contract and bypass tests | P2 | NO | Keep contract |
 | L06 | ChromeDriver matching | OBSOLETE_SUPERSEDED | webdriver-manager resolver | P2 | NO | No custom subsystem |
-| L07 | M3.1 TikTok passive capture | PARTIAL | parser/fixture present, runtime join absent | P1 | NO | Reopen M8.3 |
+| L07 | M3.1 TikTok passive capture | CLOSED_BY_DESIGN_DECISION | production wiring retired; parser/fixture retained as experimental reference | P1 | NO | Future V2 is a new project |
 | L08 | M3.4/T3 batch foundation | DONE | focused batch/import/Campaign tests | P1 | NO | Keep contract |
-| L09 | M3.5 quote management | PARTIAL | quote/cost exist, currency/history absent | P1 | NO | Before M8.5 |
+| L09 | M3.5 quote management | DONE | structured quote/cost currency contract, v2 migration, mixed-currency-safe aggregation | P1 | NO | Keep contract |
 | L10 | Creator/Account identity | DONE | ID contracts and current-data audit | P0 | NO | Keep contract |
 | L11 | Multi-account | DONE | UI/Campaign/Feishu/assistant tests | P0 | NO | Keep contract |
 | L12 | Mail relation parser | DONE | shared parser and 2/2 tests | P1 | NO | Keep contract |
@@ -474,15 +491,15 @@ Feishu Chat is not listed because current runtime connection logs and prior real
 | L20 | User/AI tag separation | DONE | persistence/projection code/tests | P1 | NO | Keep contract |
 | L21 | Creator Intelligence | DONE | factual safe projection/tests | P1 | NO | Keep contract |
 | L22 | Campaign core | DONE | sparse/multi-account/detail tests | P0 | NO | Keep contract |
-| L23 | Actual published-content model | EXPLICITLY_DEFERRED | planned fields only | P1 | NO | Reopen M8.3 |
-| L24 | Desktop Save As | ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | bridge/UI tests | P2 | NO | User acceptance |
+| L23 | Actual published-content model | PARTIALLY_CLOSED | schema v3/API/UI/tests complete; packaged manual acceptance pending | P1 | YES | Complete acceptance checklist |
+| L24 | Desktop Save As | DONE | bridge/UI tests plus packaged Windows user acceptance for all four cases | P2 | NO | Keep contract |
 | L25 | Dashboard cold-start fix | CLOSED | ONEDIR portability, packaged startup evidence, real Windows usable Dashboard and clean runtime exit | P1 | NO | Closed |
 | L26 | SQLite/read-index migration | C0_C12_ENGINEERING_COMPLETE | Performance and final synthetic evidence in `docs/pre_m8_sqlite_performance.md` | P0 | NO | Human review, then explicit production migration acceptance |
-| L27 | VideoSnapshot scale/retention | PARTIAL | no retention; scale benchmark | P1 | NO | Before M8.4 |
-| L28 | Test environment hygiene | PARTIAL | canonical isolation plus ACL residue | P2 | NO | Cleanup/CI hardening |
+| L27 | VideoSnapshot scale/retention | CLOSED_BY_DESIGN_DECISION | retain-history contract and 100,000-row benchmark | P1 | NO | Revisit only on measured scale change |
+| L28 | Test environment hygiene | DONE | canonical isolation plus narrow manual-artifact policy | P2 | NO | Keep gate |
 | L29 | Frontend discovery/harness | DONE | 40 files and syntax gates pass | P1 | NO | Keep gate |
 | L30 | Packaging dependencies | DONE | specs/requirements/TOC audit | P0 | NO | Keep gate |
-| L31 | Microsoft OAuth2 | EXPLICITLY_DEFERRED | proposal only | P2 | NO | Trigger-scoped |
+| L31 | Microsoft OAuth2 | CLOSED_BY_DESIGN_DECISION | current contract is standard IMAP/SMTP; proposal retained as deprecated reference | P2 | NO | Future OAuth2 is a new feature |
 | L32 | Security/privacy boundaries | DONE | localhost/Origin/safe projection | P0 | NO | Keep contract |
 | L33 | API/OpenAPI contract | DONE | focused tests 3/3 | P1 | NO | Keep gate |
 | L34 | Dead legacy service modules | CLOSED | source/tests removed after runtime/support/recovery/package dependency audit | P3 | NO | Closed |
@@ -503,12 +520,12 @@ These are the only intended tracked architecture/audit artifacts from this desig
 
 ```text
 PRE_M8_LEGACY_AUDIT_COMPLETE = YES
-LEGACY_UNRESOLVED_COUNT = 12
+LEGACY_UNRESOLVED_COUNT = 3
 PRE_M8_P0_BLOCKERS_REMAINING = 0
 P0_C_STORAGE_ARCHITECTURE_DESIGN = APPROVED_AND_IMPLEMENTED_THROUGH_C10
 STORAGE_ARCHITECTURE_APPROVED = YES
 M8_ENTRY = BLOCKED
-NEXT_STEP = HUMAN_REVIEW_THEN_EXPLICIT_PRODUCTION_SQLITE_MIGRATION_ACCEPTANCE
+NEXT_STEP = CLOSE_ITEMS_6_12_13
 READY_FOR_P0_C_ARCHITECTURE_REVIEW = NO_ALREADY_APPROVED
 ```
 
@@ -526,3 +543,66 @@ without executing a real migration.
 `REAL_SQLITE_MIGRATION_EXECUTED = NO` and
 `REAL_PRODUCTION_SQLITE_ACTIVATION = NO`. M8 remains blocked until the user runs
 and accepts the documented production migration procedure.
+
+## Zero-Debt Delta Closure Addendum (2026-08-27)
+
+This addendum records subsequent closure work without rewriting the historical
+findings above:
+
+- Item #8 is `CLOSED_BY_DESIGN_DECISION`: VideoSnapshot is retained historical
+  time-series data, same-snapshot children are deterministically replaced, the
+  supported latest/history indexes are present, and the 100,000-row local-product
+  benchmark is the current measured scale boundary. No TTL is required.
+- Item #9 is `CLOSED`: the canonical sandbox remains self-cleaning, while the five
+  known manual diagnostic/acceptance paths are narrowly ignored and documented as
+  non-authoritative scratch output.
+- Item #10 is `CLOSED_BY_DESIGN_DECISION`: Campaign and Settings handlers are
+  formally supported application coordinators and are contract-tested against
+  direct workbook, SQLite, and filesystem bypass.
+- Item #7 is `CLOSED`: currency identity, unit amount, positive integer quantity,
+  bounded pricing unit, computed total quote, total cost currency, backward-compatible
+  legacy rows, and mixed-currency-safe aggregation are implemented. No default
+  currency or FX conversion is invented.
+- Item #5 is `CLOSED`: the user reported packaged Windows PASS for template Save As,
+  Creator export Save As, cancellation, and Chinese/space-containing paths.
+- Current strict-gate state: #6 and #13 are closed by design decision. Item #12 engineering is
+  complete but packaged manual UI acceptance remains pending; therefore M8 entry remains blocked.
+
+## Final PRE-M8 Seal (2026-08-27)
+
+This final seal is the authoritative current status. Earlier pending, unresolved, and blocked
+statements above are retained as historical audit snapshots and are superseded by this section.
+
+| Item | Final status | Final closure evidence |
+|---:|---|---|
+| 1 | CLOSED | TaskRepository Windows atomic write contract and regression coverage complete |
+| 2 | CLOSED | Durable Feishu hard-delete propagation, recovery, retry, and reconciliation complete |
+| 3 | CLOSED | SQLite storage foundation, cutover engineering, and accepted production migration work complete |
+| 4 | CLOSED | Packaged Dashboard and runtime lifecycle accepted on Windows |
+| 5 | CLOSED | Packaged Save As flows accepted on Windows |
+| 6 | CLOSED_BY_DESIGN_DECISION | Old M3.1 production contract retired; current production support is NO; TikTok Passive Capture V2 is a new post-M8 project |
+| 7 | CLOSED | Multi-currency quote and cost identity contract complete |
+| 8 | CLOSED_BY_DESIGN_DECISION | Historical VideoSnapshot retention remains the supported contract |
+| 9 | CLOSED | Canonical isolated test runner and artifact hygiene contract complete |
+| 10 | CLOSED_BY_DESIGN_DECISION | Campaign and Settings application-coordinator boundary is the supported contract |
+| 11 | CLOSED_BY_DESIGN_DECISION | OpenClaw is retired; Assistant plus Feishu transport is canonical |
+| 12 | CLOSED | Engineering complete; packaged Windows manual acceptance passed for planned/actual separation, multiple publications, and save/reopen persistence |
+| 13 | CLOSED_BY_DESIGN_DECISION | Current mail contract is standard IMAP/SMTP; Outlook/Microsoft OAuth2 is not officially supported and its proposal is deprecated reference only |
+| 14 | CLOSED | Dead legacy backfill and cleanup modules retired after dependency audit |
+
+Item #12 packaged acceptance additionally confirms the planned-account selector UX, selection
+persistence, actual publication creation, multiple independent publication records, and unknown
+publication-time behavior where applicable. No blocking defect was found.
+
+```text
+ITEM_12_MANUAL_ACCEPTANCE = PASS
+ITEM_12_STATUS = CLOSED
+ITEM_12_COUNTS_AS_UNRESOLVED = NO
+LEGACY_CLOSED_ITEMS = [1,2,3,4,5,6,7,8,9,10,11,12,13,14]
+LEGACY_UNRESOLVED_ITEMS = []
+LEGACY_CLOSED_TOTAL = 14
+LEGACY_UNRESOLVED_COUNT = 0
+ZERO_DEBT_GATE_PASS = YES
+ALL_14_LEGACY_ITEMS_CLOSED = YES
+M8_ENTRY = READY
+```

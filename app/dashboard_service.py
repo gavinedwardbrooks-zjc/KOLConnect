@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from dashboard_repository import DashboardRepository
+from domain.money import grouped_amounts
 
 
 class DashboardService:
@@ -25,12 +26,16 @@ class DashboardService:
         cooperation_records = self._records_in_stages(relations, self._COOPERATION_STAGES)
         operational_records = [record for record in relations if self._is_operational(record)]
         recent_cutoff = datetime.now(timezone.utc) - timedelta(days=7)
+        spend = grouped_amounts(cooperation_records, "cost", "cost_currency")
         return {
             "total_creators": len(creators),
             "new_creators_7d": sum(1 for creator in creators if self._is_on_or_after(creator.get("analysis_time"), recent_cutoff)),
             "discovered_count": self._stage_count(operational_records, {"pending_contact"}),
             "cooperating_count": self._stage_count(operational_records, self._EXECUTING_STAGES),
-            "cooperation_spend": self._sum_valid_numbers(cooperation_records, "cost"),
+            "cooperation_spend": spend["total"],
+            "cooperation_spend_by_currency": spend["totals_by_currency"],
+            "cooperation_spend_unknown_currency": spend["unknown_currency_total"],
+            "cooperation_spend_multiple_currencies": spend["multiple_currencies"],
             "average_roi": self._weighted_completed_roi(relations),
         }
 
@@ -107,27 +112,31 @@ class DashboardService:
                 "platform": str(relation.get("platform") or ""),
                 "profile_url": str(relation.get("profile_url") or ""),
                 "campaign_count": 0,
-                "total_cost": 0.0,
+                "cost_records": [],
                 "total_views": 0.0,
-                "roi_cost_total": 0.0,
-                "roi_weighted_total": 0.0,
+                "roi_records": [],
             })
             aggregate["campaign_count"] += 1
             cost = self._nonnegative_number(relation.get("cost"))
             views = self._nonnegative_number(relation.get("views"))
-            aggregate["total_cost"] += cost or 0.0
+            if cost is not None:
+                aggregate["cost_records"].append(relation)
             aggregate["total_views"] += views or 0.0
             roi = self._nonnegative_number(relation.get("roi"))
             if cost is not None and cost > 0 and roi is not None:
-                aggregate["roi_cost_total"] += cost
-                aggregate["roi_weighted_total"] += cost * roi
+                aggregate["roi_records"].append(relation)
 
         top_creators = []
         for aggregate in totals_by_creator.values():
-            roi_cost_total = aggregate.pop("roi_cost_total")
-            roi_weighted_total = aggregate.pop("roi_weighted_total")
-            aggregate["average_roi"] = (
-                roi_weighted_total / roi_cost_total if roi_cost_total > 0 else None
+            cost_summary = grouped_amounts(
+                aggregate.pop("cost_records"), "cost", "cost_currency"
+            )
+            aggregate["total_cost"] = cost_summary["total"]
+            aggregate["cost_totals_by_currency"] = cost_summary["totals_by_currency"]
+            aggregate["cost_unknown_currency_total"] = cost_summary["unknown_currency_total"]
+            aggregate["cost_multiple_currencies"] = cost_summary["multiple_currencies"]
+            aggregate["average_roi"] = self._weighted_completed_roi(
+                aggregate.pop("roi_records")
             )
             top_creators.append(aggregate)
         top_creators.sort(
@@ -140,13 +149,17 @@ class DashboardService:
             )
         )
 
+        cost_summary = grouped_amounts(cooperation_records, "cost", "cost_currency")
         return {
             "total_campaigns": len({
                 str(record.get("campaign_id") or "")
                 for record in relations
                 if str(record.get("campaign_id") or "")
             }),
-            "total_cost": self._sum_valid_numbers(cooperation_records, "cost"),
+            "total_cost": cost_summary["total"],
+            "cost_totals_by_currency": cost_summary["totals_by_currency"],
+            "cost_unknown_currency_total": cost_summary["unknown_currency_total"],
+            "cost_multiple_currencies": cost_summary["multiple_currencies"],
             "total_views": self._sum_valid_numbers(cooperation_records, "views"),
             "average_roi": self._weighted_completed_roi(relations),
             "top_creators": top_creators[:5],
@@ -372,9 +385,8 @@ class DashboardService:
         )
 
     @classmethod
-    def _weighted_completed_roi(cls, rows: list[dict[str, Any]]) -> float:
-        total_cost = 0.0
-        weighted_roi = 0.0
+    def _weighted_completed_roi(cls, rows: list[dict[str, Any]]) -> float | None:
+        totals: dict[str, list[float]] = {}
         for row in rows:
             if str(row.get("archived_at") or "").strip():
                 continue
@@ -384,8 +396,15 @@ class DashboardService:
             roi = cls._nonnegative_number(row.get("roi"))
             if cost is None or cost <= 0 or roi is None:
                 continue
-            total_cost += cost
-            weighted_roi += cost * roi
+            currency = str(row.get("cost_currency") or "").strip().upper() or "__UNKNOWN__"
+            aggregate = totals.setdefault(currency, [0.0, 0.0])
+            aggregate[0] += cost
+            aggregate[1] += cost * roi
+        if not totals:
+            return 0
+        if len(totals) != 1:
+            return None
+        total_cost, weighted_roi = next(iter(totals.values()))
         return weighted_roi / total_cost if total_cost > 0 else 0
 
     @classmethod

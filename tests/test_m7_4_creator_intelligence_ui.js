@@ -27,8 +27,9 @@ assert.match(detail, /accountSignal\?\.follower_band/, "account follower band mu
 assert.match(detail, /render\(detail\);\s*renderIntelligence\(intelligence\);/, "account switch must refresh intelligence signals");
 assert.match(detail, /data\?\.intelligence/, "legacy summary must tolerate additive intelligence");
 assert.match(app, /mailSaveSuccess[^\n]*配置保存成功/, "save success must be explicit");
-assert.match(app, /Outlook \/ Microsoft 365/);
-assert.match(app, /outlook\.office365\.com/);
+assert.doesNotMatch(app, /Outlook \/ Microsoft 365/);
+assert.doesNotMatch(app, /outlook\.office365\.com/);
+assert.match(app, /mailProviderCustom/);
 assert.doesNotMatch(app, /Basic authentication is disabled/, "raw server bytes must not enter UI copy");
 
 console.log("M7.4 Creator Intelligence UI: 8/8 foundations PASS");

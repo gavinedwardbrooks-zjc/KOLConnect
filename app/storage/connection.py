@@ -80,7 +80,12 @@ class SQLiteConnectionFactory:
                 connection.close()
 
 
-def backup_database(source_path: Path, destination_path: Path) -> Path:
+def backup_database(
+    source_path: Path,
+    destination_path: Path,
+    *,
+    expected_schema_version: int | None = None,
+) -> Path:
     """Publish a validated online backup without copying live WAL files."""
     source_path = Path(source_path)
     destination_path = Path(destination_path)
@@ -99,9 +104,16 @@ def backup_database(source_path: Path, destination_path: Path) -> Path:
         probe = sqlite3.connect(staged, isolation_level=None, check_same_thread=True)
         try:
             probe.row_factory = sqlite3.Row
-            from storage.schema import validate_schema
+            from storage.schema import schema_version, validate_schema
 
-            validate_schema(probe)
+            if expected_schema_version is None:
+                validate_schema(probe)
+            else:
+                version = schema_version(probe)
+                quick_check = str(probe.execute("PRAGMA quick_check").fetchone()[0])
+                foreign_keys = list(probe.execute("PRAGMA foreign_key_check"))
+                if version != expected_schema_version or quick_check != "ok" or foreign_keys:
+                    raise SQLiteBackupError("SQLite source-version backup validation failed.")
             probe.execute("SELECT COUNT(*) FROM creators").fetchone()
         finally:
             probe.close()

@@ -40,7 +40,7 @@ Feishu access.
 | Campaign membership | `CampaignCreators` | One Creator relation with multiple `account_ids` | Active |
 | Products | `Products` | Campaign context | Active |
 | Tasks | task directory and review documents | TaskService and task API | Active |
-| Mail | settings plus mail runtime JSON | Settings/mail services | Active; Microsoft OAuth2 deferred |
+| Mail | settings plus mail runtime JSON | Settings/mail services | Standard IMAP/SMTP; Microsoft OAuth2 not supported |
 | Feishu | remote Bitable replica | Validate, Dry Run, confirmed Full Sync | Active |
 | Assistant | session-local confirmation records | narrow Assistant API | Active |
 | Creator Intelligence | computed from local recorded facts | AI-summary read path | Active, non-persistent |
@@ -74,8 +74,8 @@ inventing demographics, engagement quality, or price.
 `Campaigns.platforms` is authoritative for multi-platform Campaigns; legacy
 `platform` is compatibility-only. A Creator has one Campaign membership, with
 zero or more execution `account_ids`. `planned_publish_dates` supports multiple
-dates; legacy `publish_date` is compatibility-only. Published Content with an
-exact account and actual publication timestamp is deferred to M8.3.
+dates; legacy `publish_date` is compatibility-only. Actual publication records now preserve each
+URL, optional actual account, actual publication timestamp, and independent observation timestamp.
 
 Campaign Detail tolerates zero Creators, missing Product, sparse optional dates,
 and missing-publish widget failure. A real Campaign API failure remains visible
@@ -115,12 +115,13 @@ confirmed Full Sync through `FeishuSyncService`.
 The server remains localhost-only with Host and Origin validation. Trace IDs are
 server-generated and returned on JSON and binary responses. Assistant outputs
 exclude secrets, raw mail, local paths, and arbitrary workbook rows. Mail errors
-are sanitized. Current Outlook authentication is Basic IMAP LOGIN; Microsoft
-OAuth2 is documented separately and deferred to M7.4a.
+are sanitized. Current mail support is standard IMAP/SMTP password or app-password authentication
+where the provider permits it. Microsoft OAuth2 and guaranteed Outlook/Microsoft 365 compatibility
+are not current supported contracts.
 
 ## Deferred Boundaries
 
-Microsoft OAuth2, remote hard-delete convergence, Published Content, tracking,
+Microsoft OAuth2, remote hard-delete convergence, tracking,
 analytics expansion, URL resolution, Similar Creator, recommendations, and
 Google Sheets belong to later milestones. M8 numbering does not imply build
 order; M8 begins with architecture audit and must not redesign stable Feishu

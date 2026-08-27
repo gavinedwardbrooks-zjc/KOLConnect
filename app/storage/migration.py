@@ -15,6 +15,12 @@ import uuid
 from openpyxl import load_workbook
 
 from domain.normalization import normalize_number
+from domain.publication import (
+    normalize_publication_url,
+    normalize_utc_timestamp,
+    platforms_compatible,
+    publication_platform,
+)
 from runtime_paths import atomic_write_json, load_json_with_backup
 from storage.connection import SQLiteConnectionFactory
 from storage.errors import (
@@ -105,7 +111,9 @@ BASE_TABLES: tuple[tuple[str, str, str | tuple[str, ...], tuple[str, ...]], ...]
         "owner", "status", "budget", "goal", "note", "created_at", "updated_at", "archived_at",
     )),
     ("CampaignCreators", "campaign_creators", "id", (
-        "id", "campaign_id", "creator_id", "account_id", "stage", "owner", "creator_quote", "cost",
+        "id", "campaign_id", "creator_id", "account_id", "stage", "owner",
+        "quote_currency", "quote_unit_amount", "quote_quantity", "quote_unit",
+        "creator_quote", "cost", "cost_currency",
         "publish_date", "views", "likes", "comments", "roi", "performance_note", "created_at",
         "updated_at", "archived_at",
     )),
@@ -117,15 +125,16 @@ BASE_TABLES: tuple[tuple[str, str, str | tuple[str, ...], tuple[str, ...]], ...]
 SPECIAL_COLUMNS = {
     "Creators": {"tags"},
     "Campaigns": {"platforms"},
-    "CampaignCreators": {"account_ids", "planned_publish_dates", "publish_links"},
+    "CampaignCreators": {"account_ids", "planned_publish_dates", "publish_links", "publications"},
     "_Metadata": {"schema_version", "last_update_time"},
 }
 INTEGER_FIELDS = {
     "followers", "views", "likes", "comments", "video_count", "published_count", "total_views",
+    "quote_quantity",
 }
 REAL_FIELDS = {
     "quote", "average_views", "median_views", "stability", "creator_score", "price", "roi",
-    "budget", "creator_quote", "cost",
+    "budget", "quote_unit_amount", "creator_quote", "cost",
 }
 
 
@@ -458,11 +467,15 @@ class ExcelToSQLiteMigrator:
                     (campaign_id, position, platform),
                 )
         account_uids_by_external_id: dict[str, str] = {}
+        account_owner_by_uid: dict[str, str] = {}
+        account_platform_by_uid: dict[str, str] = {}
         for account in source_rows.get("CreatorAccounts", []):
             account_uid = str(account.get("account_uid") or "").strip()
             account_id = str(account.get("account_id") or "").strip()
             if account_uid:
                 account_uids_by_external_id[account_uid] = account_uid
+                account_owner_by_uid[account_uid] = str(account.get("creator_id") or "").strip()
+                account_platform_by_uid[account_uid] = str(account.get("platform") or "").strip()
             if account_id:
                 account_uids_by_external_id[account_id] = account_uid
         for relation in source_rows.get("CampaignCreators", []):
@@ -492,12 +505,64 @@ class ExcelToSQLiteMigrator:
                     "INSERT INTO campaign_creator_planned_dates(campaign_creator_id, position, planned_date) VALUES (?, ?, ?)",
                     (relation_id, position, planned_date),
                 )
-            links = _list_value(relation.get("publish_links"), split_plain=True)
-            for position, link in enumerate(links):
+            raw_publications = relation.get("publications")
+            if isinstance(raw_publications, str) and raw_publications.strip():
+                try:
+                    raw_publications = json.loads(raw_publications)
+                except (TypeError, ValueError) as exc:
+                    raise SQLiteMigrationError("Malformed campaign publications.") from exc
+            if not isinstance(raw_publications, list) or not raw_publications:
+                raw_publications = [
+                    {"actual_publish_url": link, "source": "legacy"}
+                    for link in _list_value(relation.get("publish_links"), split_plain=True)
+                ]
+            seen_links: set[str] = set()
+            position = 0
+            for publication in raw_publications:
+                if not isinstance(publication, dict):
+                    raise SQLiteMigrationError("Malformed campaign publication record.")
+                try:
+                    link = normalize_publication_url(
+                        publication.get("actual_publish_url") or publication.get("publish_url")
+                    )
+                except ValueError as exc:
+                    raise SQLiteMigrationError("Malformed campaign publication URL.") from exc
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
+                external_account_id = str(publication.get("actual_account_id") or "").strip()
+                account_uid = account_uids_by_external_id.get(external_account_id) if external_account_id else None
+                if external_account_id and not account_uid:
+                    raise SQLiteMigrationError("Campaign publication account identity is invalid.")
+                relation_creator_id = str(relation.get("creator_id") or "").strip()
+                if account_uid and account_owner_by_uid.get(account_uid) != relation_creator_id:
+                    raise SQLiteMigrationError("Campaign publication account belongs to another creator.")
+                inferred_platform = publication_platform(link)
+                if account_uid and not platforms_compatible(
+                    account_platform_by_uid.get(account_uid), inferred_platform
+                ):
+                    raise SQLiteMigrationError("Campaign publication account platform is invalid.")
+                publication_id = str(publication.get("publication_id") or "").strip()
+                if not publication_id:
+                    identity = hashlib.sha256(f"{relation_id}|{link}".encode("utf-8")).hexdigest()[:24]
+                    publication_id = f"publication_legacy_{identity}"
                 connection.execute(
-                    "INSERT INTO campaign_creator_publish_links(campaign_creator_id, position, publish_link) VALUES (?, ?, ?)",
-                    (relation_id, position, link),
+                    "INSERT INTO campaign_creator_publish_links("
+                    "campaign_creator_id, position, publish_link, publication_id, actual_account_uid, "
+                    "platform, published_at, observed_at, video_id, source"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        relation_id, position, link, publication_id, account_uid,
+                        str(publication.get("platform") or inferred_platform or "").strip(),
+                        normalize_utc_timestamp(
+                            publication.get("actual_published_at"), "实际发布时间"
+                        ) or None,
+                        normalize_utc_timestamp(publication.get("observed_at"), "观察时间") or None,
+                        str(publication.get("video_id") or "").strip() or None,
+                        str(publication.get("source") or "legacy").strip(),
+                    ),
                 )
+                position += 1
 
     @staticmethod
     def _relation_counts(connection) -> dict[str, int]:
@@ -765,6 +830,24 @@ def semantic_projection(connection) -> dict[str, object]:
                     (member["id"],),
                 )
             ]
+            value["publications"] = [
+                {
+                    "publication_id": str(item[0] or ""),
+                    "actual_publish_url": str(item[1] or ""),
+                    "actual_account_uid": str(item[2] or ""),
+                    "platform": str(item[3] or ""),
+                    "actual_published_at": str(item[4] or ""),
+                    "observed_at": str(item[5] or ""),
+                    "video_id": str(item[6] or ""),
+                    "source": str(item[7] or ""),
+                }
+                for item in connection.execute(
+                    "SELECT publication_id, publish_link, actual_account_uid, platform, "
+                    "published_at, observed_at, video_id, source "
+                    "FROM campaign_creator_publish_links WHERE campaign_creator_id=? ORDER BY position",
+                    (member["id"],),
+                )
+            ]
             campaign["members"].append(value)
         campaigns.append(campaign)
     return {"creators": creators, "campaigns": campaigns}
@@ -839,6 +922,41 @@ def source_semantic_projection(workbook) -> dict[str, object]:
                 member.get("planned_publish_dates"), fallback=member.get("publish_date")
             )
             value["publish_links"] = _list_value(member.get("publish_links"), split_plain=True)
+            raw_publications = member.get("publications")
+            if isinstance(raw_publications, str) and raw_publications.strip():
+                try:
+                    raw_publications = json.loads(raw_publications)
+                except (TypeError, ValueError):
+                    raw_publications = []
+            if not isinstance(raw_publications, list) or not raw_publications:
+                raw_publications = [
+                    {"actual_publish_url": link, "source": "legacy"}
+                    for link in value["publish_links"]
+                ]
+            publications = []
+            for publication in raw_publications:
+                if not isinstance(publication, dict):
+                    continue
+                link = normalize_publication_url(
+                    publication.get("actual_publish_url") or publication.get("publish_url")
+                )
+                identity = hashlib.sha256(
+                    f"{member.get('id')}|{link}".encode("utf-8")
+                ).hexdigest()[:24]
+                account_id = str(publication.get("actual_account_id") or "").strip()
+                publications.append({
+                    "publication_id": str(publication.get("publication_id") or f"publication_legacy_{identity}"),
+                    "actual_publish_url": link,
+                    "actual_account_uid": account_uids_by_external_id.get(account_id, account_id),
+                    "platform": str(publication.get("platform") or publication_platform(link) or ""),
+                    "actual_published_at": normalize_utc_timestamp(
+                        publication.get("actual_published_at"), "实际发布时间"
+                    ),
+                    "observed_at": normalize_utc_timestamp(publication.get("observed_at"), "观察时间"),
+                    "video_id": str(publication.get("video_id") or ""),
+                    "source": str(publication.get("source") or "legacy"),
+                })
+            value["publications"] = publications
             campaign["members"].append(value)
         campaigns.append(campaign)
     return {"creators": creators, "campaigns": campaigns}

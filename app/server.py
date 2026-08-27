@@ -228,12 +228,6 @@ MAIL_PROVIDER_PRESETS = {
         "smtp_host": "smtp.163.com",
         "smtp_port": "465",
     },
-    "outlook": {
-        "imap_host": "outlook.office365.com",
-        "imap_port": "993",
-        "smtp_host": "smtp.office365.com",
-        "smtp_port": "587",
-    },
 }
 
 HANDLERS = [
@@ -270,7 +264,7 @@ def normalize_mail_account(raw: dict | None) -> dict:
     preset = get_mail_provider_preset(provider)
     return {
         "name": str(raw.get("name") or "").strip(),
-        "provider": provider if provider in {"aliyun", "netease", "gmail", "outlook", "custom"} else "custom",
+        "provider": provider if provider in {"aliyun", "netease", "gmail", "custom"} else "custom",
         "email": str(raw.get("email") or "").strip(),
         "sender_name": str(raw.get("sender_name") or "").strip(),
         "imap_host": str(raw.get("imap_host") or preset.get("imap_host") or "").strip(),

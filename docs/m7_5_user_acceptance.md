@@ -64,12 +64,12 @@ Full Sync acceptance: PASS / FAIL / NOT RUN: __________.
 
 Mobile result: PASS / FAIL / PLATFORM_UI_LIMITATION: __________.
 
-## Outlook Acceptance
+## Standard IMAP/SMTP Acceptance
 
-- [ ] Save Outlook configuration and confirm the UI says configuration saved.
-- [ ] Test authentication separately.
-- [ ] If Microsoft rejects Basic authentication, confirm the UI reports that
-      authentication failed and OAuth2 is required, not that saving failed.
+- [ ] Save a provider configuration and confirm the UI says configuration saved.
+- [ ] Test authentication separately with a password/app password supported by that provider.
+- [ ] Confirm Basic-auth rejection remains distinct from settings-save failure.
 - [ ] Confirm no password, token, or raw Python/server payload is displayed.
 
-OAuth2 implementation remains deferred to M7.4a.
+Microsoft OAuth2 and guaranteed Outlook/Microsoft 365 compatibility are not supported by this
+release. Future OAuth2 work would be a new product feature.

@@ -39,6 +39,10 @@ class SnapshotRepository:
                 "email": "private@example.com",
                 "whatsapp": "+15551234567",
                 "note": "private note",
+                "accounts": [
+                    {"platform": "TikTok", "username": ""},
+                    {"platform": "YouTube", "username": "INSA"},
+                ],
             },
             "creator_two": {
                 "creator_id": "creator_two",
@@ -109,6 +113,11 @@ class CreatorLibraryExportTests(unittest.TestCase):
     def test_multiple_creator_export_preserves_requested_selection_order(self) -> None:
         rows = self._rows(["creator_two", "creator_one"])
         self.assertEqual(["Creator Two", "Creator One"], [row[2] for row in rows[1:]])
+
+    def test_merged_multi_account_creator_exports_one_canonical_name_row(self) -> None:
+        rows = self._rows(["creator_one"])
+        self.assertEqual(2, len(rows))
+        self.assertEqual("Creator One", rows[1][2])
 
     def test_empty_or_missing_selection_is_rejected(self) -> None:
         for creator_ids in (None, [], "creator_one"):

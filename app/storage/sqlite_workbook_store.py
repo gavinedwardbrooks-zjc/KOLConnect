@@ -346,6 +346,7 @@ class SQLiteWorkbookStore(ExcelWorkbookStore):
         relation_accounts: dict[str, list[str]] = defaultdict(list)
         relation_dates: dict[str, list[str]] = defaultdict(list)
         relation_links: dict[str, list[str]] = defaultdict(list)
+        relation_publications: dict[str, list[dict[str, Any]]] = defaultdict(list)
         if projection is None or "CampaignCreators" in projection:
             relation_filter = ""
             parameters = ()
@@ -380,6 +381,25 @@ class SQLiteWorkbookStore(ExcelWorkbookStore):
                 )
                 for owner_id, value in connection.execute(sql, parameters):
                     destination[str(owner_id)].append(str(value))
+            sql = (
+                "SELECT child.campaign_creator_id, child.publication_id, child.publish_link, "
+                "child.actual_account_uid, child.platform, child.published_at, child.observed_at, "
+                "child.video_id, child.source FROM campaign_creator_publish_links AS child"
+                f"{relation_filter} ORDER BY child.campaign_creator_id, child.position"
+            )
+            for row in connection.execute(sql, parameters):
+                owner_id = str(row[0])
+                account_uid = str(row[3] or "")
+                relation_publications[owner_id].append({
+                    "publication_id": str(row[1] or ""),
+                    "actual_publish_url": str(row[2] or ""),
+                    "actual_account_id": account_external_ids.get(account_uid, account_uid) if account_uid else "",
+                    "platform": str(row[4] or ""),
+                    "actual_published_at": str(row[5] or ""),
+                    "observed_at": str(row[6] or ""),
+                    "video_id": str(row[7] or ""),
+                    "source": str(row[8] or ""),
+                })
         for source, table, _identity, columns in BASE_TABLES:
             if projection is not None and source not in projection:
                 continue
@@ -420,6 +440,10 @@ class SQLiteWorkbookStore(ExcelWorkbookStore):
                     )
                     record["publish_links"] = json.dumps(
                         relation_links.get(str(relation_id), []),
+                        ensure_ascii=False,
+                    )
+                    record["publications"] = json.dumps(
+                        relation_publications.get(str(relation_id), []),
                         ensure_ascii=False,
                     )
                 sheet.append([record.get(header) for header in headers])

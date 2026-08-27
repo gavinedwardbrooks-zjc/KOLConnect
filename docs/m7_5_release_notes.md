@@ -22,17 +22,17 @@ Release version: `0.2.3`
   controls, prompt-injection resistance, and confirmation-gated writes.
 - Shared country/follower normalization and grounded Creator Intelligence with
   separate user tags and non-persistent AI tags.
-- Explicit Outlook Basic Auth rejection classification and a separate Microsoft
-  OAuth2 proposal.
+- Generic IMAP Basic-auth rejection classification with standard IMAP/SMTP configuration.
 
 ## Known Limitations and Deferred Work
 
-- Microsoft OAuth2 mail authentication is deferred to M7.4a.
+- Microsoft OAuth2 and guaranteed Outlook/Microsoft 365 compatibility are not part of the current
+  mail contract; future OAuth2 work would be a new feature.
 - Local Creator hard delete does not yet provide an automatic remote Feishu
   hard-delete lifecycle.
 - A stale secondary Creator may remain remotely after local manual merge; normal
   Full Sync repairs account relations but does not physically delete it.
-- M8 Published Content, tracking, analytics, URL resolver, Similar Creator,
+- Tracking, analytics, URL resolver, Similar Creator,
   recommendation, and Google Sheets are not part of this release.
 - M8 numbering is not implementation order. Start with M8.0 architecture audit;
   Google Sheets requires a separate sync architecture audit and must not rewrite

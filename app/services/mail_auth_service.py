@@ -17,7 +17,7 @@ def classify_imap_error(exc: BaseException) -> MailAuthenticationError:
     if "basic authentication is disabled" in lowered or "basic auth" in lowered and "disabled" in lowered:
         return MailAuthenticationError(
             "IMAP_BASIC_AUTH_REJECTED",
-            "Outlook IMAP 验证失败：Microsoft 服务器不接受当前 Basic 登录方式。配置已保存，但该账户可能需要 OAuth2。",
+            "IMAP 服务器不接受当前 Basic 登录方式。配置已保存；请确认该服务商是否支持密码或授权码登录。",
         )
     if isinstance(exc, (TimeoutError, socket.timeout)) or "timed out" in lowered:
         return MailAuthenticationError("MAIL_AUTH_TIMEOUT", "邮箱验证超时，请检查网络和服务器地址。")

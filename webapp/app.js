@@ -217,7 +217,6 @@ Object.assign(I18N.zh, {
   mailTestConnection: "测试连接",
   mailDeleteAccount: "删除",
   mailProviderGmail: "Gmail",
-  mailProviderOutlook: "Outlook / Microsoft 365",
   mailProviderNetease: "网易邮箱",
   mailProviderAliyun: "阿里邮箱",
   mailProviderCustom: "自定义邮箱",
@@ -275,7 +274,6 @@ Object.assign(I18N.en, {
   mailTestConnection: "Test connection",
   mailDeleteAccount: "Delete account",
   mailProviderGmail: "Gmail",
-  mailProviderOutlook: "Outlook / Microsoft 365",
   mailProviderNetease: "NetEase",
   mailProviderAliyun: "Aliyun Mail",
   mailProviderCustom: "Custom",
@@ -542,12 +540,6 @@ const state = {
     messages: [],
     page: 1,
     pageSize: 20
-  },
-  outlook: {
-    imap_host: "outlook.office365.com",
-    imap_port: "993",
-    smtp_host: "smtp.office365.com",
-    smtp_port: "587"
   }
 };
 
@@ -1662,7 +1654,6 @@ function getMailProviderOptions() {
     { value: "aliyun", label: t("mailProviderAliyun") },
     { value: "netease", label: t("mailProviderNetease") },
     { value: "gmail", label: t("mailProviderGmail") },
-    { value: "outlook", label: t("mailProviderOutlook") },
     { value: "custom", label: t("mailProviderCustom") }
   ];
 }

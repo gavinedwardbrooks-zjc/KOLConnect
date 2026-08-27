@@ -9,6 +9,7 @@ from statistics import median
 from typing import Any, Protocol
 
 from creator_repository import CreatorRepository
+from domain.money import grouped_amounts
 
 
 class CreatorAnalyticsSource(Protocol):
@@ -101,7 +102,7 @@ class AnalyticsService:
                 month,
                 {
                     "campaign_creator_count": 0,
-                    "total_cost": 0.0,
+                    "cost_records": [],
                     "recorded_roi": [],
                     "total_views": 0.0,
                     "total_likes": 0.0,
@@ -109,16 +110,17 @@ class AnalyticsService:
                 },
             )
             aggregate["campaign_creator_count"] += 1
-            for field in ("cost", "views", "likes", "comments"):
+            for field in ("views", "likes", "comments"):
                 value = cls._nonnegative_number(relation.get(field))
                 if value is not None:
                     target = {
-                        "cost": "total_cost",
                         "views": "total_views",
                         "likes": "total_likes",
                         "comments": "total_comments",
                     }[field]
                     aggregate[target] += value
+            if cls._nonnegative_number(relation.get("cost")) is not None:
+                aggregate["cost_records"].append(relation)
             roi = cls._number(relation.get("roi"))
             if roi is not None:
                 aggregate["recorded_roi"].append(roi)
@@ -126,12 +128,18 @@ class AnalyticsService:
         trend = []
         for month in sorted(monthly):
             aggregate = monthly[month]
+            cost_summary = grouped_amounts(
+                aggregate.pop("cost_records"), "cost", "cost_currency"
+            )
             roi_values = aggregate["recorded_roi"]
             views = aggregate["total_views"]
             trend.append({
                 "month": month,
                 "campaign_creator_count": aggregate["campaign_creator_count"],
-                "total_cost": cls._rounded(aggregate["total_cost"]),
+                "total_cost": cls._rounded(cost_summary["total"]),
+                "cost_totals_by_currency": cost_summary["totals_by_currency"],
+                "cost_unknown_currency_total": cost_summary["unknown_currency_total"],
+                "cost_multiple_currencies": cost_summary["multiple_currencies"],
                 "average_recorded_roi": cls._rounded(sum(roi_values) / len(roi_values))
                 if roi_values else None,
                 "total_views": cls._rounded(views),
@@ -158,7 +166,7 @@ class AnalyticsService:
                 "views_total": 0.0,
                 "likes_total": 0.0,
                 "comments_total": 0.0,
-                "cost_total": 0.0,
+                "cost_records": [],
                 "recorded_roi": [],
             }
             for platform in cls.PLATFORMS
@@ -200,11 +208,12 @@ class AnalyticsService:
             if cls._has_publish_links(relation.get("publish_links")):
                 aggregate["published_count"] += 1
 
-            for field in ("views", "likes", "comments", "cost"):
+            for field in ("views", "likes", "comments"):
                 value = cls._nonnegative_number(relation.get(field))
                 if value is not None:
-                    target = "cost_total" if field == "cost" else f"{field}_total"
-                    aggregate[target] += value
+                    aggregate[f"{field}_total"] += value
+            if cls._nonnegative_number(relation.get("cost")) is not None:
+                aggregate["cost_records"].append(relation)
             roi = cls._number(relation.get("roi"))
             if roi is not None:
                 aggregate["recorded_roi"].append(roi)
@@ -226,6 +235,9 @@ class AnalyticsService:
     def _finalize(cls, aggregate: dict[str, Any]) -> dict[str, Any]:
         followers = aggregate.pop("followers")
         roi_values = aggregate.pop("recorded_roi")
+        cost_summary = grouped_amounts(
+            aggregate.pop("cost_records"), "cost", "cost_currency"
+        )
         relation_count = aggregate["campaign_creator_count"]
         views_total = aggregate["views_total"]
         return {
@@ -246,7 +258,10 @@ class AnalyticsService:
             "views_total": cls._rounded(aggregate["views_total"]),
             "likes_total": cls._rounded(aggregate["likes_total"]),
             "comments_total": cls._rounded(aggregate["comments_total"]),
-            "cost_total": cls._rounded(aggregate["cost_total"]),
+            "cost_total": cls._rounded(cost_summary["total"]),
+            "cost_totals_by_currency": cost_summary["totals_by_currency"],
+            "cost_unknown_currency_total": cost_summary["unknown_currency_total"],
+            "cost_multiple_currencies": cost_summary["multiple_currencies"],
         }
 
     @staticmethod
@@ -335,7 +350,9 @@ class AnalyticsService:
         return True
 
     @staticmethod
-    def _rounded(value: float) -> int | float:
+    def _rounded(value: float | None) -> int | float | None:
+        if value is None:
+            return None
         rounded = round(value, 2)
         return int(rounded) if rounded.is_integer() else rounded
 

@@ -76,7 +76,9 @@ class SQLiteCampaignCreatorRepository(CampaignCreatorRepository):
 
     def updateCampaignCreator(self, record_id: str, payload: dict):
         scalar_fields = {
-            "stage", "owner", "performance_note", "creator_quote", "cost",
+            "stage", "owner", "performance_note", "quote_currency",
+            "quote_unit_amount", "quote_quantity", "quote_unit", "creator_quote",
+            "cost", "cost_currency",
             "views", "likes", "comments", "roi",
         }
         if not isinstance(payload, dict) or not set(payload).issubset(scalar_fields):
@@ -88,7 +90,16 @@ class SQLiteCampaignCreatorRepository(CampaignCreatorRepository):
                 raise ValueError("Campaign 达人记录不存在。")
             existing = dict(row)
             updated = self._values(payload, existing)
-            updates = {field: updated.get(field) for field in scalar_fields if field in payload}
+            monetary_fields = {
+                "quote_currency", "quote_unit_amount", "quote_quantity", "quote_unit",
+                "creator_quote", "cost", "cost_currency",
+            }
+            requested_fields = set(payload)
+            if requested_fields.intersection(monetary_fields):
+                requested_fields.update(monetary_fields)
+            updates = {
+                field: updated.get(field) for field in scalar_fields if field in requested_fields
+            }
             updates["updated_at"] = utc_now()
             connection.execute(
                 f"UPDATE campaign_creators SET {','.join(f'{field}=?' for field in updates)} WHERE id=?",

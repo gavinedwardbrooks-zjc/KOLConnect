@@ -276,14 +276,9 @@ const manifest = JSON.parse(readFileSync(
   new URL("../chrome_extension/manifest.json", import.meta.url),
   "utf8",
 ));
-const isolatedScripts = manifest.content_scripts.find((entry) => (
-  entry.run_at === "document_start" && !entry.world && entry.js.includes("content/passive_capture_bridge.js")
-)).js;
-assert.ok(
-  isolatedScripts.indexOf("platform/tiktok_network.js")
-    < isolatedScripts.indexOf("content/passive_capture_bridge.js"),
-  "the isolated parser must load before bridge wiring",
-);
+const activeScripts = manifest.content_scripts.flatMap((entry) => entry.js || []);
+assert.equal(activeScripts.includes("content/passive_capture_bridge.js"), false);
+assert.equal(activeScripts.includes("capture/passive_capture_main.js"), false);
 assert.equal(manifest.version, "0.2.3");
 
 console.log("M3.1 TikTok item_list sanitized fixture, parser, and bridge integration: OK");

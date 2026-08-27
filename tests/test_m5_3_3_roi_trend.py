@@ -76,10 +76,24 @@ class RecordedRoiTrendTests(unittest.TestCase):
             "month": "2026-07",
             "campaign_creator_count": 2,
             "total_cost": 0,
+            "cost_totals_by_currency": {},
+            "cost_unknown_currency_total": None,
+            "cost_multiple_currencies": False,
             "average_recorded_roi": None,
             "total_views": 0,
             "engagement_rate": None,
         }], result)
+
+    def test_mixed_cost_currencies_do_not_produce_a_scalar_trend_total(self):
+        result = self.analytics([
+            relation("usd", "2026-08-01", cost=200, cost_currency="USD"),
+            relation("brl", "2026-08-02", cost=1000, cost_currency="BRL"),
+        ])
+        self.assertIsNone(result[0]["total_cost"])
+        self.assertEqual(
+            {"BRL": 1000.0, "USD": 200.0}, result[0]["cost_totals_by_currency"]
+        )
+        self.assertTrue(result[0]["cost_multiple_currencies"])
 
     def test_sparse_months_are_sorted_without_zero_filling(self):
         result = self.analytics([

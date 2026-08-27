@@ -23,6 +23,12 @@ packaging/*.iconset/
 /.pre_m8_benchmark_sandbox/
 /.pre_m8_batch3_benchmark/
 /.pre_m8_batch3_acceptance/
+/.pre_m8_item7_test_runtime/
+/.pre_m8_diag_direct/
+/.pre_m8_diag_fixed/
+/KOLConnect_acceptance/
+/packaging/.startup-diag-dist-onedir/
+/packaging/.startup-diag-dist-onedir-optimized/
 /.d4_*/
 .uuid7_test_runtime/
 .uuid7_test_temp/
