@@ -1,5 +1,9 @@
 # M7 Release Notes
 
+> Historical release record: references to OpenClaw describe the interface
+> position at release time. OpenClaw was later retired from active architecture;
+> KOLConnect Assistant with Feishu long-connection transport is canonical.
+
 Release version: `0.2.3`
 
 ## Delivered

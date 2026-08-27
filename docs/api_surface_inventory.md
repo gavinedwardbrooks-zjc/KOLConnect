@@ -73,4 +73,4 @@ All entries below are registered through `server.HANDLERS` (plus the Browser Mod
 | POST | `/api/runtime/shutdown` | server | Browser Mode exit | W runtime | Compat | Yes | Yes | No |
 | POST/PATCH/PUT/DELETE | `/api/creator-library/{id}/cooperations` | creator | Reject legacy Cooperation writes | W rejected | Frozen 403 | No | Yes | Yes |
 
-Unregistered modules for account backfill, Creator backfill, and legacy Creator cleanup are retired/internal. They are not in `server.HANDLERS`, OpenAPI, or normal UI. Static web files are not API routes.
+Account backfill, Creator backfill, and legacy Creator cleanup runtime modules and routes are removed. Clean Reset is the supported replacement workflow. Static web files are not API routes.

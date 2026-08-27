@@ -1,5 +1,12 @@
 # Feishu / OpenClaw Skill Contract
 
+> **DEPRECATED / HISTORICAL / REFERENCE-ONLY**
+>
+> This document does not describe the active runtime. OpenClaw is retired from
+> the product architecture and no OpenClaw deployment is required. The active
+> conversational architecture is Feishu long-connection transport -> KOLConnect
+> Assistant -> allowlisted KOLConnect tools and services.
+
 ## Boundary
 
 The supported architecture is:
@@ -50,4 +57,4 @@ Validate and Dry Run are non-mutating. Full Sync is the sole normal Creator/Acco
 
 ## Security assumptions
 
-The current API is localhost-only and protected by Host/Origin checks. This contract does not authorize cloud or remote access. A future OpenClaw runtime outside the trusted local process requires a separate authentication and transport design before use.
+The current API is localhost-only and protected by Host/Origin checks. This historical contract never authorized cloud or remote access. No OpenClaw runtime is planned or required; any future reversal of that product decision would require a new authentication and transport design review.

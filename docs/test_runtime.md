@@ -13,6 +13,11 @@ Full Python regression:
 python scripts/run_python_tests.py
 ```
 
+This repository-owned command is the authoritative Python full-suite runner.
+Raw `python -m unittest discover -s tests -p "test_*.py"` is not authoritative
+unless the process is already inside `test_runtime_sandbox`; otherwise it can
+inherit the user's APPDATA, TEMP paths, and active SQLite storage authority.
+
 One Python test file:
 
 ```powershell
@@ -38,3 +43,8 @@ the original process environment. Set `KOLCONNECT_TEST_KEEP_RUNTIME=1` to retain
 a run for debugging. Otherwise cleanup is best effort: a retained directory
 after successful assertions is an environment cleanup warning, while an open
 workbook or lock that breaks an assertion is a real failure.
+
+HTTP fixtures remain responsible for `shutdown()`, `server_close()`, and joining
+their server/background threads. Tests that configure the application logger
+close and remove their handlers. After those fixture cleanups, the outer sandbox
+restores environment and tempfile state and removes its unique runtime directory.

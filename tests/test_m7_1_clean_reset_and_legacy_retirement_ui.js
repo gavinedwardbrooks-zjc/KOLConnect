@@ -44,6 +44,16 @@ async function run() {
   }
   assert.doesNotMatch(settingsSource, /account-backfill|creator-backfill|legacy-creator-cleanup/);
   assert.doesNotMatch(serverSource, /account_identity_backfill_handler|creator_identity_backfill_handler|legacy_creator_cleanup_handler/);
+  for (const retiredModule of [
+    "app/http_handlers/account_identity_backfill_handler.py",
+    "app/http_handlers/creator_identity_backfill_handler.py",
+    "app/http_handlers/legacy_creator_cleanup_handler.py",
+    "app/services/account_identity_backfill_service.py",
+    "app/services/creator_identity_backfill_service.py",
+    "app/services/legacy_creator_cleanup_service.py",
+  ]) {
+    assert.equal(fs.existsSync(path.join(root, retiredModule)), false, `${retiredModule} must be removed`);
+  }
   assert.match(serverSource, /clean_reset_handler/);
   for (const retained of ["feishu-sync-validate", "feishu-sync-dry-run", "feishu-sync-full"]) {
     assert.match(html, new RegExp(`id="${retained}"`), `${retained} remains available`);

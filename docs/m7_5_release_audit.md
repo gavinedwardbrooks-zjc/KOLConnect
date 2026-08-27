@@ -1,5 +1,9 @@
 # M7.5 Release Architecture Audit
 
+> Historical note: this document records the M7.5 release state. OpenClaw was
+> subsequently retired from active architecture, and the unregistered legacy
+> identity-backfill/cleanup modules were physically removed during PRE-M8 closure.
+
 Baseline: `2dad4a5b51f7836d365120264416ac0d93df1fa7`
 
 ## Authoritative Architecture

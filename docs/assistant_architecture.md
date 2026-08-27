@@ -2,9 +2,12 @@
 
 ## Boundary
 
-The assistant is a localhost-only adapter over KOLConnect capabilities:
+The assistant is a localhost-only adapter over KOLConnect capabilities. OpenClaw
+is retired from the active product architecture; no OpenClaw host, authentication,
+or transport deployment is required. Feishu long connection is the supported
+external conversational entry point:
 
-`Feishu/OpenClaw -> assistant API -> allowlisted service tool -> KOLConnect service/repository/store`
+`User / Feishu -> Feishu transport -> KOLConnect Assistant -> allowlisted service tool -> KOLConnect service/repository/store`
 
 It has no workbook, filesystem, shell, SQL, generic HTTP, or credential tool.
 M7.6 adds an optional Feishu long-connection transport that normalizes messages
@@ -44,7 +47,10 @@ mail data, notes, prices/costs, secrets, tokens, passwords, and local paths.
 Entity names and biographies are treated only as data. Ambiguous names return
 safe candidates and require user selection.
 
-## OpenClaw flow
+## Historical OpenClaw adapter contract
+
+The following local API sequence is retained as historical interface reference.
+It is not an active OpenClaw deployment plan and is not required by M8.
 
 1. Call `GET /api/assistant/capabilities`.
 2. Send a message and stable local conversation ID to `POST /api/assistant/message`.

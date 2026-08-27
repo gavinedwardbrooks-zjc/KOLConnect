@@ -1,5 +1,10 @@
 # M7.2 Integration Architecture Audit
 
+> Historical note: this audit records the M7.2 state. The legacy identity
+> backfill and cleanup modules described below were physically removed during
+> PRE-M8 closure; OpenClaw was later retired by product decision in favor of the
+> KOLConnect Assistant with Feishu long-connection transport.
+
 ## Route inventory scope
 
 The supported external surface is documented in `openapi.yaml`. All routes pass through `Handler._allow_local_request`, so the localhost Host gate applies to reads and the Origin gate additionally applies to mutations. Existing UI-only Settings, Dashboard, Analytics, Risk, Agency, mail, scrape-control, and binary transfer routes remain internal compatibility contracts.

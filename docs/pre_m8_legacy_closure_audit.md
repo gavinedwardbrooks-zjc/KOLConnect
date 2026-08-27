@@ -68,21 +68,22 @@ The historical 2,453-Creator / roughly 2,392-account evidence predates Clean Res
 
 Evidence was taken from current code, tests, Git history, packaged artifacts, read-only production workbook inspection, runtime logs, deterministic focused tests, the canonical Python runner, the unified frontend runner, static checks, and isolated synthetic workbooks. No conclusion relies only on milestone labels or comments.
 
-Status vocabulary is restricted to: `DONE`, `ENGINEERING_DONE_USER_ACCEPTANCE_PENDING`, `PARTIAL`, `MISSING`, `OBSOLETE_SUPERSEDED`, `EXPLICITLY_DEFERRED`, and `NOT_APPLICABLE`.
+Status vocabulary is restricted to: `DONE`, `CLOSED_BY_DESIGN_DECISION`, `ENGINEERING_DONE_USER_ACCEPTANCE_PENDING`, `PARTIAL`, `MISSING`, `OBSOLETE_SUPERSEDED`, `EXPLICITLY_DEFERRED`, and `NOT_APPLICABLE`.
 
 ## 6. Historical Inventory
 
 | Status | Count |
 |---|---:|
-| DONE | 20 |
-| ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | 2 |
-| PARTIAL | 6 |
+| DONE | 22 |
+| CLOSED_BY_DESIGN_DECISION | 1 |
+| ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | 1 |
+| PARTIAL | 5 |
 | MISSING | 0 |
 | OBSOLETE_SUPERSEDED | 2 |
-| EXPLICITLY_DEFERRED | 4 |
+| EXPLICITLY_DEFERRED | 3 |
 | NOT_APPLICABLE | 0 |
 
-Total classified items: 34. Unresolved items, defined as every item not `DONE`, `OBSOLETE_SUPERSEDED`, or `NOT_APPLICABLE`: 12.
+Total classified items: 34. Unresolved items, defined as every item not `DONE`, `CLOSED_BY_DESIGN_DECISION`, `OBSOLETE_SUPERSEDED`, or `NOT_APPLICABLE`: 9.
 
 ## 7. M0-M1 Foundation
 
@@ -195,11 +196,11 @@ Status: `DONE` for current one-way synchronization scope.
 
 Clean Reset is the current supported clean-baseline mechanism. It backs up the workbook before clearing business data and preserves workbook schema/metadata, Chrome configuration, mail accounts, and Feishu configuration.
 
-Historical account/Creator identity backfill and unmanaged-Creator cleanup UI/routes are retired from the normal product. Their service/handler files remain unregistered.
+Historical account/Creator identity backfill and unmanaged-Creator cleanup UI/routes are retired from the normal product. Their six unregistered service/handler modules and three legacy-only test files were physically removed after confirming zero runtime, support, recovery, dynamic-import, CLI, and packaging dependencies.
 
 Special decision K: `SUPERSEDED_BY_CLEAN_RESET`.
 
-Dead legacy service removal is optional cleanup, not a functional blocker.
+Special decision K closure: `CLOSED`. Clean Reset remains the supported workflow.
 
 ## 19. Feishu Chat M7.6
 
@@ -214,11 +215,11 @@ Special decision G: `ENGINEERING_DONE`. The earlier stuck-connecting observation
 
 ## 20. Assistant / OpenClaw
 
-Assistant status: `DONE`. OpenClaw runtime status: `EXPLICITLY_DEFERRED`.
+Assistant status: `DONE`. OpenClaw runtime status: `CLOSED_BY_DESIGN_DECISION`.
 
 Assistant tools are allowlisted and service-mediated. There is no direct workbook, filesystem, shell, generic HTTP, or Bitable access from chat. Full Sync uses the same confirmation-gated Feishu service. `ASSISTANT_BYPASS = NO` and `DIRECT_BITABLE_ACCESS_FROM_CHAT = NO`.
 
-OpenClaw remains a documented read-only contract rather than a deployed runtime. Reopen when an OpenClaw host/auth transport is selected. M8 does not depend on external OpenClaw deployment.
+OpenClaw is retired from active product architecture by explicit product decision. The canonical AI path is User / Feishu -> Feishu long-connection transport -> KOLConnect Assistant -> allowlisted tools/services. No OpenClaw host, authentication, or transport deployment is required, and M8 does not depend on OpenClaw. Existing OpenClaw material is historical/reference-only.
 
 ## 21. Normalization
 
@@ -256,11 +257,11 @@ Special decision I: `USER_ACCEPTANCE_ONLY`; no known code defect.
 
 ## 26. Dashboard Cold Start
 
-Status: `ENGINEERING_DONE_USER_ACCEPTANCE_PENDING`.
+Status: `DONE`.
 
-The response cache, fingerprint/date invalidation, immutable copies, double-check locking, mutation invalidation, packaged-runtime migration ordering, and concurrent cold-start fix are committed and packaged. Current small-workbook direct cold projection is fast, but packaged Windows cold-start acceptance remains a user gate.
+The response cache, fingerprint/date invalidation, immutable copies, double-check locking, mutation invalidation, packaged-runtime migration ordering, and concurrent cold-start fix are committed and packaged. The canonical ONEDIR release passed portability and isolated packaged startup checks. Real Windows manual acceptance confirmed that Dashboard was visible and usable; normal desktop close exited and released port 8765.
 
-Current release EXE predates the final commit by approximately eight minutes but its PyInstaller inventory contains the M7.6 modules and dependencies produced from the then-dirty implementation tree.
+Special decision I-2: `CLOSED_BY_EXISTING_ACCEPTANCE_EVIDENCE`. The historical contract did not require a sub-five-second threshold, reboot, or additional cold-start cycle.
 
 ## 27. Excel Performance Benchmark
 
@@ -341,9 +342,9 @@ Focused OpenAPI tests passed 3/3 and verify key public routes plus retired-route
 
 ## 36. Legacy Route Audit
 
-Normal registered handler groups include assistant, analytics, dashboard, risk, campaign, Feishu chat, Feishu sync, clean reset, settings, Creator, and task. Legacy identity-backfill and unmanaged-cleanup handlers remain as source modules but are unregistered and absent from normal UI. Capture-page direct Feishu business sync is retired.
+Normal registered handler groups include assistant, analytics, dashboard, risk, campaign, Feishu chat, Feishu sync, clean reset, settings, Creator, and task. Legacy identity-backfill and unmanaged-cleanup runtime modules are physically removed and absent from normal UI. Capture-page direct Feishu business sync is retired.
 
-Disposition for dead modules: `PARTIAL`; remove only after confirming no support/recovery procedure imports them. Priority P3, non-blocking.
+Disposition for dead modules: `DONE`; six modules and three legacy-only test files were removed after confirming no runtime, support, recovery, dynamic-import, CLI, or packaging dependency. Clean Reset remains supported. Priority P3, non-blocking.
 
 ## 37. Git Closure Audit
 
@@ -415,17 +416,17 @@ The former full-Python TaskRepository failure was a real Windows product race an
 | 1 | TaskRepository Windows atomic bytes | DONE | P0 | NO | Closed: shared hardened atomic writer, 8/8 focused tests, two 669-test canonical runs |
 | 2 | Feishu permanent-delete propagation | DONE | P0 | NO | Closed: durable intent/outbox, recovery, idempotent retry, progress, status, and reconciliation |
 | 3 | Excel scale/read-index architecture | C0_C12_ENGINEERING_COMPLETE | P0 | NO | Human review, then separately authorize production migration acceptance |
-| 4 | Dashboard packaged cold acceptance | ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | P1 | NO | User runs packaged cold/warm acceptance on current release candidate |
+| 4 | Dashboard packaged cold acceptance | CLOSED | P1 | NO | Closed by current ONEDIR portability plus real Windows manual acceptance: Dashboard usable, normal close exited and released port 8765 |
 | 5 | Desktop Save As acceptance | ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | P2 | NO | User validates template/export Save As and actual path in packaged Windows app |
 | 6 | M3.1 passive TikTok runtime integration | PARTIAL | P1 | NO | Reopen at M8.3; connect bridge output to authoritative capture flow or remove subsystem |
 | 7 | M3.5 quote/currency contract | PARTIAL | P1 | NO | Complete before M8.5 monetary analytics |
 | 8 | VideoSnapshot retention/index strategy | PARTIAL | P1 | NO | Complete before M8.4 tracking scale |
 | 9 | Test artifact cleanup hygiene | PARTIAL | P2 | NO | Eliminate ACL-leaking fixtures and prove cleanup in normal Windows CI/local runs |
 | 10 | Campaign/settings service-boundary debt | EXPLICITLY_DEFERRED | P2 | NO | Reopen when affected handlers are modified |
-| 11 | OpenClaw deployed runtime | EXPLICITLY_DEFERRED | P2 | NO | Reopen after external host/auth/transport decision |
+| 11 | OpenClaw deployed runtime | CLOSED_BY_DESIGN_DECISION | P2 | NO | OpenClaw retired; Assistant + Feishu transport is canonical and requires no OpenClaw deployment |
 | 12 | Actual published-content account/date model | EXPLICITLY_DEFERRED | P1 | NO | Reopen at M8.3 |
 | 13 | Microsoft OAuth2 | EXPLICITLY_DEFERRED | P2 | NO | Reopen on provider rejection or explicit product requirement |
-| 14 | Dead legacy backfill/cleanup modules | PARTIAL | P3 | NO | Remove after support/recovery import audit |
+| 14 | Dead legacy backfill/cleanup modules | CLOSED | P3 | NO | Six runtime modules and three legacy-only tests removed after zero-dependency audit |
 
 ## 42. M8 Blockers
 
@@ -439,16 +440,12 @@ acceptance.
 - M3.5 quote/currency: reopen before M8.5 monetary analytics.
 - VideoSnapshot retention/index detail: reopen before M8.4 tracking.
 - Campaign/settings service boundaries: reopen when those handlers are touched.
-- OpenClaw runtime: reopen after deployment/auth transport is selected.
 - OAuth2: reopen on provider Basic-auth rejection or explicit support requirement.
 - Actual publication account/date model: reopen at M8.3.
-- Dead legacy modules: remove after recovery/support dependency audit.
 
 ## 44. User Acceptance Queue
 
 1. Packaged Windows Desktop Save As for template and Creator export, including actual saved path.
-2. Packaged Dashboard cold/warm startup on the current release candidate.
-
 Feishu Chat is not listed because current runtime connection logs and prior real chat acceptance provide closure evidence. No Full Sync is required for this audit.
 
 ## 45. Final Legacy Matrix
@@ -470,16 +467,16 @@ Feishu Chat is not listed because current runtime connection logs and prior real
 | L13 | Local hard delete | DONE | transaction/lock/recovery tests | P0 | NO | Keep contract |
 | L14 | Remote Feishu hard delete | DONE | Durable intent/recovery/retry/progress/reconcile tests 24/24 | P0 | NO | Keep contract |
 | L15 | Feishu sync foundation | DONE | one workflow, relation/idempotency tests | P0 | NO | Keep contract |
-| L16 | M7.1d legacy cleanup | OBSOLETE_SUPERSEDED | unregistered, Clean Reset active | P3 | NO | Optional dead-code removal |
+| L16 | M7.1d legacy cleanup | OBSOLETE_SUPERSEDED | runtime modules removed, Clean Reset active | P3 | NO | Closed by physical cleanup |
 | L17 | Feishu chat M7.6 | DONE | package, logs, tests, prior acceptance | P0 | NO | Keep contract |
-| L18 | OpenClaw deployed runtime | EXPLICITLY_DEFERRED | contract only | P2 | NO | Reopen on host decision |
+| L18 | OpenClaw deployed runtime | CLOSED_BY_DESIGN_DECISION | OpenClaw retired; Assistant + Feishu transport canonical | P2 | NO | No deployment required |
 | L19 | Normalization foundation | DONE | centralized domain helper/tests | P1 | NO | Keep contract |
 | L20 | User/AI tag separation | DONE | persistence/projection code/tests | P1 | NO | Keep contract |
 | L21 | Creator Intelligence | DONE | factual safe projection/tests | P1 | NO | Keep contract |
 | L22 | Campaign core | DONE | sparse/multi-account/detail tests | P0 | NO | Keep contract |
 | L23 | Actual published-content model | EXPLICITLY_DEFERRED | planned fields only | P1 | NO | Reopen M8.3 |
 | L24 | Desktop Save As | ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | bridge/UI tests | P2 | NO | User acceptance |
-| L25 | Dashboard cold-start fix | ENGINEERING_DONE_USER_ACCEPTANCE_PENDING | committed/cache/concurrency tests | P1 | NO | User acceptance |
+| L25 | Dashboard cold-start fix | CLOSED | ONEDIR portability, packaged startup evidence, real Windows usable Dashboard and clean runtime exit | P1 | NO | Closed |
 | L26 | SQLite/read-index migration | C0_C12_ENGINEERING_COMPLETE | Performance and final synthetic evidence in `docs/pre_m8_sqlite_performance.md` | P0 | NO | Human review, then explicit production migration acceptance |
 | L27 | VideoSnapshot scale/retention | PARTIAL | no retention; scale benchmark | P1 | NO | Before M8.4 |
 | L28 | Test environment hygiene | PARTIAL | canonical isolation plus ACL residue | P2 | NO | Cleanup/CI hardening |
@@ -488,7 +485,7 @@ Feishu Chat is not listed because current runtime connection logs and prior real
 | L31 | Microsoft OAuth2 | EXPLICITLY_DEFERRED | proposal only | P2 | NO | Trigger-scoped |
 | L32 | Security/privacy boundaries | DONE | localhost/Origin/safe projection | P0 | NO | Keep contract |
 | L33 | API/OpenAPI contract | DONE | focused tests 3/3 | P1 | NO | Keep gate |
-| L34 | Dead legacy service modules | PARTIAL | source remains, routes/UI absent | P3 | NO | Remove after dependency audit |
+| L34 | Dead legacy service modules | CLOSED | source/tests removed after runtime/support/recovery/package dependency audit | P3 | NO | Closed |
 
 ## 46. Audit Artifact
 

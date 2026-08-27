@@ -8,6 +8,8 @@ KOLConnect is an overseas KOL / Creator management and marketing collaboration p
 
 The desktop application is designed for operational teams that need a practical working system without moving their creator data to a hosted database. Recent M4.8 and M4.8.5 work improves workflow clarity, link handling, result-folder access, and everyday interface density.
 
+KOLConnect Assistant is the active AI runtime. Feishu long-connection chat is the supported external conversational entry point, and all actions remain constrained to allowlisted KOLConnect tools and services. OpenClaw has been retired from the active product architecture and requires no host, authentication, or transport deployment.
+
 ## Features
 
 ### Creator Management
@@ -96,7 +98,7 @@ The repository includes several verification layers:
 
 - Python unit and regression tests for services, repositories, API behavior, storage safety, and migrations.
 - JavaScript frontend and Chrome-extension test runner: `node tests/run_extension_tests.js`.
-- Python test discovery: `python -m unittest discover -s tests -p "test_*.py"`.
+- Authoritative Python regression runner: `python scripts/run_python_tests.py`. Raw `python -m unittest discover ...` is not authoritative unless it is already running inside the repository test sandbox.
 - Python compile check: `python -m compileall app`.
 - Diff whitespace check: `git diff --check`.
 
@@ -110,7 +112,6 @@ The following items are planned and are not described above as current product c
 - **Planned: M5.3 Advanced analytics**
 - **Planned: M5.4 Final polish**
 - **Planned: M6 Browser mode**
-- **Planned: M7 OpenClaw**
 
 ## Version History
 

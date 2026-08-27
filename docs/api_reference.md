@@ -31,7 +31,7 @@ HTTP conventions are 200 for reads/updates, 201 for creates already using that c
 | Feishu validate/dry-run/full-sync | SAFE_TO_STANDARDIZE_NOW | Envelope plus existing top-level result fields |
 | Creator, Campaign, Task UI APIs | NEED_COMPATIBILITY_ADAPTER | Add trace only; retain current payload fields |
 | binary import template/export | FROZEN_LEGACY_CONTRACT | Preserve binary body; add trace response header |
-| retired identity backfill and cleanup modules | INTERNAL_ONLY | Not registered or documented as supported API |
+| retired identity backfill and cleanup routes | REMOVED | Runtime modules and routes physically removed; Clean Reset is supported |
 | legacy Cooperation writes | FROZEN_LEGACY_CONTRACT | Continue rejecting as read-only |
 
 ## Supported integration surface
