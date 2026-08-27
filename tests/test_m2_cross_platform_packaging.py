@@ -56,6 +56,7 @@ class PackagingConfigurationTests(unittest.TestCase):
     def test_pywebview_owns_darwin_pyobjc_dependencies(self):
         requirements = (ROOT / "packaging" / "requirements.txt").read_text(encoding="utf-8")
         self.assertIn("pywebview", requirements.lower())
+        self.assertIn("pyyaml>=6,<7", requirements.lower())
         for line in requirements.splitlines():
             if line.strip().lower().startswith("pyobjc"):
                 self.assertIn('sys_platform == "darwin"', line)
@@ -108,7 +109,14 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("pull_request:\n    branches:\n      - main", ci)
         self.assertIn("runs-on: windows-latest", ci)
         self.assertIn("runs-on: macos-15", ci)
-        self.assertIn("python -m unittest discover", ci)
+        self.assertEqual(
+            ci.count("python scripts/run_python_tests.py --verbosity 1"), 2
+        )
+        self.assertNotIn("python -m unittest discover", ci)
+        self.assertIn("brew install python@3.12 sqlite", ci)
+        self.assertIn("brew upgrade python@3.12 sqlite", ci)
+        self.assertIn('python3.12" -m venv .venv-ci', ci)
+        self.assertIn("python scripts/check_sqlite_runtime.py", ci)
         self.assertEqual(ci.count("node tests/run_extension_tests.js\n"), 2)
         self.assertEqual(ci.count("node tests/run_extension_tests.js --syntax"), 2)
         self.assertIn("uname -m", ci)
@@ -128,6 +136,10 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('./packaging/build_release.ps1', build)
         self.assertIn('bash packaging/build_macos.sh', build)
         self.assertIn('bash packaging/build_macos.sh x86_64', build)
+        self.assertEqual(build.count("brew install python@3.12 sqlite"), 2)
+        self.assertEqual(build.count("brew upgrade python@3.12 sqlite"), 2)
+        self.assertEqual(build.count('python3.12" -m venv .venv-ci'), 2)
+        self.assertEqual(build.count("python scripts/check_sqlite_runtime.py"), 2)
         self.assertNotIn("python -m unittest discover", build)
         self.assertNotIn("node tests/run_extension_tests.js", build)
         self.assertEqual(build.count('retention-days: 30'), 3)

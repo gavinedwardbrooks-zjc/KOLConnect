@@ -149,6 +149,10 @@ def cycle(port):
         server._RUNTIME_SHUTDOWN_THREAD = None
     thread = threading.Thread(target=httpd.serve_forever)
     thread.start()
+    # Prove serve_forever is accepting requests before asking it to shut down.
+    with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+        client.sendall(b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+        assert client.recv(64)
     assert server.request_runtime_shutdown()
     assert server.request_runtime_shutdown()
     thread.join(5)
@@ -185,6 +189,8 @@ unrelated.close()
             env=environment,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=30,
             check=False,
         )

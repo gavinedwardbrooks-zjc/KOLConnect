@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import secrets
 import shutil
+import sys
 import tempfile
 import uuid
 from typing import Iterator
@@ -16,6 +17,7 @@ from typing import Iterator
 ROOT = Path(__file__).resolve().parents[2]
 SANDBOX_ROOT = ROOT / ".test_runtime"
 _ENV_KEYS = (
+    "HOME",
     "APPDATA",
     "LOCALAPPDATA",
     "XDG_DATA_HOME",
@@ -27,8 +29,13 @@ CLEANUP_WARNINGS: list[str] = []
 
 
 def _resolve_production_app_data() -> Path:
-    roaming = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
-    return (roaming / "KOLConnect").resolve()
+    if sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support"
+    elif sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming"))
+    else:
+        base = Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
+    return (base / "KOLConnect").resolve()
 
 
 # Capture this before a process sandbox changes APPDATA. Nested contexts must keep
@@ -39,6 +46,7 @@ _PRODUCTION_APP_DATA = _resolve_production_app_data()
 @dataclass(frozen=True)
 class TestRuntime:
     root: Path
+    home: Path
     appdata: Path
     local_appdata: Path
     temp: Path
@@ -69,20 +77,25 @@ def assert_not_production_workbook(path: Path) -> None:
 
 def _materialize_runtime(root: Path) -> TestRuntime:
     root = root.resolve()
+    home = root / "home"
     appdata = root / "appdata"
     local_appdata = root / "localappdata"
     temp = root / "temp"
-    data_root = appdata / "KOLConnect"
+    if sys.platform == "darwin":
+        data_root = home / "Library" / "Application Support" / "KOLConnect"
+    else:
+        data_root = appdata / "KOLConnect"
     lock_root = data_root / "locks"
     backup_root = data_root / "backups"
     settings_path = data_root / "settings.json"
     workbook_path = data_root / "Creator_Library.xlsx"
     assert_not_production_runtime(data_root)
     assert_not_production_workbook(workbook_path)
-    for path in (appdata, local_appdata, temp, data_root, lock_root, backup_root):
+    for path in (home, appdata, local_appdata, temp, data_root, lock_root, backup_root):
         path.mkdir(parents=True, exist_ok=True)
     return TestRuntime(
         root=root,
+        home=home,
         appdata=appdata,
         local_appdata=local_appdata,
         temp=temp,
@@ -122,6 +135,7 @@ def test_runtime_sandbox(
     try:
         os.environ.update(
             {
+                "HOME": str(runtime.home),
                 "APPDATA": str(runtime.appdata),
                 "LOCALAPPDATA": str(runtime.local_appdata),
                 "XDG_DATA_HOME": str(runtime.appdata),

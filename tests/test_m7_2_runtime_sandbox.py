@@ -5,10 +5,12 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tests"))
+sys.path.insert(0, str(ROOT / "app"))
 
 from test_support.runtime_sandbox import (  # noqa: E402
     assert_not_production_runtime,
@@ -17,6 +19,7 @@ from test_support.runtime_sandbox import (  # noqa: E402
     production_app_data_path,
     test_runtime_sandbox,
 )
+import runtime_paths
 
 
 class RuntimeSandboxTests(unittest.TestCase):
@@ -68,6 +71,30 @@ class RuntimeSandboxTests(unittest.TestCase):
                 self.assertTrue(path.is_relative_to(runtime.root))
             self.assertFalse(runtime.settings_path.exists())
             self.assertFalse(runtime.workbook_path.exists())
+
+    def test_macos_native_path_uses_sandbox_home(self):
+        with test_runtime_sandbox("darwin_contract") as runtime:
+            with (
+                mock.patch.object(runtime_paths.sys, "platform", "darwin"),
+                mock.patch.object(runtime_paths.Path, "home", return_value=runtime.home),
+            ):
+                self.assertEqual(
+                    runtime.home / "Library" / "Application Support" / "KOLConnect",
+                    runtime_paths.get_app_data_dir(),
+                )
+
+    def test_fixture_home_override_keeps_native_platform_contract(self):
+        with test_runtime_sandbox("darwin_fixture") as runtime:
+            fixture_home = runtime.root / "fixture_home"
+            with (
+                mock.patch.object(runtime_paths.sys, "platform", "darwin"),
+                mock.patch.object(runtime_paths.Path, "home", return_value=fixture_home),
+                mock.patch.dict(os.environ, {"HOME": str(fixture_home)}),
+            ):
+                self.assertEqual(
+                    fixture_home / "Library" / "Application Support" / "KOLConnect",
+                    runtime_paths.get_app_data_dir(),
+                )
 
     def test_windows_style_unicode_and_spaces_are_safe(self):
         with test_runtime_sandbox("Windows 路径 with spaces") as runtime:
