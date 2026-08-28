@@ -1,15 +1,15 @@
 # KOLConnect
 
-KOLConnect 是一个本地桌面工作台，用于管理海外 Creator、Campaign 协作、内容发布及相关运营数据。
+KOLConnect 是一个本地桌面工作台，用于管理海外达人 Creator、Campaign 协作、内容发布及相关数据。
 
 ## 当前支持的能力
 
-- **Creator Library**：支持搜索、筛选、归档/恢复、永久删除、Agency 关系、导入，以及按所选 Creator 导出 Excel。
-- **Creator / CreatorAccount 多账号模型**：一个 Creator 可拥有多个平台专属的 CreatorAccount。
+- **Creator Library**：支持搜索、筛选、归档/恢复、永久删除、Agency 关系、导入，以及按所选 达人导出 Excel。
+- **Creator / CreatorAccount 多账号模型**：一个 达人可拥有多个平台账号 （比如：达人A 同时有YouTube tiktok Instagram 账号）。
 - **Campaign 管理**：支持产品、CampaignCreator 协作记录、执行账号选择、互动/表现数据及风险检查。
-- **邮箱管理**：在服务商允许密码或 app-password 认证时，支持标准 IMAP/SMTP 的本地邮箱账号与模板管理。
+- **邮箱管理**：支持除outlook邮箱外、gmail 网易邮箱 qq邮箱等邮箱，可以读取收件箱内容，同步达人邮件 （注：暂不支持发邮件 ）
 - **Feishu 集成**：可选 Feishu Bitable 同步，以及可选的 Feishu Chat Assistant。
-- **浏览器采集**：支持 Instagram 公开主页/相关 API 采集和 YouTube Shorts 指标；TikTok 提供页面分析工具，但被动网络采集不是当前生产功能。
+- **浏览器采集**：支持 Instagram 公开主页/相关 API 采集和 YouTube Shorts 指标；TikTok 提供页面分析工具，但被动网络采集不是当前生产功能。（之后会更新tiktok采集功能）
 
 ## 存储与运行时
 
