@@ -56,16 +56,28 @@ jobs:
 
   build-macos-arm64:
     runs-on: macos-15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install approved SQLite Python runtime
         shell: bash
         run: |
           set -euo pipefail
-          brew update
-          brew install python@3.12 sqlite
-          brew upgrade python@3.12 sqlite
-          "$(brew --prefix python@3.12)/bin/python3.12" -m venv .venv-ci
+          brew install sqlite
+          brew upgrade sqlite
+          python_install_log="$(mktemp)"
+          if brew install python@3.12 2>&1 | tee "${python_install_log}"; then
+            :
+          elif ! grep -Fq "The formula built, but is not symlinked" "${python_install_log}" || \
+               ! grep -Fq "Could not symlink" "${python_install_log}"; then
+            exit 1
+          fi
+          python_prefix="$(brew --prefix python@3.12)"
+          python_bin="${python_prefix}/bin/python3.12"
+          test -x "${python_bin}"
+          "${python_bin}" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          "${python_bin}" -m venv .venv-ci
           echo "${PWD}/.venv-ci/bin" >> "${GITHUB_PATH}"
       - name: Confirm Apple Silicon runner
         shell: bash
@@ -108,16 +120,28 @@ jobs:
 
   build-macos-intel:
     runs-on: macos-15-intel
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
     steps:
       - uses: actions/checkout@v4
       - name: Install approved SQLite Python runtime
         shell: bash
         run: |
           set -euo pipefail
-          brew update
-          brew install python@3.12 sqlite
-          brew upgrade python@3.12 sqlite
-          "$(brew --prefix python@3.12)/bin/python3.12" -m venv .venv-ci
+          brew install sqlite
+          brew upgrade sqlite
+          python_install_log="$(mktemp)"
+          if brew install python@3.12 2>&1 | tee "${python_install_log}"; then
+            :
+          elif ! grep -Fq "The formula built, but is not symlinked" "${python_install_log}" || \
+               ! grep -Fq "Could not symlink" "${python_install_log}"; then
+            exit 1
+          fi
+          python_prefix="$(brew --prefix python@3.12)"
+          python_bin="${python_prefix}/bin/python3.12"
+          test -x "${python_bin}"
+          "${python_bin}" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          "${python_bin}" -m venv .venv-ci
           echo "${PWD}/.venv-ci/bin" >> "${GITHUB_PATH}"
       - name: Confirm Intel runner
         shell: bash
