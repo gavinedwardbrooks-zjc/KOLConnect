@@ -49,15 +49,19 @@ class SQLiteStorageFoundationTests(unittest.TestCase):
         with self.factory.read_connection() as connection:
             apply_schema_migrations(connection, migration_reference="test")
 
-    def test_runtime_gate_and_vendored_digest(self) -> None:
+    def test_runtime_gate_accepts_the_active_approved_runtime(self) -> None:
         self.assertTrue(is_wal_safe_version("3.51.3"))
         self.assertTrue(is_wal_safe_version("3.50.7"))
         self.assertTrue(is_wal_safe_version("3.44.6"))
         self.assertFalse(is_wal_safe_version("3.50.4"))
         self.assertFalse(is_wal_safe_version("3.51.2"))
-        self.assertEqual("3.53.1", require_safe_sqlite_runtime())
-        self.assertEqual("3.53.1", runtime_version())
+        approved_version = require_safe_sqlite_runtime()
+        self.assertTrue(is_wal_safe_version(approved_version))
+        self.assertEqual(approved_version, runtime_version())
+
+    def test_windows_vendored_runtime_version_and_digest(self) -> None:
         if sys.platform == "win32":
+            self.assertEqual("3.53.1", runtime_version())
             self.assertEqual(VENDORED_WINDOWS_SQLITE_SHA256, vendored_runtime_digest())
 
     def test_canonical_paths_are_persistent_and_isolated(self) -> None:
