@@ -98,7 +98,7 @@ Windows 的规范发布格式为 **ONEDIR + ZIP**。请解压完整的版本目�
 powershell -ExecutionPolicy Bypass -File .\packaging\build_release.ps1
 ~~~
 
-构建会生成 `release/KOLConnect_v0.2.3/` 和 `release/KOLConnect_v0.2.3.zip`，验证固定的 SQLite runtime，并检查 ZIP 仅包含一个版本化顶层目录。
+构建会生成 `release/KOLConnect_v1.0.0/` 和 `release/KOLConnect_v1.0.0.zip`，验证固定的 SQLite runtime，并检查 ZIP 仅包含一个版本化顶层目录。
 
 ## 当前限制与 Post-M8 工作
 

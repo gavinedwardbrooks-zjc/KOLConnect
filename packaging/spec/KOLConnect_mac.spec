@@ -86,8 +86,8 @@ app = BUNDLE(
     info_plist={
         "CFBundleName": "KOLConnect",
         "CFBundleDisplayName": "KOLConnect",
-        "CFBundleShortVersionString": "0.2.3",
-        "CFBundleVersion": "0.2.3",
+        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleVersion": "1.0.0",
         "NSHighResolutionCapable": True,
     },
 )

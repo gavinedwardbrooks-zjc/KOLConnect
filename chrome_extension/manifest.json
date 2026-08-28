@@ -2,8 +2,8 @@
   "manifest_version": 3,
   "name": "KOLConnect",
   "description": "TikTok、Instagram、YouTube 达人自动分析与报价工具",
-  "version": "0.2.3",
-  "version_name": "KOLConnect v0.2.3",
+  "version": "1.0.0",
+  "version_name": "KOLConnect v1.0.0",
   "action": {
     "default_title": "打开 KOLConnect"
   },

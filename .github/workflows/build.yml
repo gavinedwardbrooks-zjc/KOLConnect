@@ -27,9 +27,9 @@ jobs:
       - name: Verify and hash Windows artifact
         shell: pwsh
         run: |
-          $directory = "release/KOLConnect_v0.2.3"
-          $exe = "$directory/KOLConnect_v0.2.3.exe"
-          $zip = "release/KOLConnect_v0.2.3.zip"
+          $directory = "release/KOLConnect_v1.0.0"
+          $exe = "$directory/KOLConnect_v1.0.0.exe"
+          $zip = "release/KOLConnect_v1.0.0.zip"
           if (-not (Test-Path -LiteralPath $directory -PathType Container)) { throw "Missing $directory" }
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Missing $exe" }
           if (-not (Test-Path -LiteralPath $zip -PathType Leaf)) { throw "Missing $zip" }
@@ -50,7 +50,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KOLConnect-windows-x64
-          path: release/KOLConnect_v0.2.3.zip
+          path: release/KOLConnect_v1.0.0.zip
           if-no-files-found: error
           retention-days: 30
 
@@ -87,7 +87,7 @@ jobs:
         run: |
           set -euo pipefail
           test -d packaging/.pyinstaller-dist-macos/KOLConnect.app
-          path="release/KOLConnect_v0.2.3_mac_arm64.dmg"
+          path="release/KOLConnect_v1.0.0_mac_arm64.dmg"
           test -f "${path}"
           hash="$(shasum -a 256 "${path}" | awk '{print $1}')"
           size="$(stat -f '%z' "${path}")"
@@ -102,7 +102,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KOLConnect-macos-arm64
-          path: release/KOLConnect_v0.2.3_mac_arm64.dmg
+          path: release/KOLConnect_v1.0.0_mac_arm64.dmg
           if-no-files-found: error
           retention-days: 30
 
@@ -139,7 +139,7 @@ jobs:
         run: |
           set -euo pipefail
           test -d dist/pyinstaller-macos-intel/KOLConnect.app
-          path="release/KOLConnect_v0.2.3_mac_intel.dmg"
+          path="release/KOLConnect_v1.0.0_mac_intel.dmg"
           test -f "${path}"
           hash="$(shasum -a 256 "${path}" | awk '{print $1}')"
           size="$(stat -f '%z' "${path}")"
@@ -154,7 +154,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: KOLConnect-macos-intel
-          path: release/KOLConnect_v0.2.3_mac_intel.dmg
+          path: release/KOLConnect_v1.0.0_mac_intel.dmg
           if-no-files-found: error
           retention-days: 30
 

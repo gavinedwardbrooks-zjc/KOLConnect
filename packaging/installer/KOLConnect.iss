@@ -1,8 +1,8 @@
 #define AppName "KOL联系助手"
-#define AppVersion "0.2.3"
+#define AppVersion "1.0.0"
 #define AppPublisher "KOL Connect"
-#define AppExeName "KOLConnect_v0.2.3.exe"
-#define AppSourceDirName "KOLConnect_v0.2.3"
+#define AppExeName "KOLConnect_v1.0.0.exe"
+#define AppSourceDirName "KOLConnect_v1.0.0"
 
 [Setup]
 AppId={{C0F5B829-BD30-4A1F-83C9-455AE6DB8489}
@@ -14,7 +14,7 @@ DefaultGroupName={#AppName}
 SetupIconFile={#SourcePath}\..\..\assets\KOLConnect.ico
 DisableProgramGroupPage=yes
 OutputDir={#GetEnv('USERPROFILE')}\Desktop
-OutputBaseFilename=KOLConnect_v0.2.3_setup
+OutputBaseFilename=KOLConnect_v1.0.0_setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
