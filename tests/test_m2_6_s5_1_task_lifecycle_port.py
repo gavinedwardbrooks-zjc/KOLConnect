@@ -13,17 +13,19 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import task_manager
 from adapters.task_manager_adapter import TaskManagerAdapter
 from ports.task_port import RuntimeProgressUpdate, TaskFinalizationDocuments
 from repositories.task_repository import TaskCsvDocument, TaskRepository
 from services.task_service import TaskService
+from test_support.runtime_sandbox import test_artifact_directory
 
 
 class TaskLifecyclePortContractTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp_dir = tempfile.TemporaryDirectory(dir=ROOT)
+        self.temp_dir = tempfile.TemporaryDirectory(dir=test_artifact_directory("temporary"))
         self.tasks_dir = Path(self.temp_dir.name) / "tasks"
         self.lock_patch = mock.patch(
             "repositories.task_repository.shared_storage_lock",

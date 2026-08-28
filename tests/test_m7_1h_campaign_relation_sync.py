@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from campaign_creator_repository import CampaignCreatorRepository  # noqa: E402
 from campaign_repository import CampaignRepository  # noqa: E402
@@ -30,11 +31,12 @@ from services.feishu_sync_service import (  # noqa: E402
     CREATOR_FIELDS,
     FeishuSyncService,
 )
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 
 class CampaignMultiValueTests(unittest.TestCase):
     def setUp(self) -> None:
-        runtime = ROOT / ".m7_1h_test_runtime"
+        runtime = test_artifact_path("m7_1h")
         runtime.mkdir(exist_ok=True)
         self.root = runtime / uuid4().hex
         self.root.mkdir()

@@ -13,10 +13,12 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import api_contract  # noqa: E402
 import app_logging  # noqa: E402
 from http_handlers import feishu_sync_handler  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 
 class _HttpHandler:
@@ -61,7 +63,7 @@ class ApiContractTests(unittest.TestCase):
         self.assertEqual({"field": "name"}, payload["error"]["details"])
 
     def test_request_json_adds_trace_to_body_header_and_log(self):
-        runtime = ROOT / ".test_runtime" / "m7_2" / "api_contract_subprocess"
+        runtime = test_artifact_path("m7_2", "api_contract_subprocess")
         runtime.mkdir(parents=True, exist_ok=True)
         script = r'''
 import io, json, sys

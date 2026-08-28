@@ -14,13 +14,15 @@ from openpyxl import load_workbook
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import creator_repository
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class CreatorMetadataEditTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m3_0_p1_metadata_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m3_0_p1_metadata", uuid.uuid4().hex)
         self.root.mkdir()
         self.workbook_path = self.root / "Creator_Library.xlsx"
         self.lock_patcher = mock.patch(

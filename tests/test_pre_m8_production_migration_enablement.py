@@ -23,6 +23,7 @@ from storage.migration import ExcelToSQLiteMigrator, resolve_authority
 from storage.paths import SQLiteStoragePaths
 from test_pre_m8_excel_sqlite_migration import build_fixture
 from runtime_paths import atomic_write_json
+from test_support.runtime_sandbox import test_artifact_path
 
 
 def digest(path: Path) -> str:
@@ -31,7 +32,7 @@ def digest(path: Path) -> str:
 
 class ProductionMigrationEnablementTests(unittest.TestCase):
     def setUp(self) -> None:
-        parent = ROOT / ".pre_m8_batch3_acceptance"
+        parent = test_artifact_path("pre_m8_batch3_acceptance")
         parent.mkdir(exist_ok=True)
         self.root = parent / f"production_enablement_{uuid4().hex}"
         self.root.mkdir()

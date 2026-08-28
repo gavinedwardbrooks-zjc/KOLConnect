@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from creator_repository import _WORKBOOK_SHEETS
 from runtime_paths import atomic_write_json, load_json_with_backup
@@ -34,6 +35,7 @@ from storage.migration import (
 )
 from storage.paths import SQLiteStoragePaths
 from storage.schema import apply_schema_migrations
+from test_support.runtime_sandbox import test_artifact_path
 
 
 def append_row(sheet, values: dict[str, object]) -> None:
@@ -169,7 +171,7 @@ def build_fixture(
 
 class ExcelSQLiteMigrationTests(unittest.TestCase):
     def setUp(self) -> None:
-        runtime = ROOT / ".pre_m8_c0_c3_test_runtime"
+        runtime = test_artifact_path("pre_m8_c0_c3")
         runtime.mkdir(exist_ok=True)
         self.root = runtime / f"migration_{uuid4().hex}"
         self.root.mkdir()

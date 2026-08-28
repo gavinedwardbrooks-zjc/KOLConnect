@@ -26,6 +26,16 @@ _ENV_KEYS = (
     "TMPDIR",
 )
 CLEANUP_WARNINGS: list[str] = []
+_ACTIVE_RUNTIME_ROOTS: list[Path] = []
+_FORBIDDEN_ROOT_ARTIFACT_PREFIXES = (
+    ".d4_",
+    ".m3_",
+    ".m4_",
+    ".m5_",
+    ".m6_",
+    ".m7_",
+    ".pre_m8_",
+)
 
 
 def _resolve_production_app_data() -> Path:
@@ -59,6 +69,39 @@ class TestRuntime:
 
 def production_app_data_path() -> Path:
     return _PRODUCTION_APP_DATA
+
+
+def test_artifact_path(*parts: str) -> Path:
+    """Return a workspace-local test path beneath the single sandbox root."""
+    artifact_root = (
+        _ACTIVE_RUNTIME_ROOTS[-1] / "artifacts"
+        if _ACTIVE_RUNTIME_ROOTS
+        else SANDBOX_ROOT / "standalone"
+    )
+    artifact_root.mkdir(parents=True, exist_ok=True)
+    path = artifact_root.joinpath(*parts).resolve()
+    if path != artifact_root.resolve() and artifact_root.resolve() not in path.parents:
+        raise ValueError("Test artifact path must stay inside .test_runtime.")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def test_artifact_directory(*parts: str) -> Path:
+    """Return an existing directory under the single test sandbox root."""
+    path = test_artifact_path(*parts)
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def forbidden_root_test_artifacts() -> list[Path]:
+    """List legacy root-level test artifacts without deleting user data."""
+    if not ROOT.is_dir():
+        return []
+    return sorted(
+        path
+        for path in ROOT.iterdir()
+        if path.is_dir() and path.name.startswith(_FORBIDDEN_ROOT_ARTIFACT_PREFIXES)
+    )
 
 
 def assert_not_production_runtime(path: Path) -> None:
@@ -127,11 +170,13 @@ def _safe_mkdtemp(suffix=None, prefix=None, dir=None) -> str:
 def test_runtime_sandbox(
     prefix: str = "case", *, cleanup: bool = True
 ) -> Iterator[TestRuntime]:
+    SANDBOX_ROOT.mkdir(parents=True, exist_ok=True)
     root = (SANDBOX_ROOT / f"{prefix}_{uuid.uuid4().hex}").resolve()
     runtime = _materialize_runtime(root)
     previous_env = {key: os.environ.get(key) for key in _ENV_KEYS}
     previous_tempdir = tempfile.tempdir
     previous_mkdtemp = tempfile.mkdtemp
+    _ACTIVE_RUNTIME_ROOTS.append(root)
     try:
         os.environ.update(
             {
@@ -148,6 +193,7 @@ def test_runtime_sandbox(
         tempfile.mkdtemp = _safe_mkdtemp
         yield runtime
     finally:
+        _ACTIVE_RUNTIME_ROOTS.pop()
         tempfile.mkdtemp = previous_mkdtemp
         tempfile.tempdir = previous_tempdir
         for key, value in previous_env.items():

@@ -18,17 +18,19 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from creator_repository import CreatorRepository, _WORKBOOK_SHEETS
 from dashboard_repository import DashboardRepository
 from dashboard_service import DashboardService
 from http_handlers import clean_reset_handler
 from services.clean_reset_service import BUSINESS_SHEETS, CleanResetError, CleanResetService
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class CleanResetServiceTests(unittest.TestCase):
     def setUp(self) -> None:
-        runtime_root = ROOT / ".m7_1_clean_reset_test_runtime"
+        runtime_root = test_artifact_path("m7_1_clean_reset")
         runtime_root.mkdir(parents=True, exist_ok=True)
         self.root = runtime_root / uuid4().hex
         self.root.mkdir()

@@ -15,6 +15,7 @@ from openpyxl import Workbook, load_workbook
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from excel_workbook_store import ExcelWorkbookStore  # noqa: E402
 from excel_workbook_store import WORKBOOK_LOCK  # noqa: E402
@@ -23,6 +24,7 @@ from local_storage_lock import LOCAL_STORAGE_MUTATION_LOCK  # noqa: E402
 from repository_factory import RepositoryFactory  # noqa: E402
 from repositories.task_repository import TASK_STORAGE_LOCK  # noqa: E402
 from services.creator_delete_impact_service import CreatorDeleteImpactService  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 from services.creator_delete_plan import build_creator_delete_plan  # noqa: E402
 from staged_delete_transaction import (  # noqa: E402
     StagedDeleteTransaction,
@@ -39,7 +41,7 @@ def append_row(workbook, sheet_name: str, values: dict) -> None:
 
 class WorkspaceTestCase(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m4_6b_test_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m4_6b_test", uuid.uuid4().hex)
         self.root.mkdir()
 
     def tearDown(self) -> None:

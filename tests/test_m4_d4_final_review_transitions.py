@@ -10,12 +10,14 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import scraper as scraper_module
 from adapters.task_manager_adapter import TaskManagerAdapter
 from ports.creator_port import CreatorImportResult, PreparedTaskResultUpdate
 from repositories.task_repository import TaskCsvDocument, TaskRepository
 from services.task_service import TaskReviewError, TaskService
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class CreatorPortSpy:
@@ -69,7 +71,7 @@ class CreatorPortSpy:
 
 class FinalReviewTransitionTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".d4_final_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("d4_final", uuid.uuid4().hex)
         self.root.mkdir()
         self.lock = mock.patch("repositories.task_repository.shared_storage_lock", lambda: contextlib.nullcontext())
         self.lock.start()

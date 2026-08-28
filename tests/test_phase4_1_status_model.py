@@ -11,10 +11,12 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import creator_repository
 import migrate_scrape_status
 import scraper
+from test_support.runtime_sandbox import test_artifact_directory
 
 
 class ScrapeStatusModelTests(unittest.TestCase):
@@ -115,7 +117,7 @@ class ScrapeStatusModelTests(unittest.TestCase):
                     self.assertEqual(before.get(field, ""), after.get(field, ""))
 
     def test_partial_success_can_enter_creator_library(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT) as temp_dir, mock.patch.object(
+        with tempfile.TemporaryDirectory(dir=test_artifact_directory("temporary")) as temp_dir, mock.patch.object(
             creator_repository, "log_event"
         ):
             repository = creator_repository.CreatorRepository(Path(temp_dir) / "Creator_Library.xlsx")

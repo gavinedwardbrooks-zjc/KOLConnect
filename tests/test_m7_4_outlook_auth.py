@@ -13,9 +13,11 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from services.mail_auth_service import classify_imap_error  # noqa: E402
 from runtime_paths import atomic_write_json  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_directory  # noqa: E402
 
 
 class M74OutlookAuthTests(unittest.TestCase):
@@ -44,7 +46,9 @@ class M74OutlookAuthTests(unittest.TestCase):
             )
 
     def test_synthetic_macos_style_path_save_reload_update_restart_and_delete(self):
-        with tempfile.TemporaryDirectory(dir=ROOT) as root, patch("runtime_paths.shared_storage_lock", return_value=nullcontext()):
+        with tempfile.TemporaryDirectory(
+            dir=test_artifact_directory("temporary")
+        ) as root, patch("runtime_paths.shared_storage_lock", return_value=nullcontext()):
             settings_path = Path(root) / "Library" / "Application Support" / "KOLConnect 用户" / "settings.json"
             atomic_write_json(settings_path, {"mail": {"accounts": [{"username": "user@example.com"}]}})
             self.assertEqual("user@example.com", json.loads(settings_path.read_text(encoding="utf-8"))["mail"]["accounts"][0]["username"])

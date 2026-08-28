@@ -9,13 +9,15 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from repositories.task_repository import TaskCsvDocument, TaskRepository
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class ReviewStateTransactionTests(unittest.TestCase):
     def setUp(self):
-        self.root = ROOT / f".d4_0a_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("d4_0a", uuid.uuid4().hex)
         self.root.mkdir()
         self.repository = TaskRepository(self.root)
         self.task = self.repository.create_task(["https://www.tiktok.com/@creator"], [], 1)

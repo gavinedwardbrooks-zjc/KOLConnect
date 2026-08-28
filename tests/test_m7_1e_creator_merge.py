@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from creator_repository import CreatorRepository, _WORKBOOK_SHEETS
 from campaign_creator_repository import CampaignCreatorRepository
@@ -24,6 +25,7 @@ from repositories.creator_merge_repository import CreatorMergePlanError, Creator
 from services.creator_merge_service import CreatorMergeError, CreatorMergeService
 from services.feishu_sync_service import FeishuSyncService
 from http_handlers import creator_handler
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class FailingMergeRepository(CreatorMergeRepository):
@@ -38,7 +40,7 @@ class FailingMergeRepository(CreatorMergeRepository):
 
 class CreatorMergeTests(unittest.TestCase):
     def setUp(self) -> None:
-        runtime = ROOT / ".m7_1e_merge_test_runtime"
+        runtime = test_artifact_path("m7_1e_merge")
         runtime.mkdir(exist_ok=True)
         self.root = runtime / uuid4().hex
         self.root.mkdir()

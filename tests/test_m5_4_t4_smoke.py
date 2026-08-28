@@ -15,6 +15,9 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
+
+from test_support.runtime_sandbox import test_artifact_directory
 
 
 def _close_app_logger() -> None:
@@ -30,7 +33,9 @@ def _close_app_logger() -> None:
 
 class ReleaseApiSmokeTests(unittest.TestCase):
     def test_release_read_endpoints_start_and_respond(self) -> None:
-        with tempfile.TemporaryDirectory(dir=ROOT, prefix=".m5_4_t4_") as temp_dir, mock.patch.dict(
+        with tempfile.TemporaryDirectory(
+            dir=test_artifact_directory("temporary"), prefix="m5_4_t4_"
+        ) as temp_dir, mock.patch.dict(
             os.environ,
             {
                 "APPDATA": temp_dir,

@@ -19,6 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from http_handlers import campaign_handler  # noqa: E402
 from creator_repository import CreatorRepository  # noqa: E402
@@ -28,11 +29,12 @@ from services.dashboard_response_cache import (  # noqa: E402
     DashboardResponseCache,
     DashboardResponseCacheUnstableBuild,
 )
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 
 class DashboardResponseCacheTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m5_1_1_cache_test_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m5_1_1_cache_test", uuid.uuid4().hex)
         self.root.mkdir()
         self.workbook_path = self.root / "Creator_Library.xlsx"
         self.workbook_path.write_bytes(b"initial")

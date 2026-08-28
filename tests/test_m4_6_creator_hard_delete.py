@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import creator_repository  # noqa: E402
 from http_handlers import creator_handler  # noqa: E402
@@ -24,6 +25,7 @@ from local_storage_lock import (  # noqa: E402
     shared_storage_lock_held,
 )
 from repository_factory import RepositoryFactory  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 from services.creator_delete_impact_service import CreatorDeleteImpactService  # noqa: E402
 from services.creator_hard_delete_service import (  # noqa: E402
     CreatorHardDeleteError,
@@ -67,7 +69,7 @@ class FakeHandler:
 
 class CreatorHardDeleteTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m4_6_delete_test_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m4_6_delete_test", uuid.uuid4().hex)
         self.root.mkdir()
         self.workbook_path = self.root / "Creator_Library.xlsx"
         self.tasks_dir = self.root / "tasks"

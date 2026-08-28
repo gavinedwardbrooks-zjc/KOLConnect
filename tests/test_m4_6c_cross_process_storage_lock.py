@@ -19,10 +19,12 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import local_storage_lock as storage_lock  # noqa: E402
 import launcher  # noqa: E402
 import runtime_paths  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 import services.creator_service as creator_service_module  # noqa: E402
 from excel_workbook_store import ExcelWorkbookStore  # noqa: E402
 from ports.creator_port import ManualTaskProtectionCommand  # noqa: E402
@@ -33,7 +35,7 @@ import staged_delete_transaction  # noqa: E402
 
 class CrossProcessStorageLockTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m4_6c_test_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m4_6c_test", uuid.uuid4().hex)
         self.root.mkdir()
         self.appdata = self.root / "appdata"
         self.appdata.mkdir()

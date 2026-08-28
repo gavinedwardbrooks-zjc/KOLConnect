@@ -11,9 +11,11 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from repository_factory import RepositoryFactory
 from http_handlers import campaign_handler
+from test_support.runtime_sandbox import test_artifact_directory
 
 
 class _Handler:
@@ -77,7 +79,9 @@ class CampaignStartDateHandlerTests(unittest.TestCase):
 
 class CampaignStartDateFilterTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory(dir=ROOT, prefix=".m5_4_e4_")
+        self.temp = tempfile.TemporaryDirectory(
+            dir=test_artifact_directory("temporary"), prefix="m5_4_e4_"
+        )
         self.root = Path(self.temp.name)
         self.environment = mock.patch.dict(
             os.environ,

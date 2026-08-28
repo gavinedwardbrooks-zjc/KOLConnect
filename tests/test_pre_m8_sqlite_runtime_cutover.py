@@ -40,6 +40,7 @@ from services.workbook_backup_service import WorkbookBackupService
 from staged_delete_transaction import StagedDeleteTransaction
 from test_pre_m8_excel_sqlite_migration import build_fixture
 from test_m7_1_feishu_sync_foundation import FakeClient
+from test_support.runtime_sandbox import test_artifact_path
 
 
 def digest(path: Path) -> str:
@@ -48,7 +49,7 @@ def digest(path: Path) -> str:
 
 class SQLiteRuntimeCutoverTests(unittest.TestCase):
     def setUp(self) -> None:
-        runtime = ROOT / ".pre_m8_batch2_test_runtime"
+        runtime = test_artifact_path("pre_m8_batch2")
         runtime.mkdir(exist_ok=True)
         self.root = runtime / f"cutover_{uuid4().hex}"
         self.root.mkdir()

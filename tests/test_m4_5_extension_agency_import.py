@@ -11,6 +11,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import app_logging  # noqa: E402
 
@@ -22,6 +23,7 @@ with (
 
 from creator_repository import CreatorRepository  # noqa: E402
 from services.creator_service import CreatorService  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 
 class FakeAgencyPort:
@@ -36,7 +38,7 @@ class FakeAgencyPort:
 
 class ExtensionAgencyImportTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m4_5_test_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m4_5_test", uuid.uuid4().hex)
         self.root.mkdir()
         self.repository = CreatorRepository(self.root / "Creator_Library.xlsx")
         self.agency_port = FakeAgencyPort({"agency_one", "agency_two"})

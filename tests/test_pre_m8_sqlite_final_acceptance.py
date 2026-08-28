@@ -13,11 +13,12 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from validate_sqlite_cutover import run_acceptance
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class SQLiteFinalSyntheticAcceptanceTests(unittest.TestCase):
     def test_complete_legacy_migration_restart_restore_and_reimport(self) -> None:
-        parent = ROOT / ".pre_m8_batch3_acceptance"
+        parent = test_artifact_path("pre_m8_batch3_acceptance")
         parent.mkdir(exist_ok=True)
         sandbox = parent / f"test_{uuid4().hex}"
         try:

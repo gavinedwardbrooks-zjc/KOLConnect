@@ -19,6 +19,7 @@ from openpyxl import Workbook, load_workbook
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from creator_batch_import import (  # noqa: E402
     TEMPLATE_HEADERS,
@@ -28,6 +29,7 @@ from creator_batch_import import (  # noqa: E402
 from creator_repository import CreatorRepository  # noqa: E402
 from services.creator_service import CreatorService  # noqa: E402
 import app_logging  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 with (
     mock.patch.object(app_logging, "log_event"),
@@ -66,7 +68,7 @@ class CreatorBatchImportContractTests(unittest.TestCase):
     def setUp(self) -> None:
         self.log_patcher = mock.patch("creator_repository.log_event")
         self.log_patcher.start()
-        self.root = ROOT / f".m4_4_test_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m4_4_test", uuid.uuid4().hex)
         self.root.mkdir()
         self.workbook_path = self.root / "Creator_Library.xlsx"
         self.repository = CreatorRepository(self.workbook_path)
@@ -230,7 +232,7 @@ class CreatorBatchImportContractTests(unittest.TestCase):
 
 class CreatorBatchImportHttpTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m4_4_http_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m4_4_http", uuid.uuid4().hex)
         self.root.mkdir()
         self.workbook_path = self.root / "Creator_Library.xlsx"
         self.patchers = [

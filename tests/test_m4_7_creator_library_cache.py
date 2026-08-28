@@ -17,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import creator_repository  # noqa: E402
 from local_storage_lock import shared_storage_lock  # noqa: E402
@@ -24,6 +25,7 @@ from services.agency_service import AgencyService  # noqa: E402
 from services.creator_hard_delete_service import CreatorHardDeleteService  # noqa: E402
 from services.creator_library_cache import CreatorLibraryCache  # noqa: E402
 from services.creator_service import CreatorService  # noqa: E402
+from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 
 class FakeAgencyPort:
@@ -39,7 +41,7 @@ class FakeAgencyPort:
 
 class CreatorLibraryCacheTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.root = ROOT / f".m4_7_cache_test_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("m4_7_cache_test", uuid.uuid4().hex)
         self.root.mkdir()
         self.workbook_path = self.root / "Creator_Library.xlsx"
         self.lock_patcher = mock.patch(

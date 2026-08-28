@@ -31,11 +31,12 @@ from storage.sqlite_runtime import (
     sqlite_module,
     vendored_runtime_digest,
 )
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class SQLiteStorageFoundationTests(unittest.TestCase):
     def setUp(self) -> None:
-        runtime = ROOT / ".pre_m8_c0_c3_test_runtime"
+        runtime = test_artifact_path("pre_m8_c0_c3")
         runtime.mkdir(exist_ok=True)
         self.root = runtime / f"foundation_{uuid4().hex}"
         self.root.mkdir()

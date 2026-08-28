@@ -15,12 +15,14 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / "app"
 if str(APP) not in sys.path:
     sys.path.insert(0, str(APP))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from campaign_creator_repository import CampaignCreatorRepository
 from campaign_repository import CampaignRepository
 from creator_repository import _WORKBOOK_SHEETS
 from http_handlers import campaign_handler, task_handler
 from product_repository import ProductRepository
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class Handler:
@@ -38,7 +40,7 @@ class Handler:
 
 class CampaignDetailCompatibilityTests(unittest.TestCase):
     def setUp(self) -> None:
-        runtime = ROOT / ".m7_1f_test_runtime"
+        runtime = test_artifact_path("m7_1f")
         runtime.mkdir(exist_ok=True)
         self.root = runtime / uuid4().hex
         self.root.mkdir()

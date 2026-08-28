@@ -10,15 +10,17 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from adapters.task_manager_adapter import TaskManagerAdapter
 from repositories.task_repository import TaskCsvDocument, TaskRepository
 import scraper as scraper_module
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class ReviewReadModelTests(unittest.TestCase):
     def setUp(self):
-        self.root = ROOT / f".d4_read_{uuid.uuid4().hex}"
+        self.root = test_artifact_path("d4_read", uuid.uuid4().hex)
         self.root.mkdir()
         self.lock = mock.patch("repositories.task_repository.shared_storage_lock", lambda: contextlib.nullcontext())
         self.lock.start()

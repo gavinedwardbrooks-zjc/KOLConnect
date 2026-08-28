@@ -17,6 +17,8 @@ if str(APP) not in sys.path:
 
 import launcher
 from services.feishu_chat_transport import FeishuChatTransport
+sys.path.insert(0, str(ROOT / "tests"))
+from test_support.runtime_sandbox import test_artifact_path
 
 
 class _Event:
@@ -126,7 +128,7 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         )
 
     def test_server_coordinator_releases_test_port_and_never_kills_unrelated_listener(self) -> None:
-        runtime = ROOT / ".test_runtime" / "pre_m8_lifecycle_subprocess"
+        runtime = test_artifact_path("pre_m8_lifecycle_subprocess")
         runtime.mkdir(parents=True, exist_ok=True)
         script = r'''
 import socket

@@ -14,6 +14,7 @@ from openpyxl import Workbook, load_workbook
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
+sys.path.insert(0, str(ROOT / "tests"))
 
 from http_handlers import settings_handler
 from local_storage_lock import SharedStorageLockTimeout
@@ -22,6 +23,7 @@ from services.workbook_backup_service import (
     WorkbookBackupNotFoundError,
     WorkbookBackupService,
 )
+from test_support.runtime_sandbox import test_artifact_directory
 
 
 class _Handler:
@@ -36,7 +38,9 @@ class _Handler:
 
 class WorkbookBackupTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory(dir=ROOT, prefix=".m5_4_e3_")
+        self.temp = tempfile.TemporaryDirectory(
+            dir=test_artifact_directory("temporary"), prefix="m5_4_e3_"
+        )
         self.root = Path(self.temp.name)
         self.workbook_path = self.root / "Creator_Library.xlsx"
         workbook = Workbook()
