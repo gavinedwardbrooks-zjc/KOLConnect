@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 from pathlib import Path
+import sys
 import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
+APP = ROOT / "app"
+if str(APP) not in sys.path:
+    sys.path.insert(0, str(APP))
+
+from storage.schema import CURRENT_SCHEMA_VERSION  # noqa: E402
 
 
 class PreM89DocumentationContractTests(unittest.TestCase):
@@ -12,7 +18,7 @@ class PreM89DocumentationContractTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("SQLite 是当前应用数据权威", readme)
         self.assertIn("kolconnect.db", readme)
-        self.assertIn("schema version 为 **3**", readme)
+        self.assertIn(f"schema version 为 **{CURRENT_SCHEMA_VERSION}**", readme)
         self.assertIn("ONEDIR + ZIP", readme)
         self.assertIn("python scripts/run_python_tests.py --verbosity 1", readme)
         self.assertIn("python -m unittest discover", readme)

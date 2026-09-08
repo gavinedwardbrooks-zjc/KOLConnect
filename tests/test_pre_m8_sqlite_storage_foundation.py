@@ -153,7 +153,7 @@ class SQLiteStorageFoundationTests(unittest.TestCase):
         self._initialize()
         with self.factory.read_connection() as connection:
             report = validate_schema(connection)
-            self.assertEqual(20, report["table_count"])
+            self.assertEqual(21, report["table_count"])
             tables = {
                 row[0]
                 for row in connection.execute(

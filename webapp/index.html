@@ -555,6 +555,7 @@
             <button class="soft-btn" id="creator-library-detail-edit">编辑资料</button>
             <button class="soft-btn danger" id="creator-library-detail-archive">归档达人</button>
             <button class="soft-btn" id="creator-library-detail-add-campaign">加入 Campaign</button>
+            <button class="soft-btn" id="creator-library-detail-similar">查找相似达人</button>
             <button class="primary-btn" id="creator-library-detail-task">创建合作任务</button>
           </div>
         </div>
@@ -591,6 +592,16 @@
             <p id="creator-library-freshness">--</p>
           </div>
         </div>
+
+        <section class="section-card creator-library-detail-card" id="creator-library-similar-card" hidden>
+          <div class="creator-ai-summary-heading">
+            <div>
+              <h2>相似达人候选</h2>
+              <p class="hint" id="creator-library-similar-status">仅基于本地达人库的结构化证据评分；缺失维度不计零分。</p>
+            </div>
+          </div>
+          <div class="creator-library-similar-results" id="creator-library-similar-results"></div>
+        </section>
 
         <div class="section-card creator-ai-summary-card detail-panel" data-detail-panel="overview" id="creator-ai-summary-card">
           <div class="creator-ai-summary-heading">
@@ -658,6 +669,16 @@
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="content">
           <h2>最近视频</h2>
           <div class="creator-analysis-videos" id="creator-library-videos"></div>
+        </div>
+
+        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="history">
+          <div class="creator-history-performance-heading">
+            <div><h2>合作表现历史</h2><p class="hint">基于实际发布内容的最近有效观察；金额按币种分组，不进行汇率换算。</p></div>
+          </div>
+          <div class="creator-history-performance-grid" id="creator-history-performance-summary"></div>
+          <div class="creator-history-performance-money" id="creator-history-performance-money"></div>
+          <div class="creator-history-campaigns" id="creator-history-campaigns"></div>
+          <p class="hint" id="creator-history-performance-empty">暂无可用合作表现历史。</p>
         </div>
 
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="history">
@@ -1374,6 +1395,7 @@
             <p id="campaign-detail-subtitle">查看项目信息、参与达人和执行结果。</p>
           </div>
           <div class="action-row">
+            <button class="primary-btn" id="campaign-google-sheets-sync" type="button">同步报告到 Google Sheets</button>
             <button class="soft-btn" id="campaign-detail-back" type="button">返回 Campaign 列表</button>
             <button class="danger-btn" id="campaign-detail-delete" type="button">删除 Campaign</button>
           </div>
@@ -1418,6 +1440,29 @@
                 <tbody id="campaign-missing-publish-body"></tbody>
               </table>
             </div>
+          </section>
+
+          <section class="section-card campaign-detail-section" data-campaign-section="published-performance">
+            <div class="campaign-detail-section-heading">
+              <div><p class="eyebrow">PUBLISHED CONTENT</p><h2>发布内容表现</h2></div>
+              <div class="action-row">
+                <span class="campaign-list-count" id="campaign-publication-performance-count">0 条</span>
+                <button class="soft-btn" id="campaign-publications-refresh-all" type="button">刷新全部</button>
+              </div>
+            </div>
+            <p class="hint">显示每条实际发布内容最近一次可靠观察；缺失指标不会显示为 0。</p>
+            <div class="campaign-performance-summary" id="campaign-performance-summary">
+              <article><small>总播放</small><strong id="campaign-performance-total-views">—</strong><span id="campaign-performance-views-coverage">0 / 0 条有数据</span></article>
+              <article><small>总点赞</small><strong id="campaign-performance-total-likes">—</strong><span id="campaign-performance-likes-coverage">0 / 0 条有数据</span></article>
+              <article><small>总评论</small><strong id="campaign-performance-total-comments">—</strong><span id="campaign-performance-comments-coverage">0 / 0 条有数据</span></article>
+              <article><small>平均互动率</small><strong id="campaign-performance-average-er">—</strong><span id="campaign-performance-er-coverage">0 / 0 条有数据</span></article>
+            </div>
+            <div class="campaign-performance-highlights" id="campaign-performance-highlights"></div>
+            <p class="campaign-performance-money" id="campaign-performance-money">确认成本：— · 历史报价：— · ROI：—（缺少权威回报数据）</p>
+            <div class="campaign-performance-trends" id="campaign-performance-trends"></div>
+            <div class="campaign-detail-message" id="campaign-publication-performance-empty">暂无实际发布内容。</div>
+            <div class="campaign-publication-performance-list" id="campaign-publication-performance-list"></div>
+            <p class="campaign-form-error" id="campaign-publication-performance-status" role="status" hidden></p>
           </section>
 
           <section class="section-card campaign-detail-section campaign-creator-section" data-campaign-section="creator-management">
@@ -1783,6 +1828,23 @@
           <div class="action-row">
             <button class="primary-btn" id="feishu-save" data-i18n="saveFeishu">保存飞书配置</button>
           </div>
+        </div>
+
+        <div class="section-card" id="google-sheets-card">
+          <div class="section-title">Google Sheets Campaign 报告</div>
+          <p class="hint">手动将当前 Campaign 的 Summary、Publications 和 Performance History 写入指定 Spreadsheet。SQLite 始终是权威数据源，不会从 Google 回写。</p>
+          <div class="form-grid two">
+            <label class="field"><span>OAuth Client ID</span><input id="google-sheets-client-id" type="text"></label>
+            <label class="field"><span>OAuth Client Secret</span><input id="google-sheets-client-secret" type="password" placeholder="留空表示不修改"></label>
+          </div>
+          <label class="field"><span>Spreadsheet URL 或 ID</span><input id="google-sheets-spreadsheet-id" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <div class="feishu-sync-state"><span>连接状态</span><strong id="google-sheets-status">未配置</strong></div>
+          <div class="action-row">
+            <button class="secondary-btn" id="google-sheets-save" type="button">保存配置</button>
+            <button class="primary-btn" id="google-sheets-connect" type="button">连接 Google</button>
+            <button class="soft-btn" id="google-sheets-disconnect" type="button">断开连接</button>
+          </div>
+          <p class="form-message" id="google-sheets-result" hidden></p>
         </div>
 
         <div class="section-card feishu-sync-card" id="feishu-sync-card">

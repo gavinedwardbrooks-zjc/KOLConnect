@@ -111,6 +111,18 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._json({"ok": False, "error": str(exc)}, status=500)
         return True
 
+    # POST /api/creator-library/email-capture -> Resolve a supported profile/content URL,
+    # then capture only profile-page email data without following external bio links.
+    if method == "POST" and path == "/api/creator-library/email-capture":
+        payload = request["get_payload"]()
+        raw_url = payload.get("url") if isinstance(payload, dict) else None
+        try:
+            result = services["email_url_capture"].capture(raw_url)
+            handler._json({"ok": True, **result})
+        except Exception:
+            handler._json({"ok": False, "error": "EMAIL_CAPTURE_FAILED"}, status=500)
+        return True
+
     # POST /api/creator-library/import → 批量导入 Creator；{"ok": true, "data": {"total_rows": 0, "created": 0, "skipped_existing": 0}}
     if method == "POST" and path == "/api/creator-library/import":
         content_type = str(handler.headers.get("Content-Type") or "").split(";", 1)[0].strip().lower()
@@ -141,6 +153,38 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._json({"ok": True, **creator_service.get_creator_snapshots(snapshots_match.group(1))})
         except ValueError as exc:
             handler._error(str(exc), status=404)
+        return True
+
+    similar_match = re.fullmatch(r"/api/creator-library/([^/]+)/similar", path)
+    if method == "GET" and similar_match:
+        try:
+            limit = int(query.get("limit", ["30"])[0])
+            include_ai = query.get("include_ai", ["false"])[0].lower()
+            if include_ai not in {"true", "false"}:
+                raise ValueError("include_ai 必须为 true 或 false。")
+            handler._json({"ok": True, **services["similar_creator_search"].find_scored(
+                similar_match.group(1), limit=limit, include_ai=include_ai == "true",
+            )})
+        except ValueError as exc:
+            handler._error(str(exc), status=404 if "未找到" in str(exc) else 400)
+        return True
+
+    historical_performance_match = re.fullmatch(
+        r"/api/creator-library/([^/]+)/historical-performance", path
+    )
+    if method == "GET" and historical_performance_match:
+        try:
+            creator_service.get_creator_detail(historical_performance_match.group(1))
+            handler._json({
+                "ok": True,
+                **services["analytics"].get_creator_historical_performance(
+                    historical_performance_match.group(1)
+                ),
+            })
+        except ValueError as exc:
+            handler._error(str(exc), status=404)
+        except RuntimeError as exc:
+            handler._repository_error(exc)
         return True
 
     ai_summary_match = re.fullmatch(r"/api/creator-library/([^/]+)/ai-summary", path)

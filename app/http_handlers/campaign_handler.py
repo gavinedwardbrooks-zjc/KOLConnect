@@ -21,6 +21,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     invalidate_dashboard = context.get("services", {}).get(
         "invalidate_dashboard_response_cache", lambda: None
     )
+    campaign_creator_service = context.get("services", {}).get("campaign_creator")
 
     # GET /api/products → {"ok": true, "products": [...]}
     if method == "GET" and path == "/api/products":
@@ -61,6 +62,10 @@ def handle(handler, request: dict, context: dict) -> bool:
     campaign_creators_batch_match = re.fullmatch(
         r"/api/campaigns/([^/]+)/creators/batch", path
     )
+    campaign_publications_refresh_match = re.fullmatch(
+        r"/api/campaigns/([^/]+)/publications/refresh", path
+    )
+    campaign_performance_match = re.fullmatch(r"/api/campaigns/([^/]+)/performance", path)
     # GET /api/campaigns/{campaign_id}/creators → {"ok": true, "campaign_creators": [...]}
     if method == "GET" and campaign_creators_match:
         campaign_id = campaign_creators_match.group(1)
@@ -113,8 +118,14 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error("请求路径与数据中的 Campaign ID 不一致。")
             return True
         try:
-            record = repositories["campaign_creator"]().createCampaignCreator(
-                {**payload, "campaign_id": campaign_id}
+            record = (
+                campaign_creator_service.create_campaign_creator(
+                    {**payload, "campaign_id": campaign_id}
+                )
+                if campaign_creator_service is not None
+                else repositories["campaign_creator"]().createCampaignCreator(
+                    {**payload, "campaign_id": campaign_id}
+                )
             )
             invalidate_dashboard()
             handler._json({"ok": True, "campaign_creator": record}, status=201)
@@ -132,6 +143,29 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._json({"ok": True, **result})
         except ValueError as exc:
             handler._repository_error(exc)
+        return True
+
+    if method == "POST" and campaign_publications_refresh_match:
+        payload = request["get_payload"]()
+        try:
+            result = context["services"]["publication_tracking"].refresh_campaign(
+                campaign_publications_refresh_match.group(1),
+                refresh_operation_id=payload.get("refresh_operation_id", ""),
+            )
+            handler._json({"ok": True, **result})
+        except (RuntimeError, ValueError) as exc:
+            _campaign_repository_error(handler, exc)
+        return True
+
+    if method == "GET" and campaign_performance_match:
+        try:
+            repositories["campaign"]().getCampaign(campaign_performance_match.group(1))
+            result = context["services"]["analytics"].get_campaign_performance(
+                campaign_performance_match.group(1)
+            )
+            handler._json({"ok": True, **result})
+        except (RuntimeError, ValueError) as exc:
+            _campaign_repository_error(handler, exc)
         return True
 
     # PATCH /api/products/{product_id} → {"ok": true, "product": {...}}
@@ -172,7 +206,115 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._repository_error(exc)
         return True
 
+    campaign_creator_publications_match = re.fullmatch(
+        r"/api/campaign-creators/([^/]+)/publications", path
+    )
+    campaign_creator_publication_match = re.fullmatch(
+        r"/api/campaign-creators/([^/]+)/publications/([^/]+)", path
+    )
+    campaign_creator_publication_refresh_match = re.fullmatch(
+        r"/api/campaign-creators/([^/]+)/publications/([^/]+)/refresh", path
+    )
+    campaign_creator_publication_latest_match = re.fullmatch(
+        r"/api/campaign-creators/([^/]+)/publications/([^/]+)/performance/latest", path
+    )
+    campaign_creator_publication_history_match = re.fullmatch(
+        r"/api/campaign-creators/([^/]+)/publications/([^/]+)/performance/history", path
+    )
+    campaign_creator_publication_performance_match = re.fullmatch(
+        r"/api/campaign-creators/([^/]+)/publications/([^/]+)/performance", path
+    )
     campaign_creator_match = re.fullmatch(r"/api/campaign-creators/([^/]+)", path)
+
+    # Actual publications belong to an existing CampaignCreator relation.
+    if method == "GET" and campaign_creator_publications_match:
+        try:
+            if campaign_creator_service is None:
+                raise RuntimeError("实际发布内容服务未配置。")
+            handler._json(
+                {
+                    "ok": True,
+                    "publications": campaign_creator_service.list_publications(
+                        campaign_creator_publications_match.group(1)
+                    ),
+                }
+            )
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "POST" and campaign_creator_publications_match:
+        payload = request["get_payload"]()
+        try:
+            if campaign_creator_service is None:
+                raise RuntimeError("实际发布内容服务未配置。")
+            record = campaign_creator_service.add_publication(
+                campaign_creator_publications_match.group(1), payload
+            )
+            handler._json({"ok": True, "campaign_creator": record}, status=201)
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "POST" and campaign_creator_publication_refresh_match:
+        payload = request["get_payload"]()
+        try:
+            result = context["services"]["publication_tracking"].refresh_publication(
+                campaign_creator_publication_refresh_match.group(1),
+                campaign_creator_publication_refresh_match.group(2),
+                refresh_operation_id=payload.get("refresh_operation_id", ""),
+            )
+            handler._json({"ok": True, **result})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "GET" and campaign_creator_publication_latest_match:
+        try:
+            observation = context["services"]["publication_tracking"].latest(
+                campaign_creator_publication_latest_match.group(1),
+                campaign_creator_publication_latest_match.group(2),
+            )
+            handler._json({"ok": True, "observation": observation})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "GET" and campaign_creator_publication_history_match:
+        try:
+            observations = context["services"]["publication_tracking"].history(
+                campaign_creator_publication_history_match.group(1),
+                campaign_creator_publication_history_match.group(2),
+            )
+            handler._json({"ok": True, "observations": observations})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "GET" and campaign_creator_publication_performance_match:
+        try:
+            result = context["services"]["analytics"].get_publication_performance(
+                campaign_creator_publication_performance_match.group(1),
+                campaign_creator_publication_performance_match.group(2),
+            )
+            handler._json({"ok": True, **result})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "DELETE" and campaign_creator_publication_match:
+        try:
+            if campaign_creator_service is None:
+                raise RuntimeError("实际发布内容服务未配置。")
+            result = campaign_creator_service.delete_publication(
+                campaign_creator_publication_match.group(1),
+                campaign_creator_publication_match.group(2),
+            )
+            handler._ok(**result)
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
     # PATCH /api/campaign-creators/{id} → {"ok": true, "campaign_creator": {...}}
     if method == "PATCH" and campaign_creator_match:
         payload = request["get_payload"]()
@@ -181,7 +323,13 @@ def handle(handler, request: dict, context: dict) -> bool:
             record = (
                 repository.archiveCampaignCreator(campaign_creator_match.group(1))
                 if payload.get("archived") is True
-                else repository.updateCampaignCreator(campaign_creator_match.group(1), payload)
+                else (
+                    campaign_creator_service.update_campaign_creator(
+                        campaign_creator_match.group(1), payload
+                    )
+                    if campaign_creator_service is not None and "publications" in payload
+                    else repository.updateCampaignCreator(campaign_creator_match.group(1), payload)
+                )
             )
             if payload.get("archived") is True or set(payload).intersection(
                 {

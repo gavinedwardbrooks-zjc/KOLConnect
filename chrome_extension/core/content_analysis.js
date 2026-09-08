@@ -98,6 +98,11 @@ export function contentItem(raw = {}) {
     );
   return {
     platform: normalizeText(raw.platform),
+    ...(raw.capture_layer ? {
+      capture_layer: raw.capture_layer,
+      observed_at: raw.observed_at,
+      field_provenance: raw.field_provenance,
+    } : {}),
     content_type: normalizeText(raw.content_type),
     video_id: normalizeText(raw.video_id),
     video_url: normalizeText(raw.video_url),

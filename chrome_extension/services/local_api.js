@@ -44,7 +44,13 @@ function buildVideoImportItem(video = {}, capturedAt = "") {
     comments: video.comments?.value ?? null,
     published_at: video.published_at?.value ?? null,
     engagement_rate: video.engagement_rate?.value ?? null,
-    captured_at: capturedAt
+    captured_at: capturedAt,
+    ...(video.platform === "TikTok" && video.capture_layer ? {
+      capture_layer: video.capture_layer,
+      observed_at: video.observed_at,
+      field_provenance: video.field_provenance,
+      shares: video.shares?.value ?? null,
+    } : {})
   };
 }
 

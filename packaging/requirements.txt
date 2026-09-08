@@ -7,3 +7,5 @@ openpyxl
 PyYAML>=6,<7
 pywebview
 lark-oapi==1.7.2
+google-auth==2.57.0
+google-auth-oauthlib==1.4.1

@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from storage.errors import SQLiteSchemaUnsupportedError
 
 
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 
 SCHEMA_V1_SQL = r"""
@@ -429,6 +429,34 @@ def apply_schema_migrations(connection, *, migration_reference: str = "") -> int
             connection.execute(
                 "INSERT OR REPLACE INTO storage_metadata(key, value) VALUES (?, ?)",
                 ("application_compatibility", "pre-m8-item-12-publications"),
+            )
+            connection.commit()
+            current = 3
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 3:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS publication_performance_observations ("
+                "observation_id TEXT PRIMARY KEY, publication_id TEXT NOT NULL, "
+                "refresh_operation_id TEXT NOT NULL, observed_at TEXT NOT NULL, "
+                "views INTEGER, likes INTEGER, comments INTEGER, shares INTEGER, "
+                "engagement_rate REAL, source TEXT NOT NULL, confidence TEXT NOT NULL, "
+                "UNIQUE (publication_id, refresh_operation_id))"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_publication_observations_latest "
+                "ON publication_performance_observations("
+                "publication_id, observed_at DESC, observation_id DESC)"
+            )
+            connection.execute(
+                "UPDATE storage_metadata SET value=? WHERE key='schema_version'", ("4",)
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key, value) VALUES (?, ?)",
+                ("application_compatibility", "m8-4-publication-observations"),
             )
             connection.commit()
         except Exception:

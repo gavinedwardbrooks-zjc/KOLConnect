@@ -1,10 +1,8 @@
 import {
-  CONTENT_DETAIL_DELAY_MS,
+  contentItem,
   finalizeContentAnalysis,
-  sleepWithSignal
 } from "../core/content_analysis.js";
 import {
-  abortPageDetailRequests,
   applyPublicProfileFields,
   executePageFunction,
   executeProfileCollector,
@@ -162,27 +160,23 @@ function discoverTikTokContent() {
   const clean = (value, limit = 1000) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
   const current = new URL(location.href);
   const handle = current.pathname.match(/^\/@([^/?#]+)/)?.[1] || "";
-  const byId = new Map();
+  const candidates = [];
+  const visibleLinks = [...document.querySelectorAll('a[href*="/video/"]')].filter((anchor) => {
+    try {
+      const url = new URL(anchor.href);
+      return url.protocol === "https:" && ["www.tiktok.com", "tiktok.com", "m.tiktok.com"].includes(url.hostname)
+        && url.pathname.startsWith(`/@${handle}/video/`) && anchor.getClientRects().length > 0;
+    } catch (_) { return false; }
+  });
+  const visibleIds = new Set(visibleLinks.map((anchor) => anchor.href.match(/\/video\/(\d+)/)?.[1]));
   const add = (raw) => {
+    if (typeof (raw.video_id || raw.id) !== "string") return;
     const videoId = clean(raw.video_id || raw.id, 128);
     const videoUrl = clean(raw.video_url || (videoId && handle
       ? `https://www.tiktok.com/@${handle}/video/${videoId}`
       : ""));
-    const key = videoId || videoUrl;
-    if (!key) return;
-    const previous = byId.get(key) || {};
-    byId.set(key, {
-      ...previous,
-      ...raw,
-      video_id: videoId || previous.video_id || "",
-      video_url: videoUrl || previous.video_url || "",
-      title: raw.title || previous.title || null,
-      views: raw.views ?? previous.views ?? null,
-      likes: raw.likes ?? previous.likes ?? null,
-      comments: raw.comments ?? previous.comments ?? null,
-      published_at: raw.published_at ?? previous.published_at ?? null,
-      is_pinned: Boolean(raw.is_pinned || previous.is_pinned)
-    });
+    if (!/^\d{1,32}$/.test(videoId) || candidates.length >= 200) return;
+    candidates.push({ ...raw, video_id: videoId, video_url: videoUrl });
   };
 
   const states = [];
@@ -206,7 +200,10 @@ function discoverTikTokContent() {
       visited += 1;
       const videoId = node.id || node.aweme_id || node.itemId;
       const stats = node.stats || node.statistics || {};
-      if (videoId && (
+      const author = node.author?.uniqueId || node.author?.unique_id || "";
+      const belongs = author ? typeof author === "string" && author.toLowerCase() === handle.toLowerCase()
+        : visibleIds.has(String(videoId));
+      if (belongs && videoId && (
         node.video
         || node.desc !== undefined
         || stats.playCount !== undefined
@@ -219,19 +216,20 @@ function discoverTikTokContent() {
           views: stats.playCount ?? stats.play_count ?? null,
           likes: stats.diggCount ?? stats.digg_count ?? null,
           comments: stats.commentCount ?? stats.comment_count ?? null,
+          shares: stats.shareCount ?? stats.share_count ?? null,
           published_at: node.createTime ?? node.create_time ?? null,
-          is_pinned: Boolean(node.isPinned || node.is_pinned || node.pinned),
-          source: "structured_data"
+          is_pinned: typeof node.isPinnedItem === "boolean" ? node.isPinnedItem : null,
+          source: "hydration"
         };
         add(mapped);
       }
       for (const child of Array.isArray(node) ? node : Object.values(node)) {
-        if (child && typeof child === "object") queue.push(child);
+        if (child && typeof child === "object" && queue.length < 12000) queue.push(child);
       }
     }
   }
 
-  for (const anchor of document.querySelectorAll('a[href*="/video/"]')) {
+  for (const anchor of visibleLinks) {
     const match = anchor.href.match(/\/video\/(\d+)/);
     if (!match) continue;
     const card = anchor.closest('[data-e2e*="user-post"], article, div') || anchor;
@@ -248,188 +246,123 @@ function discoverTikTokContent() {
       comments: null,
       published_at: null,
       is_pinned: /pinned|置顶|fixado/i.test(pinText),
-      source: "page_dom"
+      source: "dom"
     });
   }
 
-  return [...byId.values()].slice(0, 60);
+  return candidates;
 }
 
-async function fetchTikTokContentDetail(videoUrl) {
-  const clean = (value, limit = 2000) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
-  const videoId = String(videoUrl).match(/\/video\/(\d+)/)?.[1] || "";
-  const missing = "TikTok did not expose this field on the public video page.";
-  const registry = globalThis.__KOLCONNECT_DETAIL_CONTROLLERS__
-    ||= new Set();
-  const controller = new AbortController();
-  registry.add(controller);
-  try {
-    const response = await fetch(videoUrl, {
-      credentials: "include",
-      redirect: "follow",
-      signal: controller.signal
-    });
-    const html = await response.text();
-    const htmlPrefix = html.slice(0, 30000);
-    const loginDetected = /\/login/i.test(String(response.url || ""))
-      || /login to tiktok|log in to tiktok|<title>\s*log in/i.test(htmlPrefix);
-    const challengeDetected = /\/verify|\/challenge/i.test(String(response.url || ""))
-      || /verify to continue|challenge required|verification required|security verification|please verify/i.test(htmlPrefix);
-    const captchaDetected = /captcha/i.test(String(response.url || "")) || /captcha/i.test(htmlPrefix);
-    if (loginDetected || challengeDetected || captchaDetected) {
-      return {
-        video_id: videoId,
-        detail_fallback_status: "blocked_by_verification",
-        detail_missing_reason: "TikTok limited video detail access; using profile-page data only."
-      };
-    }
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const parsed = new DOMParser().parseFromString(html, "text/html");
-    const states = [];
-    for (const id of ["__UNIVERSAL_DATA_FOR_REHYDRATION__", "SIGI_STATE"]) {
-      const text = parsed.getElementById(id)?.textContent;
-      if (!text || text.length > 3_000_000) continue;
-      try { states.push(JSON.parse(text)); } catch (_) {}
-    }
-    let found = null;
-    for (const root of states) {
-      const queue = [root];
-      const seen = new WeakSet();
-      let visited = 0;
-      while (queue.length && visited < 10000 && !found) {
-        const node = queue.shift();
-        if (!node || typeof node !== "object" || seen.has(node)) continue;
-        seen.add(node);
-        visited += 1;
-        const id = String(node.id || node.aweme_id || node.itemId || "");
-        if (id === videoId) {
-          const stats = node.stats || node.statistics || {};
-          found = {
-            video_id: videoId,
-            title: clean(node.desc || node.title) || null,
-            views: stats.playCount ?? stats.play_count ?? null,
-            likes: stats.diggCount ?? stats.digg_count ?? null,
-            comments: stats.commentCount ?? stats.comment_count ?? null,
-            published_at: node.createTime ?? node.create_time ?? null,
-            detail_source: "detail_page_structured_data"
-          };
-          break;
-        }
-        for (const child of Array.isArray(node) ? node : Object.values(node)) {
-          if (child && typeof child === "object") queue.push(child);
-        }
-      }
-      if (found) break;
-    }
-    return found || { video_id: videoId, detail_missing_reason: missing };
-  } catch (error) {
-    return {
-      video_id: videoId,
-      detail_missing_reason: error?.message || missing
-    };
-  } finally {
-    registry.delete(controller);
-  }
+export async function captureState(tabId, profile, fallback = []) {
+  const result = await chrome.scripting.executeScript({
+    target: { tabId }, world: "ISOLATED",
+    func: (expected, items) => {
+      if (!globalThis.KOLConnectTikTokCapture) throw new Error("CAPTURE_L1_UNAVAILABLE: reload the TikTok tab after updating the extension.");
+      return globalThis.KOLConnectTikTokCapture.snapshot(expected, items);
+    },
+    args: [profile, fallback],
+  });
+  return result[0].result;
 }
 
-function mergeTikTokDetail(item, detail) {
-  const missing = detail?.detail_missing_reason || "TikTok did not expose this field on the public video page.";
-  const confidence = (source) => /structured_data/.test(source || "") ? "high" : "medium";
-  const viewsSource = item.views != null ? item.source : detail?.views != null ? detail.detail_source : "";
-  const likesSource = item.likes != null ? item.source : detail?.likes != null ? detail.detail_source : "";
-  const commentsSource = item.comments != null ? item.source : detail?.comments != null ? detail.detail_source : "";
-  const publishedSource = item.published_at != null ? item.source : detail?.published_at != null ? detail.detail_source : "";
-  return {
-    ...item,
-    title: detail?.title || item.title,
-    views: item.views ?? detail?.views ?? null,
-    likes: item.likes ?? detail?.likes ?? null,
-    comments: item.comments ?? detail?.comments ?? null,
-    published_at: item.published_at ?? detail?.published_at ?? null,
-    views_source: viewsSource,
-    likes_source: likesSource,
-    comments_source: commentsSource,
-    published_source: publishedSource,
-    views_confidence: confidence(viewsSource),
-    likes_confidence: confidence(likesSource),
-    comments_confidence: confidence(commentsSource),
-    published_confidence: confidence(publishedSource),
-    views_missing_reason: item.views == null && detail?.views == null ? missing : "",
-    likes_missing_reason: item.likes == null && detail?.likes == null ? missing : "",
-    comments_missing_reason: item.comments == null && detail?.comments == null ? missing : "",
-    published_missing_reason: item.published_at == null && detail?.published_at == null ? missing : ""
+export async function readCaptureDiagnostics(tabId) {
+  const read = async (world, func) => {
+    try { return (await chrome.scripting.executeScript({ target: { tabId }, world, func }))[0]?.result || null; }
+    catch (_) { return null; }
   };
+  const main = await read("MAIN", () => ({
+    installed: Boolean(globalThis.__kolconnectPassiveCaptureMainV1__),
+    protocol_available: Boolean(globalThis.KOLConnectPassiveCaptureProtocol),
+    control_available: Boolean(globalThis.KOLConnectPassiveCaptureControl),
+    counters: globalThis.KOLConnectPassiveCaptureControl?.diagnostics?.() || null,
+  }));
+  const runtime = await read("ISOLATED", () => globalThis.KOLConnectTikTokCapture?.diagnostics?.() || null);
+  // MAIN is page-controlled. Export only fixed keys with numeric/boolean values.
+  const counts = (source, keys) => Object.fromEntries(keys.split(" ").map(key =>
+    [key, Number.isSafeInteger(source?.[key]) && source[key] >= 0 ? source[key] : null]));
+  const flags = (source, keys) => Object.fromEntries(keys.split(" ").map(key =>
+    [key, typeof source?.[key] === "boolean" ? source[key] : null]));
+  const sessionReasons = "stopped profile_missing profile_mismatch timestamp layer invalid_id author_mismatch capacity batch_limit";
+  return {
+    scope: "document_lifetime_counters_current_session_rows",
+    main: { available: Boolean(main), ...flags(main, "installed protocol_available control_available"),
+      ...flags(main?.counters, "fetch_wrapper_current xhr_open_wrapper_current xhr_send_wrapper_current"),
+      ...counts(main?.counters, "fetch_interceptions xhr_interceptions target_matches envelopes_emitted envelopes_replayed pending_envelopes generation"),
+      matched_families: counts(main?.counters?.matched_families, "tiktok_item_list tiktok_user_detail tiktok_comment_list"),
+      misses: counts(main?.counters?.misses, "profile_missing old_generation response_unavailable response_rejected redirect_mismatch clone_failed body_too_large decode_failed emit_failed observation_failed xhr_response_type") },
+    runtime: { available: Boolean(runtime), ...flags(runtime, "bridge_connected parser_error"),
+      bridge: { ...flags(runtime?.bridge, "token_configured"),
+        ...counts(runtime?.bridge, "accepted rejected parser_invocations parser_success parser_errors normalized_rows consumer_errors"),
+        rejected_reasons: counts(runtime?.bridge?.rejected_reasons, "source origin token_unavailable token_mismatch invalid_envelope receiver_exception"),
+        parser_reasons: counts(runtime?.bridge?.parser_reasons, "invalid_payload exception") },
+      session: { ...flags(runtime?.session, "stopped"),
+        ...counts(runtime?.session, "accepted_rows rejected_rows l1_accepted_rows l1_rejected_rows current_rows current_l1_rows generation"),
+        rejected_reasons: counts(runtime?.session?.rejected_reasons, sessionReasons),
+        l1_rejected_reasons: counts(runtime?.session?.l1_rejected_reasons, sessionReasons) } },
+  };
+}
+
+export async function resetCapture(tabId) {
+  await chrome.scripting.executeScript({ target: { tabId }, world: "MAIN",
+    func: () => globalThis.KOLConnectPassiveCaptureControl?.reset() });
+  await chrome.scripting.executeScript({ target: { tabId }, world: "ISOLATED",
+    func: () => globalThis.KOLConnectTikTokCapture?.reset() });
 }
 
 export async function collectRecentContent(tabId, options = {}) {
-  const limit = Math.max(1, Math.min(30, Number(options.limit) || 30));
+  const profile = new URL(options.analysisUrl).pathname.match(/^\/@([A-Za-z0-9._]+)\/?$/)?.[1];
+  if (!profile) throw new Error("CAPTURE_PROFILE_REQUIRED");
+  const initial = await captureState(tabId, profile);
+  if (initial.stopped) throw new Error(initial.stopped);
+  if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
   options.onProgress?.({ phase: "discovering" });
-  const discovered = await executePageFunction(tabId, discoverTikTokContent);
-  const eligible = discovered.filter((item) => !options.excludePinned || !item.is_pinned).slice(0, limit);
-  const passiveFields = {
-    likes: eligible.some((item) => item.likes != null),
-    comments: eligible.some((item) => item.comments != null),
-    published_at: eligible.some((item) => item.published_at != null),
-    shares: eligible.some((item) => item.shares != null)
-  };
-  options.onProgress?.({
-    phase: "discovered",
-    discovered: discovered.length,
-    excludedPinned: discovered.filter((item) => item.is_pinned).length
-  });
-  const completed = [];
-  let detailFallbackStatus = "not_required";
-  let detailRequestCount = 0;
-  for (const [index, item] of eligible.entries()) {
-    if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-    const needsDetail = !(
-      item.views != null && item.likes != null && item.comments != null && item.published_at != null
-    );
-    if (!needsDetail || detailFallbackStatus === "blocked_by_verification") {
-      completed.push(mergeTikTokDetail(item, null));
-    } else {
-      detailFallbackStatus = "available";
-      detailRequestCount += 1;
-      let detail;
-      try {
-        detail = await executePageFunction(tabId, fetchTikTokContentDetail, [item.video_url]);
-      } catch (error) {
-        detail = {
-          video_id: item.video_id,
-          detail_missing_reason: error?.message || "TikTok detail request failed."
-        };
-      }
-      if (detail?.detail_fallback_status === "blocked_by_verification") {
-        detailFallbackStatus = "blocked_by_verification";
-      }
-      completed.push(mergeTikTokDetail(item, detail));
-    }
-    options.onProgress?.({ phase: "details", current: index + 1, total: eligible.length });
-    if (
-      index + 1 < eligible.length
-      && detailFallbackStatus !== "blocked_by_verification"
-      && CONTENT_DETAIL_DELAY_MS > 0
-    ) {
-      await sleepWithSignal(CONTENT_DETAIL_DELAY_MS, options.signal);
-    }
+  const observedAt = new Date().toISOString();
+  let discovered = [], fallbackError = false;
+  try {
+    discovered = await executePageFunction(tabId, discoverTikTokContent);
+    if (!Array.isArray(discovered)) throw new Error("PARSER_ERROR");
+  } catch (error) {
+    if (error?.name === "AbortError") throw error;
+    discovered = []; fallbackError = true;
   }
-  const completedById = new Map(completed.map((item) => [item.video_id || item.video_url, item]));
-  const merged = discovered.map((item) => completedById.get(item.video_id || item.video_url) || item);
-  options.onProgress?.({ phase: "calculating" });
-  const analysis = finalizeContentAnalysis(merged, {
-    limit,
-    excludePinned: options.excludePinned !== false,
-    contentType: "video"
+  const fallback = discovered.map((raw) => {
+    const layer = raw.source === "hydration" ? "L2" : "L3";
+    const confidence = layer === "L2" ? "medium" : "low";
+    const item = { ...raw, platform: "TikTok", content_type: "video",
+      capture_layer: layer, observed_at: observedAt };
+    for (const field of ["views", "likes", "comments", "shares"]) {
+      item[field + "_source"] = raw.source;
+      item[field + "_confidence"] = confidence;
+      item[field + "_missing_reason"] = "Not exposed by the current page.";
+    }
+    item.published_source = raw.source;
+    item.published_confidence = confidence;
+    return { ...contentItem(item), is_pinned: raw.is_pinned ?? null };
   });
-  analysis.detail_fallback_status = detailFallbackStatus;
-  analysis.detail_request_count = detailRequestCount;
-  analysis.current_page_metadata_status = Object.values(passiveFields).some(Boolean)
-    ? "available"
-    : "current_page_metadata_unavailable";
-  analysis.current_page_metadata_fields = passiveFields;
+  if (options.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  const state = await captureState(tabId, profile, fallback);
+  if (state.stopped) throw new Error(state.stopped);
+  const analysis = finalizeContentAnalysis(state.items, {
+    limit: Math.min(20, Number(options.limit) || 20),
+    excludePinned: options.excludePinned !== false, contentType: "video",
+  });
+  const layers = state.items.map((item) => item.capture_layer);
+  analysis.passive_capture_status = layers.includes("L1") ? "CAPTURE_L1_ACTIVE"
+    : layers.includes("L2") ? "FALLBACK_L2" : layers.includes("L3") ? "FALLBACK_L3"
+      : state.parser_error || fallbackError ? "PARSER_ERROR" : "NO_DATA";
+  analysis.capture_diagnostics = {
+    l1: layers.includes("L1") ? "CAPTURE_L1_ACTIVE" : "CAPTURE_L1_UNAVAILABLE",
+    l2: fallback.some((row) => row.capture_layer === "L2") ? "AVAILABLE" : "UNAVAILABLE",
+    l3: fallback.some((row) => row.capture_layer === "L3") ? "AVAILABLE" : "UNAVAILABLE",
+    bridge_connected: state.l1_available, parser_error: state.parser_error,
+    fallback_error: fallbackError ? "PARSER_ERROR" : "",
+  };
+  analysis.capture_session_id = state.session_id;
+  analysis.detail_request_count = 0;
   return analysis;
 }
 
 export async function cancelRecentContent(tabId) {
-  return executePageFunction(tabId, abortPageDetailRequests);
+  return chrome.scripting.executeScript({ target: { tabId }, world: "ISOLATED",
+    func: () => globalThis.KOLConnectTikTokCapture?.stop() });
 }

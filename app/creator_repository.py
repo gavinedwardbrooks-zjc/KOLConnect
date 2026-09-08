@@ -1394,6 +1394,20 @@ class CreatorRepository:
         }
 
     @_synchronized
+    def getSimilarCreatorSourceData(self) -> dict[str, list[dict[str, Any]]]:
+        """Return the local, detached rows needed for deterministic candidate discovery."""
+        workbook = self._load_workbook()
+        return {
+            "creators": [dict(row) for row in self._rows(workbook["Creators"])],
+            "accounts": [dict(row) for row in self._rows(workbook["CreatorAccounts"])],
+            "snapshots": [dict(row) for row in self._rows(workbook["CreatorSnapshots"])],
+            "campaign_creators": [
+                dict(row) for row in self._rows(workbook["CampaignCreators"])
+                if not str(row.get("archived_at") or "").strip()
+            ],
+        }
+
+    @_synchronized
     def getCreatorCooperations(self, creator_id: str, workbook=None) -> list[dict[str, Any]]:
         """Return one creator's cooperation history, latest contact first."""
         workbook = workbook or self._load_workbook()

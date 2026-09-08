@@ -29,6 +29,10 @@
   let relations = [];
   let missingPublishLinks = [];
   let missingPublishError = "";
+  let publicationObservations = new Map();
+  let campaignPerformance = null;
+  let publicationRefreshPending = false;
+  let googleSheetsSyncPending = false;
   let creators = [];
   let creatorsLoaded = false;
   let editingRelationId = null;
@@ -39,6 +43,11 @@
 
   function element(id) {
     return document.getElementById(id);
+  }
+
+  function setText(id, value) {
+    const target = element(id);
+    if (target) target.textContent = String(value ?? "");
   }
 
   function getApp() {
@@ -268,6 +277,262 @@
     });
   }
 
+  function metricText(value) {
+    return value === null || value === undefined || value === "" ? "—" : formatNumber(value);
+  }
+
+  function coverageText(coverage) {
+    return `${coverage?.valid_count || 0} / ${coverage?.total_publications || 0} 条有数据`;
+  }
+
+  function currencyGroupsText(groups) {
+    const entries = Object.entries(groups || {});
+    return entries.length
+      ? entries.map(([currency, amount]) => `${currency} ${formatNumber(amount)}`).join(" · ")
+      : "—";
+  }
+
+  function appendPerformanceHighlight(label, value, detail = "") {
+    const container = element("campaign-performance-highlights");
+    if (!container) return;
+    const item = document.createElement("article");
+    const title = document.createElement("small");
+    const primary = document.createElement("strong");
+    const context = document.createElement("span");
+    title.textContent = label;
+    primary.textContent = value || "—";
+    context.textContent = detail;
+    item.append(title, primary, context);
+    container.appendChild(item);
+  }
+
+  function renderCampaignPerformanceAnalytics() {
+    const data = campaignPerformance;
+    const totals = data?.totals || {};
+    ["views", "likes", "comments"].forEach(metric => {
+      setText(`campaign-performance-total-${metric}`, metricText(totals[metric]?.total));
+      setText(`campaign-performance-${metric}-coverage`, coverageText(totals[metric]));
+    });
+    setText("campaign-performance-average-er", data?.average_er == null ? "—" : `${formatNumber(data.average_er)}%`);
+    setText("campaign-performance-er-coverage", `${data?.valid_er_count || 0} / ${data?.total_publications || 0} 条有数据`);
+
+    const highlights = element("campaign-performance-highlights");
+    if (highlights) highlights.replaceChildren();
+    appendPerformanceHighlight("Top Creator", data?.top_creator?.creator_name, data?.top_creator ? `累计播放 ${formatNumber(data.top_creator.views)}` : "暂无可用播放数据");
+    appendPerformanceHighlight("Top Video", data?.top_video?.creator_name, data?.top_video ? `${data.top_video.publication_id} · 播放 ${formatNumber(data.top_video.views)}` : "暂无可用播放数据");
+    appendPerformanceHighlight("最高互动率", data?.highest_er?.creator_name, data?.highest_er ? `${data.highest_er.publication_id} · ${formatNumber(data.highest_er.engagement_rate)}%` : "暂无可用互动率");
+    const fastest = data?.fastest_growing;
+    appendPerformanceHighlight(
+      "最快增长（播放/天）",
+      fastest?.creator_name,
+      fastest ? `${formatNumber(fastest.growth_rate)} / 天 · ${fastest.start_observed_at} 至 ${fastest.end_observed_at}` : "至少需要两个不同时间的播放观察",
+    );
+    setText(
+      "campaign-performance-money",
+      `确认成本：${currencyGroupsText(data?.total_cost_by_currency)} · 历史报价：${currencyGroupsText(data?.total_quote_by_currency)} · 未知币种成本/报价记录 ${data?.unknown_currency_records?.cost || 0}/${data?.unknown_currency_records?.quote || 0}（不纳入币种汇总） · ROI：—（缺少权威回报数据）`,
+    );
+
+    const trends = element("campaign-performance-trends");
+    if (!trends) return;
+    trends.replaceChildren();
+    (Array.isArray(data?.publications) ? data.publications : []).forEach(publication => {
+      const series = Array.isArray(publication.series) ? publication.series : [];
+      if (!series.length) return;
+      const section = document.createElement("section");
+      const heading = document.createElement("h3");
+      heading.textContent = `${publication.creator_name || "未命名达人"} · ${publication.platform || "未知平台"}`;
+      const identity = document.createElement("small");
+      identity.textContent = `${publication.publication_id} · ${publication.actual_account_uid || "账号未记录"}`;
+      const table = document.createElement("table");
+      table.className = "campaign-performance-trend-table";
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      ["观察时间", "播放", "点赞", "评论", "互动率"].forEach(label => headRow.appendChild(createCell(label)));
+      head.appendChild(headRow);
+      const body = document.createElement("tbody");
+      series.forEach(point => {
+        const row = document.createElement("tr");
+        [point.observed_at, point.views, point.likes, point.comments, point.engagement_rate == null ? null : `${point.engagement_rate}%`]
+          .forEach(value => row.appendChild(createCell(metricText(value))));
+        body.appendChild(row);
+      });
+      table.append(head, body);
+      section.append(heading, identity, table);
+      const growth = document.createElement("p");
+      growth.className = "hint";
+      growth.textContent = [["views", "播放"], ["likes", "点赞"], ["comments", "评论"], ["engagement_rate", "ER（百分点）"]]
+        .map(([metric, label]) => {
+          const delta = publication.growth?.[metric];
+          if (!delta) return `${label}增长 —`;
+          const percentage = delta.percentage == null ? "百分比不可用" : `${formatNumber(delta.percentage)}%`;
+          return `${label}增长 ${formatNumber(delta.absolute)} (${percentage}) · ${delta.start_observed_at} 至 ${delta.end_observed_at}${delta.status === "decrease" ? " · 观察值下降" : ""}`;
+        }).join("；");
+      section.appendChild(growth);
+      trends.appendChild(section);
+    });
+  }
+
+  async function reloadCampaignPerformanceAnalytics() {
+    if (!resources || !campaignId) return;
+    const currentLifecycle = lifecycleId;
+    try {
+      const data = await global.KOLConnectAPI.get(
+        `/api/campaigns/${encodeURIComponent(campaignId)}/performance`,
+        { signal: resources.signal },
+      );
+      if (!resources || currentLifecycle !== lifecycleId) return;
+      campaignPerformance = data;
+    } catch (error) {
+      if (!resources || currentLifecycle !== lifecycleId) return;
+      if (error?.name === "AbortError") throw error;
+      campaignPerformance = null;
+    }
+    renderCampaignPerformanceAnalytics();
+  }
+
+  function allPublications() {
+    return relations.flatMap(relation => (
+      Array.isArray(relation.publications)
+        ? relation.publications.map(publication => ({ relation, publication }))
+        : []
+    ));
+  }
+
+  function renderPublicationPerformance() {
+    const list = element("campaign-publication-performance-list");
+    const empty = element("campaign-publication-performance-empty");
+    const count = element("campaign-publication-performance-count");
+    const refreshAll = element("campaign-publications-refresh-all");
+    if (!list || !empty || !count || !refreshAll) return;
+    const publications = allPublications();
+    list.replaceChildren();
+    count.textContent = `${publications.length} 条`;
+    empty.hidden = publications.length !== 0;
+    refreshAll.disabled = publicationRefreshPending || publications.length === 0;
+    publications.forEach(({ relation, publication }) => {
+      const publicationId = String(publication.publication_id || "");
+      const observation = publicationObservations.get(publicationId) || null;
+      const card = document.createElement("article");
+      card.className = "campaign-publication-performance-card";
+      card.dataset.publicationPerformance = publicationId;
+
+      const heading = document.createElement("div");
+      heading.className = "campaign-publication-performance-heading";
+      const identity = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = relation.creator_name || "未命名达人";
+      const meta = document.createElement("small");
+      meta.textContent = `${publication.platform || "未知平台"} · ${observation ? `最近检查 ${observation.observed_at}` : "尚未检查"}`;
+      identity.append(title, meta);
+      const refresh = document.createElement("button");
+      refresh.type = "button";
+      refresh.className = "soft-btn compact-btn";
+      refresh.dataset.publicationRefresh = publicationId;
+      refresh.dataset.campaignCreatorId = String(relation.id || "");
+      refresh.disabled = publicationRefreshPending;
+      refresh.textContent = "刷新";
+      heading.append(identity, refresh);
+
+      const metrics = document.createElement("div");
+      metrics.className = "campaign-publication-metrics";
+      [
+        ["播放", observation?.views], ["点赞", observation?.likes],
+        ["评论", observation?.comments], ["分享", observation?.shares],
+        ["互动率", observation?.engagement_rate == null ? null : `${observation.engagement_rate}%`],
+      ].forEach(([label, value]) => {
+        const item = document.createElement("span");
+        const labelNode = document.createElement("small");
+        labelNode.textContent = label;
+        const valueNode = document.createElement("b");
+        valueNode.textContent = metricText(value);
+        item.append(labelNode, valueNode);
+        metrics.appendChild(item);
+      });
+      const source = document.createElement("small");
+      source.className = "hint";
+      source.textContent = observation
+        ? `来源 ${observation.source} · 置信度 ${observation.confidence}`
+        : "追踪状态：Unavailable";
+      card.append(heading, metrics, source);
+      list.appendChild(card);
+    });
+  }
+
+  function hydrateLatestPublicationObservations() {
+    publicationObservations = new Map(
+      (Array.isArray(campaignPerformance?.publications) ? campaignPerformance.publications : [])
+        .map(publication => {
+          const series = Array.isArray(publication.series) ? publication.series : [];
+          return [String(publication.publication_id || ""), series[series.length - 1] || null];
+        }),
+    );
+  }
+
+  function setPublicationStatus(message, isError = false) {
+    const status = element("campaign-publication-performance-status");
+    if (!status) return;
+    status.hidden = !message;
+    status.textContent = message || "";
+    status.className = `campaign-form-error${isError ? "" : " is-success"}`;
+  }
+
+  async function refreshPublication(relationId, publicationId) {
+    if (publicationRefreshPending || !resources) return;
+    publicationRefreshPending = true;
+    setPublicationStatus("");
+    renderPublicationPerformance();
+    try {
+      const result = await global.KOLConnectAPI.post(
+        `/api/campaign-creators/${encodeURIComponent(relationId)}/publications/${encodeURIComponent(publicationId)}/refresh`,
+        {}, { signal: resources.signal },
+      );
+      if (result.observation) publicationObservations.set(publicationId, result.observation);
+      await reloadCampaignPerformanceAnalytics();
+      setPublicationStatus(
+        result.status === "SUCCESS" ? "发布内容指标已刷新。" : `暂不可刷新：${result.reason || result.status}`,
+        result.status !== "SUCCESS",
+      );
+    } catch (error) {
+      if (error?.name !== "AbortError") setPublicationStatus(error.message || "刷新失败。", true);
+    } finally {
+      publicationRefreshPending = false;
+      renderPublicationPerformance();
+    }
+  }
+
+  async function refreshAllPublications() {
+    if (publicationRefreshPending || !resources || !campaignId) return;
+    publicationRefreshPending = true;
+    setPublicationStatus("");
+    renderPublicationPerformance();
+    try {
+      const result = await global.KOLConnectAPI.post(
+        `/api/campaigns/${encodeURIComponent(campaignId)}/publications/refresh`,
+        {}, { signal: resources.signal },
+      );
+      result.results?.forEach(item => {
+        if (item.observation) publicationObservations.set(String(item.publication_id || ""), item.observation);
+      });
+      await reloadCampaignPerformanceAnalytics();
+      setPublicationStatus(
+        result.status === "SUCCESS"
+          ? "全部发布内容指标已刷新。"
+          : `批量刷新 ${result.status || "FAILED"}：成功 ${result.succeeded || 0}，未完成 ${result.failed || 0}。`,
+        result.status !== "SUCCESS",
+      );
+    } catch (error) {
+      if (error?.name !== "AbortError") setPublicationStatus(error.message || "批量刷新失败。", true);
+    } finally {
+      publicationRefreshPending = false;
+      renderPublicationPerformance();
+    }
+  }
+
+  function handlePublicationPerformanceClick(event) {
+    const button = event.target?.closest?.("[data-publication-refresh]");
+    if (button) refreshPublication(button.dataset.campaignCreatorId, button.dataset.publicationRefresh);
+  }
+
   async function loadDetail() {
     if (!resources || !campaignId) return;
     const currentLifecycle = lifecycleId;
@@ -279,7 +544,7 @@
     missingPublishError = "";
 
     try {
-      const [campaignData, relationsData, publishingData] = await Promise.all([
+      const [campaignData, relationsData, publishingData, performanceData] = await Promise.all([
         global.KOLConnectAPI.get(`/api/campaigns/${encodeURIComponent(campaignId)}`, {
           signal: campaignController.signal,
         }),
@@ -293,6 +558,12 @@
           missingPublishError = "missing_publish_links_unavailable";
           return { missing_publish_links: [] };
         }),
+        global.KOLConnectAPI.get(`/api/campaigns/${encodeURIComponent(campaignId)}/performance`, {
+          signal: relationsController.signal,
+        }).catch(error => {
+          if (error?.name === "AbortError") throw error;
+          return null;
+        }),
       ]);
       if (!resources || currentLifecycle !== lifecycleId) return;
       campaign = campaignData.campaign || null;
@@ -302,11 +573,15 @@
       missingPublishLinks = Array.isArray(publishingData.missing_publish_links)
         ? publishingData.missing_publish_links
         : [];
+      campaignPerformance = performanceData;
+      hydrateLatestPublicationObservations();
       if (!campaign) throw new Error("Campaign 数据不存在。");
       if (isArchived()) closeCreatorForm();
       renderOverview();
       renderRelations();
       renderMissingPublishLinks();
+      renderCampaignPerformanceAnalytics();
+      renderPublicationPerformance();
       setDetailState("loaded");
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
@@ -833,6 +1108,43 @@
     }
   }
 
+  async function syncGoogleSheetsReport() {
+    if (googleSheetsSyncPending || !campaignId || !resources) return;
+    googleSheetsSyncPending = true;
+    const button = element("campaign-google-sheets-sync");
+    if (button) {
+      button.disabled = true;
+      button.textContent = "正在同步...";
+    }
+    const requestedCampaignId = campaignId;
+    const requestedLifecycle = lifecycleId;
+    try {
+      const result = await global.KOLConnectAPI.post(
+        `/api/campaigns/${encodeURIComponent(campaignId)}/google-sheets-sync`,
+        {}, { signal: resources.signal },
+      );
+      if (!resources || requestedLifecycle !== lifecycleId || requestedCampaignId !== campaignId) return;
+      if (result.status !== "SUCCESS") {
+        throw new Error(
+          result.status === "PARTIAL"
+            ? "Google Sheets 报告仅部分写入，请检查各工作表状态后重试。"
+            : `Google Sheets 报告同步失败：${result.error || result.status || "UNKNOWN"}`,
+        );
+      }
+      const detail = (result.worksheets || [])
+        .map(item => `${item.worksheet}: ${item.row_count ?? 0} 行`).join("；");
+      getApp().showSaved(`Google Sheets 报告同步成功。${detail}`);
+    } catch (error) {
+      if (error?.name !== "AbortError") getApp().showError(error);
+    } finally {
+      googleSheetsSyncPending = false;
+      if (button) {
+        button.disabled = false;
+        button.textContent = "同步报告到 Google Sheets";
+      }
+    }
+  }
+
   async function handleListAction(event) {
     const button = event.target.closest("[data-campaign-creator-action]");
     if (!button) return;
@@ -858,6 +1170,10 @@
       relations = [];
       missingPublishLinks = [];
       missingPublishError = "";
+      publicationObservations = new Map();
+      campaignPerformance = null;
+      publicationRefreshPending = false;
+      googleSheetsSyncPending = false;
       creators = [];
       creatorsLoaded = false;
       accountCache.clear();
@@ -872,6 +1188,7 @@
     bind() {
       listen("campaign-detail-back", "click", () => global.KOLConnectPages.navigate("campaigns"));
       listen("campaign-detail-delete", "click", deleteCampaign);
+      listen("campaign-google-sheets-sync", "click", syncGoogleSheetsReport);
       listen("campaign-detail-retry", "click", loadDetail);
       listen("campaign-creator-add-open", "click", openAddForm);
       listen("campaign-creator-form-cancel", "click", closeCreatorForm);
@@ -883,6 +1200,8 @@
       listen("campaign-planned-date-list", "click", handlePlannedDateClick);
       listen("campaign-publication-add", "click", handlePublicationClick);
       listen("campaign-publication-list", "click", handlePublicationClick);
+      listen("campaign-publication-performance-list", "click", handlePublicationPerformanceClick);
+      listen("campaign-publications-refresh-all", "click", refreshAllPublications);
       listen("campaign-creator-list-body", "click", handleListAction);
       if (document?.addEventListener) resources.listen(document, "click", handleAccountPickerClickOutside);
     },
@@ -899,11 +1218,15 @@
       campaign = null;
       relations = [];
       missingPublishLinks = [];
+      publicationObservations = new Map();
+      campaignPerformance = null;
+      publicationRefreshPending = false;
       creators = [];
       creatorsLoaded = false;
       accountCache.clear();
       saving = false;
       deleting = false;
+      googleSheetsSyncPending = false;
       closeCreatorForm();
     },
   };

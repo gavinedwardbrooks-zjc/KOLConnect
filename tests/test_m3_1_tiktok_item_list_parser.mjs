@@ -224,7 +224,9 @@ const received = [];
 bridge.subscribeItemList((result) => received.push(result));
 const token = "0123456789abcdef0123456789abcdef";
 target.dispatchMessage(Protocol.createBootstrapEnvelope(token));
+bridge.setExpectedToken(token);
 const validEnvelope = Protocol.createCaptureEnvelope({
+  profile: "creator", observedAt: "2026-09-03T00:00:00Z",
   bridgeToken: token,
   endpointKind: "tiktok_item_list",
   method: "GET",
@@ -244,6 +246,7 @@ target.dispatchMessage({ ...validEnvelope, endpointKind: "unsupported" });
 target.dispatchMessage({ ...validEnvelope, payload: null });
 target.dispatchMessage(null);
 const userDetailEnvelope = Protocol.createCaptureEnvelope({
+  profile: "creator", observedAt: "2026-09-03T00:00:00Z",
   bridgeToken: token,
   endpointKind: "tiktok_user_detail",
   method: "GET",
@@ -261,6 +264,7 @@ const parserFailureBridge = Bridge.installIsolatedBridge(parserFailureTarget, Pr
 let rawCaptureCount = 0;
 parserFailureBridge.subscribe(() => { rawCaptureCount += 1; });
 parserFailureTarget.dispatchMessage(Protocol.createBootstrapEnvelope(token));
+parserFailureBridge.setExpectedToken(token);
 assert.doesNotThrow(() => parserFailureTarget.dispatchMessage(validEnvelope));
 assert.equal(rawCaptureCount, 1, "parser failure must not block validated transport consumers");
 
@@ -277,8 +281,8 @@ const manifest = JSON.parse(readFileSync(
   "utf8",
 ));
 const activeScripts = manifest.content_scripts.flatMap((entry) => entry.js || []);
-assert.equal(activeScripts.includes("content/passive_capture_bridge.js"), false);
-assert.equal(activeScripts.includes("capture/passive_capture_main.js"), false);
+assert.equal(activeScripts.includes("content/passive_capture_bridge.js"), true);
+assert.equal(activeScripts.includes("capture/passive_capture_main.js"), true);
 assert.equal(manifest.version, "1.0.0");
 
 console.log("M3.1 TikTok item_list sanitized fixture, parser, and bridge integration: OK");

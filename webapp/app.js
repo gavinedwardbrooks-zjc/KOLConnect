@@ -1557,6 +1557,14 @@ function renderCreatorLibraryConfig(config) {
   setValue("creator-library-workbook-path", config?.workbook_path || "");
 }
 
+function renderGoogleSheetsConfig(config) {
+  setValue("google-sheets-client-id", config?.client_id || "");
+  setValue("google-sheets-client-secret", "");
+  setValue("google-sheets-spreadsheet-id", config?.spreadsheet_id || "");
+  const labels = { CONNECTED: "已连接", NOT_CONNECTED: "未连接", NOT_CONFIGURED: "未配置" };
+  setText("google-sheets-status", labels[config?.status] || "未配置");
+}
+
 function renderSettingsState(data) {
   state.language = data.ui?.language || "zh";
   setValue("ui-language", state.language);
@@ -1567,6 +1575,7 @@ function renderSettingsState(data) {
   renderStaticText();
   renderProfiles(data.profiles || [], data.selectedProfile || "Default");
   renderFourTableConfig(data.feishu || {});
+  renderGoogleSheetsConfig(data.google_sheets || {});
   renderCreatorLibraryConfig(data.creator_library || {});
   return debugMode;
 }

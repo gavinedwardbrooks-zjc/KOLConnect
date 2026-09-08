@@ -20,7 +20,13 @@ from http_handlers import campaign_handler
 from product_repository import ProductRepository
 from storage.sqlite_campaign_repositories import SQLiteCampaignCreatorRepository
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
-from storage.schema import SCHEMA_V1_SQL, SCHEMA_V2_COLUMNS, apply_schema_migrations, schema_version
+from storage.schema import (
+    CURRENT_SCHEMA_VERSION,
+    SCHEMA_V1_SQL,
+    SCHEMA_V2_COLUMNS,
+    apply_schema_migrations,
+    schema_version,
+)
 from storage.sqlite_runtime import sqlite_module
 from test_support.runtime_sandbox import test_runtime_sandbox
 
@@ -225,7 +231,7 @@ class PublicationSchemaMigrationTests(unittest.TestCase):
     def test_v2_to_v3_preserves_legacy_link_without_fabricating_actual_fields(self):
         connection = self._v2_connection()
         self.addCleanup(connection.close)
-        self.assertEqual(3, apply_schema_migrations(connection))
+        self.assertEqual(CURRENT_SCHEMA_VERSION, apply_schema_migrations(connection))
         row = connection.execute(
             "SELECT publication_id, publish_link, actual_account_uid, published_at, observed_at, source "
             "FROM campaign_creator_publish_links"

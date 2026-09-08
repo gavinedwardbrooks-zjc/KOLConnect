@@ -101,6 +101,7 @@ async function testFetchCapture() {
   let cloneCalls = 0;
   let pageReads = 0;
   const rawPayload = {
+    ...JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures/tiktok/item_list_normal.json"), "utf8")),
     transport: "only",
     Authorization: "Bearer secret",
     Cookie: "session=secret",
@@ -136,6 +137,7 @@ async function testFetchCapture() {
   bridge.subscribe((message) => received.push(message));
   assert.equal(MainCapture.installMainWorldCapture(target, Protocol), true);
   assert.equal(MainCapture.installMainWorldCapture(target, Protocol), false);
+  bridge.setExpectedToken(target.KOLConnectPassiveCaptureControl.token());
 
   const pageResponse = await target.fetch(
     "https://www.tiktok.com/api/post/item_list/?msToken=secret&X-Bogus=signature",
@@ -154,7 +156,8 @@ async function testFetchCapture() {
   assert.equal(received[0].endpointKind, "tiktok_item_list");
   assert.equal(received[0].method, "POST");
   assert.equal(received[0].pathname, "/api/post/item_list/");
-  assert.equal(received[0].payload.nested.safeUrl, "/@creator/video/123");
+  assert.equal(received[0].payload.nested, undefined);
+  assert.equal(received[0].payload.itemList.length, 2);
 
   const serialized = JSON.stringify(received[0]);
   for (const forbidden of [
@@ -165,7 +168,7 @@ async function testFetchCapture() {
     assert.equal(serialized.includes(forbidden), false, `bridge leaked ${forbidden}`);
   }
   assert.deepEqual(Object.keys(received[0]).sort(), [
-    "bridgeToken", "endpointKind", "method", "namespace", "pathname", "payload", "platform", "type",
+    "bridgeToken", "endpointKind", "method", "namespace", "observedAt", "pathname", "payload", "platform", "profile", "type",
   ]);
 
   await target.fetch("https://www.tiktok.com/api/music/list/");
@@ -175,7 +178,43 @@ async function testFetchCapture() {
   assert.equal(received.length, 1);
 }
 
+async function testBoundedReplayResetAndLateResponse() {
+  let finish;
+  const response = { clone: () => ({ json: async () => ({ itemList: [{ id: "123", stats: { playCount: 0 } }] }) }) };
+  const target = createWindow({ fetch: () => new Promise(resolve => { finish = resolve; }) });
+  MainCapture.installMainWorldCapture(target, Protocol);
+  const inFlight = target.fetch("/api/post/item_list/");
+  target.KOLConnectPassiveCaptureControl.reset();
+  finish(response);
+  await inFlight; await flushObservers();
+  assert.equal(captureMessages(target).length, 0, "reset rejects an older in-flight observation");
+  for (let i = 0; i < 15; i++) {
+    const pageCall = target.fetch("/api/post/item_list/");
+    finish(response); await pageCall; await flushObservers();
+  }
+  target.messages.length = 0;
+  target.KOLConnectPassiveCaptureControl.replay();
+  assert.equal(captureMessages(target).length, 10, "only the bounded sanitized envelopes are replayed, never requests");
+  target.messages.length = 0;
+  target.KOLConnectPassiveCaptureControl.reset();
+  target.KOLConnectPassiveCaptureControl.replay();
+  assert.equal(captureMessages(target).length, 0);
+  target.location.href = "https://www.tiktok.com/foryou";
+  const unknown = target.fetch("/api/post/item_list/");
+  finish(response); await unknown; await flushObservers();
+  assert.equal(captureMessages(target).length, 0, "unknown account identity must not enter the profile session");
+}
+
 async function testFetchFailuresPreservePageBehavior() {
+  const nativeResponse = new Response(JSON.stringify({ itemList: [{ id: "123", stats: { playCount: 0 } }] }));
+  const streamed = createWindow({ fetch: async () => nativeResponse });
+  MainCapture.installMainWorldCapture(streamed, Protocol);
+  const streamedPageResponse = await streamed.fetch("/api/post/item_list/");
+  assert.strictEqual(streamedPageResponse, nativeResponse);
+  assert.equal(nativeResponse.bodyUsed, false);
+  assert.equal((await streamedPageResponse.json()).itemList[0].stats.playCount, 0);
+  await flushObservers();
+  assert.equal(captureMessages(streamed).length, 1, "real Response clone/stream semantics remain readable to the page");
   const parseFailureResponse = {
     clone() {
       return { json: async () => { throw new Error("invalid json"); } };
@@ -245,6 +284,7 @@ async function testXhrCapture() {
   bridge.subscribe((message) => received.push(message));
   assert.equal(MainCapture.installMainWorldCapture(target, Protocol), true);
   assert.equal(MainCapture.installMainWorldCapture(target, Protocol), false);
+  bridge.setExpectedToken(target.KOLConnectPassiveCaptureControl.token());
 
   const xhr = new target.XMLHttpRequest();
   xhr.responseText = JSON.stringify({ transport: "only" });
@@ -279,6 +319,11 @@ async function testXhrCapture() {
   aborted.open("GET", "/api/user/detail/");
   aborted.send(null);
   assert.equal(received.length, 1);
+  const setupFailure = new target.XMLHttpRequest();
+  setupFailure.open("GET", "/api/post/item_list/");
+  setupFailure.addEventListener = () => { throw new Error("observer unavailable"); };
+  assert.equal(setupFailure.send("original"), "send-result");
+  assert.deepEqual(setupFailure.sendArgs, ["original"]);
 }
 
 async function testBridgeValidationAndTokens() {
@@ -295,11 +340,15 @@ async function testBridgeValidationAndTokens() {
   bridge.subscribe((message) => received.push(message));
   target.dispatchMessage(Protocol.createBootstrapEnvelope(firstToken));
   const valid = Protocol.createCaptureEnvelope({
+    profile: "creator", observedAt: "2026-09-03T00:00:00Z",
     bridgeToken: firstToken,
     endpointKind: "tiktok_user_detail",
     method: "GET",
     payload: { transport: "only" },
   });
+  target.dispatchMessage(valid);
+  assert.equal(received.length, 0, "untrusted page bootstrap must not establish a token");
+  bridge.setExpectedToken(firstToken);
   target.dispatchMessage(valid);
   target.dispatchMessage(valid);
   assert.equal(received.length, 2, "valid events must be independently delivered");
@@ -314,6 +363,10 @@ async function testBridgeValidationAndTokens() {
     { ...valid, endpointKind: "unsupported" },
     { ...valid, pathname: "/api/post/item_list/" },
     { ...valid, payload: null },
+    { ...valid, payload: [] },
+    { ...valid, profile: "" },
+    { ...valid, profile: "../wrong" },
+    { ...valid, observedAt: "invalid" },
     null,
   ];
   for (const message of forged) target.dispatchMessage(message);
@@ -327,8 +380,10 @@ async function testManifestWiring() {
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   assert.equal(manifest.version, "1.0.0");
   const activeScripts = manifest.content_scripts.flatMap(entry => entry.js || []);
-  assert.equal(activeScripts.includes("content/passive_capture_bridge.js"), false);
-  assert.equal(activeScripts.includes("capture/passive_capture_main.js"), false);
+  assert.equal(activeScripts.includes("content/passive_capture_bridge.js"), true);
+  assert.equal(activeScripts.includes("capture/passive_capture_main.js"), true);
+  assert.equal(manifest.content_scripts.find(entry => entry.world === "MAIN").run_at, "document_start");
+  assert.ok(manifest.content_scripts.find(entry => entry.world === "MAIN").matches.every(url => url.includes("tiktok.com")));
   assert.equal(manifest.permissions.includes("webRequest"), false);
 }
 
@@ -405,6 +460,7 @@ async function testMainWorldBootIgnoresPageModuleGlobal() {
 async function run() {
   await testMatcher();
   await testFetchCapture();
+  await testBoundedReplayResetAndLateResponse();
   await testFetchFailuresPreservePageBehavior();
   await testXhrCapture();
   await testBridgeValidationAndTokens();

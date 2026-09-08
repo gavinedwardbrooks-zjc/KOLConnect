@@ -101,6 +101,7 @@
       platform: "TikTok",
       content_type: "video",
       video_id: item.id,
+      author_username: typeof item.author?.uniqueId === "string" ? item.author.uniqueId : "",
       video_id_provenance: {
         source: SOURCE,
         confidence: CONFIDENCE,
@@ -118,7 +119,7 @@
       comments: metricField(item, METRICS.comments),
       shares: metricField(item, METRICS.shares),
       published_at: publishedField(item),
-      is_pinned: null,
+      is_pinned: typeof item.isPinnedItem === "boolean" ? item.isPinnedItem : null,
     };
   }
 

@@ -24,7 +24,7 @@ from product_repository import ProductRepository
 from storage.connection import SQLiteConnectionFactory
 from storage.authority import resolve_runtime_authority
 from storage.paths import SQLiteStoragePaths
-from storage.schema import apply_schema_migrations, schema_version
+from storage.schema import CURRENT_SCHEMA_VERSION, apply_schema_migrations, schema_version
 from storage.sqlite_campaign_repositories import SQLiteCampaignCreatorRepository
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
 from test_support.runtime_sandbox import test_runtime_sandbox
@@ -250,7 +250,7 @@ class MultiCurrencyQuoteTests(unittest.TestCase):
                 """
             )
             apply_schema_migrations(connection, migration_reference="test-v1-v2")
-            self.assertEqual(3, schema_version(connection))
+            self.assertEqual(CURRENT_SCHEMA_VERSION, schema_version(connection))
             row = connection.execute(
                 "SELECT creator_quote,cost,quote_currency,quote_unit_amount,"
                 "quote_quantity,quote_unit,cost_currency FROM campaign_creators"
@@ -341,7 +341,7 @@ class MultiCurrencyQuoteTests(unittest.TestCase):
         backups = list(paths.database_backup_dir.glob("kolconnect-pre-schema-v1-*.db"))
         self.assertEqual(1, len(backups))
         with factory.read_connection() as connection:
-            self.assertEqual(3, schema_version(connection))
+            self.assertEqual(CURRENT_SCHEMA_VERSION, schema_version(connection))
             row = connection.execute(
                 "SELECT creator_quote,cost,quote_currency,cost_currency "
                 "FROM campaign_creators WHERE id='legacy'"

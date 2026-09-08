@@ -18,6 +18,7 @@ from repositories.creator_delete_impact_repository import CreatorDeleteImpactRep
 from repositories.creator_hard_delete_repository import CreatorHardDeleteRepository
 from repositories.creator_merge_repository import CreatorMergeRepository
 from repositories.risk_repository import RiskRepository
+from repositories.publication_performance_repository import PublicationPerformanceRepository
 from storage.authority import resolve_runtime_authority
 from storage.paths import SQLiteStoragePaths
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
@@ -63,6 +64,7 @@ class RepositoryFactory:
         self._campaign_creator: CampaignCreatorRepository | None = None
         self._dashboard: DashboardRepository | None = None
         self._risk: RiskRepository | None = None
+        self._publication_performance: PublicationPerformanceRepository | None = None
 
     @classmethod
     def for_path(
@@ -198,6 +200,13 @@ class RepositoryFactory:
         if self._risk is None:
             self._risk = RiskRepository(self.store)
         return self._risk
+
+    def publication_performance(self) -> PublicationPerformanceRepository:
+        if self._publication_performance is None:
+            if not isinstance(self.store, SQLiteWorkbookStore):
+                raise RuntimeError("Publication performance history requires SQLite authority.")
+            self._publication_performance = PublicationPerformanceRepository(self.store)
+        return self._publication_performance
 
     def dashboard(
         self,

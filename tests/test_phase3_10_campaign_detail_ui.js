@@ -173,6 +173,9 @@ async function run() {
         return { campaign: clone(campaign) };
       }
       if (url === "/api/campaigns/campaign_one/creators") return { campaign_creators: clone(relations) };
+      if (url === "/api/campaigns/campaign_one/performance") return {
+        totals: {}, publications: [], average_er: null, valid_er_count: 0, total_publications: 0,
+      };
       if (url === "/api/campaigns/campaign_one/missing-publish-links") {
         if (missingPublishFailure) throw new Error("optional publishing data unavailable");
         return { missing_publish_links: [] };
@@ -272,11 +275,12 @@ async function run() {
 
   await registeredPage.load({ campaignId: "campaign_one" });
   const initialCalls = calls.splice(0);
-  assert.deepEqual(initialCalls.map(call => `${call.method} ${call.url}`), [
+  assert.deepEqual(initialCalls.map(call => `${call.method} ${call.url}`).sort(), [
     "GET /api/campaigns/campaign_one",
     "GET /api/campaigns/campaign_one/creators",
     "GET /api/campaigns/campaign_one/missing-publish-links",
-  ], "initial load must use the three parallel read-only aggregate requests");
+    "GET /api/campaigns/campaign_one/performance",
+  ].sort(), "initial load must use four read-only requests, including batched performance");
   assert.equal(elements.get("campaign-detail-title").textContent, "Brazil Launch");
   assert.equal(elements.get("campaign-creator-count").textContent, "1 位达人");
   assert.equal(elements.get("campaign-detail-content").hidden, false);

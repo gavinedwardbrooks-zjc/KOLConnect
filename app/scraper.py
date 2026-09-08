@@ -28,6 +28,8 @@ from pathlib import Path
 from urllib.parse import unquote, urljoin, urlparse
 
 import requests
+
+from domain.creator_url_resolver import CreatorURLResolver
 from bs4 import BeautifulSoup
 from chromedriver_resolver import ChromeDriverResolutionError, resolve_chromedriver
 from local_storage_lock import shared_storage_lock
@@ -291,7 +293,27 @@ def _normalization_failure_reason(raw_url: str, platform: str, parsed) -> str:
 
 
 def normalize_link_record(raw_url: str) -> dict:
+    """Compatibility profile-link adapter over the canonical URL resolver.
+
+    Existing import/task callers intentionally continue to accept only URLs
+    from which a creator profile can be determined.  Content URLs with a
+    deterministic owner (for example TikTok ``@handle/video/...``) retain the
+    historical behavior of normalizing to that profile URL.
+    """
     raw_url = str(raw_url or "").strip()
+    resolved = CreatorURLResolver().resolve(raw_url)
+    platform = str(resolved.get("platform") or "")
+    normalized_url = str(resolved.get("canonical_profile_url") or "")
+    valid = bool(normalized_url)
+    if valid:
+        return {
+            "input": raw_url,
+            "platform": platform.lower(),
+            "normalized_url": normalized_url,
+            "valid": True,
+            "status": "success",
+            "reason": "",
+        }
     if not raw_url:
         return {
             "input": raw_url,
@@ -312,25 +334,13 @@ def normalize_link_record(raw_url: str) -> dict:
             "reason": _normalization_failure_reason(raw_url, "", parsed),
         }
 
-    normalized_host = _normalized_host(parsed)
-    platform = detect_platform(f"https://{normalized_host}{parsed.path}")
-    normalized_url = ""
-    if platform == "TikTok":
-        normalized_url = _normalize_tiktok_profile(parsed)
-    elif platform == "Instagram":
-        normalized_url = _normalize_instagram_profile(parsed)
-    elif platform == "YouTube":
-        normalized_url = _normalize_youtube_profile(parsed)
-
-    platform_key = platform.lower()
-    valid = bool(normalized_url)
     return {
         "input": raw_url,
-        "platform": platform_key,
-        "normalized_url": normalized_url,
-        "valid": valid,
-        "status": "success" if valid else "failed",
-        "reason": "" if valid else _normalization_failure_reason(raw_url, platform, parsed),
+        "platform": platform.lower(),
+        "normalized_url": "",
+        "valid": False,
+        "status": "failed",
+        "reason": _normalization_failure_reason(raw_url, platform, parsed),
     }
 
 
@@ -1033,14 +1043,30 @@ def scrape_external_link_emails(platform: str, page: str, session: requests.Sess
     }
 
 
-def collect_page_emails_with_external_fallback(platform: str, page: str, session: requests.Session | None) -> tuple[list[str], dict]:
+def collect_page_emails(
+    platform: str,
+    page: str,
+    session: requests.Session | None,
+    *,
+    allow_external_fallback: bool = True,
+) -> tuple[list[str], dict]:
+    """Extract profile-page emails, optionally preserving the legacy link fallback."""
     emails = choose_best_email(extract_mailto_emails(page) + extract_emails_from_text(page))
     external = {"email": "", "link": "", "source": "", "status": ""}
-    if not emails and session:
+    if not emails and session and allow_external_fallback:
         external = scrape_external_link_emails(platform, page, session)
         if external["email"]:
             emails = [external["email"]]
     return emails, external
+
+
+def collect_page_emails_with_external_fallback(
+    platform: str,
+    page: str,
+    session: requests.Session | None,
+) -> tuple[list[str], dict]:
+    """Compatibility wrapper for legacy capture paths that permit link crawling."""
+    return collect_page_emails(platform, page, session, allow_external_fallback=True)
 
 
 def _meta_content(page: str, attr_name: str, attr_value: str) -> str:
@@ -1211,9 +1237,18 @@ def extract_latest_publish_date(text: str) -> str:
     return ""
 
 
-def scrape_instagram(url: str, driver=None, session=None) -> dict:
+def scrape_instagram(
+    url: str,
+    driver=None,
+    session=None,
+    *,
+    allow_external_email_fallback: bool = True,
+) -> dict:
     page, source = load_page_source_with_context(url, driver, session)
-    emails, external = collect_page_emails_with_external_fallback("Instagram", page, session)
+    emails, external = collect_page_emails(
+        "Instagram", page, session,
+        allow_external_fallback=allow_external_email_fallback,
+    )
     name = extract_creator_name("Instagram", page, url)
     latest_publish_date = extract_latest_publish_date(page)
     access_status, access_reason = detect_scrape_access("Instagram", page, source)
@@ -1246,9 +1281,18 @@ def scrape_instagram(url: str, driver=None, session=None) -> dict:
     )
 
 
-def scrape_tiktok(url: str, driver=None, session=None) -> dict:
+def scrape_tiktok(
+    url: str,
+    driver=None,
+    session=None,
+    *,
+    allow_external_email_fallback: bool = True,
+) -> dict:
     page, source = load_page_source_with_context(url, driver, session)
-    emails, external = collect_page_emails_with_external_fallback("TikTok", page, session)
+    emails, external = collect_page_emails(
+        "TikTok", page, session,
+        allow_external_fallback=allow_external_email_fallback,
+    )
     name = extract_creator_name("TikTok", page)
     latest_publish_date = extract_latest_publish_date(page)
     access_status, access_reason = detect_scrape_access("TikTok", page, source)
@@ -1281,10 +1325,19 @@ def scrape_tiktok(url: str, driver=None, session=None) -> dict:
     )
 
 
-def scrape_youtube(url: str, driver=None, session=None) -> dict:
+def scrape_youtube(
+    url: str,
+    driver=None,
+    session=None,
+    *,
+    allow_external_email_fallback: bool = True,
+) -> dict:
     about_url = url.rstrip("/") + "/about"
     page, source = load_page_source_with_context(about_url, driver, session)
-    emails, external = collect_page_emails_with_external_fallback("YouTube", page, session)
+    emails, external = collect_page_emails(
+        "YouTube", page, session,
+        allow_external_fallback=allow_external_email_fallback,
+    )
     name = extract_creator_name("YouTube", page)
     latest_publish_date = extract_latest_publish_date(page)
     access_status, access_reason = detect_scrape_access("YouTube", page, source)
@@ -1314,6 +1367,28 @@ def scrape_youtube(url: str, driver=None, session=None) -> dict:
             emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+    )
+
+
+def capture_profile_email(platform: str, profile_url: str, driver=None, session=None) -> dict:
+    """Capture profile-page email data without following external bio links.
+
+    M8.7 uses this narrow entry point after ``CreatorURLResolver`` has already
+    established a canonical profile URL.  It deliberately does not parse URLs
+    or invoke content/video capture endpoints.
+    """
+    capture = {
+        "Instagram": scrape_instagram,
+        "TikTok": scrape_tiktok,
+        "YouTube": scrape_youtube,
+    }.get(str(platform or ""))
+    if capture is None:
+        raise ValueError("不支持该平台的主页邮箱补全。")
+    return capture(
+        profile_url,
+        driver=driver,
+        session=session,
+        allow_external_email_fallback=False,
     )
 
 

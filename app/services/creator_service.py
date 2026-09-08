@@ -704,6 +704,27 @@ class CreatorService:
                 pass
             raise
 
+    def import_url_email_capture(
+        self,
+        task_id: str,
+        record: dict[str, Any],
+        *,
+        imported_at: str,
+    ) -> dict[str, Any]:
+        """Persist one email-only profile result through the existing task import path."""
+        result = self._repository_provider().importTaskResults(
+            task_id,
+            [record],
+            source="m8_7_profile_email_capture",
+            imported_at=imported_at,
+        )
+        self._invalidate_creator_read_caches()
+        return result
+
+    def get_creator_accounts(self) -> list[dict[str, Any]]:
+        """Expose the existing account read model to bounded service workflows."""
+        return self._repository_provider().getCreatorAccounts("")
+
     def get_creator_task(self, creator_id: str) -> dict[str, Any]:
         """Return the existing review task linked to one Creator."""
         detail = self._repository_provider().getCreatorDetail(creator_id)

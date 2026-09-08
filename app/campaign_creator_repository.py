@@ -268,7 +268,15 @@ class CampaignCreatorRepository(ExcelDataRepository):
         publications = CampaignCreatorRepository._publication_records(record)
         for publication in publications:
             account_id = str(publication.get("actual_account_id") or "")
-            publication["actual_account"] = accounts.get(account_id) if account_id else None
+            publication_account = accounts.get(account_id) if account_id else None
+            publication["actual_account"] = publication_account
+            publication["actual_account_uid"] = (
+                str((publication_account or {}).get("account_uid") or "").strip()
+                or None
+            )
+            publication["published_at"] = (
+                str(publication.get("actual_published_at") or "").strip() or None
+            )
         return {
             **record,
             "account_ids": account_ids,

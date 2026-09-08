@@ -53,6 +53,13 @@ def handle(handler, request: dict, context: dict) -> bool:
                     "contact_table_id": four_table_config["contact_table_id"],
                     "chat_enabled": bool(state["feishu"].get("chat_enabled")),
                 },
+                "google_sheets": {
+                    "client_id": client_state.get("google_sheets", {}).get("client_id", ""),
+                    "client_secret": client_state.get("google_sheets", {}).get("client_secret", ""),
+                    "has_client_secret": bool(state.get("google_sheets", {}).get("client_secret")),
+                    "spreadsheet_id": client_state.get("google_sheets", {}).get("spreadsheet_id", ""),
+                    **services["google_sheets_client"]().status(),
+                },
                 "creator_library": client_state.get("creator_library", {}),
                 "mail": client_state["mail"],
             }
@@ -85,6 +92,7 @@ def handle(handler, request: dict, context: dict) -> bool:
     settings_paths = {
         "/api/settings/ui", "/api/settings/profiles", "/api/settings/accounts",
         "/api/account/open", "/api/settings/feishu", "/api/settings/mail",
+        "/api/settings/google-sheets",
         "/api/settings/creator-library", "/api/settings/creator-library/backup",
         "/api/mail/test", "/api/mail/inbox/sync",
         "/api/mail/inbox/sync-crm-replies",
@@ -169,6 +177,18 @@ def handle(handler, request: dict, context: dict) -> bool:
         if state["feishu"].get("chat_enabled"):
             services["feishu_chat"].stop()
             services["feishu_chat"].start()
+        handler._ok()
+        return True
+
+    # POST /api/settings/google-sheets saves integration configuration only.
+    if path == "/api/settings/google-sheets":
+        google_sheets = state.setdefault("google_sheets", {})
+        google_sheets["client_id"] = str(payload.get("client_id") or "").strip()
+        new_secret = str(payload.get("client_secret") or "").strip()
+        if new_secret and not services["is_sensitive_mask"](new_secret):
+            google_sheets["client_secret"] = new_secret
+        google_sheets["spreadsheet_id"] = str(payload.get("spreadsheet_id") or "").strip()
+        state_access["normalize_and_save"]()
         handler._ok()
         return True
 

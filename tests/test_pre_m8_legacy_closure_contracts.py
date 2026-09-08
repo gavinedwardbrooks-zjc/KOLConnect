@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PreM8LegacyClosureContractTests(unittest.TestCase):
-    def test_legacy_tiktok_passive_capture_is_not_production_wired(self) -> None:
+    def test_tiktok_acceptance_wiring_does_not_claim_production_support(self) -> None:
         manifest = json.loads(
             (ROOT / "chrome_extension" / "manifest.json").read_text(encoding="utf-8")
         )
@@ -19,8 +19,8 @@ class PreM8LegacyClosureContractTests(unittest.TestCase):
             for entry in manifest.get("content_scripts", [])
             for script in entry.get("js", [])
         }
-        self.assertNotIn("content/passive_capture_bridge.js", active_scripts)
-        self.assertNotIn("capture/passive_capture_main.js", active_scripts)
+        self.assertIn("content/passive_capture_bridge.js", active_scripts)
+        self.assertIn("capture/passive_capture_main.js", active_scripts)
         self.assertTrue((ROOT / "chrome_extension" / "platform" / "tiktok_network.js").exists())
         boundary = (ROOT / "docs" / "post_m8_tiktok_passive_capture_v2.md").read_text(
             encoding="utf-8"

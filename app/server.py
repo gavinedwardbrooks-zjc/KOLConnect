@@ -62,6 +62,7 @@ from ports.task_port import (
     ManualTaskCreateCommand,
     ManualTaskInitializationCommand,
     ManualReviewTaskCommand,
+    RuntimeProgressUpdate,
     TaskPort,
 )
 from repositories.task_repository import TaskRepository
@@ -75,8 +76,11 @@ from services.creator_hard_delete_service import CreatorHardDeleteService
 from services.creator_merge_service import CreatorMergeService
 from services.creator_library_cache import CreatorLibraryCache
 from services.campaign_creator_service import CampaignCreatorService
+from services.publication_tracking_service import PublicationTrackingService
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
+from services.similar_creator_search_service import SimilarCreatorSearchService
+from services.email_url_capture_service import EmailURLCaptureService
 from services.creator_summary_service import CreatorSummaryService
 from services.creator_intelligence_service import (
     CreatorIntelligenceService,
@@ -109,6 +113,7 @@ from runtime_paths import (
 from local_storage_lock import shared_storage_lock
 from staged_delete_transaction import recover_pending_delete_transactions
 from feishu_client import FeishuClient
+from google_sheets_client import GoogleOAuthTokenStore, GoogleSheetsClient
 from local_request_security import (
     MUTATING_METHODS,
     allowed_host_header,
@@ -126,6 +131,7 @@ from http_handlers import (
     feishu_chat_handler,
     feishu_delete_handler,
     feishu_sync_handler,
+    google_sheets_handler,
     settings_handler,
     storage_migration_handler,
     task_handler,
@@ -133,6 +139,7 @@ from http_handlers import (
 )
 from services.feishu_sync_service import FeishuSyncService
 from services.feishu_chat_transport import FeishuChatTransport
+from services.google_campaign_report_service import GoogleCampaignReportService
 from services.feishu_delete_intent_service import (
     FeishuDeleteIntentStore,
     FeishuDeleteReconciliationService,
@@ -148,6 +155,7 @@ STATIC_DIR = APP_DIR / "webapp"
 STATE_FILE = DATA_DIR / "settings.json"
 TASKS_DIR = DATA_DIR / "tasks"
 DATA_PROTECTION_FILE = DATA_DIR / "data_protection.json"
+GOOGLE_SHEETS_TOKEN_FILE = DATA_DIR / "google_sheets_token.json"
 CREATOR_ANALYSIS_DIR = DATA_DIR / "creator_analysis"
 CREATOR_LIBRARY_FILE = DATA_DIR / "creator_library.json"
 DEFAULT_CREATOR_LIBRARY_WORKBOOK = DATA_DIR / "Creator_Library.xlsx"
@@ -205,6 +213,11 @@ DEFAULT_STATE = {
         "contact_table_id": "",
         "chat_enabled": False,
     },
+    "google_sheets": {
+        "client_id": "",
+        "client_secret": "",
+        "spreadsheet_id": "",
+    },
     "mail": {
         "accounts": [],
         "template_subject": "",
@@ -239,6 +252,7 @@ HANDLERS = [
     feishu_chat_handler,
     feishu_delete_handler,
     feishu_sync_handler,
+    google_sheets_handler,
     clean_reset_handler,
     storage_migration_handler,
     settings_handler,
@@ -339,6 +353,13 @@ def state_for_client(state: dict) -> dict:
         feishu["app_secret"] = SENSITIVE_MASK
     if feishu.get("app_token"):
         feishu["app_token"] = SENSITIVE_MASK
+    google_sheets = (
+        client_state.get("google_sheets")
+        if isinstance(client_state.get("google_sheets"), dict)
+        else {}
+    )
+    if google_sheets.get("client_secret"):
+        google_sheets["client_secret"] = SENSITIVE_MASK
     mail = client_state.get("mail") if isinstance(client_state.get("mail"), dict) else {}
     accounts = mail.get("accounts") if isinstance(mail.get("accounts"), list) else []
     for account in accounts:
@@ -475,6 +496,11 @@ def normalize_state(raw: dict | None) -> dict:
         ):
             state["feishu"][key] = str(feishu.get(key) or "").strip()
         state["feishu"]["chat_enabled"] = bool(feishu.get("chat_enabled"))
+
+    if isinstance(raw.get("google_sheets"), dict):
+        google_sheets = raw["google_sheets"]
+        for key in ("client_id", "client_secret", "spreadsheet_id"):
+            state["google_sheets"][key] = str(google_sheets.get(key) or "").strip()
 
     if isinstance(raw.get("mail"), dict):
         state["mail"] = normalize_mail_state(raw["mail"])
@@ -1701,6 +1727,19 @@ def get_campaign_creator_service() -> CampaignCreatorService:
     return CampaignCreatorService(
         get_campaign_creator_repository,
         DASHBOARD_RESPONSE_CACHE.invalidate,
+        get_creator_repository,
+    )
+
+
+def get_publication_tracking_service() -> PublicationTrackingService:
+    def observation_repository():
+        factory = get_active_repository_factory() or _new_repository_factory()
+        return factory.publication_performance()
+
+    return PublicationTrackingService(
+        get_campaign_creator_repository,
+        get_campaign_repository,
+        observation_repository,
     )
 
 
@@ -1717,6 +1756,19 @@ def get_creator_service() -> CreatorService:
         lambda: CREATOR_LIBRARY_CACHE,
         DASHBOARD_RESPONSE_CACHE.invalidate,
     )
+
+
+def get_similar_creator_search_service() -> SimilarCreatorSearchService:
+    return SimilarCreatorSearchService(
+        get_creator_repository,
+        historical_performance_provider=lambda creator_ids: (
+            get_analytics_service().get_creator_historical_performance_many(creator_ids)
+        ),
+    )
+
+
+def get_email_url_capture_service() -> EmailURLCaptureService:
+    return EmailURLCaptureService(get_creator_service())
 
 
 def get_creator_summary_service() -> CreatorIntelligenceSummaryFacade:
@@ -1900,9 +1952,11 @@ def _creator_library_workbook_path() -> Path:
     return Path(STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK)
 
 
-def _new_repository_factory() -> RepositoryFactory:
+def _new_repository_factory(*, bootstrap_new_install: bool = False) -> RepositoryFactory:
     return RepositoryFactory.for_runtime(
         _creator_library_workbook_path(),
+        storage_paths=SQLiteStoragePaths.for_app_data(DATA_DIR),
+        bootstrap_new_install=bootstrap_new_install,
         legacy_analysis_dir=CREATOR_ANALYSIS_DIR,
         legacy_library_file=CREATOR_LIBRARY_FILE,
         tasks_dir=TASKS_DIR,
@@ -1932,7 +1986,32 @@ def get_risk_service() -> RiskService:
 
 def get_analytics_service() -> AnalyticsService:
     factory = get_active_repository_factory() or _new_repository_factory()
-    return AnalyticsService(factory.creator(), factory.campaign_creator())
+    return AnalyticsService(
+        factory.creator(),
+        factory.campaign_creator(),
+        factory.publication_performance()
+        if getattr(factory.store, "is_sqlite_authority", False)
+        else None,
+    )
+
+
+def get_google_sheets_config() -> dict[str, str]:
+    value = STATE.get("google_sheets")
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def get_google_sheets_client() -> GoogleSheetsClient:
+    return GoogleSheetsClient(
+        get_google_sheets_config(), GoogleOAuthTokenStore(GOOGLE_SHEETS_TOKEN_FILE)
+    )
+
+
+def get_google_campaign_report_service() -> GoogleCampaignReportService:
+    return GoogleCampaignReportService(
+        get_campaign_repository(),
+        get_campaign_creator_repository(),
+        get_analytics_service(),
+    )
 
 
 def get_workbook_backup_service() -> WorkbookBackupService:
@@ -2499,10 +2578,14 @@ class Handler(BaseHTTPRequestHandler):
                 "agency": get_agency_service(),
                 "assistant": get_assistant_service(),
                 "analytics": get_analytics_service(),
+                "google_campaign_report": get_google_campaign_report_service(),
+                "google_sheets_client": get_google_sheets_client,
                 "workbook_backup": get_workbook_backup_service(),
                 "clean_reset": get_clean_reset_service(),
                 "storage_migration": get_production_migration_service(),
                 "creator": get_creator_service(),
+                "similar_creator_search": get_similar_creator_search_service(),
+                "email_url_capture": get_email_url_capture_service(),
                 "creator_summary": get_creator_summary_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),
@@ -2511,6 +2594,7 @@ class Handler(BaseHTTPRequestHandler):
                 "feishu_delete_reconciliation": get_feishu_delete_reconciliation_service(),
                 "feishu_chat": get_feishu_chat_transport(),
                 "campaign_creator": get_campaign_creator_service(),
+                "publication_tracking": get_publication_tracking_service(),
                 "task": get_task_service(),
                 "risk": get_risk_service(),
                 "build_accounts_payload": build_accounts_payload,
@@ -2518,6 +2602,7 @@ class Handler(BaseHTTPRequestHandler):
                 "invalidate_dashboard_response_cache": DASHBOARD_RESPONSE_CACHE.invalidate,
                 "get_agency_contact_options": get_agency_contact_options,
                 "get_four_table_feishu_config": get_four_table_feishu_config,
+                "get_google_sheets_config": get_google_sheets_config,
                 "get_profiles": get_profiles,
                 "get_system_health": get_system_health,
                 "is_sensitive_mask": is_sensitive_mask,
@@ -2689,6 +2774,8 @@ def request_runtime_shutdown() -> bool:
 
 def run() -> None:
     global _RUNTIME_SERVER, _RUNTIME_SHUTDOWN_THREAD
+    # Resolve storage before accepting concurrent first-page API requests.
+    _new_repository_factory(bootstrap_new_install=True)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     with _RUNTIME_SERVER_LOCK:
         _RUNTIME_SERVER = server

@@ -54,7 +54,12 @@ app_state.json
 mail_messages.json
 data_protection.json
 settings.json
+google_sheets_token.json
 window_state.json
+*.db
+*.db-wal
+*.db-shm
+storage_authority.json
 *.log
 *.bak
 *.tmp
@@ -64,6 +69,7 @@ window_state.json
 *.xlsm
 ~$*.xlsx
 ChromeProfile/
+/chrome_profile/
 
 # Local credentials and environment overrides
 .env

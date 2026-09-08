@@ -59,6 +59,12 @@ class SQLiteCreatorRepository(CreatorRepository):
         )):
             return super().getCreatorIntelligenceSourceData(creator_id)
 
+    def getSimilarCreatorSourceData(self):
+        with self._projection(
+            "Creators", "CreatorAccounts", "CreatorSnapshots", "CampaignCreators"
+        ):
+            return super().getSimilarCreatorSourceData()
+
     def getCreatorCooperations(self, creator_id: str, workbook=None):
         if workbook is not None:
             return super().getCreatorCooperations(creator_id, workbook)

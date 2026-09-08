@@ -6,6 +6,7 @@ import threading
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -14,6 +15,7 @@ APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
 
 import server
+from ports.task_port import RuntimeProgressUpdate
 
 
 class FinishedProcess:
@@ -164,6 +166,48 @@ class TaskLifecycleTests(unittest.TestCase):
         self.assertFalse(task["stop_requested"])
         self.assertEqual("stopped", task["worker_status"])
         self.assertEqual("2026-08-06T09:52:38Z", task["finished_at"])
+
+    def test_monitor_persists_runtime_progress_without_monitor_error(self) -> None:
+        updates = []
+
+        class OneCycleStopEvent:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            def wait(self, _seconds: float) -> bool:
+                self.calls += 1
+                return self.calls > 1
+
+        class TaskService:
+            def get_runtime_task_snapshot(self, _task_id: str):
+                return SimpleNamespace(status="running")
+
+            def persist_runtime_progress(self, _task_id: str, update: RuntimeProgressUpdate) -> None:
+                updates.append(update)
+
+        task_paths = {"progress": Path(self.temp_dir.name) / "progress.csv"}
+        server.SCRAPE_JOB.running = True
+        server.SCRAPE_JOB.task_id = self.task["id"]
+        with (
+            mock.patch.object(server, "get_task_service", return_value=TaskService()),
+            mock.patch.object(server.scraper_module, "load_progress", side_effect=[{}, {"done": {}}]),
+            mock.patch.object(server, "_task_next_pending_item", return_value="https://example.test/next"),
+            mock.patch.object(server, "_instagram_error_count", return_value=5),
+            mock.patch.object(server, "TASK_HEARTBEAT_SECONDS", 0),
+        ):
+            server._monitor_scrape_task(self.task["id"], task_paths, OneCycleStopEvent())
+
+        self.assertEqual(1, len(updates))
+        update = updates[0]
+        self.assertIsInstance(update, RuntimeProgressUpdate)
+        self.assertEqual(1, update.completed_count)
+        self.assertEqual(1, update.last_successful_index)
+        self.assertEqual("https://example.test/next", update.current_item)
+        self.assertTrue(update.last_progress_time)
+        self.assertTrue(update.heartbeat_time)
+        self.assertEqual(5, update.instagram_error_count)
+        self.assertEqual("login_required", update.instagram_status)
+        self.assertFalse(any("任务监控更新失败" in line for line in server.SCRAPE_JOB.logs))
 
 
 if __name__ == "__main__":

@@ -50,6 +50,16 @@
     if (element) element.textContent = value ?? "--";
   }
 
+  function renderGoogleSheetsResult(data, message = "") {
+    const labels = { CONNECTED: "已连接", NOT_CONNECTED: "未连接", NOT_CONFIGURED: "未配置" };
+    setSyncText("google-sheets-status", labels[data?.status] || data?.status || "未配置");
+    const result = document.getElementById("google-sheets-result");
+    if (result) {
+      result.hidden = false;
+      result.textContent = message || (data?.error ? `操作失败：${data.error}` : "Google Sheets 配置已更新。");
+    }
+  }
+
   function renderFeishuChatStatus(data) {
     const labels = {
       disabled: "未启用",
@@ -414,6 +424,32 @@
         } catch (error) {
           handleError(error);
         }
+      });
+
+      listen("google-sheets-save", "click", async () => {
+        try {
+          await api.post("/api/settings/google-sheets", {
+            client_id: app.valueOf("google-sheets-client-id").trim(),
+            client_secret: app.valueOf("google-sheets-client-secret").trim(),
+            spreadsheet_id: app.valueOf("google-sheets-spreadsheet-id").trim(),
+          }, { signal: resources.signal });
+          const data = await reloadSettings();
+          renderGoogleSheetsResult(data.google_sheets, "Google Sheets 配置已保存。");
+        } catch (error) { handleError(error); }
+      });
+
+      listen("google-sheets-connect", "click", async () => {
+        try {
+          const data = await api.post("/api/google-sheets/connect", {}, { signal: resources.signal });
+          renderGoogleSheetsResult(data, "Google OAuth 连接成功。");
+        } catch (error) { handleError(error); }
+      });
+
+      listen("google-sheets-disconnect", "click", async () => {
+        try {
+          const data = await api.post("/api/google-sheets/disconnect", {}, { signal: resources.signal });
+          renderGoogleSheetsResult(data, "Google OAuth 连接已断开。");
+        } catch (error) { handleError(error); }
       });
 
       listen("feishu-sync-validate", "click", async () => {

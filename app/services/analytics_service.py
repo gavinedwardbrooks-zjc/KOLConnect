@@ -35,9 +35,54 @@ class AnalyticsService:
         self,
         creator_repository: CreatorAnalyticsSource,
         campaign_creator_repository: CampaignCreatorAnalyticsSource,
+        publication_performance_repository: Any | None = None,
     ) -> None:
         self._creator_repository = creator_repository
         self._campaign_creator_repository = campaign_creator_repository
+        self._publication_performance_repository = publication_performance_repository
+
+    def _performance_rows(self, **filters) -> list[dict[str, Any]]:
+        if self._publication_performance_repository is None:
+            raise RuntimeError("Publication performance analytics requires SQLite authority.")
+        return self._publication_performance_repository.analytics_rows(**filters)
+
+    def get_campaign_performance(self, campaign_id: str) -> dict[str, Any]:
+        from services.performance_analytics import campaign_performance
+
+        return {"campaign_id": campaign_id, **campaign_performance(self._performance_rows(campaign_id=campaign_id))}
+
+    def get_creator_historical_performance(self, creator_id: str) -> dict[str, Any]:
+        from services.performance_analytics import creator_historical_performance
+
+        return {"creator_id": creator_id, **creator_historical_performance(self._performance_rows(creator_id=creator_id))}
+
+    def get_creator_historical_performance_many(self, creator_ids: list[str]) -> dict[str, dict[str, Any]]:
+        from services.performance_analytics import creator_historical_performance
+
+        wanted = {str(value) for value in creator_ids if str(value)}
+        if not wanted:
+            return {}
+        grouped = {creator_id: [] for creator_id in wanted}
+        for row in self._performance_rows(creator_ids=sorted(wanted)):
+            creator_id = str(row.get("creator_id") or "")
+            if creator_id in grouped:
+                grouped[creator_id].append(row)
+        return {
+            creator_id: {"creator_id": creator_id, **creator_historical_performance(rows)}
+            for creator_id, rows in grouped.items()
+        }
+
+    def get_publication_performance(self, campaign_creator_id: str, publication_id: str) -> dict[str, Any]:
+        from services.performance_analytics import _group_publications, publication_trend
+
+        rows = self._performance_rows(
+            campaign_creator_id=campaign_creator_id,
+            publication_id=publication_id,
+        )
+        publications = _group_publications(rows)
+        if publication_id not in publications:
+            raise ValueError("实际发布内容不存在或不属于该合作关系。")
+        return publication_trend(publications[publication_id])
 
     def get_platform_analytics(self) -> dict[str, Any]:
         creators = self._creator_repository.getCreators(include_archived=False)

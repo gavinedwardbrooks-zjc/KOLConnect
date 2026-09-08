@@ -32,6 +32,20 @@
   const state = {
     profile: null,
     contentAnalysis: null,
+    captureDiagnostics: null,
+    captureDiagnosticTrace: {
+      request_id: 0,
+      status: "NOT_REQUESTED",
+      request_started: false,
+      background_response_received: false,
+      background_response_ok: false,
+      background_response_diagnostics_present: false,
+      background_response_runtime_present: false,
+      state_assigned: false,
+      state_invalidated: false,
+      state_rendered: false,
+      reason: ""
+    },
     contentLoading: false,
     visible: false,
     minimized: false,
@@ -171,11 +185,28 @@
   const diagnostics = create("details", "kol-diagnostics");
   diagnostics.append(create("summary", "", "高级诊断"));
   const diagnosticsText = create("pre", "", "—");
-  diagnostics.append(diagnosticsText);
+  const diagnosticsRefresh = create("button", "", "刷新 TikTok 诊断（只读）");
+  diagnosticsRefresh.type = "button";
+  const diagnosticsHint = create("p", "", "只读内存计数，不采集、不重放、不请求 TikTok。累计计数随页面重载清零；当前行数按会话去重。fetch 匹配计数在响应完成后记录，XHR 在 send 时记录；bridge 拒绝计数包含无关页面消息。");
+  diagnostics.append(diagnosticsRefresh, diagnosticsHint, diagnosticsText);
 
   const actions = create("div", "kol-actions");
   const refreshButton = create("button", "", "重新分析资料");
   const analyzeContentButton = create("button", "", "分析最近30条");
+  const resetCaptureButton = create("button", "", "重新开始 TikTok 被动采集");
+  resetCaptureButton.type = "button";
+  resetCaptureButton.hidden = true;
+  contentSection.append(resetCaptureButton);
+  resetCaptureButton.addEventListener("click", async () => {
+    await cancelContentAnalysis(false);
+    try {
+      const result = await sendMessage({ type: "KOLCONNECT_PASSIVE_RESET" });
+      if (!result?.ok) throw new Error("被动采集重置失败，请刷新 TikTok 页面。");
+      clearContent();
+      if (state.profile) { state.profile.videos = []; state.profile.video_analysis = {}; }
+      contentStatus.textContent = "已清空采集会话。请正常浏览主页后再次分析；不会主动请求视频。";
+    } catch (error) { contentStatus.textContent = error.message; }
+  });
   const cancelContentButton = create("button", "kol-danger", "取消内容分析");
   const copyButton = create("button", "", "复制诊断报告");
   const importButton = create("button", "kol-primary", "导入 KOLConnect");
@@ -296,10 +327,75 @@
       valid_publish_time_count: analysis.valid_publish_time_count,
       valid_engagement_count: analysis.valid_engagement_count,
       capture_status: analysis.capture_status,
+      capture_diagnostics: analysis.capture_diagnostics || {},
       missing_field_summary: analysis.missing_field_summary || {},
       summary_validation: analysis.summary_validation || {}
     } : {};
   };
+
+  const getCaptureDiagnostics = () => JSON.parse(JSON.stringify({
+    content_analysis_present: Boolean(state.contentAnalysis),
+    content_loading: state.contentLoading,
+    runtime: state.captureDiagnostics,
+    diagnostic_trace: state.captureDiagnosticTrace,
+  }));
+  const diagnosticReport = () => ({ ...state.profile?.diagnostic_report,
+    ...(pageSupport.isSupportedCreatorPage(location.href) && /tiktok\.com\//i.test(location.href)
+      ? { tiktok_capture: getCaptureDiagnostics() } : {}) });
+  const refreshCaptureDiagnostics = async () => {
+    const url = location.href;
+    const requestId = state.captureDiagnosticTrace.request_id + 1;
+    state.captureDiagnosticTrace = {
+      request_id: requestId,
+      status: "REQUEST_STARTED",
+      request_started: true,
+      background_response_received: false,
+      background_response_ok: false,
+      background_response_diagnostics_present: false,
+      background_response_runtime_present: false,
+      state_assigned: false,
+      state_invalidated: false,
+      state_rendered: false,
+      reason: ""
+    };
+    diagnosticsRefresh.disabled = true;
+    try {
+      const result = await sendMessage({ type: "KOLCONNECT_PASSIVE_DIAGNOSTICS" });
+      state.captureDiagnosticTrace.background_response_received = true;
+      state.captureDiagnosticTrace.background_response_ok = result?.ok === true;
+      state.captureDiagnosticTrace.background_response_diagnostics_present = Boolean(result?.diagnostics);
+      state.captureDiagnosticTrace.background_response_runtime_present = Boolean(result?.diagnostics?.runtime);
+      if (location.href !== url) {
+        state.captureDiagnosticTrace.status = "STATE_INVALIDATED";
+        state.captureDiagnosticTrace.state_invalidated = true;
+        state.captureDiagnosticTrace.reason = "URL_CHANGED";
+        return;
+      }
+      state.captureDiagnostics = result?.ok && result.diagnostics
+        ? result.diagnostics : { status: "CAPTURE_DIAGNOSTICS_UNAVAILABLE" };
+      state.captureDiagnosticTrace.status = result?.ok && result.diagnostics
+        ? "STATE_ASSIGNED" : "BACKGROUND_RESPONSE_UNAVAILABLE";
+      state.captureDiagnosticTrace.state_assigned = true;
+      state.captureDiagnosticTrace.reason = result?.ok && result.diagnostics ? "" : "NO_DIAGNOSTICS";
+    } catch (_) {
+      if (location.href === url) {
+        state.captureDiagnostics = { status: "CAPTURE_DIAGNOSTICS_UNAVAILABLE" };
+        state.captureDiagnosticTrace.status = "BACKGROUND_ERROR";
+        state.captureDiagnosticTrace.state_assigned = true;
+        state.captureDiagnosticTrace.reason = "MESSAGE_ERROR";
+      } else {
+        state.captureDiagnosticTrace.status = "STATE_INVALIDATED";
+        state.captureDiagnosticTrace.state_invalidated = true;
+        state.captureDiagnosticTrace.reason = "URL_CHANGED";
+      }
+    } finally {
+      diagnosticsRefresh.disabled = false;
+      state.captureDiagnosticTrace.state_rendered = true;
+      diagnosticsText.textContent = JSON.stringify(diagnosticReport(), null, 2);
+    }
+    return getCaptureDiagnostics();
+  };
+  diagnosticsRefresh.addEventListener("click", refreshCaptureDiagnostics);
 
   const renderProfile = () => {
     const profile = state.profile;
@@ -311,6 +407,7 @@
       : "";
     const displayName = creatorName || username || "—";
     fieldElements.platform.textContent = profile?.platform || "—";
+    resetCaptureButton.hidden = profile?.platform !== "TikTok";
     fieldElements.username.textContent = username || "—";
     fieldElements.creator_name.textContent = displayName;
     fieldElements.followers.textContent = profile?.followers
@@ -318,7 +415,8 @@
       : "—";
     fieldElements.bio.textContent = profile?.bio || "暂无公开简介";
     fieldElements.capture_status.textContent = profile?.capture_status || "idle";
-    diagnosticsText.textContent = JSON.stringify(profile?.diagnostic_report || {}, null, 2);
+    diagnosticsRefresh.hidden = diagnosticsHint.hidden = !/tiktok\.com\//i.test(location.href);
+    diagnosticsText.textContent = JSON.stringify(diagnosticReport(), null, 2);
   };
 
   const missingReasons = (item) => [
@@ -352,10 +450,21 @@
     contentSummaryFields.median_views.textContent = formatNumber(analysis.median_views);
     contentSummaryFields.weighted_engagement_rate.textContent = formatPercent(analysis.weighted_engagement_rate);
     contentSummaryFields.capture_status.textContent = analysis.capture_status || "—";
-    contentStatus.textContent = state.profile?.platform === "TikTok"
-      && analysis.detail_fallback_status === "blocked_by_verification"
-      ? "TikTok 限制了视频详情读取，当前仅使用主页可获得的数据。"
-      : analysis.error === "CONTENT_VIEW_SUMMARY_MISMATCH"
+    const passiveLabels = {
+      CAPTURE_L1_ACTIVE: "L1 被动网络采集（高置信度）。",
+      FALLBACK_L2: "L1 无可用数据，使用 L2 页面内嵌数据（中置信度）。",
+      FALLBACK_L3: "L1 / L2 无可用数据，使用 L3 可见页面（低置信度）。",
+      NO_DATA: "当前未观察到数据，请正常浏览后重试。",
+      PARSER_ERROR: "观察到的响应无法解析，未生成有效内容。",
+      CAPTCHA_DETECTED: "CAPTCHA_DETECTED：检测到验证页，采集已停止。请手动处理后重新开始采集。",
+      LOGIN_REQUIRED: "LOGIN_REQUIRED：需要登录，采集已停止。请手动登录后重新开始采集。",
+      CAPTURE_BLOCKED: "CAPTURE_BLOCKED：检测到安全检查，采集已停止。",
+      CAPTURE_STOPPED: "CAPTURE_STOPPED：采集已停止，请重新开始采集。",
+      CAPTURE_PROFILE_CHANGED: "CAPTURE_PROFILE_CHANGED：账号页面已变化，请重新分析资料。",
+      CAPTURE_L1_UNAVAILABLE: "CAPTURE_L1_UNAVAILABLE：被动桥接未就绪，请更新扩展后刷新 TikTok 页面。",
+    };
+    const passiveState = analysis.passive_capture_status || (state.profile?.platform === "TikTok" ? String(analysis.error || "").split(":")[0] : "");
+    contentStatus.textContent = passiveLabels[passiveState] || (analysis.error === "CONTENT_VIEW_SUMMARY_MISMATCH"
       ? "播放统计数据不一致，请重新分析。"
       : analysis.capture_status === "success"
       ? "最近内容分析完成。"
@@ -363,7 +472,7 @@
         ? "已取得部分公开内容数据。"
         : analysis.capture_status === "unavailable"
           ? "当前页面没有公开足够的内容数据。"
-          : "内容分析失败。";
+          : "内容分析失败。");
     contentDetails.hidden = !analysis.contents?.length;
     for (const [index, item] of (analysis.contents || []).entries()) {
       const itemCard = create("article", "kol-content-item");
@@ -382,6 +491,12 @@
         } · 互动率 ${formatPercent(item.engagement_rate?.value)}`
       );
       const reasons = missingReasons(item);
+      if (item.capture_layer) {
+        const sources = [["views", "播放"], ["likes", "点赞"], ["comments", "评论"], ["published_at", "发布时间"]]
+          .map(([key, label]) => `${label} ${item.field_provenance?.[key]?.layer || "—"}/${item.field_provenance?.[key]?.confidence || "missing"}`);
+        itemCard.append(create("div", "kol-content-missing",
+          `来源 ${item.capture_layer} · ${sources.join(" · ")} · 观察时间 ${item.observed_at || "—"}`));
+      }
       if (reasons.length) {
         itemCard.append(title, metrics, create("div", "kol-content-missing", [...new Set(reasons)].join("；")));
       } else {
@@ -493,6 +608,7 @@
     state.contentLoading = true;
     state.contentAnalysis = null;
     analyzeContentButton.disabled = true;
+    if (state.profile.platform === "TikTok") { state.profile.videos = []; state.profile.video_analysis = {}; }
     cancelContentButton.hidden = false;
     contentStatus.textContent = "正在发现内容……";
     renderContent();
@@ -532,6 +648,10 @@
   const handleUrlChange = (url = location.href) => {
     const nextUrl = String(url || location.href);
     if (nextUrl === state.lastUrl) return;
+    state.captureDiagnostics = null;
+    state.captureDiagnosticTrace.status = "STATE_INVALIDATED";
+    state.captureDiagnosticTrace.state_invalidated = true;
+    state.captureDiagnosticTrace.reason = "URL_CHANGED";
     state.lastUrl = nextUrl;
     profileSessions.invalidate();
     state.currentSessionId = profileSessions.currentSessionId;
@@ -553,7 +673,7 @@
   };
 
   const copyDiagnostics = async () => {
-    const report = JSON.stringify(state.profile?.diagnostic_report || {}, null, 2);
+    const report = JSON.stringify(diagnosticReport(), null, 2);
     try {
       await navigator.clipboard.writeText(report);
     } catch (_) {
@@ -697,7 +817,9 @@
     importCurrent,
     initializePreview,
     profileForImport,
-    agencyStatus
+    agencyStatus,
+    getCaptureDiagnostics,
+    refreshCaptureDiagnostics
   };
 
   loadAgencyOptions();

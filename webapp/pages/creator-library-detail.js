@@ -8,11 +8,13 @@
   let campaignsController = null;
   let editController = null;
   let summaryController = null;
+  let similarController = null;
   let campaignModal = null;
   let creatorId = "";
   let detail = null;
   let intelligence = null;
   let creatorCampaigns = [];
+  let historicalPerformance = null;
   let selectedAccountKey = "";
   let lifecycleId = 0;
 
@@ -179,6 +181,75 @@
       }
       return [dt, dd];
     }));
+  }
+
+  function appendHistoryStat(container, label, value, detail = "") {
+    const item = document.createElement("article");
+    const title = document.createElement("small");
+    const metric = document.createElement("strong");
+    const context = document.createElement("span");
+    title.textContent = label;
+    metric.textContent = value;
+    context.textContent = detail;
+    item.append(title, metric, context);
+    container.appendChild(item);
+  }
+
+  function formatCurrencyGroups(groups) {
+    const entries = Object.entries(groups || {});
+    return entries.length
+      ? entries.map(([currency, amount]) => `${currency} ${formatMetric(amount)}`).join(" · ")
+      : "--";
+  }
+
+  function renderHistoricalPerformance() {
+    const data = historicalPerformance;
+    const summary = element("creator-history-performance-summary");
+    const money = element("creator-history-performance-money");
+    const campaigns = element("creator-history-campaigns");
+    const empty = element("creator-history-performance-empty");
+    if (!summary || !money || !campaigns || !empty) return;
+    summary.replaceChildren();
+    money.replaceChildren();
+    campaigns.replaceChildren();
+    const hasHistory = Boolean(data && (data.cooperation_count || data.publication_count));
+    empty.hidden = hasHistory;
+    appendHistoryStat(summary, "合作次数", formatMetric(data?.cooperation_count), "按 CampaignCreator 去重");
+    appendHistoryStat(summary, "历史 Campaign", formatMetric(data?.historical_campaign_count), "按 campaign_id 去重");
+    appendHistoryStat(summary, "平均播放", formatMetric(data?.average_latest_views), `${data?.valid_publication_views_count || 0} / ${data?.total_historical_publications || 0} 条有数据`);
+    appendHistoryStat(summary, "平均互动率", data?.average_latest_er == null ? "--" : `${formatMetric(data.average_latest_er)}%`, `${data?.valid_publication_er_count || 0} / ${data?.total_historical_publications || 0} 条有数据`);
+
+    const moneyTitle = document.createElement("h3");
+    moneyTitle.textContent = "金额与效率";
+    const moneyText = document.createElement("p");
+    moneyText.textContent = `确认成本：${formatCurrencyGroups(data?.total_cost_by_currency)} · 历史报价：${formatCurrencyGroups(data?.total_quote_by_currency)} · 未知币种成本/报价记录 ${data?.unknown_currency_records?.cost || 0}/${data?.unknown_currency_records?.quote || 0}（不纳入币种汇总）`;
+    money.append(moneyTitle, moneyText);
+    Object.entries(data?.efficiency_by_currency || {}).forEach(([currency, values]) => {
+      const line = document.createElement("p");
+      line.textContent = `${currency} · CPV ${formatMetric(values?.cpv)} · CPE ${formatMetric(values?.cpe)}`;
+      money.appendChild(line);
+    });
+    const roi = document.createElement("p");
+    roi.textContent = "ROI：--（缺少权威回报数据）";
+    money.appendChild(roi);
+
+    const campaignTitle = document.createElement("h3");
+    campaignTitle.textContent = "历史 Campaign";
+    campaigns.appendChild(campaignTitle);
+    const history = Array.isArray(data?.historical_campaigns) ? data.historical_campaigns : [];
+    if (!history.length) {
+      const unavailable = document.createElement("p");
+      unavailable.textContent = "暂无 Campaign 历史。";
+      campaigns.appendChild(unavailable);
+    } else {
+      const list = document.createElement("ul");
+      history.forEach(item => {
+        const entry = document.createElement("li");
+        entry.textContent = `${item.campaign_name || item.campaign_id} · ${item.campaign_status || "--"} · ${item.start_date || "日期未记录"}`;
+        list.appendChild(entry);
+      });
+      campaigns.appendChild(list);
+    }
   }
 
   function summaryMetric(measurement) {
@@ -513,9 +584,10 @@
     renderSnapshots(data);
     renderCooperations(data);
     renderVideos(analysis);
+    renderHistoricalPerformance();
     const archiveButton = element("creator-library-detail-archive");
     if (archiveButton) archiveButton.textContent = archived ? "恢复达人" : "归档达人";
-    ["creator-library-detail-edit", "creator-library-detail-add-campaign", "creator-library-detail-task"].forEach(id => {
+    ["creator-library-detail-edit", "creator-library-detail-add-campaign", "creator-library-detail-similar", "creator-library-detail-task"].forEach(id => {
       const button = element(id);
       if (button) button.disabled = archived;
     });
@@ -552,12 +624,19 @@
       `/api/campaigns?creator_id=${encodeURIComponent(creatorId)}`,
       { signal: campaignsController.signal },
     );
-    const [detailResult, campaignsResult] = await Promise.allSettled([detailRequest, campaignsRequest]);
+    const historyRequest = pageContext.api.get(
+      `/api/creator-library/${encodeURIComponent(creatorId)}/historical-performance`,
+      { signal: detailController.signal },
+    );
+    const [detailResult, campaignsResult, historyResult] = await Promise.allSettled([
+      detailRequest, campaignsRequest, historyRequest,
+    ]);
     const requestedCreatorId = String(pageContext?.params?.creatorId || "").trim();
     if (!pageContext || currentLifecycle !== lifecycleId || creatorId !== requestedCreatorId) return;
     if (detailResult.status === "rejected") throw detailResult.reason;
     const data = detailResult.value;
     detail = data;
+    historicalPerformance = historyResult.status === "fulfilled" ? historyResult.value : null;
     resolveDefaultAccount(data);
     if (campaignsResult.status === "fulfilled") {
       creatorCampaigns = Array.isArray(campaignsResult.value.campaigns) ? campaignsResult.value.campaigns : [];
@@ -732,6 +811,118 @@
     if (campaignId) pageContext.navigate("campaign-detail", { campaignId }).catch(showError);
   }
 
+  function clearSimilarCandidates() {
+    similarController?.abort();
+    similarController = null;
+    const card = element("creator-library-similar-card");
+    if (card) card.hidden = true;
+    element("creator-library-similar-results")?.replaceChildren();
+    setText(
+      "creator-library-similar-status",
+      "仅基于本地达人库的结构化证据评分；缺失维度不计零分。",
+    );
+  }
+
+  function renderSimilarCandidates(result) {
+    const container = element("creator-library-similar-results");
+    if (!container) return;
+    const candidates = Array.isArray(result?.candidates) ? result.candidates : [];
+    if (!candidates.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "暂无具备可用匹配证据的本地达人。";
+      container.replaceChildren(empty);
+      return;
+    }
+    container.replaceChildren(...candidates.map(candidate => {
+      const item = document.createElement("div");
+      item.className = "creator-library-similar-item";
+      const identity = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = String(candidate?.creator_name || "未命名达人");
+      const summary = document.createElement("span");
+      const score = candidate?.base_similarity_score;
+      summary.textContent = typeof score === "number" && Number.isFinite(score)
+        ? `相似度 ${score.toFixed(2)}% · 可用证据权重 ${candidate.available_nominal_weight}/100`
+        : "相似度 -- · 可比证据不足";
+      identity.append(name, summary);
+      const reasons = document.createElement("ul");
+      const explanations = Array.isArray(candidate?.why_recommended) ? candidate.why_recommended : [];
+      explanations.forEach(reason => {
+        const line = document.createElement("li");
+        line.textContent = String(reason?.text || "");
+        reasons.appendChild(line);
+      });
+      identity.appendChild(reasons);
+      const history = candidate.historical_performance_evidence;
+      if (history) {
+        const evidence = document.createElement("small");
+        evidence.textContent = `历史证据（不改变评分）：${history.cooperation_count} 次合作 · ${history.publication_count} 条发布 · 平均播放 ${formatMetric(history.average_latest_views)} · 平均 ER ${history.average_latest_er == null ? "--" : `${formatMetric(history.average_latest_er)}%`}`;
+        identity.appendChild(evidence);
+      }
+      const labels = { tag: "标签", content: "内容", followers: "粉丝", price: "报价",
+        engagement: "互动率", country_language: "国家/语言", platform: "平台" };
+      const missing = Array.isArray(candidate?.unavailable_dimensions) ? candidate.unavailable_dimensions : [];
+      const unavailable = document.createElement("small");
+      unavailable.textContent = missing.length
+        ? `未纳入评分：${missing.map(key => labels[key] || key).join("、")}` : "所有维度均有可比证据";
+      identity.appendChild(unavailable);
+      const geoMissing = candidate?.dimensions?.country_language?.evidence?.unavailable || [];
+      if (geoMissing.length) {
+        const subMissing = document.createElement("small");
+        subMissing.textContent = `国家/语言缺项：${geoMissing.map(key => key === "country" ? "国家" : "语言").join("、")}`;
+        identity.appendChild(subMissing);
+      }
+      const ai = result?.ai?.explanations?.find(row => row.creator_id === candidate.creator_id);
+      if (ai?.text) {
+        const aiText = document.createElement("p");
+        aiText.textContent = `AI 补充说明（不改变评分）：${ai.text}`;
+        identity.appendChild(aiText);
+      }
+      const action = document.createElement("button");
+      action.type = "button";
+      action.className = "soft-btn";
+      action.dataset.similarCreatorId = String(candidate?.creator_id || "");
+      action.textContent = "查看达人";
+      item.append(identity, action);
+      return item;
+    }));
+  }
+
+  async function loadSimilarCandidates() {
+    if (!creatorId || !pageContext?.api || detail?.record?.archived_at) return;
+    const currentLifecycle = lifecycleId;
+    const card = element("creator-library-similar-card");
+    if (card) card.hidden = false;
+    setText("creator-library-similar-status", "正在查找本地达人库候选...");
+    similarController?.abort();
+    similarController = pageContext.resources.createAbortController();
+    const requestController = similarController;
+    element("creator-library-similar-results")?.replaceChildren();
+    try {
+      const result = await pageContext.api.get(
+        `/api/creator-library/${encodeURIComponent(creatorId)}/similar`,
+        { signal: similarController.signal },
+      );
+      if (!pageContext || currentLifecycle !== lifecycleId || requestController !== similarController) return;
+      renderSimilarCandidates(result);
+      setText(
+        "creator-library-similar-status",
+        `本地候选 ${Number(result?.total || 0)} 个，展示 ${result?.candidates?.length || 0} 个；按确定性评分排序，缺失证据不计零分。`,
+      );
+    } catch (error) {
+      if (error?.name === "AbortError" || !pageContext || currentLifecycle !== lifecycleId || requestController !== similarController) return;
+      renderSimilarCandidates({ candidates: [] });
+      setText("creator-library-similar-status", error?.message || "相似达人搜索失败。");
+    }
+  }
+
+  function handleSimilarCreatorAction(event) {
+    const button = event.target.closest("[data-similar-creator-id]");
+    const candidateId = String(button?.dataset?.similarCreatorId || "").trim();
+    if (candidateId) pageContext.navigate("creator-library-detail", { creatorId: candidateId }).catch(showError);
+  }
+
   const creatorLibraryDetailPage = {
     async load(context) {
       if (!context?.state || !context.api || !context.resources || !context.params) {
@@ -745,7 +936,9 @@
         : "overview";
       creatorId = String(context.params.creatorId || "").trim();
       detail = null;
+      historicalPerformance = null;
       creatorCampaigns = [];
+      clearSimilarCandidates();
       campaignModal = global.KOLConnectCreatorCampaignModal.create(context);
       clearRenderedDetail();
       renderCreatorCampaigns();
@@ -765,10 +958,12 @@
       listen("creator-library-detail-edit", "click", () => openEditModal().catch(showError));
       listen("creator-library-detail-archive", "click", () => changeArchiveState().catch(showError));
       listen("creator-library-detail-add-campaign", "click", () => openCampaignModal().catch(showError));
+      listen("creator-library-detail-similar", "click", () => loadSimilarCandidates());
       listen("creator-library-detail-task", "click", () => openCollaborationTask().catch(showError));
       listen("creator-account-options", "click", handleAccountSwitch);
       listen("creator-ai-summary-generate", "click", () => generateAISummary().catch(showError));
       listen("creator-campaigns-body", "click", handleCampaignAction);
+      listen("creator-library-similar-results", "click", handleSimilarCreatorAction);
       listen("creator-edit-modal-close", "click", closeEditModal);
       listen("creator-edit-cancel", "click", closeEditModal);
       listen("creator-edit-form", "submit", saveCreatorProfile);
@@ -784,9 +979,12 @@
       editController = null;
       summaryController?.abort();
       summaryController = null;
+      similarController?.abort();
+      similarController = null;
       campaignModal = null;
       creatorId = "";
       detail = null;
+      historicalPerformance = null;
       creatorCampaigns = [];
       selectedAccountKey = "";
       closeEditModal();
