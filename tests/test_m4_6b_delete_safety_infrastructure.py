@@ -57,7 +57,7 @@ class AtomicWriteJsonTests(WorkspaceTestCase):
 
     def test_atomic_write_uses_unique_sibling_temp_files(self) -> None:
         target = self.root / "manifest.json"
-        real_replace = runtime_paths.os.replace
+        real_replace = runtime_paths._replace_json_file
         sources: list[Path] = []
 
         def record_replace(source, destination):
@@ -66,7 +66,7 @@ class AtomicWriteJsonTests(WorkspaceTestCase):
 
         with (
             mock.patch.object(runtime_paths, "shared_storage_lock", side_effect=nullcontext),
-            mock.patch.object(runtime_paths.os, "replace", side_effect=record_replace),
+            mock.patch.object(runtime_paths, "_replace_json_file", side_effect=record_replace),
         ):
             runtime_paths.atomic_write_json(target, {"sequence": 1})
             runtime_paths.atomic_write_json(target, {"sequence": 2})

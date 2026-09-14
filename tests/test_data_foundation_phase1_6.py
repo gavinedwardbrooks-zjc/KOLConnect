@@ -313,7 +313,10 @@ class HistoricalTaskBoundaryTests(unittest.TestCase):
                         name=f"Historical {index}",
                         scrape_status="success",
                     )
-                    writer.writerow(server.scraper_module.result_to_row(result))
+                    writer.writerow({
+                        field: server.scraper_module.result_to_row(result).get(field, "")
+                        for field in server.scraper_module.OUTPUT_FIELDS
+                    })
 
             workbook_before = workbook_path.read_bytes()
             task_before = paths["metadata"].read_bytes()

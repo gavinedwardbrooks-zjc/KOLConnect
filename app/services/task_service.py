@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Callable
+from uuid import uuid4
 
+import creator_data_compat as scraper_module
 from ports.creator_port import (
     CreatorImportResult,
     CreatorImportSummary,
@@ -116,6 +118,18 @@ class TaskService:
 
     def get_task_metadata(self, task_id: str) -> dict[str, object]:
         return self._get_task_port().get_task(task_id).to_response()
+
+    def get_task_input_links(self, task_id: str, *, unfinished_only: bool) -> dict[str, object]:
+        repository = self._get_task_repository()
+        links = repository.read_links(task_id)
+        if unfinished_only:
+            completed = {
+                str(row.get(scraper_module.FIELD_URL) or "").strip()
+                for row in repository.read_progress(task_id)
+                if str(row.get(scraper_module.FIELD_STATUS) or "") == "完成"
+            }
+            links = [link for link in links if link not in completed]
+        return {"links": links, "scope": "unfinished" if unfinished_only else "all"}
 
     # These lifecycle operations are intentionally named transitions, rather than
     # exposing the legacy task-manager's generic metadata/file primitives.
@@ -374,6 +388,93 @@ class TaskService:
             task_id, command
         ).to_response()
 
+    def prepare_task_run(
+        self, task_id: str, *, platforms: object, profile: object
+    ) -> dict[str, object]:
+        """Create an append-only task-local run over still-unfinished URLs."""
+        if self._task_is_running(task_id):
+            raise RuntimeError("已有任务正在运行。")
+        repository = self._get_task_repository()
+        task = repository.get_task(task_id)
+        links = repository.read_links(task_id)
+        available = [
+            str(item).lower()
+            for item in task.get("available_platforms", task.get("platforms", []))
+            if str(item).strip()
+        ]
+        requested_values = platforms if isinstance(platforms, list) else ([] if platforms is None else [platforms])
+        requested = [
+            str(item).lower()
+            for item in requested_values
+            if str(item).strip()
+        ]
+        selected = list(dict.fromkeys(requested or available))
+        selected_links = [
+            url for url in links
+            if str(scraper_module.detect_platform(url) or "").lower() in selected
+        ]
+        # Historical task fixtures and manually created compatibility tasks
+        # can predate platform classification. Preserve their runnable
+        # all-link behavior instead of rejecting them at startup.
+        if not selected_links and not requested and links:
+            selected = []
+            selected_links = list(links)
+        if not selected_links:
+            raise ValueError("所选平台没有原始链接。")
+        completed = {
+            str(row.get(scraper_module.FIELD_URL) or "").strip()
+            for row in repository.read_progress(task_id)
+            if str(row.get(scraper_module.FIELD_STATUS) or "") == "完成"
+        }
+        unfinished = [url for url in selected_links if url not in completed]
+        run_id = f"run_{uuid4().hex}"
+        now = self._utc_now()
+        run = {
+            "run_id": run_id,
+            "created_at": now,
+            "selected_platforms": selected,
+            "selected_count": len(selected_links),
+            "unfinished_count": len(unfinished),
+            "profile": str(profile or "").strip(),
+            "started_at": "",
+            "completed_at": "",
+            "status": "created",
+            "success_count": 0,
+            "partial_count": 0,
+            "failed_count": 0,
+        }
+        repository.append_run(task_id, run)
+        repository.update_task(
+            task_id,
+            active_run_id=run_id,
+            active_platforms=selected,
+            available_platforms=available,
+        )
+        return {"run": run, "selected_platforms": selected, "selected_count": len(selected_links), "unfinished_count": len(unfinished)}
+
+    def finish_task_run(self, task_id: str, *, status: str) -> None:
+        repository = self._get_task_repository()
+        task = repository.get_task(task_id)
+        run_id = str(task.get("active_run_id") or "")
+        if not run_id:
+            return
+        selected = {str(item).lower() for item in task.get("active_platforms", [])}
+        rows = repository.read_progress(task_id)
+        selected_rows = [
+            row for row in rows
+            if str(scraper_module.detect_platform(str(row.get(scraper_module.FIELD_URL) or "")) or "").lower() in selected
+        ]
+        result_statuses = [str(row.get(scraper_module.FIELD_SCRAPE_STATUS) or "") for row in selected_rows]
+        repository.update_run(
+            task_id,
+            run_id,
+            status=status,
+            completed_at=self._utc_now(),
+            success_count=sum(value == "success" for value in result_statuses),
+            partial_count=sum(value == "partial_success" for value in result_statuses),
+            failed_count=sum(value in {"failed", "missing_data", "login_required", "platform_error"} for value in result_statuses),
+        )
+
     def resume_task(
         self,
         task_id: str,
@@ -469,13 +570,8 @@ class TaskService:
         library_import = None
         if str(task.get("status") or "") in {"completed", "manual_created"}:
             try:
-                import_result = creator_port.import_task_results(
-                    TaskResultImportCommand(
-                        task_id=task_id,
-                        task=task,
-                        rows=prepared.result_rows,
-                        allowed_statuses=("completed", "manual_created"),
-                    )
+                import_result = self._sync_prepared_row_to_creator_library(
+                    task_id, task, prepared
                 )
                 if not isinstance(import_result, CreatorImportResult):
                     raise RuntimeError("Creator 导入结果无效。")
@@ -588,6 +684,65 @@ class TaskService:
                     reviewed_at=self._utc_now(),
                 )
         return self._complete_review_creator_mutation(task_id, normalized_uid)
+
+    def _sync_prepared_row_to_creator_library(
+        self, task_id: str, task: dict[str, object], prepared: object
+    ) -> CreatorImportResult:
+        """Persist one edited, already-imported account without a task reimport."""
+        repository = self._get_task_repository()
+        progress = repository.read_progress_document(task_id).rows
+        result_rows = getattr(prepared, "result_rows")
+        target_uid = str(getattr(prepared, "account_uid") or "")
+        merged_rows = self._merge_rows_with_progress(result_rows, progress)
+        selected = tuple(
+            row for row in merged_rows
+            if self._account_uid_for_row(row) == target_uid
+        )
+        if len(selected) != 1:
+            raise RuntimeError("未找到已导入账号对应的任务结果。")
+        result = self._get_creator_port().import_task_results(
+            TaskResultImportCommand(
+                task_id=task_id,
+                task=task,
+                rows=selected,
+                allowed_statuses=("completed", "manual_created"),
+            )
+        )
+        if not isinstance(result, CreatorImportResult):
+            raise RuntimeError("Creator 导入结果无效。")
+        return result
+
+    @staticmethod
+    def _account_uid_for_row(row: object) -> str:
+        if not isinstance(row, dict):
+            return ""
+        return scraper_module.build_creator_uid(scraper_module.row_to_result(row))
+
+    @staticmethod
+    def _merge_rows_with_progress(
+        result_rows: object, progress_rows: object
+    ) -> tuple[dict[str, object], ...]:
+        by_url = {
+            str(row.get(scraper_module.FIELD_URL) or "").strip(): dict(row)
+            for row in progress_rows
+            if isinstance(row, dict) and str(row.get(scraper_module.FIELD_URL) or "").strip()
+        }
+        fields = (
+            scraper_module.FIELD_SCRAPE_STATUS,
+            scraper_module.FIELD_STATUS_REASON,
+            scraper_module.FIELD_LAST_SCRAPE_TIME,
+            scraper_module.FIELD_RETRY_COUNT,
+        )
+        merged: list[dict[str, object]] = []
+        for raw in result_rows:
+            row = dict(raw)
+            diagnostic = by_url.get(str(row.get(scraper_module.FIELD_URL) or "").strip(), {})
+            for field in fields:
+                row.setdefault(field, diagnostic.get(field, ""))
+                if not row.get(field):
+                    row[field] = diagnostic.get(field, "")
+            merged.append(row)
+        return tuple(merged)
 
     def edit_approve_task_result(
         self, task_id: str, account_uid: object, fields: object
@@ -793,7 +948,10 @@ class TaskService:
             raise RuntimeError("任务抓取中，请稍候")
         if task_status == "finalizing":
             raise RuntimeError("任务入库收尾中，请稍候")
-        rows = repository.read_results_document(task_id).rows
+        rows = self._merge_rows_with_progress(
+            repository.read_results_document(task_id).rows,
+            repository.read_progress_document(task_id).rows,
+        )
         creator_port = self._get_creator_port()
         prepared = creator_port.prepare_four_table_sync(
             FourTableSyncCommand(task_id=task_id, task=task, rows=rows)
@@ -934,7 +1092,10 @@ class TaskService:
             return {"status": "skipped", "reason": "task_not_completed"}
         if not repository.results_exist(task_id):
             return {"status": "skipped", "reason": "results_missing"}
-        rows = repository.read_results_document(task_id).rows
+        rows = self._merge_rows_with_progress(
+            repository.read_results_document(task_id).rows,
+            repository.read_progress_document(task_id).rows,
+        )
         items = map_task_rows_for_creator_library(task, rows)
         summary = self._get_creator_port().import_task_results(
             ImportTaskResultsCommand(

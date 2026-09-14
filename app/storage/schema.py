@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from storage.errors import SQLiteSchemaUnsupportedError
 
 
-CURRENT_SCHEMA_VERSION = 4
+CURRENT_SCHEMA_VERSION = 5
 
 
 SCHEMA_V1_SQL = r"""
@@ -459,6 +459,66 @@ def apply_schema_migrations(connection, *, migration_reference: str = "") -> int
                 ("application_compatibility", "m8-4-publication-observations"),
             )
             connection.commit()
+            current = 4
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 4:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(campaign_creators)")
+            }
+            for column, data_type in (
+                ("next_action", "TEXT"),
+                ("due_date", "TEXT"),
+                ("waiting_on", "TEXT"),
+                ("last_progress_at", "TEXT"),
+                ("need_my_decision", "INTEGER"),
+            ):
+                if column not in existing:
+                    connection.execute(
+                        f"ALTER TABLE campaign_creators ADD COLUMN {column} {data_type}"
+                    )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS campaign_briefs ("
+                "campaign_id TEXT PRIMARY KEY REFERENCES campaigns(campaign_id) ON DELETE CASCADE, "
+                "title TEXT, core_selling_points TEXT, must_include TEXT, must_avoid TEXT, "
+                "brand_requirements TEXT, content_requirements TEXT, publishing_requirements TEXT, "
+                "reference_notes TEXT, platform_guidance TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS content_submissions ("
+                "submission_id TEXT PRIMARY KEY, campaign_creator_id TEXT NOT NULL "
+                "REFERENCES campaign_creators(id) ON DELETE CASCADE, account_uid TEXT "
+                "REFERENCES creator_accounts(account_uid) ON DELETE SET NULL, content_type TEXT NOT NULL, "
+                "content_reference TEXT, submitted_at TEXT, submitted_by TEXT, source TEXT, "
+                "review_status TEXT NOT NULL DEFAULT 'pending', review_note TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS content_submission_ai_findings ("
+                "finding_id TEXT PRIMARY KEY, submission_id TEXT NOT NULL "
+                "REFERENCES content_submissions(submission_id) ON DELETE CASCADE, location TEXT, "
+                "finding_type TEXT, brief_requirement TEXT, risk_level TEXT, description TEXT, "
+                "suggestion TEXT, needs_human_confirmation INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_campaign_creators_execution_due "
+                "ON campaign_creators(due_date, last_progress_at)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_content_submissions_relation "
+                "ON content_submissions(campaign_creator_id, created_at DESC)"
+            )
+            connection.execute(
+                "UPDATE storage_metadata SET value=? WHERE key='schema_version'", ("5",)
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key, value) VALUES (?, ?)",
+                ("application_compatibility", "m8-campaign-execution"),
+            )
+            connection.commit()
+            current = 5
         except Exception:
             connection.rollback()
             raise

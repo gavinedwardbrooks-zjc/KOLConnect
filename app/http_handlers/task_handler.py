@@ -16,6 +16,17 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._json({"ok": True, **task_service.get_tasks()})
         return True
 
+    task_links_export_match = re.fullmatch(r"/api/tasks/([^/]+)/links", path)
+    if method == "GET" and task_links_export_match:
+        scope = str((request.get("query", {}).get("scope") or ["all"])[0])
+        try:
+            handler._json({"ok": True, **task_service.get_task_input_links(
+                task_links_export_match.group(1), unfinished_only=scope == "unfinished"
+            )})
+        except ValueError as exc:
+            handler._error(str(exc), status=404)
+        return True
+
     task_details_match = re.fullmatch(r"/api/tasks/([^/]+)/details", path)
     # GET /api/tasks/{task_id}/details → 读取任务详情；{"ok": true, "task": {...}, "links": [...]}
     if method == "GET" and task_details_match:
@@ -143,7 +154,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             account_uids = selected if isinstance(selected, list) else []
             result = services["retry_failed_task_results"](task_retry_match.group(1), account_uids)
             services["start_scrape"](
-                {"taskId": task_retry_match.group(1), "profile": payload.get("profile")}
+                {"taskId": task_retry_match.group(1), "profile": payload.get("profile"), "platforms": result.get("retry_platforms", [])}
             )
             handler._ok(**result, started=True)
         except (ValueError, RuntimeError) as exc:

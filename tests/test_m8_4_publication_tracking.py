@@ -18,7 +18,7 @@ from services.publication_tracking_service import (  # noqa: E402
     PublicationTrackingService,
     UnavailablePublicationMetricProvider,
 )
-from storage.schema import apply_schema_migrations, schema_version  # noqa: E402
+from storage.schema import CURRENT_SCHEMA_VERSION, apply_schema_migrations, schema_version  # noqa: E402
 from storage.sqlite_workbook_store import SQLiteWorkbookStore  # noqa: E402
 from test_support.runtime_sandbox import test_runtime_sandbox  # noqa: E402
 
@@ -121,9 +121,9 @@ class M84PublicationTrackingTests(unittest.TestCase):
             "source": "browser_capture", "confidence": "high",
         }
 
-    def test_schema_v4_fresh_and_v3_upgrade_preserve_publication_and_video_snapshot(self):
+    def test_schema_current_fresh_and_v3_upgrade_preserve_publication_and_video_snapshot(self):
         with self.store.factory.read_connection() as connection:
-            self.assertEqual(4, schema_version(connection))
+            self.assertEqual(CURRENT_SCHEMA_VERSION, schema_version(connection))
             self.assertIsNotNone(connection.execute(
                 "SELECT name FROM sqlite_master WHERE name='publication_performance_observations'"
             ).fetchone())
@@ -144,12 +144,12 @@ class M84PublicationTrackingTests(unittest.TestCase):
             connection.execute("DROP TABLE publication_performance_observations")
             connection.execute("UPDATE storage_metadata SET value='3' WHERE key='schema_version'")
         with self.store.factory.read_connection() as connection:
-            self.assertEqual(4, apply_schema_migrations(connection))
-            self.assertEqual(4, apply_schema_migrations(connection))
+            self.assertEqual(CURRENT_SCHEMA_VERSION, apply_schema_migrations(connection))
+            self.assertEqual(CURRENT_SCHEMA_VERSION, apply_schema_migrations(connection))
             self.assertEqual(3, connection.execute("SELECT COUNT(*) FROM campaign_creator_publish_links").fetchone()[0])
             self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM video_snapshots").fetchone()[0])
             compatibility = connection.execute("SELECT value FROM storage_metadata WHERE key='application_compatibility'").fetchone()[0]
-            self.assertEqual("m8-4-publication-observations", compatibility)
+            self.assertEqual("m8-campaign-execution", compatibility)
 
     def test_append_only_idempotency_latest_missing_zero_and_provenance(self):
         provider = _Provider([

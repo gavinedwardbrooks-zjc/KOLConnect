@@ -740,6 +740,7 @@
     setValue("creator-edit-followers", record.followers || creator.followers);
     setValue("creator-edit-country", record.country || creator.country);
     setValue("creator-edit-language", record.language || creator.language);
+    setValue("creator-edit-whatsapp", record.whatsapp || creator.whatsapp);
     setValue("creator-edit-content-category", record.content_category || analysis.content_category);
     setValue("creator-edit-bio", record.bio || creator.bio);
     renderAgencyOptions([], record.agency_id);
@@ -772,6 +773,7 @@
           followers: valueOf("creator-edit-followers").trim(),
           country: valueOf("creator-edit-country").trim(),
           language: valueOf("creator-edit-language").trim(),
+          whatsapp: valueOf("creator-edit-whatsapp").trim(),
           content_category: valueOf("creator-edit-content-category").trim(),
           bio: valueOf("creator-edit-bio").trim(),
           agency_id: valueOf("creator-edit-agency").trim(),

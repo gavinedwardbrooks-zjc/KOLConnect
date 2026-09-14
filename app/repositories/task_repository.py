@@ -91,11 +91,15 @@ class TaskRepository:
             task_id = self._new_task_id()
             paths = self._paths(task_id)
             paths["root"].mkdir(parents=True, exist_ok=False)
-            paths["links"].write_text(
-                "\n".join(normalized_links) + "\n", encoding="utf-8"
-            )
+            links_content = "\n".join(normalized_links) + "\n"
+            paths["links"].write_text(links_content, encoding="utf-8")
+            # The runtime boundary still has a legacy reader that expects
+            # links.txt. Keep a write-time compatibility mirror; reads prefer
+            # links.csv and never migrate historical tasks implicitly.
+            paths["legacy_links"].write_text(links_content, encoding="utf-8")
             filtered_links = filtered_links or []
             self._atomic_write_json(paths["filtered_links"], filtered_links)
+            self._atomic_write_json(paths["runs"], [])
             normalized_task_type = str(task_type or "").strip()
             if normalized_task_type not in {"scrape", "manual", "email_recheck"}:
                 normalized_task_type = "scrape"
@@ -115,6 +119,12 @@ class TaskRepository:
                 "invalid_count": len(invalid_links),
                 "target_platform": target_platform or "全部",
                 "platforms": self.normalize_platforms(platforms, target_platform),
+                "available_platforms": [
+                    str(platform).lower()
+                    for platform, count in dict(platform_summary or {}).items()
+                    if int(count or 0) > 0
+                ] or self.normalize_platforms(platforms, target_platform),
+                "active_platforms": [],
                 "platform_summary": dict(platform_summary or {}),
                 "filtered_count": len(filtered_links),
                 "completed_count": 0,
@@ -209,13 +219,21 @@ class TaskRepository:
 
     def write_links(self, task_id: str, links: list[str]) -> None:
         with shared_storage_lock(), _TASK_LOCK:
-            path = self._paths(task_id)["links"]
+            paths = self._paths(task_id)
+            path = paths["links"]
+            content = "\n".join(links) + ("\n" if links else "")
             temp_path = path.with_suffix(f"{path.suffix}.tmp")
             try:
-                temp_path.write_text(
-                    "\n".join(links) + ("\n" if links else ""), encoding="utf-8"
-                )
+                temp_path.write_text(content, encoding="utf-8")
                 temp_path.replace(path)
+                legacy_path = paths["legacy_links"]
+                if legacy_path != path:
+                    legacy_temp = legacy_path.with_suffix(f"{legacy_path.suffix}.tmp")
+                    try:
+                        legacy_temp.write_text(content, encoding="utf-8")
+                        legacy_temp.replace(legacy_path)
+                    finally:
+                        legacy_temp.unlink(missing_ok=True)
             finally:
                 temp_path.unlink(missing_ok=True)
 
@@ -280,6 +298,30 @@ class TaskRepository:
     def write_filtered_links(self, task_id: str, links: list[dict]) -> None:
         self.get_task(task_id)
         self._atomic_write_json(self._paths(task_id)["filtered_links"], links)
+
+    def read_runs(self, task_id: str) -> list[dict]:
+        self.get_task(task_id)
+        data = self._read_json(self._paths(task_id)["runs"], [])
+        return [dict(item) for item in data if isinstance(item, dict)] if isinstance(data, list) else []
+
+    def append_run(self, task_id: str, run: Mapping[str, object]) -> list[dict]:
+        with shared_storage_lock(), _TASK_LOCK:
+            runs = self.read_runs(task_id)
+            runs.append(dict(run))
+            self._atomic_write_json(self._paths(task_id)["runs"], runs)
+            return runs
+
+    def update_run(self, task_id: str, run_id: str, **changes: object) -> list[dict]:
+        with shared_storage_lock(), _TASK_LOCK:
+            runs = self.read_runs(task_id)
+            for run in reversed(runs):
+                if str(run.get("run_id") or "") == str(run_id or ""):
+                    run.update(changes)
+                    break
+            else:
+                raise ValueError("任务运行记录不存在。")
+            self._atomic_write_json(self._paths(task_id)["runs"], runs)
+            return runs
 
     def read_sync_result(self, task_id: str) -> dict:
         self.get_task(task_id)
@@ -452,9 +494,16 @@ class TaskRepository:
     def _paths(self, task_id: str) -> dict[str, Path]:
         task_id = self._validate_task_id(task_id)
         root = self._tasks_dir / task_id
+        # New task containers preserve their immutable original URLs in a
+        # clearly named CSV input file. Existing tasks remain readable without
+        # a migration through their historical newline-delimited links.txt.
+        links_csv = root / "links.csv"
+        legacy_links = root / "links.txt"
+        links = links_csv if links_csv.exists() or not legacy_links.exists() else legacy_links
         return {
             "root": root,
-            "links": root / "links.txt",
+            "links": links,
+            "legacy_links": legacy_links,
             "progress": root / "progress.csv",
             "results": root / "results.csv",
             "metadata": root / "task.json",
@@ -462,6 +511,7 @@ class TaskRepository:
             "modifications": root / "modifications.json",
             "review_state": root / "review_state.json",
             "filtered_links": root / "filtered_links.json",
+            "runs": root / "runs.json",
         }
 
     @staticmethod

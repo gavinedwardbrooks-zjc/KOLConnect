@@ -31,6 +31,9 @@
   let missingPublishError = "";
   let publicationObservations = new Map();
   let campaignPerformance = null;
+  let campaignBrief = null;
+  let contentSubmissions = [];
+  const submissionReviewFindings = new Map();
   let publicationRefreshPending = false;
   let googleSheetsSyncPending = false;
   let creators = [];
@@ -250,6 +253,153 @@
       row.appendChild(actionCell);
       body.appendChild(row);
     });
+  }
+
+  function renderExecutionWorkspace() {
+    const summary = element("campaign-execution-summary");
+    const body = element("campaign-execution-body");
+    if (!summary || !body) return;
+    const today = new Date().toISOString().slice(0, 10);
+    const terminal = new Set(["completed", "rejected", "cancelled"]);
+    const cards = [
+      ["今天要处理", relations.filter(item => item.due_date === today).length],
+      ["即将到期", relations.filter(item => item.due_date && item.due_date >= today && item.due_date <= new Date(Date.now() + 172800000).toISOString().slice(0, 10) && !terminal.has(item.stage)).length],
+      ["已超时", relations.filter(item => item.due_date && item.due_date < today && !terminal.has(item.stage)).length],
+      ["等待达人", relations.filter(item => item.waiting_on === "creator").length],
+      ["等待内部", relations.filter(item => item.waiting_on === "internal").length],
+      ["需要决策", relations.filter(item => item.need_my_decision).length],
+    ];
+    summary.replaceChildren(...cards.map(([label, count]) => {
+      const card = document.createElement("article");
+      const small = document.createElement("small");
+      const strong = document.createElement("strong");
+      small.textContent = label;
+      strong.textContent = String(count);
+      card.append(small, strong);
+      return card;
+    }));
+    body.replaceChildren();
+    relations.forEach(item => {
+      const row = document.createElement("tr");
+      const overdue = item.due_date && item.due_date < today && !terminal.has(item.stage);
+      const stalled = item.last_progress_at && !terminal.has(item.stage)
+        && (Date.now() - new Date(item.last_progress_at).getTime()) >= 3 * 86400000;
+      [
+        item.creator_name || "--", STAGE_LABELS[item.stage] || item.stage || "--", item.owner || "--",
+        item.next_action || "--", { creator: "达人", internal: "内部", client: "客户", self: "本人决策", none: "无" }[item.waiting_on] || "无",
+        item.due_date || "--", overdue ? "已超时" : stalled ? "已卡住" : item.need_my_decision ? "需要决策" : "正常",
+      ].forEach(value => row.appendChild(createCell(value)));
+      body.appendChild(row);
+    });
+  }
+
+  function renderBrief() {
+    const brief = campaignBrief || {};
+    ["title", "platform_guidance", "core_selling_points", "must_include", "must_avoid", "brand_requirements", "content_requirements", "publishing_requirements", "reference_notes"].forEach(field => {
+      const target = element(`campaign-brief-${field.replaceAll("_", "-")}`);
+      if (target) target.value = brief[field] || "";
+    });
+  }
+
+  function renderSubmissions() {
+    const select = element("content-submission-relation");
+    const list = element("content-submission-list");
+    if (select) {
+      select.replaceChildren();
+      relations.forEach(relation => appendOption(select, relation.id, relation.creator_name || relation.id));
+    }
+    if (!list) return;
+    list.replaceChildren();
+    contentSubmissions.forEach(item => {
+      const card = document.createElement("article");
+      card.className = "campaign-publication-performance-card";
+      const title = document.createElement("strong");
+      title.textContent = `${item.content_type} · ${item.review_status === "pending" ? "待人工审核" : item.review_status}`;
+      const reference = document.createElement("p");
+      reference.textContent = item.content_reference || "--";
+      const note = document.createElement("small");
+      note.textContent = item.review_note || "AI 一审：未配置（不影响人工审核）";
+      const actions = document.createElement("div");
+      const firstPass = document.createElement("button");
+      firstPass.className = "soft-btn compact-btn";
+      firstPass.type = "button";
+      firstPass.dataset.submissionAiReview = item.submission_id;
+      firstPass.textContent = "规则一审";
+      actions.appendChild(firstPass);
+      ["approved", "changes_requested", "rejected"].forEach(status => {
+        const button = document.createElement("button");
+        button.className = "soft-btn compact-btn";
+        button.type = "button";
+        button.dataset.submissionReview = item.submission_id;
+        button.dataset.reviewStatus = status;
+        button.textContent = { approved: "通过", changes_requested: "要求修改", rejected: "拒绝" }[status];
+        actions.appendChild(button);
+      });
+      const findings = submissionReviewFindings.get(item.submission_id);
+      if (findings) {
+        const result = document.createElement("small");
+        result.className = "hint";
+        result.textContent = findings.length
+          ? `规则一审发现 ${findings.length} 项，人工审核状态未改变。`
+          : "规则一审未发现 Brief 明确规则冲突，仍需人工审核。";
+        card.append(title, reference, note, result, actions);
+      } else {
+        card.append(title, reference, note, actions);
+      }
+      list.appendChild(card);
+    });
+  }
+
+  async function reloadBriefAndSubmissions() {
+    if (!resources || !campaignId) return;
+    const briefData = await global.KOLConnectAPI.get(`/api/campaigns/${encodeURIComponent(campaignId)}/brief`, { signal: resources.signal });
+    campaignBrief = briefData.brief || null;
+    const batches = await Promise.all(relations.map(relation => global.KOLConnectAPI.get(`/api/campaign-creators/${encodeURIComponent(relation.id)}/submissions`, { signal: resources.signal }).catch(() => ({ submissions: [] }))));
+    contentSubmissions = batches.flatMap(data => Array.isArray(data.submissions) ? data.submissions : []);
+    renderBrief();
+    renderSubmissions();
+  }
+
+  async function saveBrief() {
+    const payload = {};
+    ["title", "platform_guidance", "core_selling_points", "must_include", "must_avoid", "brand_requirements", "content_requirements", "publishing_requirements", "reference_notes"].forEach(field => {
+      payload[field] = element(`campaign-brief-${field.replaceAll("_", "-")}`)?.value.trim() || "";
+    });
+    const data = await global.KOLConnectAPI.request("PUT", `/api/campaigns/${encodeURIComponent(campaignId)}/brief`, { payload, signal: resources.signal });
+    campaignBrief = data.brief || null;
+    getApp().showSaved("Campaign Brief 已保存。");
+  }
+
+  async function createSubmission() {
+    const relationId = element("content-submission-relation")?.value;
+    if (!relationId) return;
+    await global.KOLConnectAPI.post(`/api/campaign-creators/${encodeURIComponent(relationId)}/submissions`, {
+      content_type: element("content-submission-type")?.value,
+      content_reference: element("content-submission-reference")?.value.trim() || "",
+      source: "manual",
+    }, { signal: resources.signal });
+    element("content-submission-reference").value = "";
+    await reloadBriefAndSubmissions();
+  }
+
+  async function reviewSubmission(event) {
+    const firstPass = event.target?.closest?.("[data-submission-ai-review]");
+    if (firstPass) {
+      const result = await global.KOLConnectAPI.post(
+        `/api/content-submissions/${encodeURIComponent(firstPass.dataset.submissionAiReview)}/ai-review`,
+        {}, { signal: resources.signal },
+      );
+      submissionReviewFindings.set(firstPass.dataset.submissionAiReview, Array.isArray(result.findings) ? result.findings : []);
+      renderSubmissions();
+      return;
+    }
+    const button = event.target?.closest?.("[data-submission-review]");
+    if (!button) return;
+    await global.KOLConnectAPI.patch(`/api/content-submissions/${encodeURIComponent(button.dataset.submissionReview)}/review`, {
+      review_status: button.dataset.reviewStatus,
+      review_note: "",
+    }, { signal: resources.signal });
+    await reloadBriefAndSubmissions();
   }
 
   function renderMissingPublishLinks() {
@@ -497,6 +647,7 @@
     } finally {
       publicationRefreshPending = false;
       renderPublicationPerformance();
+      await reloadBriefAndSubmissions();
     }
   }
 
@@ -579,9 +730,11 @@
       if (isArchived()) closeCreatorForm();
       renderOverview();
       renderRelations();
+      renderExecutionWorkspace();
       renderMissingPublishLinks();
       renderCampaignPerformanceAnalytics();
       renderPublicationPerformance();
+      await reloadBriefAndSubmissions();
       setDetailState("loaded");
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
@@ -778,6 +931,16 @@
     element("campaign-creator-comments").value = "";
     element("campaign-creator-roi").value = "";
     element("campaign-creator-performance-note").value = "";
+    const executionOwner = element("campaign-creator-execution-owner");
+    const nextAction = element("campaign-creator-next-action");
+    const dueDate = element("campaign-creator-due-date");
+    const waitingOn = element("campaign-creator-waiting-on");
+    const decision = element("campaign-creator-need-my-decision");
+    if (executionOwner) executionOwner.value = "";
+    if (nextAction) nextAction.value = "";
+    if (dueDate) dueDate.value = "";
+    if (waitingOn) waitingOn.value = "none";
+    if (decision) decision.checked = false;
     element("campaign-creator-form-error").hidden = true;
     element("campaign-creator-form-error").textContent = "";
   }
@@ -803,7 +966,8 @@
   }
 
   function assignFormValue(id, value) {
-    element(id).value = value === "" || value == null ? "" : String(value);
+    const target = element(id);
+    if (target) target.value = value === "" || value == null ? "" : String(value);
   }
 
   function updateStructuredQuoteTotal() {
@@ -964,6 +1128,12 @@
     assignFormValue("campaign-creator-comments", relation.comments);
     assignFormValue("campaign-creator-roi", relation.roi);
     assignFormValue("campaign-creator-performance-note", relation.performance_note);
+    assignFormValue("campaign-creator-execution-owner", relation.owner);
+    assignFormValue("campaign-creator-next-action", relation.next_action);
+    assignFormValue("campaign-creator-due-date", relation.due_date);
+    assignFormValue("campaign-creator-waiting-on", relation.waiting_on || "none");
+    const decision = element("campaign-creator-need-my-decision");
+    if (decision) decision.checked = Boolean(relation.need_my_decision);
     element("campaign-creator-form-card").hidden = false;
     await loadAccounts(
       relation.creator_id,
@@ -1005,6 +1175,17 @@
     };
   }
 
+  function executionPayload() {
+    return {
+      stage: element("campaign-creator-stage").value || "pending_contact",
+      owner: element("campaign-creator-execution-owner")?.value.trim() || "",
+      next_action: element("campaign-creator-next-action")?.value.trim() || "",
+      due_date: element("campaign-creator-due-date")?.value || "",
+      waiting_on: element("campaign-creator-waiting-on")?.value || "none",
+      need_my_decision: Boolean(element("campaign-creator-need-my-decision")?.checked),
+    };
+  }
+
   function setSaving(value) {
     saving = value;
     const button = element("campaign-creator-form-save");
@@ -1023,15 +1204,16 @@
 
     setSaving(true);
     try {
+      let savedRelation;
       if (editingRelationId) {
-        await global.KOLConnectAPI.patch(
+        savedRelation = await global.KOLConnectAPI.patch(
           `/api/campaign-creators/${encodeURIComponent(editingRelationId)}`,
           payload,
           { signal: resources.signal },
         );
         getApp().showSaved("达人合作记录已更新。");
       } else {
-        await global.KOLConnectAPI.post(
+        savedRelation = await global.KOLConnectAPI.post(
           `/api/campaigns/${encodeURIComponent(campaignId)}/creators`,
           { ...payload, creator_id: element("campaign-creator-id").value },
           { signal: resources.signal },
@@ -1131,6 +1313,13 @@
             : `Google Sheets 报告同步失败：${result.error || result.status || "UNKNOWN"}`,
         );
       }
+      const relationId = String(savedRelation?.campaign_creator?.id || editingRelationId || "");
+      if (relationId) {
+        await global.KOLConnectAPI.patch(
+          `/api/campaign-creators/${encodeURIComponent(relationId)}/execution`,
+          executionPayload(), { signal: resources.signal },
+        );
+      }
       const detail = (result.worksheets || [])
         .map(item => `${item.worksheet}: ${item.row_count ?? 0} 行`).join("；");
       getApp().showSaved(`Google Sheets 报告同步成功。${detail}`);
@@ -1160,6 +1349,10 @@
     if (target) resources.listen(target, type, listener);
   }
 
+  function handleError(error) {
+    if (error?.name !== "AbortError") getApp().showError(error);
+  }
+
   const campaignDetailPage = {
     async load(context) {
       resources?.cleanup();
@@ -1172,6 +1365,9 @@
       missingPublishError = "";
       publicationObservations = new Map();
       campaignPerformance = null;
+      campaignBrief = null;
+      contentSubmissions = [];
+      submissionReviewFindings.clear();
       publicationRefreshPending = false;
       googleSheetsSyncPending = false;
       creators = [];
@@ -1203,6 +1399,9 @@
       listen("campaign-publication-performance-list", "click", handlePublicationPerformanceClick);
       listen("campaign-publications-refresh-all", "click", refreshAllPublications);
       listen("campaign-creator-list-body", "click", handleListAction);
+      listen("campaign-brief-save", "click", () => saveBrief().catch(handleError));
+      listen("content-submission-create", "click", () => createSubmission().catch(handleError));
+      listen("content-submission-list", "click", event => reviewSubmission(event).catch(handleError));
       if (document?.addEventListener) resources.listen(document, "click", handleAccountPickerClickOutside);
     },
 
@@ -1220,6 +1419,7 @@
       missingPublishLinks = [];
       publicationObservations = new Map();
       campaignPerformance = null;
+      submissionReviewFindings.clear();
       publicationRefreshPending = false;
       creators = [];
       creatorsLoaded = false;

@@ -80,6 +80,7 @@ class SQLiteCampaignCreatorRepository(CampaignCreatorRepository):
             "quote_unit_amount", "quote_quantity", "quote_unit", "creator_quote",
             "cost", "cost_currency",
             "views", "likes", "comments", "roi",
+            "next_action", "due_date", "waiting_on", "last_progress_at", "need_my_decision",
         }
         if not isinstance(payload, dict) or not set(payload).issubset(scalar_fields):
             return super().updateCampaignCreator(record_id, payload)

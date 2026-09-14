@@ -60,6 +60,7 @@ def handle(handler, request: dict, context: dict) -> bool:
                     "spreadsheet_id": client_state.get("google_sheets", {}).get("spreadsheet_id", ""),
                     **services["google_sheets_client"]().status(),
                 },
+                "fx": services["fx"].list_rates(),
                 "creator_library": client_state.get("creator_library", {}),
                 "mail": client_state["mail"],
             }
@@ -87,12 +88,16 @@ def handle(handler, request: dict, context: dict) -> bool:
         return True
 
     if method != "POST":
+        if method == "GET" and path == "/api/settings/fx":
+            handler._json({"ok": True, **services["fx"].list_rates()})
+            return True
         return False
 
     settings_paths = {
         "/api/settings/ui", "/api/settings/profiles", "/api/settings/accounts",
         "/api/account/open", "/api/settings/feishu", "/api/settings/mail",
         "/api/settings/google-sheets",
+        "/api/settings/fx",
         "/api/settings/creator-library", "/api/settings/creator-library/backup",
         "/api/mail/test", "/api/mail/inbox/sync",
         "/api/mail/inbox/sync-crm-replies",
@@ -140,6 +145,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             {
                 "profile": str(item.get("profile") or "").strip(),
                 "alias": str(item.get("alias") or "").strip(),
+                "note": str(item.get("note") or "").strip(),
                 "usage": str(item.get("usage") or "通用").strip() or "通用",
             }
             for item in entries
@@ -190,6 +196,13 @@ def handle(handler, request: dict, context: dict) -> bool:
         google_sheets["spreadsheet_id"] = str(payload.get("spreadsheet_id") or "").strip()
         state_access["normalize_and_save"]()
         handler._ok()
+        return True
+
+    if path == "/api/settings/fx":
+        try:
+            handler._json({"ok": True, **services["fx"].save_rates(payload.get("rates"))})
+        except ValueError as exc:
+            handler._repository_error(exc)
         return True
 
     # POST /api/settings/mail → 保存邮件配置；{"ok": true}

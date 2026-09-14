@@ -30,6 +30,7 @@
         <button class="nav-btn nav-sub" data-page="products" data-primary="mail">产品</button>
         <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail">Agency</button>
         <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign</button>
+        <button class="nav-btn nav-sub" data-page="campaign-execution" data-primary="mail">执行看板</button>
         <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件</button>
         <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">Chrome 账号</button>
         <button class="nav-btn nav-sub" data-page="mail-accounts" data-primary="settings">邮箱账户</button>
@@ -729,6 +730,7 @@
               <label class="field"><span>粉丝数</span><input id="creator-edit-followers"></label>
               <label class="field"><span>国家/地区</span><input id="creator-edit-country"></label>
               <label class="field"><span>语言</span><input id="creator-edit-language"></label>
+              <label class="field"><span>WhatsApp</span><input id="creator-edit-whatsapp" placeholder="可留空"></label>
               <label class="field"><span>内容类型</span><input id="creator-edit-content-category"></label>
               <label class="field"><span>Agency</span><select id="creator-edit-agency"><option value="">No Agency</option></select></label>
             </div>
@@ -874,8 +876,12 @@
               <select id="review-task-select"></select>
             </label>
             <label class="field review-search-field">
-              <span data-i18n="reviewSearch">搜索平台、达人名称或邮箱</span>
-              <input id="review-search" type="search" data-i18n-placeholder="reviewSearch" placeholder="搜索平台、达人名称或邮箱">
+              <span data-i18n="reviewSearch">搜索平台、账号名或邮箱</span>
+              <input id="review-search" type="search" data-i18n-placeholder="reviewSearch" placeholder="搜索平台、账号名或邮箱">
+            </label>
+            <label class="field review-page-size-field">
+              <span>结果筛选</span>
+              <select id="review-status-filter"><option value="">全部</option><option value="attention">需要处理</option><option value="failed">获取失败</option></select>
             </label>
             <label class="field review-page-size-field">
               <span data-i18n="reviewPageSize">每页条数</span>
@@ -892,18 +898,6 @@
             </div>
           </div>
           <p class="hint" id="review-summary">请选择一个已有任务。</p>
-        </div>
-
-        <div class="section-card review-queue" id="review-queue" hidden>
-          <div class="creator-analysis-heading">
-            <div>
-              <h2>审核队列</h2>
-              <p class="hint" id="review-queue-progress"></p>
-            </div>
-            <span class="creator-analysis-level" id="review-queue-state"></span>
-          </div>
-          <div id="review-queue-current"></div>
-          <div class="action-row" id="review-queue-actions"></div>
         </div>
 
         <div class="section-card creator-analysis-card" id="creator-analysis-panel" hidden>
@@ -941,7 +935,7 @@
                   <th>抓取状态</th>
                   <th data-i18n="reviewLatestDate">最近发布日期</th>
                   <th>记录状态</th>
-                  <th data-i18n="reviewName">达人名称</th>
+                  <th>账号名</th>
                   <th data-i18n="reviewEmail">邮箱</th>
                   <th data-i18n="reviewFollowerCount">粉丝数</th>
                   <th>WhatsApp</th>
@@ -1051,14 +1045,15 @@
       <section class="page workspace-narrow" data-page="accounts">
         <div class="page-header">
           <h1 data-i18n="accountsTitle">Chrome 账号</h1>
-          <p data-i18n="accountsSubtitle">管理用于达人抓取的 Chrome Profile 和用途。</p>
+          <p>管理用于达人抓取的 Chrome Profile 配置；删除配置不会删除浏览器数据。</p>
         </div>
 
         <div class="section-card">
-          <div class="section-title" data-i18n="profilesTitle">Chrome Profile</div>
+          <div class="section-title">Chrome Profile 配置</div>
           <div class="action-row">
-            <button class="soft-btn" id="accounts-refresh" data-i18n="refreshProfiles">刷新 Profile</button>
-            <button class="primary-btn" id="accounts-save" data-i18n="saveAccounts">保存账号配置</button>
+            <button class="soft-btn" id="accounts-refresh">刷新 Chrome 账号</button>
+            <button class="primary-btn" id="accounts-add">+ 添加账号配置</button>
+            <button class="primary-btn" id="accounts-save">保存账号配置</button>
           </div>
           <div id="accounts-list" class="stack-list"></div>
         </div>
@@ -1387,6 +1382,45 @@
         </div>
       </section>
 
+      <section class="page" data-page="campaign-execution">
+        <div class="page-header">
+          <div>
+            <p class="eyebrow">CAMPAIGN EXECUTION</p>
+            <h1>执行看板</h1>
+            <p>按截止时间、等待对象和决策需求聚合当前合作事项。</p>
+          </div>
+        </div>
+        <p class="form-message" id="campaign-execution-error" hidden></p>
+        <div class="section-card">
+          <div class="campaign-detail-section-heading"><div><h2>今天要处理</h2></div></div>
+          <div id="campaign-execution-today" class="campaign-publication-performance-list"></div>
+        </div>
+        <div class="section-card">
+          <div class="campaign-detail-section-heading"><div><h2>即将到期</h2></div></div>
+          <div id="campaign-execution-due-soon" class="campaign-publication-performance-list"></div>
+        </div>
+        <div class="section-card">
+          <div class="campaign-detail-section-heading"><div><h2>已超时</h2></div></div>
+          <div id="campaign-execution-overdue" class="campaign-publication-performance-list"></div>
+        </div>
+        <div class="section-card">
+          <div class="campaign-detail-section-heading"><div><h2>长时间未推进</h2></div></div>
+          <div id="campaign-execution-stalled" class="campaign-publication-performance-list"></div>
+        </div>
+        <div class="section-card">
+          <div class="campaign-detail-section-heading"><div><h2>等待达人反馈</h2></div></div>
+          <div id="campaign-execution-waiting-creator" class="campaign-publication-performance-list"></div>
+        </div>
+        <div class="section-card">
+          <div class="campaign-detail-section-heading"><div><h2>等待内部处理</h2></div></div>
+          <div id="campaign-execution-waiting-internal" class="campaign-publication-performance-list"></div>
+        </div>
+        <div class="section-card">
+          <div class="campaign-detail-section-heading"><div><h2>需要我决策</h2></div></div>
+          <div id="campaign-execution-need-my-decision" class="campaign-publication-performance-list"></div>
+        </div>
+      </section>
+
       <section class="page" data-page="campaign-detail">
         <div class="page-header campaign-detail-heading">
           <div>
@@ -1559,6 +1593,14 @@
                 </div>
 
                 <div class="campaign-form-subsection" data-campaign-section="execution-data">
+                  <h3>执行管理</h3>
+                  <div class="form-grid three">
+                    <label class="field"><span>负责人</span><input id="campaign-creator-execution-owner" type="text"></label>
+                    <label class="field"><span>下一步动作</span><input id="campaign-creator-next-action" type="text"></label>
+                    <label class="field"><span>截止时间</span><input id="campaign-creator-due-date" type="date"></label>
+                    <label class="field"><span>等待对象</span><select id="campaign-creator-waiting-on"><option value="none">无</option><option value="creator">达人</option><option value="internal">内部</option><option value="client">客户</option><option value="self">本人决策</option></select></label>
+                    <label class="checkbox-field"><input id="campaign-creator-need-my-decision" type="checkbox"><span>需要我决策</span></label>
+                  </div>
                   <h3>实际发布内容</h3>
                   <p class="hint">实际发布账号和时间独立于计划；未知信息可留空。</p>
                   <div id="campaign-publication-list" class="campaign-publication-list"></div>
@@ -1611,6 +1653,41 @@
                 <tbody id="campaign-creator-list-body"></tbody>
               </table>
             </div>
+          </section>
+
+          <section class="section-card campaign-detail-section" data-campaign-section="execution-workspace">
+            <div class="campaign-detail-section-heading"><div><p class="eyebrow">EXECUTION WORKSPACE</p><h2>执行工作台</h2></div></div>
+            <p class="hint">基于 CampaignCreator 执行字段生成；不会创建额外业务记录。</p>
+            <div class="campaign-performance-summary" id="campaign-execution-summary"></div>
+            <div class="review-table-wrap"><table class="review-table"><thead><tr><th>达人</th><th>阶段</th><th>负责人</th><th>下一步</th><th>等待对象</th><th>截止</th><th>状态</th></tr></thead><tbody id="campaign-execution-body"></tbody></table></div>
+          </section>
+
+          <section class="section-card campaign-detail-section" data-campaign-section="brief">
+            <div class="campaign-detail-section-heading"><div><p class="eyebrow">CAMPAIGN BRIEF</p><h2>Campaign Brief</h2></div></div>
+            <div class="form-grid two">
+              <label class="field"><span>Brief 标题</span><input id="campaign-brief-title" type="text"></label>
+              <label class="field"><span>平台指引</span><input id="campaign-brief-platform-guidance" type="text"></label>
+              <label class="field"><span>核心卖点</span><textarea id="campaign-brief-core-selling-points" rows="3"></textarea></label>
+              <label class="field"><span>必须包含</span><textarea id="campaign-brief-must-include" rows="3"></textarea></label>
+              <label class="field"><span>禁止表达</span><textarea id="campaign-brief-must-avoid" rows="3"></textarea></label>
+              <label class="field"><span>品牌要求</span><textarea id="campaign-brief-brand-requirements" rows="3"></textarea></label>
+              <label class="field"><span>内容要求</span><textarea id="campaign-brief-content-requirements" rows="3"></textarea></label>
+              <label class="field"><span>发布要求</span><textarea id="campaign-brief-publishing-requirements" rows="3"></textarea></label>
+              <label class="field"><span>参考 / 备注</span><textarea id="campaign-brief-reference-notes" rows="3"></textarea></label>
+            </div>
+            <div class="action-row"><button class="primary-btn" id="campaign-brief-save" type="button">保存 Brief</button></div>
+          </section>
+
+          <section class="section-card campaign-detail-section" data-campaign-section="content-review">
+            <div class="campaign-detail-section-heading"><div><p class="eyebrow">CONTENT REVIEW</p><h2>内容提交与人工审核</h2></div></div>
+            <p class="hint">AI 一审为未来可选辅助，人工审核始终是最终状态。</p>
+            <div class="form-grid three">
+              <label class="field"><span>合作达人</span><select id="content-submission-relation"></select></label>
+              <label class="field"><span>内容类型</span><select id="content-submission-type"><option value="script">脚本</option><option value="copy">文案</option><option value="video_draft">视频审核稿</option><option value="other">其他</option></select></label>
+              <label class="field"><span>内容 / 文件引用</span><input id="content-submission-reference" type="text"></label>
+            </div>
+            <div class="action-row"><button class="secondary-btn" id="content-submission-create" type="button">提交审核内容</button></div>
+            <div id="content-submission-list" class="campaign-publication-performance-list"></div>
           </section>
         </div>
       </section>
@@ -1753,6 +1830,19 @@
           <div class="action-row">
             <button class="primary-btn" id="creator-library-save-config">保存达人库文件设置</button>
           </div>
+        </div>
+
+        <div class="section-card" id="fx-settings-card">
+          <div class="section-title">汇率设置</div>
+          <p class="hint">基准货币：USD。手动输入规则为 1 USD = X 外币；原始金额和币种不会被改写。</p>
+          <div class="form-grid two" id="fx-rate-fields"></div>
+          <div class="action-row"><button class="primary-btn" id="fx-save" type="button">保存并更新</button></div>
+          <div class="section-title">快速换算</div>
+          <div class="form-grid two">
+            <label class="field"><span>金额</span><input id="fx-calculator-amount" type="number" step="any"></label>
+            <label class="field"><span>币种</span><select id="fx-calculator-currency"></select></label>
+          </div>
+          <p class="hint" id="fx-calculator-result">输入金额和币种以换算 USD。</p>
         </div>
 
         <div class="section-card creator-library-backup-card">
@@ -1921,8 +2011,9 @@
   <script src="pages/creator-library-detail.js"></script>
   <script src="pages/products.js"></script>
   <script src="pages/agencies.js"></script>
-  <script src="pages/campaigns.js"></script>
-  <script src="pages/campaign-detail.js"></script>
+<script src="pages/campaigns.js"></script>
+<script src="pages/campaign-execution.js"></script>
+<script src="pages/campaign-detail.js"></script>
   <script src="pages/settings.js"></script>
 </body>
 </html>

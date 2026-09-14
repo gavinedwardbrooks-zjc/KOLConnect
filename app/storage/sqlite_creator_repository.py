@@ -121,7 +121,7 @@ class SQLiteCreatorRepository(CreatorRepository):
             raise ValueError("缺少可更新的达人资料。")
         allowed = {
             "creator_name", "profile_url", "followers", "country", "language",
-            "content_category", "bio", "agency_id", "archived_at",
+            "content_category", "bio", "whatsapp", "agency_id", "archived_at",
         }
         unknown = set(payload) - allowed
         if unknown:
@@ -167,7 +167,7 @@ class SQLiteCreatorRepository(CreatorRepository):
                 raw = str(payload.get("followers") or "").strip()
                 updates["followers"] = _value("followers", raw)
                 analysis_creator["followers"] = crm["followers"] = raw
-            for field in ("country", "language", "bio"):
+            for field in ("country", "language", "bio", "whatsapp"):
                 if field in payload:
                     value = str(payload.get(field) or "").strip()
                     updates[field] = value or None
@@ -237,6 +237,7 @@ class SQLiteCreatorRepository(CreatorRepository):
             "profile_url": str(updated_row.get("profile_url") or ""),
             "followers": str(updated_row.get("followers") or ""),
             "content_category": str(updated_row.get("content_category") or ""),
+            "whatsapp": str(updated_row.get("whatsapp") or ""),
             "bio": str(updated_row.get("bio") or crm.get("bio") or ""),
             "agency_id": str(updated_row.get("agency_id") or ""),
             "archived_at": updated_row.get("archived_at") or None,

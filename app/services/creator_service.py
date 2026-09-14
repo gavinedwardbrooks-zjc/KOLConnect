@@ -49,6 +49,7 @@ REVIEW_CSV_FIELDS = (
 )
 REVIEW_EDITABLE_FIELDS = {
     scraper_module.FIELD_NAME,
+    scraper_module.FIELD_ACCOUNT_NAME,
     scraper_module.FIELD_EMAIL,
     scraper_module.FIELD_FOLLOWER_COUNT,
     REVIEW_FIELD_WHATSAPP,
@@ -947,11 +948,6 @@ class CreatorService:
         if unknown_fields:
             raise ValueError(f"不允许修改字段：{', '.join(sorted(unknown_fields))}")
 
-        final_name = str(
-            fields.get(scraper_module.FIELD_NAME, row.get(scraper_module.FIELD_NAME) or "")
-        ).strip()
-        if not final_name:
-            raise ValueError("达人名称不能为空。")
         final_email = str(
             fields.get(scraper_module.FIELD_EMAIL, row.get(scraper_module.FIELD_EMAIL) or "")
         ).strip()
@@ -981,7 +977,8 @@ class CreatorService:
 
         normalized: dict[str, str] = {}
         for field, value in (
-            (scraper_module.FIELD_NAME, final_name),
+            (scraper_module.FIELD_NAME, str(fields.get(scraper_module.FIELD_NAME) or "").strip()),
+            (scraper_module.FIELD_ACCOUNT_NAME, str(fields.get(scraper_module.FIELD_ACCOUNT_NAME) or "").strip()),
             (scraper_module.FIELD_EMAIL, final_email),
             (scraper_module.FIELD_FOLLOWER_COUNT, final_followers),
             (REVIEW_FIELD_WHATSAPP, final_whatsapp),
@@ -1059,7 +1056,13 @@ class CreatorService:
                     "account_uid": scraper_module.build_creator_uid(result),
                     "platform": platform,
                     "profile_url": str(normalized.get("normalized_url") or profile_url),
-                    "creator_name": str(result.get("name") or "").strip(),
+                    # Scrapers no longer supply page-title names. Retain only
+                    # explicit/manual or historical result values here.
+                    "creator_name": str(
+                        result.get("name")
+                        or task.get("manual_creator_name")
+                        or ""
+                    ).strip(),
                     "followers": str(result.get("follower_count") or "").strip(),
                     "email": email,
                     "whatsapp": str(result.get("whatsapp") or "").strip(),
@@ -1120,9 +1123,6 @@ class CreatorService:
                 errors.append(
                     f"{reference}：抓取状态为 {scrape_status}，请重新抓取后再同步。"
                 )
-            name = str(result.get("name") or "").strip()
-            if not name:
-                errors.append(f"{reference}：达人名称不能为空。")
             email_display = str(row.get(scraper_module.FIELD_EMAIL) or "").strip()
             if email_display and email_display != scraper_module.NO_EMAIL:
                 if any(char.isspace() for char in email_display):

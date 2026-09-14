@@ -65,8 +65,8 @@ function testChromeAccountLabels() {
   const html = read("webapp/index.html");
   assert.match(html, /data-page="accounts" data-primary="settings"[^>]*>Chrome 账号/);
   assert.match(html, /data-i18n="accountsTitle">Chrome 账号/);
-  assert.match(html, /管理用于达人抓取的 Chrome Profile 和用途/);
-  assert.match(html, /data-i18n="profilesTitle">Chrome Profile/);
+  assert.match(html, /管理用于达人抓取的 Chrome Profile 配置；删除配置不会删除浏览器数据/);
+  assert.match(html, /Chrome Profile 配置/);
 }
 
 testDashboardReadingOrder();

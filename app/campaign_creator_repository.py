@@ -24,7 +24,8 @@ CAMPAIGN_CREATORS_HEADERS = [
     "id", "campaign_id", "creator_id", "account_id", "account_ids", "stage", "owner",
     "quote_currency", "quote_unit_amount", "quote_quantity", "quote_unit",
     "creator_quote", "cost", "cost_currency", "publish_links", "publications", "publish_date", "planned_publish_dates", "views", "likes",
-    "comments", "roi", "performance_note", "created_at", "updated_at",
+    "comments", "roi", "performance_note", "next_action", "due_date", "waiting_on",
+    "last_progress_at", "need_my_decision", "created_at", "updated_at",
     "archived_at",
 ]
 
@@ -321,6 +322,11 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 dates, ensure_ascii=False, separators=(",", ":")
             )
             values["publish_date"] = dates[0] if dates else ""
+        for field in ("next_action", "due_date", "waiting_on", "last_progress_at"):
+            if field in payload or not existing:
+                values[field] = str(payload.get(field, existing.get(field)) or "").strip()
+        if "need_my_decision" in payload or not existing:
+            values["need_my_decision"] = bool(payload.get("need_my_decision", existing.get("need_my_decision", False)))
         return values
 
     def createCampaignCreator(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -403,7 +409,6 @@ class CampaignCreatorRepository(ExcelDataRepository):
                         str(account.get("account_id") or ""),
                     )
                 )
-
             relations_by_creator = {
                 str(row.get("creator_id") or ""): row
                 for row in self.rows(workbook["CampaignCreators"])

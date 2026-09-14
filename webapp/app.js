@@ -57,7 +57,7 @@ const I18N = {
     discoverOutputTitle: "清洗结果",
     cleanLinks: "清洗链接",
     accountsTitle: "Chrome 账号",
-    accountsSubtitle: "管理用于达人抓取的 Chrome Profile 和用途。",
+    accountsSubtitle: "配置用于达人抓取的 Chrome Profile；移除配置不会删除浏览器数据。",
     profilesTitle: "Chrome Profile",
     refreshProfiles: "刷新 Profile",
     saveAccounts: "保存账号配置",
@@ -86,7 +86,6 @@ const I18N = {
     noAccounts: "暂无账号配置",
     profile: "Profile",
     alias: "备注名",
-    usage: "用途",
     open: "打开",
   },
   en: {
@@ -147,7 +146,7 @@ const I18N = {
     discoverOutputTitle: "Normalized result",
     cleanLinks: "Normalize links",
     accountsTitle: "Account Management",
-    accountsSubtitle: "Manage profile aliases and usage.",
+    accountsSubtitle: "Configure Chrome profiles for creator capture; removing a configuration never deletes browser data.",
     profilesTitle: "Profile list",
     refreshProfiles: "Refresh profiles",
     saveAccounts: "Save account settings",
@@ -176,7 +175,6 @@ const I18N = {
     noAccounts: "No accounts",
     profile: "Profile",
     alias: "Alias",
-    usage: "Usage",
     open: "Open",
   }
 };
@@ -660,7 +658,24 @@ function renderTaskList() {
     return;
   }
 
+  const selector = document.createElement("select");
+  selector.className = "task-selector";
   state.tasks.forEach(task => {
+    selector.add(new Option(
+      `${task.name || task.id} · ${scrapeStatusLabel(task.status || "created")}`,
+      task.id, false, task.id === state.currentTaskId,
+    ));
+  });
+  selector.addEventListener("change", () => {
+    state.currentTaskId = selector.value;
+    state.currentTask = state.tasks.find(task => task.id === selector.value) || null;
+    window.localStorage.setItem("kolconnect.currentTaskId", selector.value);
+    renderCurrentTask();
+    renderTaskList();
+  });
+  wrap.appendChild(selector);
+
+  state.tasks.filter(task => task.id === state.currentTaskId).forEach(task => {
     const card = document.createElement("div");
     card.className = "task-card";
     card.classList.toggle("selected", task.id === state.currentTaskId);
@@ -709,6 +724,62 @@ function renderTaskList() {
       } catch (error) {
         showError(error);
       }
+    });
+    const platformSelect = document.createElement("select");
+    platformSelect.multiple = true;
+    platformSelect.className = "task-run-platforms";
+    (task.available_platforms || task.platforms || []).forEach(platform => {
+      const option = new Option(String(platform), String(platform));
+      option.selected = true;
+      platformSelect.add(option);
+    });
+    const run = document.createElement("button");
+    run.type = "button";
+    run.className = "mini-btn";
+    run.textContent = "抓取所选平台";
+    run.addEventListener("click", async event => {
+      event.stopPropagation();
+      const platforms = Array.from(platformSelect.selectedOptions).map(option => option.value);
+      if (!platforms.length) return showError(new Error("请选择至少一个平台。"));
+      try {
+        await apiPost("/api/scrape/start", { taskId: task.id, profile: valueOf("profile-select"), platforms });
+        await refreshScrapeStatus();
+      } catch (error) { showError(error); }
+    });
+    const copyTaskLinks = async scope => {
+      const data = await apiGet(`/api/tasks/${encodeURIComponent(task.id)}/links?scope=${scope}`);
+      return (data.links || []).join("\n");
+    };
+    const copyAll = document.createElement("button");
+    copyAll.type = "button";
+    copyAll.className = "mini-btn";
+    copyAll.textContent = "复制全部原始链接";
+    copyAll.addEventListener("click", async event => {
+      event.stopPropagation();
+      try { await navigator.clipboard.writeText(await copyTaskLinks("all")); showSaved("全部原始链接已复制。"); } catch (error) { showError(error); }
+    });
+    const copyUnfinished = document.createElement("button");
+    copyUnfinished.type = "button";
+    copyUnfinished.className = "mini-btn";
+    copyUnfinished.textContent = "复制未完成链接";
+    copyUnfinished.addEventListener("click", async event => {
+      event.stopPropagation();
+      try { await navigator.clipboard.writeText(await copyTaskLinks("unfinished")); showSaved("未完成链接已复制。"); } catch (error) { showError(error); }
+    });
+    const exportLinks = document.createElement("button");
+    exportLinks.type = "button";
+    exportLinks.className = "mini-btn";
+    exportLinks.textContent = "导出全部原始链接";
+    exportLinks.addEventListener("click", async event => {
+      event.stopPropagation();
+      try {
+        const blob = new Blob([`${await copyTaskLinks("all")}\n`], { type: "text/plain;charset=utf-8" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `${task.name || task.id}-links.txt`;
+        link.click();
+        URL.revokeObjectURL(link.href);
+      } catch (error) { showError(error); }
     });
     const remove = document.createElement("button");
     remove.type = "button";
@@ -766,7 +837,7 @@ function renderTaskList() {
       });
       actions.append(recover);
     }
-    actions.append(details, rename, remove);
+    actions.append(platformSelect, run, details, copyAll, copyUnfinished, exportLinks, rename, remove);
     head.append(name, actions);
 
     const meta = document.createElement("div");
@@ -789,6 +860,13 @@ function renderTaskList() {
       ? `${t("taskEmailFound")} ${task.email_found_count || 0} · ${t("taskEmailFailed")} ${task.email_failed_count || 0} · ${t("taskPending")} ${task.pending_links || 0} · ${task.progress || 0}%`
       : `${t("taskCompleted")} ${task.completed_links || 0} · ${t("taskFailed")} ${task.failed_links || 0} · ${t("taskPending")} ${task.pending_links || 0} · ${task.progress || 0}%`;
     card.append(head, meta, track, progress);
+    const platformProgress = document.createElement("div");
+    platformProgress.className = "task-card-progress-row";
+    platformProgress.textContent = Object.entries(task.platform_progress || {})
+      .filter(([, value]) => Number(value?.total || 0) > 0)
+      .map(([platform, value]) => `${platform} ${value.processed || 0}/${value.total || 0}，未完成 ${value.unfinished || 0}`)
+      .join(" · ");
+    if (platformProgress.textContent) card.appendChild(platformProgress);
     if (task.instagram_status === "login_required") {
       const warning = document.createElement("div");
       warning.className = "task-instagram-warning";
@@ -996,9 +1074,15 @@ function reviewField(record, field) {
 
 function reviewFilteredRecords() {
   const query = valueOf("review-search").trim().toLowerCase();
-  if (!query) return state.review.records;
-  return state.review.records.filter(record => ["平台", "达人名称", "邮箱"]
-    .some(field => reviewField(record, field).toLowerCase().includes(query)));
+  const filter = valueOf("review-status-filter");
+  return state.review.records.filter(record => {
+    const matchesQuery = !query || ["平台", "账号名", "达人名称", "邮箱"]
+      .some(field => reviewField(record, field).toLowerCase().includes(query));
+    const scrapeStatus = reviewField(record, "scrape_status");
+    const attention = reviewField(record, "review_state") === "rejected" || scrapeStatus !== "success";
+    const failed = ["failed", "missing_data", "login_required", "platform_error"].includes(scrapeStatus);
+    return matchesQuery && (!filter || (filter === "attention" && attention) || (filter === "failed" && failed));
+  });
 }
 
 function reviewCell(row, value, className = "") {
@@ -1265,7 +1349,6 @@ function renderReviewResults() {
     summary.textContent += `\n成功：${statusCounts.success} / 部分成功：${statusCounts.partial_success} / 缺少数据：${statusCounts.missing_data} / 失败：${statusCounts.failed + statusCounts.login_required + statusCounts.platform_error}`;
     summary.textContent += `\n本次抓取：${platforms}\n结果：TikTok ${counts.TikTok || 0} / Instagram ${counts.Instagram || 0} / YouTube ${counts.YouTube || 0}`;
   }
-  renderReviewQueue();
 
   visible.forEach(record => {
     const row = document.createElement("tr");
@@ -1275,7 +1358,7 @@ function renderReviewResults() {
     reviewCell(row, reviewScrapeStatusLabel(reviewField(record, "scrape_status")));
     reviewCell(row, reviewField(record, "最近发布日期"));
     reviewCell(row, reviewField(record, "状态"));
-    reviewEditableCell(row, reviewField(record, "达人名称"), "达人名称");
+    reviewCell(row, reviewField(record, "账号名") || reviewField(record, "达人名称"));
     reviewEditableCell(row, reviewField(record, "邮箱"), "邮箱");
     reviewEditableCell(row, reviewField(record, "粉丝数"), "粉丝数");
     reviewEditableCell(row, reviewField(record, "WhatsApp"), "WhatsApp");
@@ -1630,31 +1713,54 @@ function renderAccounts(accounts) {
   accounts.forEach(account => {
     const row = document.createElement("div");
     row.className = "table-row";
-    row.innerHTML = `
-      <div class="field-inline">
-        <label>${t("profile")}</label>
-        <input type="text" data-key="profile" value="${account.profile || ""}" readonly>
-      </div>
-      <div class="field-inline">
-        <label>${t("alias")}</label>
-        <input type="text" data-key="alias" value="${account.alias || ""}">
-      </div>
-      <div class="field-inline">
-        <label>${t("usage")}</label>
-        <input type="text" data-key="usage" value="${account.usage || ""}">
-      </div>
-      <button type="button" class="mini-btn" data-action="open">${t("open")}</button>
-    `;
-
-    row.querySelector('[data-action="open"]').addEventListener("click", async () => {
+    const field = (label, key, value, readOnly = false) => {
+      const wrap = document.createElement("div");
+      wrap.className = "field-inline";
+      const title = document.createElement("label");
+      title.textContent = label;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.dataset.key = key;
+      input.value = String(value || "");
+      input.readOnly = readOnly;
+      wrap.append(title, input);
+      return wrap;
+    };
+    row.append(
+      field("Chrome Profile", "profile", account.profile, true),
+      field("备注名", "alias", account.alias),
+      field("备注", "note", account.note),
+    );
+    const status = document.createElement("span");
+    status.className = "hint";
+    status.textContent = account.is_automation
+      ? "KOLConnect 独立自动化 Profile"
+      : (account.available ? "可用" : "不可用");
+    const selected = document.createElement("span");
+    selected.className = "hint";
+    selected.textContent = account.is_default ? "当前默认 Profile" : "";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "mini-btn";
+    open.textContent = "打开浏览器";
+    open.disabled = !account.available;
+    open.addEventListener("click", async () => {
       try {
         await apiPost("/api/account/open", { profile: account.profile });
+        showSaved(`已打开：${account.profile}${account.alias ? ` · ${account.alias}` : ""}`);
       } catch (error) {
         showError(error);
       }
     });
-
-    wrap.appendChild(row);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "mini-btn";
+    remove.textContent = "移除配置";
+    remove.addEventListener("click", () => {
+      if (window.confirm(`删除 ${account.profile} 的 KOLConnect 配置？不会删除 Chrome 浏览器资料。`)) row.remove();
+    });
+    row.append(status, selected, open, remove);
+    wrap.append(row);
   });
 }
 
@@ -1951,7 +2057,7 @@ function collectAccounts() {
   return Array.from(document.querySelectorAll("#accounts-list .table-row")).map(row => ({
     profile: textAreaOrInputValue(row, '[data-key="profile"]'),
     alias: textAreaOrInputValue(row, '[data-key="alias"]'),
-    usage: textAreaOrInputValue(row, '[data-key="usage"]')
+    note: textAreaOrInputValue(row, '[data-key="note"]')
   })).filter(item => item.profile);
 }
 
@@ -2134,6 +2240,10 @@ function bindEvents() {
     }
   });
   $("review-search").addEventListener("input", () => {
+    state.review.page = 1;
+    renderReviewResults();
+  });
+  $("review-status-filter").addEventListener("change", () => {
     state.review.page = 1;
     renderReviewResults();
   });
@@ -2340,6 +2450,12 @@ function bindEvents() {
   });
 
   $("accounts-refresh").addEventListener("click", loadState);
+  $("accounts-add").addEventListener("click", () => {
+    const rows = Array.from(document.querySelectorAll("#accounts-list .table-row"));
+    const candidate = rows.find(row => !textAreaOrInputValue(row, '[data-key="alias"]') && !textAreaOrInputValue(row, '[data-key="note"]'));
+    if (!candidate) return showError(new Error("所有已发现的 Chrome Profile 都已有配置。"));
+    candidate.querySelector('[data-key="alias"]')?.focus();
+  });
   $("accounts-save").addEventListener("click", async () => {
     try {
       await apiPost("/api/settings/accounts", { entries: collectAccounts() });

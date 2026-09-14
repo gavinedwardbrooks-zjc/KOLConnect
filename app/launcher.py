@@ -332,7 +332,7 @@ def run_desktop() -> None:
     desktop_file_bridge.bind_window(window)
     install_window_state_handlers(window, on_close=runtime.shutdown)
     try:
-        webview.start()
+        webview.start(icon=str(get_resource_dir() / "assets" / "KOLConnect.ico"))
     finally:
         runtime.shutdown()
 

@@ -76,6 +76,8 @@ from services.creator_hard_delete_service import CreatorHardDeleteService
 from services.creator_merge_service import CreatorMergeService
 from services.creator_library_cache import CreatorLibraryCache
 from services.campaign_creator_service import CampaignCreatorService
+from services.campaign_execution_service import CampaignExecutionService
+from services.fx_service import FxService
 from services.publication_tracking_service import PublicationTrackingService
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
@@ -218,6 +220,7 @@ DEFAULT_STATE = {
         "client_secret": "",
         "spreadsheet_id": "",
     },
+    "fx": {"rates": {}},
     "mail": {
         "accounts": [],
         "template_subject": "",
@@ -477,6 +480,7 @@ def normalize_state(raw: dict | None) -> dict:
             {
                 "profile": str(item.get("profile") or "").strip(),
                 "alias": str(item.get("alias") or "").strip(),
+                "note": str(item.get("note") or "").strip(),
                 "usage": str(item.get("usage") or "通用").strip() or "通用",
             }
             for item in raw["accounts"]["entries"]
@@ -501,6 +505,13 @@ def normalize_state(raw: dict | None) -> dict:
         google_sheets = raw["google_sheets"]
         for key in ("client_id", "client_secret", "spreadsheet_id"):
             state["google_sheets"][key] = str(google_sheets.get(key) or "").strip()
+
+    if isinstance(raw.get("fx"), dict) and isinstance(raw["fx"].get("rates"), dict):
+        state["fx"]["rates"] = {
+            str(code or "").strip().upper(): value
+            for code, value in raw["fx"]["rates"].items()
+            if isinstance(value, dict)
+        }
 
     if isinstance(raw.get("mail"), dict):
         state["mail"] = normalize_mail_state(raw["mail"])
@@ -950,7 +961,9 @@ def build_accounts_payload() -> list[dict]:
             {
                 "profile": profile,
                 "alias": saved.get("alias", ""),
-                "usage": saved.get("usage", "通用"),
+                "note": saved.get("note", ""),
+                "available": profile == AUTOMATION_PROFILE_NAME or (CHROME_USER_DATA / profile).is_dir(),
+                "is_automation": profile == AUTOMATION_PROFILE_NAME,
                 "is_default": profile == STATE["profiles"].get("selected"),
             }
         )
@@ -964,6 +977,11 @@ def start_scrape(payload: dict) -> dict:
     task_id = str(payload.get("taskId") or "").strip()
     if not task_id:
         raise RuntimeError("请选择任务。")
+    run = get_task_service().prepare_task_run(
+        task_id,
+        platforms=payload.get("platforms"),
+        profile=payload.get("profile"),
+    )
     runtime_task = get_task_service().get_runtime_task_snapshot(task_id)
     runtime_documents = get_task_service().get_runtime_documents(task_id)
     task_paths = {
@@ -1155,6 +1173,7 @@ def start_scrape(payload: dict) -> dict:
                     SCRAPE_JOB.append("任务完成。\n")
                 elif status == "failed":
                     SCRAPE_JOB.append(f"任务失败：{last_error or '结果处理失败'}\n")
+                get_task_service().finish_task_run(task_id, status=status)
             except Exception as task_error:
                 SCRAPE_JOB.append(f"\n任务状态保存失败：{task_error}\n")
                 try:
@@ -1169,7 +1188,7 @@ def start_scrape(payload: dict) -> dict:
                     SCRAPE_JOB.stop_requested = False
 
     threading.Thread(target=worker, daemon=True).start()
-    return {"task_id": task_id}
+    return {"task_id": task_id, **run}
 
 
 def _active_scrape_task() -> str:
@@ -1369,11 +1388,11 @@ def _platform_display(platforms: list[str]) -> str:
 
 
 def prepare_task_links(raw_links: list[str], selected_platforms: object = None) -> dict:
-    """Normalize once, then keep only links selected for this local task."""
+    """Normalize task input once while preserving every valid original URL."""
     platforms = task_manager.normalize_platforms(selected_platforms)
 
     platform_summary = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
-    selected_links: list[str] = []
+    normalized_links: list[str] = []
     filtered_links: list[dict] = []
     invalid_links: list[str] = []
     seen_links: set[str] = set()
@@ -1398,9 +1417,8 @@ def prepare_task_links(raw_links: list[str], selected_platforms: object = None) 
             continue
         seen_links.add(normalized_url)
         platform_summary[platform] += 1
-        if platform.lower() in platforms:
-            selected_links.append(normalized_url)
-        else:
+        normalized_links.append(normalized_url)
+        if platform.lower() not in platforms:
             filtered_links.append(
                 {
                     "url": normalized_url,
@@ -1412,8 +1430,13 @@ def prepare_task_links(raw_links: list[str], selected_platforms: object = None) 
     return {
         "target_platform": _platform_display(platforms),
         "platforms": platforms,
+        "available_platforms": [
+            platform.lower()
+            for platform, count in platform_summary.items()
+            if count
+        ],
         "platform_summary": platform_summary,
-        "normalized_links": selected_links,
+        "normalized_links": normalized_links,
         "filtered_links": filtered_links,
         "invalid_links": invalid_links,
     }
@@ -1729,6 +1752,21 @@ def get_campaign_creator_service() -> CampaignCreatorService:
         DASHBOARD_RESPONSE_CACHE.invalidate,
         get_creator_repository,
     )
+
+
+def get_campaign_execution_service() -> CampaignExecutionService:
+    def connection_factory():
+        factory = get_active_repository_factory() or _new_repository_factory()
+        store = factory.store
+        if not getattr(store, "is_sqlite_authority", False):
+            raise RuntimeError("Campaign execution requires SQLite authority.")
+        return store.factory
+
+    return CampaignExecutionService(connection_factory)
+
+
+def get_fx_service() -> FxService:
+    return FxService(lambda: STATE, lambda: save_state(STATE))
 
 
 def get_publication_tracking_service() -> PublicationTrackingService:
@@ -2594,6 +2632,8 @@ class Handler(BaseHTTPRequestHandler):
                 "feishu_delete_reconciliation": get_feishu_delete_reconciliation_service(),
                 "feishu_chat": get_feishu_chat_transport(),
                 "campaign_creator": get_campaign_creator_service(),
+                "campaign_execution": get_campaign_execution_service(),
+                "fx": get_fx_service(),
                 "publication_tracking": get_publication_tracking_service(),
                 "task": get_task_service(),
                 "risk": get_risk_service(),

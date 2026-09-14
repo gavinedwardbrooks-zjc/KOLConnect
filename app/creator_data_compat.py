@@ -12,7 +12,14 @@ import scraper as _scraper
 
 FIELD_EMAIL = _scraper.FIELD_EMAIL
 FIELD_FOLLOWER_COUNT = _scraper.FIELD_FOLLOWER_COUNT
+FIELD_ACCOUNT_NAME = _scraper.FIELD_ACCOUNT_NAME
+FIELD_LAST_SCRAPE_TIME = _scraper.FIELD_LAST_SCRAPE_TIME
 FIELD_NAME = _scraper.FIELD_NAME
+FIELD_RETRY_COUNT = _scraper.FIELD_RETRY_COUNT
+FIELD_SCRAPE_STATUS = _scraper.FIELD_SCRAPE_STATUS
+FIELD_STATUS = _scraper.FIELD_STATUS
+FIELD_STATUS_REASON = _scraper.FIELD_STATUS_REASON
+FIELD_URL = _scraper.FIELD_URL
 FOUR_TABLE_ACCOUNT_FIELD_EMAIL = _scraper.FOUR_TABLE_ACCOUNT_FIELD_EMAIL
 NO_EMAIL = _scraper.NO_EMAIL
 
@@ -23,6 +30,10 @@ def build_creator_uid(*args, **kwargs):
 
 def build_result(*args, **kwargs):
     return _scraper.build_result(*args, **kwargs)
+
+
+def detect_platform(*args, **kwargs):
+    return _scraper.detect_platform(*args, **kwargs)
 
 
 def normalize_follower_count(*args, **kwargs):

@@ -178,6 +178,10 @@ class TaskManagerAdapter:
             )
         metadata_changes: dict[str, object] = {
             "status": "manual_created",
+            # `results.csv` deliberately stores account-scoped data only. Keep
+            # an explicitly entered person name in task metadata for the
+            # manual-import compatibility path.
+            "manual_creator_name": command.creator_name,
             "completed_count": 0,
             "modified_count": len(modifications),
             "last_modified_time": now if manual_values else "",
@@ -362,6 +366,8 @@ class TaskManagerAdapter:
         for task in repository.list_tasks():
             task_id = str(task.get("id") or "")
             progress = self._task_progress(task_id, int(task.get("valid_count") or 0))
+            links = repository.read_links(task_id)
+            runs = repository.read_runs(task_id)
             task_type = str(task.get("task_type") or "scrape")
             item: dict[str, object] = {
                 "id": task_id,
@@ -374,6 +380,9 @@ class TaskManagerAdapter:
                     task.get("platforms"),
                     task.get("platform") or task.get("target_platform"),
                 ),
+                "available_platforms": list(task.get("available_platforms") or []),
+                "platform_progress": self._platform_progress(repository, task_id, links),
+                "latest_run": runs[-1] if runs else {},
                 "status": str(task.get("status") or "created"),
                 "heartbeat_time": str(task.get("heartbeat_time") or ""),
                 "heartbeat_interval": int(
@@ -430,8 +439,18 @@ class TaskManagerAdapter:
                 {"index": index, "url": link, "platform": platform, "status": status}
             )
         progress = self._task_progress(task_id, len(links))
+        platform_progress = self._platform_progress(repository, task_id, links)
         return TaskReadResult(
-            {"task": {**task, **progress, "total_links": len(links)}, "links": records}
+            {
+                "task": {
+                    **task,
+                    **progress,
+                    "total_links": len(links),
+                    "platform_progress": platform_progress,
+                    "runs": repository.read_runs(task_id),
+                },
+                "links": records,
+            }
         )
 
     def get_task_results(self, task_id: str) -> TaskReadResult:
@@ -449,7 +468,9 @@ class TaskManagerAdapter:
                     "records": [],
                 }
             )
-        rows = repository.read_results(task_id)
+        rows = self._merge_result_diagnostics(
+            repository.read_results(task_id), repository.read_progress(task_id)
+        )
         review_rows = repository.read_review_state(task_id).get("rows", {})
         records = [self._review_record(row, review_rows) for row in rows]
         platform_results = {platform: 0 for platform in _PLATFORMS}
@@ -558,15 +579,17 @@ class TaskManagerAdapter:
     ) -> TaskReadResult:
         repository = self._repository()
         task = repository.get_task(task_id)
-        rows = repository.read_results(task_id)
+        rows = self._merge_result_diagnostics(
+            repository.read_results(task_id), repository.read_progress(task_id)
+        )
         requested = set(command.account_uids)
         retry_rows: list[dict[str, str]] = []
         for row in rows:
             result = scraper_module.row_to_result(row)
-            scrape_status = str(
-                result.get("scrape_status") or "success"
+            source_status = str(
+                row.get(scraper_module.FIELD_SCRAPE_STATUS) or ""
             ).strip()
-            if scrape_status not in _RETRYABLE_SCRAPE_STATUSES:
+            if source_status not in _RETRYABLE_SCRAPE_STATUSES:
                 continue
             account_uid = scraper_module.build_creator_uid(result)
             if requested and account_uid not in requested:
@@ -583,6 +606,11 @@ class TaskManagerAdapter:
         links = list(dict.fromkeys(link for link in links if link))
         if not links:
             raise ValueError("失败记录缺少有效主页链接。")
+        retry_platforms = list(dict.fromkeys(
+            str(scraper_module.detect_platform(url) or "").lower()
+            for url in links
+            if str(scraper_module.detect_platform(url) or "").strip()
+        ))
 
         next_retry_round = max(0, int(task.get("retry_round") or 0)) + 1
         retry_task = repository.update_task(
@@ -599,6 +627,7 @@ class TaskManagerAdapter:
                 "task": retry_task,
                 "retried_count": len(links),
                 "retry_round": next_retry_round,
+                "retry_platforms": retry_platforms,
             }
         )
 
@@ -702,6 +731,27 @@ class TaskManagerAdapter:
             "progress": progress,
         }
 
+    @staticmethod
+    def _platform_progress(
+        repository: TaskRepository, task_id: str, links: list[str]
+    ) -> dict[str, dict[str, int]]:
+        completed = {
+            str(row.get(scraper_module.FIELD_URL) or "").strip()
+            for row in repository.read_progress(task_id)
+            if str(row.get(scraper_module.FIELD_STATUS) or "") == "完成"
+        }
+        values = {platform: {"total": 0, "processed": 0, "unfinished": 0} for platform in _PLATFORMS}
+        for link in links:
+            platform = str(scraper_module.detect_platform(link) or "")
+            if platform not in values:
+                continue
+            values[platform]["total"] += 1
+            if link in completed:
+                values[platform]["processed"] += 1
+        for item in values.values():
+            item["unfinished"] = item["total"] - item["processed"]
+        return values
+
     def _email_recheck_summary(self, task_id: str) -> dict[str, int]:
         repository = self._repository()
         try:
@@ -780,14 +830,27 @@ class TaskManagerAdapter:
         state = str(stored.get("review_state") or "pending")
         if state not in {"pending", "approved", "rejected"}:
             state = "pending"
-        scrape_status = str(result.get("scrape_status") or "success")
         # The read-model status is reclassified for data usability. Review
         # eligibility must retain the CSV's original access outcome instead.
         source_scrape_status = str(
             row.get(scraper_module.FIELD_SCRAPE_STATUS) or "success"
         ).strip()
+        # New clean results.csv rows carry the account-name column, so their
+        # operational outcome is projected from progress.csv. Historical rows
+        # retain their established usability classification.
+        scrape_status = (
+            source_scrape_status
+            if scraper_module.FIELD_ACCOUNT_NAME in row
+            and source_scrape_status in _RETRYABLE_SCRAPE_STATUSES
+            else str(result.get("scrape_status") or "success")
+        )
         return {
             "account_uid": account_uid,
+            scraper_module.FIELD_ACCOUNT_NAME: str(
+                row.get(scraper_module.FIELD_ACCOUNT_NAME)
+                or result.get("account_name")
+                or ""
+            ),
             scraper_module.FIELD_NAME: str(row.get(scraper_module.FIELD_NAME) or ""),
             scraper_module.FIELD_PLATFORM: str(
                 row.get(scraper_module.FIELD_PLATFORM) or ""
@@ -831,6 +894,38 @@ class TaskManagerAdapter:
                 row, _REVIEW_FIELD_MODIFIED_AT
             ),
         }
+
+    @staticmethod
+    def _merge_result_diagnostics(
+        result_rows: list[dict[str, str]], progress_rows: list[dict[str, str]]
+    ) -> list[dict[str, str]]:
+        """Project internal progress diagnostics into the API read model.
+
+        New results.csv files intentionally omit runtime fields. Historical
+        result files keep working because existing values win over the join.
+        """
+        diagnostics_by_url = {
+            str(row.get(scraper_module.FIELD_URL) or "").strip(): dict(row)
+            for row in progress_rows
+            if str(row.get(scraper_module.FIELD_URL) or "").strip()
+        }
+        fields = (
+            scraper_module.FIELD_SCRAPE_STATUS,
+            scraper_module.FIELD_STATUS_REASON,
+            scraper_module.FIELD_LAST_SCRAPE_TIME,
+            scraper_module.FIELD_RETRY_COUNT,
+        )
+        merged: list[dict[str, str]] = []
+        for row in result_rows:
+            current = dict(row)
+            diagnostic = diagnostics_by_url.get(
+                str(current.get(scraper_module.FIELD_URL) or "").strip(), {}
+            )
+            for field in fields:
+                if not str(current.get(field) or ""):
+                    current[field] = str(diagnostic.get(field) or "")
+            merged.append(current)
+        return merged
 
     @staticmethod
     def _snapshot(task: Mapping[str, object]) -> TaskSnapshot:

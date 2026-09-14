@@ -43,7 +43,14 @@ def map_task_rows_for_creator_library(
                 account_uid=scraper_module.build_creator_uid(result),
                 platform=platform,
                 profile_url=str(normalized.get("normalized_url") or profile_url),
-                creator_name=str(result.get("name") or "").strip(),
+                # Current scraper paths leave page-derived names blank. Keep
+                # an explicit/historical value readable, but never derive a
+                # Creator.name from page metadata in this mapper.
+                creator_name=str(
+                    result.get("name")
+                    or task.get("manual_creator_name")
+                    or ""
+                ).strip(),
                 followers=str(result.get("follower_count") or "").strip(),
                 email=email,
                 whatsapp=str(result.get("whatsapp") or "").strip(),

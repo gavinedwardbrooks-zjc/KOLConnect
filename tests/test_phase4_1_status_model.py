@@ -101,6 +101,12 @@ class ScrapeStatusModelTests(unittest.TestCase):
                 )
             )
 
+        # This fixture models rows written before the account-label column was
+        # introduced. Their historical status classification must not be
+        # silently upgraded from a URL-derived label.
+        for row in rows:
+            row.pop(scraper.FIELD_ACCOUNT_NAME, None)
+
         fieldnames, migrated, summary = migrate_scrape_status.reclassify_rows(
             list(scraper.OUTPUT_FIELDS), rows
         )

@@ -49,6 +49,8 @@ class FakeElement {
 
   closest(selector) {
     if (selector === "[data-campaign-creator-action]" && this.dataset.campaignCreatorAction) return this;
+    if (selector === "[data-submission-ai-review]" && this.dataset.submissionAiReview) return this;
+    if (selector === "[data-submission-review]" && this.dataset.submissionReview) return this;
     return this.parentElement?.closest(selector) || null;
   }
 
@@ -74,6 +76,15 @@ function findAction(node, action, recordId) {
   return null;
 }
 
+function findSubmissionAction(node, property, recordId) {
+  if (String(node.dataset[property] || "") === String(recordId)) return node;
+  for (const child of node.children) {
+    const match = findSubmissionAction(child, property, recordId);
+    if (match) return match;
+  }
+  return null;
+}
+
 async function run() {
   const ids = [
     "campaign-detail-title", "campaign-detail-subtitle", "campaign-detail-back", "campaign-detail-delete",
@@ -92,6 +103,10 @@ async function run() {
     "campaign-creator-table-wrap", "campaign-creator-list-body",
     "campaign-missing-publish-count", "campaign-missing-publish-empty",
     "campaign-missing-publish-table-wrap", "campaign-missing-publish-body",
+    "campaign-brief-title", "campaign-brief-platform-guidance", "campaign-brief-core-selling-points",
+    "campaign-brief-must-include", "campaign-brief-must-avoid", "campaign-brief-brand-requirements",
+    "campaign-brief-content-requirements", "campaign-brief-publishing-requirements", "campaign-brief-reference-notes",
+    "content-submission-relation", "content-submission-type", "content-submission-reference", "content-submission-list",
   ];
   const elements = new Map(ids.map(id => [id, new FakeElement(id)]));
   elements.get("campaign-creator-form-card").hidden = true;
@@ -180,6 +195,10 @@ async function run() {
         if (missingPublishFailure) throw new Error("optional publishing data unavailable");
         return { missing_publish_links: [] };
       }
+      if (url === "/api/campaigns/campaign_one/brief") return { brief: { title: "Launch brief", must_include: "Brand" } };
+      if (url === "/api/campaign-creators/relation_one/submissions") return {
+        submissions: [{ submission_id: "submission_one", content_type: "script", content_reference: "draft", review_status: "pending", review_note: "" }],
+      };
       if (url === "/api/creator-library") return { records: clone(creators) };
       const creatorMatch = url.match(/^\/api\/creator-library\/(.+)$/);
       if (creatorMatch) return { accounts: clone(accounts[creatorMatch[1]] || []) };
@@ -187,6 +206,9 @@ async function run() {
     },
     async post(url, payload, options = {}) {
       calls.push({ method: "POST", url, payload: clone(payload), signal: options.signal });
+      if (url === "/api/content-submissions/submission_one/ai-review") {
+        return { status: "success", human_review_status: "pending", findings: [{ finding_type: "required_missing" }] };
+      }
       relations.push({
         id: "relation_two",
         campaign_id: "campaign_one",
@@ -280,11 +302,14 @@ async function run() {
     "GET /api/campaigns/campaign_one/creators",
     "GET /api/campaigns/campaign_one/missing-publish-links",
     "GET /api/campaigns/campaign_one/performance",
+    "GET /api/campaigns/campaign_one/brief",
+    "GET /api/campaign-creators/relation_one/submissions",
   ].sort(), "initial load must use four read-only requests, including batched performance");
   assert.equal(elements.get("campaign-detail-title").textContent, "Brazil Launch");
   assert.equal(elements.get("campaign-creator-count").textContent, "1 位达人");
   assert.equal(elements.get("campaign-detail-content").hidden, false);
   assert.equal(elements.get("campaign-creator-add-open").disabled, false);
+  assert.equal(elements.get("campaign-brief-title").value, "Launch brief");
 
   missingPublishFailure = true;
   await registeredPage.load({ campaignId: "campaign_one" });
@@ -311,6 +336,11 @@ async function run() {
 
   registeredPage.bind();
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 1);
+  const firstPassButton = findSubmissionAction(elements.get("content-submission-list"), "submissionAiReview", "submission_one");
+  assert.ok(firstPassButton, "content submission should expose a rules-first-pass action");
+  await elements.get("content-submission-list").dispatch("click", { target: firstPassButton });
+  assert.ok(calls.splice(0).some(call => call.method === "POST" && call.url === "/api/content-submissions/submission_one/ai-review"));
+  assert.match(elements.get("content-submission-list").children[0].children[3].textContent, /人工审核状态未改变/);
   campaignFailure = Object.assign(new Error("server details unavailable"), { status: 500 });
   await elements.get("campaign-detail-retry").dispatch("click");
   assert.equal(elements.get("campaign-detail-error").hidden, false);

@@ -17,6 +17,7 @@
     agencies: "mail",
     "agency-detail": "mail",
     campaigns: "mail",
+    "campaign-execution": "mail",
     "campaign-detail": "mail",
     mail: "mail",
     settings: "settings",
@@ -29,6 +30,7 @@
     "task-details": "scrape",
     "agency-detail": "agencies",
     "campaign-detail": "campaigns",
+    "campaign-execution": "campaign-execution",
   });
 
   function validateLifecycle(name, page) {

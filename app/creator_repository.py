@@ -665,7 +665,7 @@ class CreatorRepository:
             raise ValueError("缺少可更新的达人资料。")
         allowed = {
             "creator_name", "profile_url", "followers", "country", "language",
-            "content_category",
+            "content_category", "whatsapp",
             "bio", "agency_id", "archived_at",
         }
         unknown = set(payload) - allowed
@@ -730,6 +730,12 @@ class CreatorRepository:
             updated["content_category"] = content_category
             analysis["content_category"] = content_category
             crm["content_category"] = content_category
+
+        if "whatsapp" in payload:
+            whatsapp = str(payload.get("whatsapp") or "").strip()
+            updated["whatsapp"] = whatsapp
+            analysis_creator["whatsapp"] = whatsapp
+            crm["whatsapp"] = whatsapp
 
         if "bio" in payload:
             bio = str(payload.get("bio") or "").strip()
@@ -810,6 +816,7 @@ class CreatorRepository:
             "profile_url": str(updated.get("profile_url") or ""),
             "followers": str(updated.get("followers") or ""),
             "content_category": str(updated.get("content_category") or ""),
+            "whatsapp": str(updated.get("whatsapp") or ""),
             "bio": str(updated.get("bio") or crm.get("bio") or analysis_creator.get("bio") or ""),
             "agency_id": str(updated.get("agency_id") or ""),
             "archived_at": updated.get("archived_at") or None,
@@ -1236,6 +1243,12 @@ class CreatorRepository:
                 "profile_url": str(crm.get("profile_url") or primary_account.get("profile_url") or creator.get("profile_url") or ""),
                 "followers": str(crm.get("followers") if "followers" in crm else creator.get("followers") or primary_account.get("followers") or snapshot.get("followers") or ""),
                 "content_category": str(crm.get("content_category") if "content_category" in crm else creator.get("content_category") or ""),
+                "whatsapp": str(
+                    creator.get("whatsapp")
+                    or crm.get("whatsapp")
+                    or analysis_creator.get("whatsapp")
+                    or ""
+                ),
                 "bio": str(
                     creator.get("bio")
                     or crm.get("bio")
@@ -1298,6 +1311,7 @@ class CreatorRepository:
             "platform": record.get("platform") or analysis_creator.get("platform") or "",
             "profile_url": record.get("profile_url") or analysis_creator.get("profile_url") or "",
             "followers": record.get("followers") or analysis_creator.get("followers") or "",
+            "whatsapp": record.get("whatsapp") or analysis_creator.get("whatsapp") or "",
             "bio": record.get("bio") if "bio" in record else analysis_creator.get("bio") or "",
         }
         analysis["content_category"] = record.get("content_category") or analysis.get("content_category") or ""

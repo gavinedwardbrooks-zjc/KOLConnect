@@ -66,6 +66,8 @@ def handle(handler, request: dict, context: dict) -> bool:
         r"/api/campaigns/([^/]+)/publications/refresh", path
     )
     campaign_performance_match = re.fullmatch(r"/api/campaigns/([^/]+)/performance", path)
+    campaign_brief_match = re.fullmatch(r"/api/campaigns/([^/]+)/brief", path)
+    execution_workspace_match = path == "/api/campaign-execution/workspace"
     # GET /api/campaigns/{campaign_id}/creators → {"ok": true, "campaign_creators": [...]}
     if method == "GET" and campaign_creators_match:
         campaign_id = campaign_creators_match.group(1)
@@ -168,6 +170,28 @@ def handle(handler, request: dict, context: dict) -> bool:
             _campaign_repository_error(handler, exc)
         return True
 
+    if method == "GET" and execution_workspace_match:
+        try:
+            handler._json({"ok": True, **context["services"]["campaign_execution"].workspace()})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "GET" and campaign_brief_match:
+        try:
+            repositories["campaign"]().getCampaign(campaign_brief_match.group(1))
+            handler._json({"ok": True, "brief": context["services"]["campaign_execution"].get_brief(campaign_brief_match.group(1))})
+        except (RuntimeError, ValueError) as exc:
+            _campaign_repository_error(handler, exc)
+        return True
+
+    if method == "PUT" and campaign_brief_match:
+        try:
+            handler._json({"ok": True, "brief": context["services"]["campaign_execution"].save_brief(campaign_brief_match.group(1), request["get_payload"]())})
+        except (RuntimeError, ValueError) as exc:
+            _campaign_repository_error(handler, exc)
+        return True
+
     # PATCH /api/products/{product_id} → {"ok": true, "product": {...}}
     if method == "PATCH" and product_match:
         payload = request["get_payload"]()
@@ -225,6 +249,52 @@ def handle(handler, request: dict, context: dict) -> bool:
         r"/api/campaign-creators/([^/]+)/publications/([^/]+)/performance", path
     )
     campaign_creator_match = re.fullmatch(r"/api/campaign-creators/([^/]+)", path)
+    campaign_creator_execution_match = re.fullmatch(r"/api/campaign-creators/([^/]+)/execution", path)
+    campaign_creator_submissions_match = re.fullmatch(r"/api/campaign-creators/([^/]+)/submissions", path)
+    submission_review_match = re.fullmatch(r"/api/content-submissions/([^/]+)/review", path)
+    submission_ai_review_match = re.fullmatch(r"/api/content-submissions/([^/]+)/ai-review", path)
+
+    if method == "GET" and campaign_creator_execution_match:
+        try:
+            handler._json({"ok": True, "execution": context["services"]["campaign_execution"].execution_for(campaign_creator_execution_match.group(1))})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "PATCH" and campaign_creator_execution_match:
+        try:
+            handler._json({"ok": True, "execution": context["services"]["campaign_execution"].update_execution(campaign_creator_execution_match.group(1), request["get_payload"]())})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "GET" and campaign_creator_submissions_match:
+        try:
+            handler._json({"ok": True, "submissions": context["services"]["campaign_execution"].list_submissions(campaign_creator_submissions_match.group(1))})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "POST" and campaign_creator_submissions_match:
+        try:
+            handler._json({"ok": True, "submission": context["services"]["campaign_execution"].create_submission(campaign_creator_submissions_match.group(1), request["get_payload"]())}, status=201)
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "PATCH" and submission_review_match:
+        try:
+            handler._json({"ok": True, "submission": context["services"]["campaign_execution"].review_submission(submission_review_match.group(1), request["get_payload"]())})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
+
+    if method == "POST" and submission_ai_review_match:
+        try:
+            handler._json({"ok": True, "ai_review": context["services"]["campaign_execution"].ai_review_submission(submission_ai_review_match.group(1))})
+        except (RuntimeError, ValueError) as exc:
+            handler._repository_error(exc)
+        return True
 
     # Actual publications belong to an existing CampaignCreator relation.
     if method == "GET" and campaign_creator_publications_match:

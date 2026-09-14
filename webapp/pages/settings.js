@@ -7,6 +7,7 @@
   let feishuChatPollGeneration = 0;
   const FEISHU_CHAT_POLL_INTERVAL_MS = 1000;
   const storageMigrationSession = `settings-${global.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+  let fxRates = [];
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -24,6 +25,7 @@
     if (currentWorkbook) {
       currentWorkbook.textContent = app.valueOf("creator-library-workbook-path").trim() || "--";
     }
+    renderFxSettings(result?.fx);
     return result;
   }
 
@@ -48,6 +50,53 @@
   function setSyncText(id, value) {
     const element = document.getElementById(id);
     if (element) element.textContent = value ?? "--";
+  }
+
+  function renderFxSettings(data) {
+    fxRates = Array.isArray(data?.rates) ? data.rates : [];
+    const fields = document.getElementById("fx-rate-fields");
+    const currencies = document.getElementById("fx-calculator-currency");
+    if (fields) {
+      fields.replaceChildren();
+      fxRates.forEach(rate => {
+        const label = document.createElement("label");
+        label.className = "field";
+        const title = document.createElement("span");
+        title.textContent = rate.currency_code === "USD" ? "USD（固定）" : `${rate.currency_code}：1 USD =`;
+        const input = document.createElement("input");
+        input.type = "number";
+        input.step = "any";
+        input.min = "0";
+        input.dataset.fxCurrency = rate.currency_code;
+        input.value = rate.rate_per_usd ?? "";
+        input.disabled = !rate.editable;
+        label.append(title, input);
+        fields.appendChild(label);
+      });
+    }
+    if (currencies) {
+      currencies.replaceChildren();
+      fxRates.forEach(rate => {
+        const option = document.createElement("option");
+        option.value = rate.currency_code;
+        option.textContent = rate.currency_code;
+        currencies.appendChild(option);
+      });
+    }
+    updateFxCalculator();
+  }
+
+  function updateFxCalculator() {
+    const output = document.getElementById("fx-calculator-result");
+    const amount = Number(document.getElementById("fx-calculator-amount")?.value);
+    const code = document.getElementById("fx-calculator-currency")?.value;
+    const rate = fxRates.find(item => item.currency_code === code)?.rate_per_usd;
+    if (!output) return;
+    if (!Number.isFinite(amount) || !rate || Number(rate) <= 0) {
+      output.textContent = "当前币种未配置有效汇率，无法换算。";
+      return;
+    }
+    output.textContent = `${amount} ${code} ≈ ${(amount / Number(rate)).toFixed(2)} USD（1 USD = ${rate} ${code}）`;
   }
 
   function renderGoogleSheetsResult(data, message = "") {
@@ -384,6 +433,25 @@
           handleError(error);
         }
       });
+
+      listen("fx-save", "click", async () => {
+        try {
+          const rates = {};
+          document.querySelectorAll("[data-fx-currency]").forEach(input => {
+            if (input.dataset.fxCurrency !== "USD") rates[input.dataset.fxCurrency] = input.value;
+          });
+          const data = await api.post("/api/settings/fx", { rates }, { signal: resources.signal });
+          renderFxSettings(data);
+          app.showSaved("汇率已保存，后续 USD 派生计算将使用新汇率。");
+        } catch (error) {
+          handleError(error);
+        }
+      });
+
+      for (const id of ["fx-calculator-amount", "fx-calculator-currency"]) {
+        listen(id, "input", updateFxCalculator);
+        listen(id, "change", updateFxCalculator);
+      }
 
       listen("system-health-run", "click", async () => {
         try {

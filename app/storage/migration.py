@@ -114,8 +114,8 @@ BASE_TABLES: tuple[tuple[str, str, str | tuple[str, ...], tuple[str, ...]], ...]
         "id", "campaign_id", "creator_id", "account_id", "stage", "owner",
         "quote_currency", "quote_unit_amount", "quote_quantity", "quote_unit",
         "creator_quote", "cost", "cost_currency",
-        "publish_date", "views", "likes", "comments", "roi", "performance_note", "created_at",
-        "updated_at", "archived_at",
+        "publish_date", "views", "likes", "comments", "roi", "performance_note", "next_action",
+        "due_date", "waiting_on", "last_progress_at", "need_my_decision", "created_at", "updated_at", "archived_at",
     )),
     ("_AnalysisData", "analysis_data", "creator_id", (
         "creator_id", "task_id", "account_uid", "status_updated_at", "analysis_json", "source",

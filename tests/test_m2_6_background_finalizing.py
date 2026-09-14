@@ -104,7 +104,7 @@ class BackgroundFinalizingBoundaryTests(unittest.TestCase):
         self.assertEqual(stored["creator_library_account_ids"], ["account-1"])
         self.assertEqual(creator_port.import_calls, 1)
         item = creator_port.commands[0].items[0]
-        self.assertEqual(item.creator_name, "Finalizing Demo")
+        self.assertEqual(item.creator_name, "")
         self.assertEqual(item.email, "finalizing@example.test")
 
     def test_creator_import_failure_marks_task_failed(self):

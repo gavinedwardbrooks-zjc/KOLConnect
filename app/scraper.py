@@ -97,6 +97,9 @@ PROGRESS_FILE = "progress.csv"
 NO_EMAIL = "未抓取到"
 FIELD_URL = "达人链接"
 FIELD_PLATFORM = "平台"
+# Account identity is intentionally separate from the optional person-level
+# Creator.name used by the local library.
+FIELD_ACCOUNT_NAME = "账号名"
 FIELD_NAME = "达人名称"
 FIELD_EMAIL = "邮箱"
 FIELD_EMAIL_SOURCE = "邮箱来源"
@@ -126,6 +129,7 @@ REVIEW_FIELDS = [
 PROGRESS_FIELDS = [
     FIELD_URL,
     FIELD_PLATFORM,
+    FIELD_ACCOUNT_NAME,
     FIELD_NAME,
     FIELD_EMAIL,
     FIELD_EMAIL_SOURCE,
@@ -143,7 +147,7 @@ PROGRESS_FIELDS = [
 OUTPUT_FIELDS = [
     FIELD_URL,
     FIELD_PLATFORM,
-    FIELD_NAME,
+    FIELD_ACCOUNT_NAME,
     FIELD_EMAIL,
     FIELD_EMAIL_SOURCE,
     FIELD_EXTERNAL_LINK,
@@ -151,10 +155,6 @@ OUTPUT_FIELDS = [
     FIELD_LATEST_DATE,
     FIELD_FOLLOWER_COUNT,
     FIELD_STATUS,
-    FIELD_SCRAPE_STATUS,
-    FIELD_STATUS_REASON,
-    FIELD_LAST_SCRAPE_TIME,
-    FIELD_RETRY_COUNT,
     *REVIEW_FIELDS,
 ]
 
@@ -742,6 +742,7 @@ def finalize_scrape_status(
     platform: str = "",
     profile_url: str = "",
     name: str = "",
+    account_name: str = "",
     emails: list[str] | None = None,
     follower_count: str = "",
     whatsapp: str = "",
@@ -750,12 +751,14 @@ def finalize_scrape_status(
 ) -> str:
     """Classify the usability of extracted creator data, not the transport outcome."""
     del latest_publish_date  # Publishing dates alone cannot establish creator identity.
+    normalized_access_status = str(access_status or "").strip()
     normalized_platform = str(platform or "").strip()
     normalized_url = str(profile_url or "").strip()
     normalized_name = str(name or "").strip()
+    normalized_account_name = str(account_name or "").strip()
     normalized_whatsapp = str(whatsapp or "").strip()
     has_email = bool(clean_email_candidates(emails or []))
-    has_identity = bool(normalized_name or has_email or normalized_whatsapp)
+    has_identity = bool(normalized_name or normalized_account_name or has_email or normalized_whatsapp)
     if not has_identity:
         return "failed"
 
@@ -768,9 +771,9 @@ def finalize_scrape_status(
     has_complete_identity = bool(
         normalized_platform in {"TikTok", "Instagram", "YouTube"}
         and normalized_url
-        and normalized_name
+        and (normalized_name or normalized_account_name)
     )
-    has_access_warning = str(access_status or "").strip() != "success"
+    has_access_warning = normalized_access_status != "success"
     if has_complete_identity and has_enhanced_data and not has_access_warning:
         return "success"
     return "partial_success"
@@ -783,6 +786,7 @@ def finalize_status_reason(
     platform: str = "",
     profile_url: str = "",
     name: str = "",
+    account_name: str = "",
     emails: list[str] | None = None,
     follower_count: str = "",
     whatsapp: str = "",
@@ -793,9 +797,10 @@ def finalize_status_reason(
     normalized_platform = str(platform or "").strip()
     normalized_url = str(profile_url or "").strip()
     normalized_name = str(name or "").strip()
+    normalized_account_name = str(account_name or "").strip()
     normalized_whatsapp = str(whatsapp or "").strip()
     has_email = bool(clean_email_candidates(emails or []))
-    has_identity = bool(normalized_name or has_email or normalized_whatsapp)
+    has_identity = bool(normalized_name or normalized_account_name or has_email or normalized_whatsapp)
     has_enhanced_data = bool(
         has_email
         or normalized_whatsapp
@@ -808,8 +813,8 @@ def finalize_status_reason(
     if not has_identity:
         reasons.append("missing_identity")
     else:
-        if not normalized_name:
-            reasons.append("missing_creator_name")
+        if not normalized_name and not normalized_account_name:
+            reasons.append("missing_account_identity")
         if normalized_platform not in {"TikTok", "Instagram", "YouTube"}:
             reasons.append("unsupported_platform")
         if not normalized_url:
@@ -839,6 +844,7 @@ def reclassify_result_status(result: dict) -> tuple[str, str]:
         platform=result.get("platform", ""),
         profile_url=result.get("url", ""),
         name=result.get("name", ""),
+        account_name=result.get("account_name", ""),
         emails=result.get("emails"),
         follower_count=result.get("follower_count", ""),
         whatsapp=result.get("whatsapp", ""),
@@ -850,6 +856,7 @@ def reclassify_result_status(result: dict) -> tuple[str, str]:
         platform=result.get("platform", ""),
         profile_url=result.get("url", ""),
         name=result.get("name", ""),
+        account_name=result.get("account_name", ""),
         emails=result.get("emails"),
         follower_count=result.get("follower_count", ""),
         whatsapp=result.get("whatsapp", ""),
@@ -1222,18 +1229,39 @@ def extract_creator_name(platform: str, page: str, target_url: str = "") -> str:
     return ""
 
 
-def extract_latest_publish_date(text: str) -> str:
-    for pattern in LATEST_DATE_PATTERNS:
-        match = pattern.search(text or "")
-        if not match:
+def latest_publication_date_from_content(
+    content_items: list[dict], *, target_account_name: str
+) -> str:
+    """Select the newest target-account, non-pinned publication or fail closed."""
+    target = str(target_account_name or "").strip().casefold()
+    if not target:
+        return ""
+    dates: list[datetime] = []
+    for item in content_items:
+        if not isinstance(item, dict) or bool(item.get("is_pinned")):
             continue
-        value = match.group(1)
-        if len(value) == 10 and value.isdigit():
-            try:
-                return datetime.fromtimestamp(int(value), tz=timezone.utc).strftime("%Y-%m-%d")
-            except Exception:
-                continue
-        return value
+        account = str(item.get("account_name") or item.get("username") or "").strip().casefold()
+        if account != target:
+            continue
+        raw = item.get("published_at")
+        try:
+            if isinstance(raw, (int, float)) or (isinstance(raw, str) and raw.isdigit()):
+                parsed = datetime.fromtimestamp(int(raw), tz=timezone.utc)
+            else:
+                parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except (TypeError, ValueError, OverflowError):
+            continue
+        dates.append(parsed)
+    return max(dates).date().isoformat() if dates else ""
+
+
+def extract_latest_publish_date(_text: str) -> str:
+    """Legacy page-wide date discovery is unsafe for business data.
+
+    A profile page can contain recommendations, pinned content, and unrelated
+    metadata. Current capture callers have no identity-bound content list, so
+    they intentionally leave this field blank rather than guessing.
+    """
     return ""
 
 
@@ -1249,13 +1277,16 @@ def scrape_instagram(
         "Instagram", page, session,
         allow_external_fallback=allow_external_email_fallback,
     )
-    name = extract_creator_name("Instagram", page, url)
+    # Page titles are not a trustworthy person identity. The task UI uses the
+    # account label derived from the canonical profile URL instead.
+    name = ""
     latest_publish_date = extract_latest_publish_date(page)
     access_status, access_reason = detect_scrape_access("Instagram", page, source)
     return build_result(
         url=url,
         platform="Instagram",
         name=name,
+        account_name=account_name_from_url(url, "Instagram"),
         emails=emails,
         email_source="主页" if emails and not external["email"] else ("外链" if external["email"] else ""),
         external_link=external["link"],
@@ -1266,6 +1297,7 @@ def scrape_instagram(
             platform="Instagram",
             profile_url=url,
             name=name,
+            account_name=account_name_from_url(url, "Instagram"),
             emails=emails,
             latest_publish_date=latest_publish_date,
         ),
@@ -1275,6 +1307,7 @@ def scrape_instagram(
             platform="Instagram",
             profile_url=url,
             name=name,
+            account_name=account_name_from_url(url, "Instagram"),
             emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -1293,13 +1326,14 @@ def scrape_tiktok(
         "TikTok", page, session,
         allow_external_fallback=allow_external_email_fallback,
     )
-    name = extract_creator_name("TikTok", page)
+    name = ""
     latest_publish_date = extract_latest_publish_date(page)
     access_status, access_reason = detect_scrape_access("TikTok", page, source)
     return build_result(
         url=url,
         platform="TikTok",
         name=name,
+        account_name=account_name_from_url(url, "TikTok"),
         emails=emails,
         email_source="主页" if emails and not external["email"] else ("外链" if external["email"] else ""),
         external_link=external["link"],
@@ -1310,6 +1344,7 @@ def scrape_tiktok(
             platform="TikTok",
             profile_url=url,
             name=name,
+            account_name=account_name_from_url(url, "TikTok"),
             emails=emails,
             latest_publish_date=latest_publish_date,
         ),
@@ -1319,6 +1354,7 @@ def scrape_tiktok(
             platform="TikTok",
             profile_url=url,
             name=name,
+            account_name=account_name_from_url(url, "TikTok"),
             emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -1338,13 +1374,14 @@ def scrape_youtube(
         "YouTube", page, session,
         allow_external_fallback=allow_external_email_fallback,
     )
-    name = extract_creator_name("YouTube", page)
+    name = ""
     latest_publish_date = extract_latest_publish_date(page)
     access_status, access_reason = detect_scrape_access("YouTube", page, source)
     return build_result(
         url=url,
         platform="YouTube",
         name=name,
+        account_name=account_name_from_url(url, "YouTube"),
         emails=emails,
         email_source="主页" if emails and not external["email"] else ("外链" if external["email"] else ""),
         external_link=external["link"],
@@ -1355,6 +1392,7 @@ def scrape_youtube(
             platform="YouTube",
             profile_url=url,
             name=name,
+            account_name=account_name_from_url(url, "YouTube"),
             emails=emails,
             latest_publish_date=latest_publish_date,
         ),
@@ -1364,6 +1402,7 @@ def scrape_youtube(
             platform="YouTube",
             profile_url=url,
             name=name,
+            account_name=account_name_from_url(url, "YouTube"),
             emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
@@ -1421,7 +1460,27 @@ def normalize_follower_count(value: object) -> str:
     return str(count)
 
 
-def build_result(*, url: str, platform: str, name: str = "", emails: list[str] | None = None, email_source: str = "", external_link: str = "", external_source: str = "", latest_publish_date: str = "", follower_count: str = "", status: str = "ok", scrape_status: str = "success", status_reason: str = "", last_scrape_time: str = "", retry_count: int | str = 0, whatsapp: str = "", note: str = "", data_status: str = "待检查", last_modified_at: str = "") -> dict:
+def account_name_from_url(url: str, platform: str = "") -> str:
+    """Return a URL-bound account label without trusting page metadata."""
+    parsed = urlparse(str(url or ""))
+    parts = [part for part in parsed.path.split("/") if part]
+    normalized_platform = str(platform or detect_platform(str(url or ""))).strip()
+    if not parts:
+        return ""
+    if normalized_platform == "TikTok" and parts[0].startswith("@"):
+        return parts[0][1:]
+    if normalized_platform == "Instagram":
+        reserved = {"p", "reel", "reels", "stories", "tv", "explore", "accounts", "directory"}
+        return "" if parts[0].casefold() in reserved else parts[0]
+    if normalized_platform == "YouTube":
+        if parts[0].startswith("@"):
+            return parts[0][1:]
+        if len(parts) >= 2 and parts[0].casefold() in {"channel", "c", "user"}:
+            return parts[1]
+    return ""
+
+
+def build_result(*, url: str, platform: str, name: str = "", account_name: str | None = None, emails: list[str] | None = None, email_source: str = "", external_link: str = "", external_source: str = "", latest_publish_date: str = "", follower_count: str = "", status: str = "ok", scrape_status: str = "success", status_reason: str = "", last_scrape_time: str = "", retry_count: int | str = 0, whatsapp: str = "", note: str = "", data_status: str = "待检查", last_modified_at: str = "") -> dict:
     unique_emails = clean_email_candidates(emails or [])
     try:
         normalized_retry_count = max(0, int(retry_count or 0))
@@ -1431,6 +1490,9 @@ def build_result(*, url: str, platform: str, name: str = "", emails: list[str] |
         "url": url,
         "platform": platform,
         "name": str(name or "").strip(),
+        "account_name": str(
+            account_name_from_url(url, platform) if account_name is None else account_name
+        ).strip(),
         "emails": unique_emails,
         "email_display": ", ".join(unique_emails) if unique_emails else NO_EMAIL,
         "email_source": email_source,
@@ -1454,6 +1516,7 @@ def result_to_row(result: dict) -> dict:
     return {
         FIELD_URL: result["url"],
         FIELD_PLATFORM: result["platform"],
+        FIELD_ACCOUNT_NAME: result.get("account_name", ""),
         FIELD_NAME: result["name"],
         FIELD_EMAIL: result["email_display"],
         FIELD_EMAIL_SOURCE: result["email_source"],
@@ -1479,13 +1542,18 @@ def row_to_result(row: dict) -> dict:
         url=row.get(FIELD_URL, ""),
         platform=row.get(FIELD_PLATFORM, "Unknown"),
         name=row.get(FIELD_NAME, ""),
+        account_name=row.get(FIELD_ACCOUNT_NAME, ""),
         emails=[] if email_display in ("", NO_EMAIL) else [item.strip() for item in email_display.split(",") if item.strip()],
         email_source=row.get(FIELD_EMAIL_SOURCE, ""),
         external_link=row.get(FIELD_EXTERNAL_LINK, ""),
         external_source=row.get(FIELD_EXTERNAL_SOURCE, ""),
         latest_publish_date=row.get(FIELD_LATEST_DATE, ""),
         follower_count=row.get(FIELD_FOLLOWER_COUNT, ""),
-        status="ok" if row.get(FIELD_STATUS, "") == "完成" else row.get(FIELD_STATUS, "error"),
+        status=(
+            "ok"
+            if str(row.get(FIELD_STATUS, "") or "").strip() in {"完成", "ok"}
+            else row.get(FIELD_STATUS, "error")
+        ),
         scrape_status=row.get(FIELD_SCRAPE_STATUS, "success"),
         status_reason=row.get(FIELD_STATUS_REASON, ""),
         last_scrape_time=row.get(FIELD_LAST_SCRAPE_TIME, ""),
@@ -1713,7 +1781,7 @@ def scrape_all(
         for url in control.get("retry_requested_urls", [])
         if str(url or "").strip()
     }
-    platform_values = control.get("platforms", [])
+    platform_values = control.get("active_platforms") or control.get("platforms", [])
     if not isinstance(platform_values, list):
         platform_values = [platform_values]
     selected_platforms = {
