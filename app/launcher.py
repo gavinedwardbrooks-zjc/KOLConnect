@@ -18,7 +18,13 @@ from typing import Any
 from urllib.request import ProxyHandler, build_opener
 
 from app_logging import log_error, log_event
-from runtime_paths import atomic_write_json, get_app_data_dir, get_logs_dir, load_json_with_backup
+from runtime_paths import (
+    atomic_write_json,
+    get_app_data_dir,
+    get_logs_dir,
+    get_resource_dir,
+    load_json_with_backup,
+)
 from local_storage_lock import SharedStorageLockTimeout, shared_storage_lock
 from version import APP_DISPLAY_VERSION
 

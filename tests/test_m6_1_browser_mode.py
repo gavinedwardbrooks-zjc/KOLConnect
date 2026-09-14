@@ -15,6 +15,7 @@ sys.path.insert(0, str(APP_DIR))
 
 import launcher  # noqa: E402
 import local_request_security as security  # noqa: E402
+import runtime_paths  # noqa: E402
 
 
 class _FakeThread:
@@ -46,6 +47,44 @@ def _fake_server(workbook: Path | None = None):
 
 
 class BrowserModeStartupTests(unittest.TestCase):
+    def test_desktop_icon_uses_the_canonical_source_resource_resolver(self) -> None:
+        self.assertIs(launcher.get_resource_dir, runtime_paths.get_resource_dir)
+        icon_path = launcher.get_resource_dir() / "assets" / "KOLConnect.ico"
+        self.assertEqual(ROOT / "assets" / "KOLConnect.ico", icon_path)
+        self.assertTrue(icon_path.is_file())
+
+    def test_desktop_icon_resource_resolves_from_pyinstaller_bundle(self) -> None:
+        bundle_root = Path("C:/PyInstallerBundle")
+        with (
+            mock.patch.object(runtime_paths.sys, "frozen", True, create=True),
+            mock.patch.object(runtime_paths.sys, "_MEIPASS", str(bundle_root), create=True),
+        ):
+            self.assertEqual(
+                bundle_root / "assets" / "KOLConnect.ico",
+                launcher.get_resource_dir() / "assets" / "KOLConnect.ico",
+            )
+
+    def test_desktop_launch_passes_the_frozen_icon_resource_to_webview(self) -> None:
+        bundle_root = Path("C:/PyInstallerBundle")
+        runtime = mock.Mock()
+        webview = mock.Mock()
+        webview.create_window.return_value = object()
+
+        with (
+            mock.patch.dict(sys.modules, {"webview": webview}),
+            mock.patch.object(runtime_paths.sys, "frozen", True, create=True),
+            mock.patch.object(runtime_paths.sys, "_MEIPASS", str(bundle_root), create=True),
+            mock.patch.object(launcher, "start_local_runtime", return_value=runtime),
+            mock.patch.object(launcher, "load_window_size", return_value=(1400, 900)),
+            mock.patch.object(launcher, "install_window_state_handlers"),
+        ):
+            launcher.run_desktop()
+
+        webview.start.assert_called_once_with(
+            icon=str(bundle_root / "assets" / "KOLConnect.ico")
+        )
+        runtime.shutdown.assert_called_once_with()
+
     def test_server_import_is_static_and_pyinstaller_discoverable(self) -> None:
         source = (APP_DIR / "launcher.py").read_text(encoding="utf-8-sig")
         tree = ast.parse(source)
