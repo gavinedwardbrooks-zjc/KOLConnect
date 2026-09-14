@@ -97,6 +97,7 @@ async function run() {
     KOLConnectCreatorCampaignModal: {
       create() { return { bind() {}, destroy() {}, open() {} }; },
     },
+    KOLConnectCreatorMergeModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
   };
   vm.runInNewContext(source, { window, document, console, setTimeout, clearTimeout, AbortController });
 

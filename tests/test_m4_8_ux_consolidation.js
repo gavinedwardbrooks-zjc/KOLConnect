@@ -20,7 +20,7 @@ function testInformationArchitectureAndSingleMailAccountForm() {
   const secondaryByPrimary = primary => [...html.matchAll(new RegExp(`class="nav-btn nav-sub"[^>]*data-primary="${primary}"[^>]*>([^<]+)<\\/button>`, "g"))]
     .map(match => match[1].trim());
   assert.deepEqual(secondaryByPrimary("scrape"), ["邮箱抓取", "审核结果", "链接清洗"]);
-  assert.deepEqual(secondaryByPrimary("mail"), ["产品", "Agency", "Campaign", "执行看板", "邮件"]);
+  assert.deepEqual(secondaryByPrimary("mail"), ["产品", "Agency", "Campaign", "邮件"]);
   assert.deepEqual(secondaryByPrimary("settings"), ["Chrome 账号", "邮箱账户", "日志"]);
   assert.match(html, /data-page="scrape" data-primary="scrape"[^>]*>邮箱抓取</);
   assert.match(html, /data-page="mail-accounts" data-primary="settings">邮箱账户</);

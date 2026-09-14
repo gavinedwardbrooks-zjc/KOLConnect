@@ -716,7 +716,7 @@ function renderTaskList() {
     const details = document.createElement("button");
     details.type = "button";
     details.className = "mini-btn";
-    details.textContent = "查看任务详情";
+    details.textContent = "查看结果";
     details.addEventListener("click", async event => {
       event.stopPropagation();
       try {
@@ -725,6 +725,7 @@ function renderTaskList() {
         showError(error);
       }
     });
+    const canContinue = task.status !== "completed" && task.status !== "failed";
     const platformSelect = document.createElement("select");
     platformSelect.multiple = true;
     platformSelect.className = "task-run-platforms";
@@ -736,7 +737,7 @@ function renderTaskList() {
     const run = document.createElement("button");
     run.type = "button";
     run.className = "mini-btn";
-    run.textContent = "抓取所选平台";
+    run.textContent = "继续抓取";
     run.addEventListener("click", async event => {
       event.stopPropagation();
       const platforms = Array.from(platformSelect.selectedOptions).map(option => option.value);
@@ -802,7 +803,7 @@ function renderTaskList() {
         showError(error);
       }
     });
-    if (task.task_type === "manual") {
+    if (task.task_type === "manual" && canContinue) {
       const supplement = document.createElement("button");
       supplement.type = "button";
       supplement.className = "mini-btn";
@@ -837,7 +838,17 @@ function renderTaskList() {
       });
       actions.append(recover);
     }
-    actions.append(platformSelect, run, details, copyAll, copyUnfinished, exportLinks, rename, remove);
+    const more = document.createElement("details");
+    more.className = "task-card-more";
+    const moreSummary = document.createElement("summary");
+    moreSummary.textContent = "更多";
+    const moreActions = document.createElement("div");
+    moreActions.className = "task-card-more-actions";
+    moreActions.append(copyAll, copyUnfinished, exportLinks, rename, remove);
+    more.append(moreSummary, moreActions);
+    actions.append(details);
+    if (canContinue) actions.append(platformSelect, run);
+    actions.append(more);
     head.append(name, actions);
 
     const meta = document.createElement("div");
@@ -845,7 +856,9 @@ function renderTaskList() {
     const taskType = task.task_type === "manual"
       ? t("taskTypeManual")
       : task.task_type === "email_recheck" ? t("taskTypeEmailRecheck") : t("taskTypeScrape");
-    meta.textContent = `${taskType} · ${task.target_platform || "全部"} · ${task.total_links || 0} links · ${task.status || "created"}`;
+    const platforms = task.available_platforms || task.platforms || [task.target_platform || "全部"];
+    const timestamp = task.latest_run_at || task.updated_at || task.created_at || "";
+    meta.textContent = `${taskType} · ${platforms.filter(Boolean).join("、") || "全部"} · 原始链接 ${task.total_links || 0} · ${scrapeStatusLabel(task.status || "created")}${timestamp ? ` · ${timestamp}` : ""}`;
 
     const track = document.createElement("div");
     track.className = "task-progress-track";
@@ -859,6 +872,7 @@ function renderTaskList() {
     progress.textContent = task.task_type === "email_recheck"
       ? `${t("taskEmailFound")} ${task.email_found_count || 0} · ${t("taskEmailFailed")} ${task.email_failed_count || 0} · ${t("taskPending")} ${task.pending_links || 0} · ${task.progress || 0}%`
       : `${t("taskCompleted")} ${task.completed_links || 0} · ${t("taskFailed")} ${task.failed_links || 0} · ${t("taskPending")} ${task.pending_links || 0} · ${task.progress || 0}%`;
+    card.classList.toggle("task-card-completed", task.status === "completed");
     card.append(head, meta, track, progress);
     const platformProgress = document.createElement("div");
     platformProgress.className = "task-card-progress-row";
@@ -1197,6 +1211,12 @@ function isRetryableReviewStatus(status) {
   return ["missing_data", "failed", "login_required", "platform_error"].includes(String(status || "").trim());
 }
 
+function reviewPrimaryResultLabel(status) {
+  if (String(status || "").trim() === "success") return "成功";
+  if (String(status || "").trim() === "partial_success") return "部分获取";
+  return "未获取";
+}
+
 function pendingReviewRecords() {
   return state.review.records.filter(record => record.review_eligible === true && record.review_state === "pending");
 }
@@ -1353,11 +1373,19 @@ function renderReviewResults() {
   visible.forEach(record => {
     const row = document.createElement("tr");
     reviewCell(row, reviewField(record, "平台"));
-    reviewCell(row, reviewField(record, "达人链接"));
-    reviewCell(row, reviewField(record, "account_uid"));
-    reviewCell(row, reviewScrapeStatusLabel(reviewField(record, "scrape_status")));
+    const profileUrl = reviewField(record, "达人链接");
+    const profileCell = document.createElement("td");
+    if (/^https?:\/\//i.test(profileUrl)) {
+      const link = document.createElement("a");
+      link.href = profileUrl;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = reviewField(record, "账号名") || "打开主页";
+      profileCell.appendChild(link);
+    } else profileCell.textContent = "--";
+    row.appendChild(profileCell);
+    reviewCell(row, reviewPrimaryResultLabel(reviewField(record, "scrape_status")));
     reviewCell(row, reviewField(record, "最近发布日期"));
-    reviewCell(row, reviewField(record, "状态"));
     reviewCell(row, reviewField(record, "账号名") || reviewField(record, "达人名称"));
     reviewEditableCell(row, reviewField(record, "邮箱"), "邮箱");
     reviewEditableCell(row, reviewField(record, "粉丝数"), "粉丝数");
@@ -1711,8 +1739,8 @@ function renderAccounts(accounts) {
   }
 
   accounts.forEach(account => {
-    const row = document.createElement("div");
-    row.className = "table-row";
+    const row = document.createElement("article");
+    row.className = "chrome-profile-card";
     const field = (label, key, value, readOnly = false) => {
       const wrap = document.createElement("div");
       wrap.className = "field-inline";
@@ -1759,7 +1787,13 @@ function renderAccounts(accounts) {
     remove.addEventListener("click", () => {
       if (window.confirm(`删除 ${account.profile} 的 KOLConnect 配置？不会删除 Chrome 浏览器资料。`)) row.remove();
     });
-    row.append(status, selected, open, remove);
+    const statusGroup = document.createElement("div");
+    statusGroup.className = "chrome-profile-status";
+    statusGroup.append(status, selected);
+    const actions = document.createElement("div");
+    actions.className = "chrome-profile-actions";
+    actions.append(open, remove);
+    row.append(statusGroup, actions);
     wrap.append(row);
   });
 }
@@ -2054,7 +2088,7 @@ async function refreshScrapeStatus() {
 }
 
 function collectAccounts() {
-  return Array.from(document.querySelectorAll("#accounts-list .table-row")).map(row => ({
+  return Array.from(document.querySelectorAll("#accounts-list .chrome-profile-card")).map(row => ({
     profile: textAreaOrInputValue(row, '[data-key="profile"]'),
     alias: textAreaOrInputValue(row, '[data-key="alias"]'),
     note: textAreaOrInputValue(row, '[data-key="note"]')
@@ -2451,7 +2485,7 @@ function bindEvents() {
 
   $("accounts-refresh").addEventListener("click", loadState);
   $("accounts-add").addEventListener("click", () => {
-    const rows = Array.from(document.querySelectorAll("#accounts-list .table-row"));
+    const rows = Array.from(document.querySelectorAll("#accounts-list .chrome-profile-card"));
     const candidate = rows.find(row => !textAreaOrInputValue(row, '[data-key="alias"]') && !textAreaOrInputValue(row, '[data-key="note"]'));
     if (!candidate) return showError(new Error("所有已发现的 Chrome Profile 都已有配置。"));
     candidate.querySelector('[data-key="alias"]')?.focus();

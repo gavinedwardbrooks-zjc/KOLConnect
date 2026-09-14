@@ -30,6 +30,7 @@ async function run() {
   const window = {
     KOLConnectPages: { registerPage(name, value) { page = value; } },
     KOLConnectCreatorCampaignModal: { create: () => ({ bind() {}, destroy() {} }) },
+    KOLConnectCreatorMergeModal: { create: () => ({ bind() {}, destroy() {}, open() {} }) },
   };
   const context = {
     params: { creatorId: "source" }, state: { creatorLibrary: {} },

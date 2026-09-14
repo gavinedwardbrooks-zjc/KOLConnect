@@ -20,7 +20,7 @@ KOLConnect 是本地应用，**SQLite 是当前应用数据权威（application 
 %APPDATA%\KOLConnect\storage_authority.json
 ~~~
 
-当前 SQLite schema version 为 **4**。`storage_authority.json` 记录活动数据权威与预期 schema，应用会在启动时验证。
+当前 SQLite schema version 为 **5**。`storage_authority.json` 记录活动数据权威与预期 schema，应用会在启动时验证。
 
 `Creator_Library.xlsx` 是历史导入/兼容性文件，不再是当前权威数据库。KOLConnect 不提供整库 SQLite 到 Excel 的导出；Creator Library 的所选 Creator Excel 导出是独立且受限的导出功能。
 
@@ -45,7 +45,7 @@ Campaign 计划和实际发布证据被明确区分：
 
 金额记录使用 ISO 风格代码保留明确的币种身份。结构化报价包含 `unit amount`、正数 `quantity` 与 `pricing unit`；总 `creator_quote` 为 `unit amount × quantity`。`cost` 为已确认或应支付的合作总成本。历史的仅总额 quote/cost 记录仍然有效。
 
-系统可以存储多种币种，但混合币种金额绝不会被静默相加为单一总额。KOLConnect 当前不提供 FX 换算、实时或历史汇率，也不提供会计账本。
+系统可以存储多种币种，但混合币种金额绝不会被静默相加为单一总额。KOLConnect 支持手动维护 USD 基准汇率并在需要时换算为 USD；不提供实时或历史 FX 汇率，也不提供会计账本。
 
 ## Feishu
 
@@ -104,7 +104,7 @@ powershell -ExecutionPolicy Bypass -File .\packaging\build_release.ps1
 
 - `TikTok Passive Capture V2` 尚未实现。
 - Microsoft OAuth2 邮箱支持尚未实现。
-- FX 换算与会计功能尚未实现。
+- 自动 FX 汇率与会计功能尚未实现。
 - OpenClaw 部署不是当前产品要求。
 
 ## 许可证

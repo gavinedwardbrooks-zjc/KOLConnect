@@ -10,6 +10,7 @@ from typing import Iterator
 from urllib.parse import urlparse
 
 from creator_repository import CreatorRepository, _mutation_synchronized, _utc_now
+from domain.creator_url_resolver import CreatorURLResolver
 from storage.migration import _value
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
 
@@ -243,6 +244,74 @@ class SQLiteCreatorRepository(CreatorRepository):
             "archived_at": updated_row.get("archived_at") or None,
             "updated_at": now,
         }
+
+    @_mutation_synchronized
+    def addCreatorAccount(self, creator_id: str, profile_url: object) -> dict:
+        creator_id = str(creator_id or "").strip()
+        resolver = CreatorURLResolver.from_repository(self)
+        resolved = resolver.resolve(profile_url)
+        if resolved.get("resolution_status") != "resolved" or resolved.get("input_type") != "profile":
+            raise ValueError("主页链接必须是受支持平台的达人主页链接。")
+        platform = str(resolved.get("platform") or "")
+        canonical_url = str(resolved.get("canonical_profile_url") or "")
+        account_uid = self._build_account_uid(platform, canonical_url)
+        now = _utc_now()
+        with self.store.factory.write_transaction() as connection:
+            if connection.execute("SELECT 1 FROM creators WHERE creator_id=?", (creator_id,)).fetchone() is None:
+                raise ValueError("未找到达人记录。")
+            existing = connection.execute(
+                "SELECT a.*, c.name AS creator_name FROM creator_accounts a "
+                "JOIN creators c ON c.creator_id=a.creator_id WHERE a.account_uid=?",
+                (account_uid,),
+            ).fetchone()
+            if existing is not None:
+                account = dict(existing)
+                if str(account.get("creator_id") or "") == creator_id:
+                    return {"created": False, "account": account}
+                return {
+                    "created": False,
+                    "conflict": "ACCOUNT_OWNED_BY_OTHER_CREATOR",
+                    "account": account,
+                    "owner": {"creator_id": account["creator_id"], "creator_name": account.get("creator_name") or ""},
+                }
+            account = {
+                "account_uid": account_uid,
+                "account_id": self._account_id(account_uid),
+                "creator_id": creator_id,
+                "platform": platform,
+                "username": str(resolved.get("username") or ""),
+                "profile_url": canonical_url,
+                "platform_account_id": str(resolved.get("platform_account_id") or "") or None,
+                "created_at": now,
+                "updated_at": now,
+            }
+            columns = tuple(account)
+            connection.execute(
+                f"INSERT INTO creator_accounts({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+                tuple(account.values()),
+            )
+            self.store.increment_business_revision(connection)
+        return {"created": True, "account": account}
+
+    @_mutation_synchronized
+    def removeCreatorAccount(self, creator_id: str, account_uid: str) -> dict:
+        creator_id, account_uid = str(creator_id or "").strip(), str(account_uid or "").strip()
+        with self.store.factory.write_transaction() as connection:
+            account = connection.execute(
+                "SELECT * FROM creator_accounts WHERE account_uid=? AND creator_id=?", (account_uid, creator_id)
+            ).fetchone()
+            if account is None:
+                raise ValueError("未找到该达人账号。")
+            references = sum(int(connection.execute(query, (account_uid,)).fetchone()[0]) for query in (
+                "SELECT COUNT(*) FROM creator_snapshots WHERE account_uid=?",
+                "SELECT COUNT(*) FROM campaign_creator_accounts WHERE account_uid=?",
+                "SELECT COUNT(*) FROM campaign_creator_publish_links WHERE actual_account_uid=?",
+            ))
+            if references:
+                raise ValueError("该账号已有合作或表现历史，不能移除。")
+            connection.execute("DELETE FROM creator_accounts WHERE account_uid=?", (account_uid,))
+            self.store.increment_business_revision(connection)
+        return {"removed": True, "account_uid": account_uid}
 
     @_mutation_synchronized
     def createSnapshot(self, analysis: dict, creator_id: str, workbook=None):

@@ -139,6 +139,7 @@ async function run() {
   };
   let campaignFailure = null;
   let missingPublishFailure = false;
+  let fxRates = [{ currency_code: "USD", rate_per_usd: 1 }, { currency_code: "BRL", rate_per_usd: 5 }];
   let relations = [{
     id: "relation_one",
     campaign_id: "campaign_one",
@@ -191,6 +192,7 @@ async function run() {
       if (url === "/api/campaigns/campaign_one/performance") return {
         totals: {}, publications: [], average_er: null, valid_er_count: 0, total_publications: 0,
       };
+      if (url === "/api/settings/fx") return { rates: clone(fxRates) };
       if (url === "/api/campaigns/campaign_one/missing-publish-links") {
         if (missingPublishFailure) throw new Error("optional publishing data unavailable");
         return { missing_publish_links: [] };
@@ -302,6 +304,7 @@ async function run() {
     "GET /api/campaigns/campaign_one/creators",
     "GET /api/campaigns/campaign_one/missing-publish-links",
     "GET /api/campaigns/campaign_one/performance",
+    "GET /api/settings/fx",
     "GET /api/campaigns/campaign_one/brief",
     "GET /api/campaign-creators/relation_one/submissions",
   ].sort(), "initial load must use four read-only requests, including batched performance");
@@ -310,6 +313,26 @@ async function run() {
   assert.equal(elements.get("campaign-detail-content").hidden, false);
   assert.equal(elements.get("campaign-creator-add-open").disabled, false);
   assert.equal(elements.get("campaign-brief-title").value, "Launch brief");
+
+  // Original currency stays authoritative; USD is a derived display only.
+  relations[0].creator_quote = 500;
+  relations[0].quote_currency = "BRL";
+  await registeredPage.load({ campaignId: "campaign_one" });
+  assert.equal(
+    elements.get("campaign-creator-list-body").children[0].children[5].textContent,
+    "BRL 500\n≈ USD 100",
+  );
+  assert.equal(relations[0].creator_quote, 500, "rendering must not rewrite the original business amount");
+  fxRates = [{ currency_code: "USD", rate_per_usd: 1 }];
+  await registeredPage.load({ campaignId: "campaign_one" });
+  assert.equal(
+    elements.get("campaign-creator-list-body").children[0].children[5].textContent,
+    "BRL 500",
+    "a missing rate must retain original currency without fabricating a USD value",
+  );
+  fxRates = [{ currency_code: "USD", rate_per_usd: 1 }, { currency_code: "BRL", rate_per_usd: 5 }];
+  relations[0].creator_quote = 500;
+  relations[0].quote_currency = "USD";
 
   missingPublishFailure = true;
   await registeredPage.load({ campaignId: "campaign_one" });

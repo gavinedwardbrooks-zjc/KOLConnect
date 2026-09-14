@@ -186,6 +186,19 @@
         { signal: context.resources.signal },
       );
       primary = { ...record, ...detail.record, creator_id: creatorId, accounts: detail.accounts || [] };
+      const secondaryCreatorId = String(options.secondaryCreatorId || "").trim();
+      if (secondaryCreatorId && secondaryCreatorId !== creatorId) {
+        const secondaryDetail = await context.api.get(
+          `/api/creator-library/${encodeURIComponent(secondaryCreatorId)}`,
+          { signal: context.resources.signal },
+        );
+        secondary = {
+          ...secondaryDetail.record,
+          creator_id: secondaryCreatorId,
+          creator_name: secondaryDetail.record?.creator_name || "未命名达人",
+          accounts: secondaryDetail.accounts || [],
+        };
+      }
       onMerged = typeof options.onMerged === "function" ? options.onMerged : null;
       target("creator-merge-modal").hidden = false;
       renderSelection();

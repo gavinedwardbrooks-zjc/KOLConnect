@@ -592,6 +592,50 @@ class SQLiteRuntimeCutoverTests(unittest.TestCase):
         self.assertTrue(response["ok"], response)
         self.assertEqual(2, response["data"]["total"])
 
+    def test_creator_account_url_management_is_canonical_and_fail_closed(self) -> None:
+        repository = self.factory().creator()
+        before_accounts = repository.getCreatorDetail("creator_0000")["accounts"]
+        before_creator_count = len(repository.getCreators(include_archived=True))
+        added = repository.addCreatorAccount(
+            "creator_0000", "https://www.instagram.com/new.creator/"
+        )
+        self.assertTrue(added["created"])
+        account = added["account"]
+        self.assertEqual("Instagram", account["platform"])
+        self.assertEqual("https://www.instagram.com/new.creator/", account["profile_url"])
+
+        youtube = repository.addCreatorAccount(
+            "creator_0000", "https://www.youtube.com/@newcreator"
+        )
+        self.assertTrue(youtube["created"])
+        self.assertEqual("YouTube", youtube["account"]["platform"])
+        detail_accounts = repository.getCreatorDetail("creator_0000")["accounts"]
+        self.assertEqual(before_creator_count, len(repository.getCreators(include_archived=True)))
+        self.assertEqual(len(before_accounts) + 2, len(detail_accounts))
+        self.assertTrue(any(row["account_uid"] == account["account_uid"] for row in detail_accounts))
+        self.assertTrue(any(row["account_uid"] == youtube["account"]["account_uid"] for row in detail_accounts))
+
+        same_creator_duplicate = repository.addCreatorAccount(
+            "creator_0000", "https://www.youtube.com/@newcreator"
+        )
+        self.assertFalse(same_creator_duplicate["created"])
+        self.assertEqual(youtube["account"]["account_uid"], same_creator_duplicate["account"]["account_uid"])
+
+        duplicate = repository.addCreatorAccount(
+            "creator_0001", "https://www.instagram.com/new.creator/"
+        )
+        self.assertEqual("ACCOUNT_OWNED_BY_OTHER_CREATOR", duplicate["conflict"])
+        self.assertEqual("creator_0000", duplicate["owner"]["creator_id"])
+        self.assertEqual(1, sum(
+            row["account_uid"] == account["account_uid"]
+            for row in self.factory().creator().getCreatorAccounts()
+        ))
+
+        self.assertTrue(repository.removeCreatorAccount("creator_0000", account["account_uid"])["removed"])
+        self.assertTrue(repository.removeCreatorAccount("creator_0000", youtube["account"]["account_uid"])["removed"])
+        with self.assertRaisesRegex(ValueError, "合作或表现历史"):
+            repository.removeCreatorAccount("creator_0000", "account_0000_0")
+
 
 if __name__ == "__main__":
     unittest.main()

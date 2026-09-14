@@ -33,6 +33,7 @@
   let campaignPerformance = null;
   let campaignBrief = null;
   let contentSubmissions = [];
+  let fxRates = new Map();
   const submissionReviewFindings = new Map();
   let publicationRefreshPending = false;
   let googleSheetsSyncPending = false;
@@ -78,7 +79,11 @@
     const amount = formatNumber(value);
     if (amount === "--") return amount;
     const code = String(currency || "").trim().toUpperCase();
-    return code ? `${code} ${amount}` : amount;
+    if (!code || code === "USD") return code ? `${code} ${amount}` : amount;
+    const rate = Number(fxRates.get(code));
+    const numericValue = Number(value);
+    if (!Number.isFinite(rate) || rate <= 0 || !Number.isFinite(numericValue)) return `${code} ${amount}`;
+    return `${code} ${amount}\n≈ USD ${formatNumber(numericValue / rate)}`;
   }
 
   function safeHttpUrl(value) {
@@ -695,7 +700,7 @@
     missingPublishError = "";
 
     try {
-      const [campaignData, relationsData, publishingData, performanceData] = await Promise.all([
+      const [campaignData, relationsData, publishingData, performanceData, fxData] = await Promise.all([
         global.KOLConnectAPI.get(`/api/campaigns/${encodeURIComponent(campaignId)}`, {
           signal: campaignController.signal,
         }),
@@ -715,6 +720,12 @@
           if (error?.name === "AbortError") throw error;
           return null;
         }),
+        global.KOLConnectAPI.get("/api/settings/fx", {
+          signal: relationsController.signal,
+        }).catch(error => {
+          if (error?.name === "AbortError") throw error;
+          return { rates: [] };
+        }),
       ]);
       if (!resources || currentLifecycle !== lifecycleId) return;
       campaign = campaignData.campaign || null;
@@ -725,6 +736,11 @@
         ? publishingData.missing_publish_links
         : [];
       campaignPerformance = performanceData;
+      fxRates = new Map(
+        (Array.isArray(fxData?.rates) ? fxData.rates : [])
+          .map(rate => [String(rate?.currency_code || "").trim().toUpperCase(), rate?.rate_per_usd])
+          .filter(([code]) => code),
+      );
       hydrateLatestPublicationObservations();
       if (!campaign) throw new Error("Campaign 数据不存在。");
       if (isArchived()) closeCreatorForm();
@@ -1313,13 +1329,6 @@
             : `Google Sheets 报告同步失败：${result.error || result.status || "UNKNOWN"}`,
         );
       }
-      const relationId = String(savedRelation?.campaign_creator?.id || editingRelationId || "");
-      if (relationId) {
-        await global.KOLConnectAPI.patch(
-          `/api/campaign-creators/${encodeURIComponent(relationId)}/execution`,
-          executionPayload(), { signal: resources.signal },
-        );
-      }
       const detail = (result.worksheets || [])
         .map(item => `${item.worksheet}: ${item.row_count ?? 0} 行`).join("；");
       getApp().showSaved(`Google Sheets 报告同步成功。${detail}`);
@@ -1367,6 +1376,7 @@
       campaignPerformance = null;
       campaignBrief = null;
       contentSubmissions = [];
+      fxRates = new Map();
       submissionReviewFindings.clear();
       publicationRefreshPending = false;
       googleSheetsSyncPending = false;

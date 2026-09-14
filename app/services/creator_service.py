@@ -109,6 +109,10 @@ class CreatorRepositoryReader(Protocol):
 
     def updateCreatorStatus(self, creator_id: str, status: object) -> dict[str, Any]: ...
 
+    def addCreatorAccount(self, creator_id: str, profile_url: object) -> dict[str, Any]: ...
+
+    def removeCreatorAccount(self, creator_id: str, account_uid: str) -> dict[str, Any]: ...
+
     def updateCreatorRelations(
         self,
         creator_id: str,
@@ -654,6 +658,16 @@ class CreatorService:
 
     def update_creator_status(self, creator_id: str, status: object) -> dict[str, Any]:
         result = self._repository_provider().updateCreatorStatus(creator_id, status)
+        self._invalidate_creator_read_caches()
+        return result
+
+    def add_creator_account(self, creator_id: str, profile_url: object) -> dict[str, Any]:
+        result = self._repository_provider().addCreatorAccount(creator_id, profile_url)
+        self._invalidate_creator_read_caches()
+        return result
+
+    def remove_creator_account(self, creator_id: str, account_uid: str) -> dict[str, Any]:
+        result = self._repository_provider().removeCreatorAccount(creator_id, account_uid)
         self._invalidate_creator_read_caches()
         return result
 

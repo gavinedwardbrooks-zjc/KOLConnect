@@ -135,6 +135,7 @@ async function run() {
     KOLConnectAPI: api,
     KOLConnectPages: { registerPage(_name, candidate) { page = candidate; } },
     KOLConnectCreatorCampaignModal: { create() { return { bind() {}, destroy() {} }; } },
+    KOLConnectCreatorMergeModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
     localStorage: { getItem() { return "card"; }, setItem() {} },
     confirm: () => true,
     URL: {

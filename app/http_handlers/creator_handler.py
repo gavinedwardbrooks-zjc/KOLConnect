@@ -323,6 +323,28 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc))
         return True
 
+    account_match = re.fullmatch(r"/api/creator-library/([^/]+)/accounts", path)
+    if method == "POST" and account_match:
+        payload = request["get_payload"]()
+        try:
+            result = creator_service.add_creator_account(
+                account_match.group(1), (payload or {}).get("profile_url")
+            )
+            handler._json({"ok": not bool(result.get("conflict")), **result}, status=409 if result.get("conflict") else 200)
+        except ValueError as exc:
+            handler._error(str(exc), status=400)
+        return True
+
+    account_delete_match = re.fullmatch(r"/api/creator-library/([^/]+)/accounts/([^/]+)", path)
+    if method == "DELETE" and account_delete_match:
+        try:
+            handler._ok(**creator_service.remove_creator_account(
+                account_delete_match.group(1), account_delete_match.group(2)
+            ))
+        except ValueError as exc:
+            handler._error(str(exc), status=409)
+        return True
+
     # POST /api/local/agencies → 保存本地 Agency；{"ok": true, "agency": {...}}
     if method == "POST" and path == "/api/local/agencies":
         try:

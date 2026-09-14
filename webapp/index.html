@@ -30,7 +30,6 @@
         <button class="nav-btn nav-sub" data-page="products" data-primary="mail">产品</button>
         <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail">Agency</button>
         <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign</button>
-        <button class="nav-btn nav-sub" data-page="campaign-execution" data-primary="mail">执行看板</button>
         <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件</button>
         <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">Chrome 账号</button>
         <button class="nav-btn nav-sub" data-page="mail-accounts" data-primary="settings">邮箱账户</button>
@@ -288,7 +287,7 @@
         <div class="capture-mode-bar">
           <label class="field capture-mode-field">
             <span>抓取模式</span>
-            <select id="capture-mode"><option value="automatic">自动抓取</option><option value="manual">人工抓取</option></select>
+            <select id="capture-mode"><option value="automatic">自动抓取</option><option value="manual">人工录入</option></select>
           </label>
         </div>
 
@@ -338,7 +337,7 @@
         </div>
 
         <div class="section-card" id="capture-manual-panel" hidden>
-          <div class="section-title">人工抓取</div>
+          <div class="section-title">人工录入</div>
           <p class="hint">主动发现的达人先进入审核流程；主页链接会用于生成账号唯一ID。</p>
           <div class="form-grid two">
             <label class="field">
@@ -735,6 +734,14 @@
               <label class="field"><span>Agency</span><select id="creator-edit-agency"><option value="">No Agency</option></select></label>
             </div>
             <p class="hint">完善国家和语言信息，可提升达人分析准确度。</p>
+            <section class="creator-edit-accounts" aria-labelledby="creator-edit-accounts-title">
+              <div><h3 id="creator-edit-accounts-title">平台账号</h3><p class="hint">主页链接用于识别平台和账号身份，无需填写内部 ID。</p></div>
+              <div id="creator-edit-accounts-list" class="creator-edit-accounts-list"></div>
+              <div class="action-row">
+                <input id="creator-edit-account-url" type="url" placeholder="粘贴 TikTok、Instagram 或 YouTube 主页链接">
+                <button class="soft-btn" id="creator-edit-account-add" type="button">+ 添加主页链接</button>
+              </div>
+            </section>
             <label class="field"><span>简介</span><textarea id="creator-edit-bio" rows="5"></textarea></label>
             <p class="form-message" id="creator-edit-message" hidden></p>
             <div class="action-row creator-campaign-modal-actions">
@@ -931,10 +938,8 @@
                 <tr>
                   <th data-i18n="reviewPlatform">平台</th>
                   <th data-i18n="reviewLink">达人链接</th>
-                  <th data-i18n="reviewAccountUid">账号唯一ID</th>
-                  <th>抓取状态</th>
+                  <th>结果</th>
                   <th data-i18n="reviewLatestDate">最近发布日期</th>
-                  <th>记录状态</th>
                   <th>账号名</th>
                   <th data-i18n="reviewEmail">邮箱</th>
                   <th data-i18n="reviewFollowerCount">粉丝数</th>
@@ -1592,15 +1597,7 @@
                   </div>
                 </div>
 
-                <div class="campaign-form-subsection" data-campaign-section="execution-data">
-                  <h3>执行管理</h3>
-                  <div class="form-grid three">
-                    <label class="field"><span>负责人</span><input id="campaign-creator-execution-owner" type="text"></label>
-                    <label class="field"><span>下一步动作</span><input id="campaign-creator-next-action" type="text"></label>
-                    <label class="field"><span>截止时间</span><input id="campaign-creator-due-date" type="date"></label>
-                    <label class="field"><span>等待对象</span><select id="campaign-creator-waiting-on"><option value="none">无</option><option value="creator">达人</option><option value="internal">内部</option><option value="client">客户</option><option value="self">本人决策</option></select></label>
-                    <label class="checkbox-field"><input id="campaign-creator-need-my-decision" type="checkbox"><span>需要我决策</span></label>
-                  </div>
+                <div class="campaign-form-subsection" data-campaign-section="publication-data">
                   <h3>实际发布内容</h3>
                   <p class="hint">实际发布账号和时间独立于计划；未知信息可留空。</p>
                   <div id="campaign-publication-list" class="campaign-publication-list"></div>
@@ -1655,12 +1652,6 @@
             </div>
           </section>
 
-          <section class="section-card campaign-detail-section" data-campaign-section="execution-workspace">
-            <div class="campaign-detail-section-heading"><div><p class="eyebrow">EXECUTION WORKSPACE</p><h2>执行工作台</h2></div></div>
-            <p class="hint">基于 CampaignCreator 执行字段生成；不会创建额外业务记录。</p>
-            <div class="campaign-performance-summary" id="campaign-execution-summary"></div>
-            <div class="review-table-wrap"><table class="review-table"><thead><tr><th>达人</th><th>阶段</th><th>负责人</th><th>下一步</th><th>等待对象</th><th>截止</th><th>状态</th></tr></thead><tbody id="campaign-execution-body"></tbody></table></div>
-          </section>
 
           <section class="section-card campaign-detail-section" data-campaign-section="brief">
             <div class="campaign-detail-section-heading"><div><p class="eyebrow">CAMPAIGN BRIEF</p><h2>Campaign Brief</h2></div></div>
@@ -1833,7 +1824,7 @@
         </div>
 
         <div class="section-card" id="fx-settings-card">
-          <div class="section-title">汇率设置</div>
+          <div class="section-title">货币与汇率</div>
           <p class="hint">基准货币：USD。手动输入规则为 1 USD = X 外币；原始金额和币种不会被改写。</p>
           <div class="form-grid two" id="fx-rate-fields"></div>
           <div class="action-row"><button class="primary-btn" id="fx-save" type="button">保存并更新</button></div>

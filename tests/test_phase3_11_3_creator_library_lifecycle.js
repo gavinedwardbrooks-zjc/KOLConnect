@@ -422,6 +422,8 @@ async function run() {
     setTimeout,
     clearTimeout,
     confirm: () => true,
+    KOLConnectCreatorCampaignModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
+    KOLConnectCreatorMergeModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
   };
   const sandbox = { window, document, console, AbortController, Option: FakeOption, Intl, Date, Set, Map };
   sandbox.globalThis = sandbox;

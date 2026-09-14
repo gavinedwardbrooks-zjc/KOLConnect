@@ -130,6 +130,7 @@ function createEnvironment() {
     KOLConnectAPI: api,
     KOLConnectPages: { registerPage(_name, candidate) { page = candidate; } },
     KOLConnectCreatorCampaignModal: { create() { return { bind() {}, destroy() {} }; } },
+    KOLConnectCreatorMergeModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
     localStorage: { getItem: key => storage.get(key) || null, setItem: (key, value) => storage.set(key, value) },
     confirm: () => true,
     URL: { createObjectURL: () => "blob:creator-template", revokeObjectURL() {} },

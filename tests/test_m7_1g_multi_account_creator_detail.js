@@ -137,6 +137,7 @@ async function run() {
   const window = {
     URL, localStorage: { setItem() {} },
     KOLConnectCreatorCampaignModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
+    KOLConnectCreatorMergeModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
     KOLConnectPages: { registerPage(name, page) { assert.equal(name, "creator-library-detail"); registeredPage = page; } },
   };
   vm.runInNewContext(

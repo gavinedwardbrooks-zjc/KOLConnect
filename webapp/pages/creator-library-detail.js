@@ -10,6 +10,7 @@
   let summaryController = null;
   let similarController = null;
   let campaignModal = null;
+  let mergeModal = null;
   let creatorId = "";
   let detail = null;
   let intelligence = null;
@@ -729,6 +730,39 @@
     select.value = String(selectedAgencyId || "");
   }
 
+  function renderEditableAccounts() {
+    const list = element("creator-edit-accounts-list");
+    if (!list) return;
+    const accounts = Array.isArray(detail?.accounts) ? detail.accounts : [];
+    if (!accounts.length) {
+      const empty = document.createElement("p");
+      empty.className = "hint";
+      empty.textContent = "暂无已关联的平台账号。";
+      list.replaceChildren(empty);
+      return;
+    }
+    list.replaceChildren(...accounts.map(account => {
+      const row = document.createElement("div");
+      row.className = "creator-edit-account-row";
+      const identity = document.createElement("div");
+      const title = document.createElement("strong");
+      title.textContent = `${account?.platform || "未知平台"} · ${accountIdentity(account)}`;
+      const open = document.createElement("a");
+      open.href = String(account?.profile_url || "#");
+      open.target = "_blank";
+      open.rel = "noopener noreferrer";
+      open.textContent = "打开主页";
+      identity.append(title, open);
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "soft-btn compact-btn";
+      remove.dataset.creatorEditAccountUid = String(account?.account_uid || "");
+      remove.textContent = "移除关联";
+      row.append(identity, remove);
+      return row;
+    }));
+  }
+
   async function openEditModal() {
     if (!detail?.record || detail.record.archived_at) return;
     const record = detail.record;
@@ -744,6 +778,7 @@
     setValue("creator-edit-content-category", record.content_category || analysis.content_category);
     setValue("creator-edit-bio", record.bio || creator.bio);
     renderAgencyOptions([], record.agency_id);
+    renderEditableAccounts();
     element("creator-edit-modal").hidden = false;
     showEditMessage("");
 
@@ -811,6 +846,61 @@
     if (!button) return;
     const campaignId = String(button.dataset.creatorCampaignId || "").trim();
     if (campaignId) pageContext.navigate("campaign-detail", { campaignId }).catch(showError);
+  }
+
+  async function addCreatorAccount() {
+    const input = element("creator-edit-account-url");
+    const profileUrl = String(input?.value || "").trim();
+    if (!profileUrl) return showEditMessage("请输入主页链接。");
+    showEditMessage("");
+    try {
+      await pageContext.api.post(
+        `/api/creator-library/${encodeURIComponent(creatorId)}/accounts`,
+        { profile_url: profileUrl }, { signal: pageContext.resources.signal },
+      );
+      if (input) input.value = "";
+      await loadDetail();
+      renderEditableAccounts();
+      pageContext.ui.showSaved("平台账号已关联。");
+    } catch (error) {
+      const data = error?.responseData || {};
+      if (data?.conflict === "ACCOUNT_OWNED_BY_OTHER_CREATOR") {
+        const owner = data.owner || {};
+        showEditMessage(`该账号已属于【${owner.creator_name || owner.creator_id || "另一位达人"}】。`);
+        const message = element("creator-edit-message");
+        const view = document.createElement("button");
+        view.type = "button";
+        view.className = "soft-btn compact-btn";
+        view.textContent = "查看现有达人";
+        view.addEventListener("click", () => pageContext.navigate("creator-library-detail", { creatorId: owner.creator_id }));
+        const merge = document.createElement("button");
+        merge.type = "button";
+        merge.className = "soft-btn compact-btn";
+        merge.textContent = "合并达人";
+        merge.addEventListener("click", () => mergeModal.open(detail.record, {
+          secondaryCreatorId: owner.creator_id,
+          onMerged: loadDetail,
+        }).catch(showError));
+        message?.append(" ", view, " ", merge);
+      } else if (error?.name !== "AbortError") showEditMessage(error.message || "账号关联失败。");
+    }
+  }
+
+  async function removeCreatorAccount(event) {
+    const button = event.target.closest("[data-creator-edit-account-uid]");
+    const accountUid = String(button?.dataset?.creatorEditAccountUid || "");
+    if (!accountUid || !global.confirm("移除仅允许无历史引用的账号；已有合作或表现历史的账号会被安全保留。")) return;
+    try {
+      await pageContext.api.delete(
+        `/api/creator-library/${encodeURIComponent(creatorId)}/accounts/${encodeURIComponent(accountUid)}`,
+        { signal: pageContext.resources.signal },
+      );
+      await loadDetail();
+      renderEditableAccounts();
+      pageContext.ui.showSaved("平台账号已移除。");
+    } catch (error) {
+      if (error?.name !== "AbortError") showEditMessage(error.message || "该账号无法移除。");
+    }
   }
 
   function clearSimilarCandidates() {
@@ -942,6 +1032,7 @@
       creatorCampaigns = [];
       clearSimilarCandidates();
       campaignModal = global.KOLConnectCreatorCampaignModal.create(context);
+      mergeModal = global.KOLConnectCreatorMergeModal.create(context);
       clearRenderedDetail();
       renderCreatorCampaigns();
       if (!creatorId) {
@@ -953,6 +1044,7 @@
 
     bind() {
       campaignModal.bind();
+      mergeModal.bind();
       document.querySelectorAll(".detail-tab").forEach(button => {
         pageContext.resources.listen(button, "click", () => setDetailTab(button.dataset.detailTab));
       });
@@ -969,11 +1061,14 @@
       listen("creator-edit-modal-close", "click", closeEditModal);
       listen("creator-edit-cancel", "click", closeEditModal);
       listen("creator-edit-form", "submit", saveCreatorProfile);
+      listen("creator-edit-account-add", "click", () => addCreatorAccount());
+      listen("creator-edit-accounts-list", "click", removeCreatorAccount);
     },
 
     unbind() {
       lifecycleId += 1;
       campaignModal?.destroy();
+      mergeModal?.destroy();
       pageContext?.resources.cleanup();
       pageContext = null;
       detailController = null;
@@ -984,6 +1079,7 @@
       similarController?.abort();
       similarController = null;
       campaignModal = null;
+      mergeModal = null;
       creatorId = "";
       detail = null;
       historicalPerformance = null;

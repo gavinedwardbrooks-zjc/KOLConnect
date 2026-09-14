@@ -913,6 +913,10 @@ button:disabled {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.campaign-creator-table td {
+  white-space: pre-line;
+}
+
 .campaign-detail-error[hidden] {
   display: none;
 }
@@ -1857,6 +1861,77 @@ button {
   transition: width 0.2s ease;
 }
 
+.task-card-completed {
+  gap: 6px;
+  padding-block: 12px;
+}
+
+.task-card-completed .task-progress-track,
+.task-card-completed .task-card-progress-row:not(:last-child) {
+  margin-block: 5px;
+}
+
+.task-card-more { position: relative; }
+
+.task-card-more summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.task-card-more summary::-webkit-details-marker { display: none; }
+.task-card-more summary::after { content: " ▾"; }
+.task-card-more[open] summary::after { content: " ▴"; }
+
+.task-card-more-actions {
+  position: absolute;
+  z-index: 4;
+  right: 0;
+  display: grid;
+  gap: 6px;
+  min-width: 170px;
+  margin-top: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.chrome-profile-card {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(150px, 1fr) minmax(180px, 1.2fr) auto auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.chrome-profile-status,
+.chrome-profile-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chrome-profile-actions .mini-btn { white-space: nowrap; }
+
+@media (max-width: 900px) {
+  .chrome-profile-card { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+  .chrome-profile-card { grid-template-columns: 1fr; align-items: stretch; }
+}
+
 .review-toolbar {
   display: grid;
   grid-template-columns: minmax(200px, 0.8fr) minmax(240px, 1.2fr) 110px;
@@ -2197,6 +2272,16 @@ button {
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.creator-edit-accounts { display: grid; gap: 10px; margin: 18px 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-muted); }
+.creator-edit-accounts h3 { margin: 0; font-size: 15px; }
+.creator-edit-accounts .hint { margin: 4px 0 0; }
+.creator-edit-accounts-list { display: grid; gap: 8px; }
+.creator-edit-account-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--border); }
+.creator-edit-account-row:first-child { border-top: 0; }
+.creator-edit-account-row strong, .creator-edit-account-row a { display: block; }
+.creator-edit-account-row a { margin-top: 3px; font-size: 12px; }
+.creator-edit-accounts .action-row input { flex: 1 1 280px; min-width: 0; }
 
 .creator-library-similar-results {
   display: grid;

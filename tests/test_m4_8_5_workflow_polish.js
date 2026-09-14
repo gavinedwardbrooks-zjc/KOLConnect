@@ -18,12 +18,16 @@ function testDashboardReadingOrder() {
 function testCaptureModeAndResultActions() {
   const html = read("webapp/index.html");
   const source = read("webapp/app.js");
-  assert.match(html, /id="capture-mode"[\s\S]*value="automatic">自动抓取[\s\S]*value="manual">人工抓取/);
+  assert.match(html, /id="capture-mode"[\s\S]*value="automatic">自动抓取[\s\S]*value="manual">人工录入/);
   assert.match(html, /id="capture-automatic-panel"/);
   assert.match(html, /id="capture-manual-panel" hidden/);
   assert.match(source, /automaticPanel\.hidden = mode !== "automatic"/);
   assert.match(source, /manualPanel\.hidden = mode !== "manual"/);
   assert.match(source, /platforms: selectedTaskPlatforms\(\)/, "platform payload remains unchanged");
+  assert.match(source, /details\.textContent = "查看结果"/);
+  assert.match(source, /run\.textContent = "继续抓取"/);
+  assert.match(source, /moreSummary\.textContent = "更多"/);
+  assert.match(source, /moreActions\.append\(copyAll, copyUnfinished, exportLinks, rename, remove\)/);
   assert.match(html, /id="scrape-open-results"[^>]*>打开结果文件/);
   assert.match(html, /id="scrape-open-result-folder"[^>]*disabled>打开结果文件夹/);
   assert.match(source, /\/api\/tasks\/\$\{encodeURIComponent\(state\.currentTaskId\)\}\/results\/open-folder/);
@@ -32,9 +36,12 @@ function testCaptureModeAndResultActions() {
 
 function testCompactReviewAndCreatorLibraryToolbars() {
   const html = read("webapp/index.html");
+  const source = read("webapp/app.js");
   const css = read("webapp/styles.css");
   assert.match(html, /扫描达人库缺失邮箱/);
   assert.doesNotMatch(html, /同步有效结果到飞书表|review-sync-four-tables/);
+  assert.doesNotMatch(html, /<th data-i18n="reviewAccountUid">账号唯一ID<\/th>/);
+  assert.match(source, /function reviewPrimaryResultLabel/);
   assert.match(css, /\.review-toolbar-actions[\s\S]*grid-column:\s*1 \/ -1/);
   assert.match(html, /class="creator-library-actions-left"/);
   assert.match(html, /class="creator-library-actions-right"/);
@@ -63,10 +70,16 @@ function testRecentMailPaginationContract() {
 
 function testChromeAccountLabels() {
   const html = read("webapp/index.html");
+  const source = read("webapp/app.js");
+  const css = read("webapp/styles.css");
   assert.match(html, /data-page="accounts" data-primary="settings"[^>]*>Chrome 账号/);
   assert.match(html, /data-i18n="accountsTitle">Chrome 账号/);
   assert.match(html, /管理用于达人抓取的 Chrome Profile 配置；删除配置不会删除浏览器数据/);
   assert.match(html, /Chrome Profile 配置/);
+  assert.match(source, /row\.className = "chrome-profile-card"/);
+  assert.match(source, /#accounts-list \.chrome-profile-card/);
+  assert.match(css, /\.chrome-profile-card/);
+  assert.match(css, /\.chrome-profile-actions \.mini-btn \{ white-space: nowrap; \}/);
 }
 
 testDashboardReadingOrder();

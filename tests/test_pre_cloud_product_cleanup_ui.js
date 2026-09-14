@@ -22,7 +22,7 @@ assert.match(app, /retryFailedReviewRecord/);
 // and clear source-link copy/export actions.
 assert.match(app, /task-selector/);
 assert.match(app, /task-run-platforms/);
-assert.match(app, /抓取所选平台/);
+assert.match(app, /继续抓取/);
 assert.match(app, /copyTaskLinks\("all"\)/);
 assert.match(app, /copyTaskLinks\("unfinished"\)/);
 
