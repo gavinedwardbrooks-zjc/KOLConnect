@@ -152,46 +152,77 @@ from pathlib import Path
 sys.path.insert(0, str(Path.cwd() / "app"))
 import server
 
+def checkpoint(label):
+    print(label, file=sys.stderr, flush=True)
+
+class TestHTTPServer(ThreadingHTTPServer):
+    daemon_threads = True
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         return
 
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def finish(self):
+        try:
+            super().finish()
+        finally:
+            handler_finished.set()
+
 def cycle(port):
+    global handler_finished
+    handler_finished = threading.Event()
     httpd = None
     thread = None
     try:
-        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        httpd = TestHTTPServer(("127.0.0.1", port), Handler)
+        checkpoint("CYCLE_CREATED")
         with server._RUNTIME_SERVER_LOCK:
             server._RUNTIME_SERVER = httpd
             server._RUNTIME_SHUTDOWN_THREAD = None
-        thread = threading.Thread(target=httpd.serve_forever)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
         thread.start()
+        checkpoint("SERVE_STARTED")
         # Prove serve_forever is accepting requests before asking it to shut down.
         with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
             client.sendall(b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
-            assert client.recv(64)
+            response = bytearray()
+            while chunk := client.recv(4096):
+                response.extend(chunk)
+            assert response.startswith(b"HTTP/1.0 200")
+        assert handler_finished.wait(5)
+        checkpoint("REQUEST_COMPLETED")
         assert server.request_runtime_shutdown()
+        checkpoint("SHUTDOWN_1_RETURNED")
         assert server.request_runtime_shutdown()
+        checkpoint("SHUTDOWN_2_RETURNED")
         thread.join(5)
         assert not thread.is_alive()
+        checkpoint("SERVE_THREAD_JOINED")
+        shutdown_thread = server._RUNTIME_SHUTDOWN_THREAD
+        assert shutdown_thread is not None
+        shutdown_thread.join(5)
+        assert not shutdown_thread.is_alive()
     finally:
-        # A failed lifecycle assertion must not leave a non-daemon server thread
-        # alive and turn the useful error into an outer subprocess timeout.
+        # Bound failure cleanup so the original assertion can reach the parent.
         if httpd is not None and thread is not None and thread.is_alive():
-            try:
-                httpd.shutdown()
-            except Exception:
-                pass
+            cleanup = threading.Thread(target=httpd.shutdown, daemon=True)
+            cleanup.start()
+            cleanup.join(5)
         if httpd is not None:
-            try:
-                httpd.server_close()
-            except Exception:
-                pass
+            checkpoint("SERVER_CLOSE_START")
+            httpd.server_close()
+            checkpoint("SERVER_CLOSE_END")
         if thread is not None:
             thread.join(5)
         with server._RUNTIME_SERVER_LOCK:
             server._RUNTIME_SERVER = None
             server._RUNTIME_SHUTDOWN_THREAD = None
+        checkpoint("CYCLE_END")
 
 probe = socket.socket()
 probe.bind(("127.0.0.1", 0))
@@ -208,23 +239,30 @@ with server._RUNTIME_SERVER_LOCK:
 assert server.request_runtime_shutdown() is False
 assert unrelated.getsockname()[1] > 0
 unrelated.close()
+checkpoint("PROCESS_END")
 '''
         environment = os.environ.copy()
         environment["APPDATA"] = str(runtime / "appdata")
         environment["TEMP"] = str(runtime / "temp")
         environment["TMP"] = str(runtime / "temp")
         Path(environment["TEMP"]).mkdir(parents=True, exist_ok=True)
-        result = subprocess.run(
-            [sys.executable, "-c", script],
-            cwd=ROOT,
-            env=environment,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=30,
-            check=False,
-        )
+        try:
+            result = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=30,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stderr = exc.stderr or b""
+            if isinstance(stderr, bytes):
+                stderr = stderr.decode("utf-8", errors="replace")
+            self.fail(f"Lifecycle child timed out; last checkpoints:\n{stderr}")
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
 
