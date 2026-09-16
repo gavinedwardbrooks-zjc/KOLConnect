@@ -24,6 +24,12 @@ if ($LASTEXITCODE -ne 0) {
   throw "SQLite runtime safety gate failed."
 }
 
+foreach ($temporaryPath in @($workPath, $distPath)) {
+  if (Test-Path -LiteralPath $temporaryPath) {
+    Remove-Item -LiteralPath $temporaryPath -Recurse -Force
+  }
+}
+
 $pyInstallerArgs = @(
   "-m", "PyInstaller", "--noconfirm", "--clean",
   "--workpath", $workPath,
@@ -46,21 +52,14 @@ $releaseDirectory = Join-Path $release $releaseName
 $releaseExe = Join-Path $releaseDirectory $releaseFileName
 $releaseZip = Join-Path $release "$releaseName.zip"
 $legacyOneFileExe = Join-Path $release $releaseFileName
+$stagingRoot = Join-Path $release ".staging-$([guid]::NewGuid().ToString('N'))"
+$stagingDirectory = Join-Path $stagingRoot $releaseName
+$stagingZip = Join-Path $stagingRoot "$releaseName.zip"
 New-Item -ItemType Directory -Force -Path $release | Out-Null
 
-if (Test-Path -LiteralPath $releaseDirectory) {
-  Remove-Item -LiteralPath $releaseDirectory -Recurse -Force
-}
-if (Test-Path -LiteralPath $releaseZip) {
-  Remove-Item -LiteralPath $releaseZip -Force
-}
-if (Test-Path -LiteralPath $legacyOneFileExe) {
-  Remove-Item -LiteralPath $legacyOneFileExe -Force
-}
+Copy-Item -LiteralPath $builtDirectory -Destination $stagingDirectory -Recurse
 
-Copy-Item -LiteralPath $builtDirectory -Destination $releaseDirectory -Recurse
-
-$packagedSqlite = @(Get-ChildItem -LiteralPath $releaseDirectory -Recurse -File -Filter "sqlite3.dll")
+$packagedSqlite = @(Get-ChildItem -LiteralPath $stagingDirectory -Recurse -File -Filter "sqlite3.dll")
 if ($packagedSqlite.Count -ne 1) {
   throw "Expected exactly one packaged sqlite3.dll; found $($packagedSqlite.Count)."
 }
@@ -71,10 +70,29 @@ if ($vendorHash -ne $packagedHash) {
   throw "Packaged SQLite runtime does not match the pinned library."
 }
 
-Compress-Archive -LiteralPath $releaseDirectory -DestinationPath $releaseZip -CompressionLevel Optimal
-
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-$archive = [System.IO.Compression.ZipFile]::OpenRead($releaseZip)
+$zipCreated = $false
+for ($attempt = 1; $attempt -le 5; $attempt++) {
+  try {
+    Remove-Item -LiteralPath $stagingZip -Force -ErrorAction SilentlyContinue
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+      $stagingDirectory,
+      $stagingZip,
+      [System.IO.Compression.CompressionLevel]::Optimal,
+      $true
+    )
+    $zipCreated = $true
+    break
+  } catch [System.IO.IOException] {
+    if ($attempt -eq 5) { throw }
+    Start-Sleep -Milliseconds (200 * $attempt)
+  }
+}
+if (-not $zipCreated) {
+  throw "Release ZIP creation failed."
+}
+
+$archive = [System.IO.Compression.ZipFile]::OpenRead($stagingZip)
 try {
   $invalidEntries = @($archive.Entries | Where-Object {
     $normalized = $_.FullName.Replace("\", "/")
@@ -87,10 +105,23 @@ try {
   $archive.Dispose()
 }
 
-$releaseFiles = @(Get-ChildItem -LiteralPath $releaseDirectory -Recurse -File)
+$releaseFiles = @(Get-ChildItem -LiteralPath $stagingDirectory -Recurse -File)
 $directorySize = ($releaseFiles | Measure-Object -Property Length -Sum).Sum
-$exeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $releaseExe).Hash
-$zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $releaseZip).Hash
+$exeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stagingDirectory $releaseFileName)).Hash
+$zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $stagingZip).Hash
+
+if (Test-Path -LiteralPath $releaseDirectory) {
+  Remove-Item -LiteralPath $releaseDirectory -Recurse -Force
+}
+if (Test-Path -LiteralPath $releaseZip) {
+  Remove-Item -LiteralPath $releaseZip -Force
+}
+if (Test-Path -LiteralPath $legacyOneFileExe) {
+  Remove-Item -LiteralPath $legacyOneFileExe -Force
+}
+Move-Item -LiteralPath $stagingDirectory -Destination $releaseDirectory
+Move-Item -LiteralPath $stagingZip -Destination $releaseZip
+Remove-Item -LiteralPath $stagingRoot -Force
 
 Write-Host "RELEASE_FORMAT = ONEDIR"
 Write-Host "RELEASE_DIRECTORY = $releaseDirectory"
