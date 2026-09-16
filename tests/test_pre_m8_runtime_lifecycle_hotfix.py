@@ -157,24 +157,41 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 def cycle(port):
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
-    with server._RUNTIME_SERVER_LOCK:
-        server._RUNTIME_SERVER = httpd
-        server._RUNTIME_SHUTDOWN_THREAD = None
-    thread = threading.Thread(target=httpd.serve_forever)
-    thread.start()
-    # Prove serve_forever is accepting requests before asking it to shut down.
-    with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
-        client.sendall(b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
-        assert client.recv(64)
-    assert server.request_runtime_shutdown()
-    assert server.request_runtime_shutdown()
-    thread.join(5)
-    assert not thread.is_alive()
-    httpd.server_close()
-    with server._RUNTIME_SERVER_LOCK:
-        server._RUNTIME_SERVER = None
-        server._RUNTIME_SHUTDOWN_THREAD = None
+    httpd = None
+    thread = None
+    try:
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+        with server._RUNTIME_SERVER_LOCK:
+            server._RUNTIME_SERVER = httpd
+            server._RUNTIME_SHUTDOWN_THREAD = None
+        thread = threading.Thread(target=httpd.serve_forever)
+        thread.start()
+        # Prove serve_forever is accepting requests before asking it to shut down.
+        with socket.create_connection(("127.0.0.1", port), timeout=5) as client:
+            client.sendall(b"GET / HTTP/1.0\r\nHost: 127.0.0.1\r\n\r\n")
+            assert client.recv(64)
+        assert server.request_runtime_shutdown()
+        assert server.request_runtime_shutdown()
+        thread.join(5)
+        assert not thread.is_alive()
+    finally:
+        # A failed lifecycle assertion must not leave a non-daemon server thread
+        # alive and turn the useful error into an outer subprocess timeout.
+        if httpd is not None and thread is not None and thread.is_alive():
+            try:
+                httpd.shutdown()
+            except Exception:
+                pass
+        if httpd is not None:
+            try:
+                httpd.server_close()
+            except Exception:
+                pass
+        if thread is not None:
+            thread.join(5)
+        with server._RUNTIME_SERVER_LOCK:
+            server._RUNTIME_SERVER = None
+            server._RUNTIME_SHUTDOWN_THREAD = None
 
 probe = socket.socket()
 probe.bind(("127.0.0.1", 0))
