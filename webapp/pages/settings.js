@@ -6,7 +6,6 @@
   let storageMigrationPreview = null;
   let feishuChatPollGeneration = 0;
   const FEISHU_CHAT_POLL_INTERVAL_MS = 1000;
-  const CLOUD_ACCOUNT_POLL_INTERVAL_MS = 1500;
   const storageMigrationSession = `settings-${global.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
   let fxRates = [];
   let showAllFxRates = false;
@@ -742,7 +741,6 @@
     },
 
     unbind() {
-      stopCloudAccountPolling();
       stopFeishuChatPolling();
       resources?.cleanup();
       resources = null;

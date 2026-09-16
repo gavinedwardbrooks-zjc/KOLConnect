@@ -2,7 +2,7 @@ from __future__ import annotations
 
 """Creator Library storage contract backed by a cloud-syncable Excel workbook.
 
-The public methods are intentionally storage-neutral. A future Supabase or
+The public methods are intentionally storage-neutral. A future remote or
 PostgreSQL adapter can keep this contract without changing the HTTP API or UI.
 """
 
