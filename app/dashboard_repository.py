@@ -31,6 +31,7 @@ class DashboardRepository:
         self._creators: list[dict[str, Any]] | None = None
         self._campaign_creators: list[dict[str, Any]] | None = None
         self._campaigns: list[dict[str, Any]] | None = None
+        self._accounts: list[dict[str, Any]] | None = None
 
     def get_creators(self) -> list[dict[str, Any]]:
         if self._creators is None:
@@ -40,6 +41,16 @@ class DashboardRepository:
     def get_creator_health_records(self) -> list[dict[str, Any]]:
         """Creator records already include the latest snapshot trend and freshness."""
         return self.get_creators()
+
+    def get_creator_accounts(self) -> list[dict[str, Any]]:
+        if self._accounts is None:
+            self._accounts = self._creator_repository.getCreatorAccounts()
+        return self._accounts
+
+    def get_campaigns(self) -> list[dict[str, Any]]:
+        if self._campaigns is None:
+            self._campaigns = self._campaign_repository.getCampaigns(include_archived=True)
+        return self._campaigns
 
     def get_campaign_creator_records(
         self,
@@ -51,8 +62,7 @@ class DashboardRepository:
             self._campaign_creators = self._campaign_creator_repository.getCampaignCreators(
                 include_archived=False
             )
-        if self._campaigns is None:
-            self._campaigns = self._campaign_repository.getCampaigns(include_archived=True)
+        self.get_campaigns()
         creators_by_id = {
             str(creator.get("creator_id") or creator.get("analysis_id") or ""): creator
             for creator in creators

@@ -11,6 +11,59 @@
   let lifecycleId = 0;
   const charts = new Map();
   const CHART_COLORS = ["#e56b46", "#2f7d6d", "#e9a23b", "#5574b9", "#b65d7a", "#717171"];
+  const DASHBOARD_LAYOUT_KEY = "kolconnect-dashboard-layout-v2";
+  const MODULES = [
+    { id: "today", label: "今日待处理", description: "可直接进入待联系或数据过期对象", essential: true },
+    { id: "missing_info", label: "待补充信息", description: "账号邮箱与达人基础资料缺口" },
+    { id: "campaigns", label: "Campaign 概览", description: "项目成员与发布进度" },
+    { id: "creator_overview", label: "达人数据概览", description: "Creator 与平台账号构成" },
+    { id: "data_freshness", label: "数据更新状态", description: "快照新鲜度与现有趋势" },
+    { id: "geography", label: "地区与语言", description: "已录入 Creator 基础资料分布" },
+    { id: "roi", label: "ROI / Performance", description: "仅展示已录入的表现数据" },
+  ];
+
+  function defaultLayout() {
+    return { version: 2, order: MODULES.map(module => module.id), visible: Object.fromEntries(MODULES.map(module => [module.id, true])) };
+  }
+
+  function readLayout() {
+    const fallback = defaultLayout();
+    try {
+      const saved = JSON.parse(global.localStorage?.getItem(DASHBOARD_LAYOUT_KEY) || "null");
+      if (!saved || !Array.isArray(saved.order) || typeof saved.visible !== "object") return fallback;
+      const known = new Set(MODULES.map(module => module.id));
+      const order = [...new Set(saved.order.filter(id => known.has(id) && id !== "today"))];
+      order.unshift("today");
+      MODULES.forEach(module => { if (!order.includes(module.id)) order.push(module.id); });
+      const visible = Object.fromEntries(MODULES.map(module => [module.id, module.essential || saved.visible[module.id] !== false]));
+      return { version: 2, order, visible };
+    } catch (_) { return fallback; }
+  }
+
+  function saveLayout(layout) {
+    global.localStorage?.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(layout));
+    global.dispatchEvent?.(new global.Event("kolconnect-dashboard-layout-changed"));
+  }
+
+  function applyDashboardLayout() {
+    const container = element("dashboard-v2-modules");
+    if (!container) return;
+    const layout = readLayout();
+    const byId = new Map([...container.querySelectorAll("[data-dashboard-v2-module]")].map(node => [node.dataset.dashboardV2Module, node]));
+    layout.order.forEach(id => {
+      const node = byId.get(id);
+      if (!node) return;
+      node.hidden = layout.visible[id] === false;
+      container.appendChild(node);
+    });
+  }
+
+  function updateLayout(mutator) {
+    const layout = readLayout();
+    mutator(layout);
+    saveLayout(layout);
+    applyDashboardLayout();
+  }
 
   function element(id) {
     return document.getElementById(id);
@@ -189,6 +242,8 @@
     setText("dashboard-total-views", formatNumber(cooperation.total_views));
     setText("dashboard-cooperation-roi", formatNumber(cooperation.average_roi));
     renderHealthSummary(data?.health_summary);
+    renderV2Health(data?.health_summary);
+    renderV2Dashboard(data);
 
     renderCreatorList("dashboard-rising-creators", health.rising_creators, "暂无上升达人。", record => formatChange(record.change));
     renderCreatorList("dashboard-falling-creators", health.falling_creators, "暂无下滑达人。", record => formatChange(record.change));
@@ -201,6 +256,203 @@
       return `${record.campaign_count || 0} 个 Campaign · ${roi}`;
     });
     renderVisualizations(data);
+  }
+
+  function readableHomepage(record) {
+    const rawUrl = String(record?.profile_url || "").trim();
+    if (!rawUrl) return "主页链接未录入";
+    try {
+      const url = new URL(rawUrl);
+      const host = url.hostname.replace(/^www\./i, "");
+      const path = url.pathname.replace(/\/$/, "");
+      return `${host}${path}` || host;
+    } catch (_) {
+      return rawUrl;
+    }
+  }
+
+  function appendEmpty(target, text) {
+    const empty = document.createElement("p");
+    empty.className = "dashboard-empty";
+    empty.textContent = text;
+    target.appendChild(empty);
+  }
+
+  function renderV2Today(actionItems) {
+    const target = element("dashboard-v2-today-list");
+    if (!target) return;
+    target.replaceChildren();
+    const groups = [
+      { label: "数据过期", records: actionItems?.expired_creators, reason: record => `已过期 ${record?.freshness?.days ?? "--"} 天` },
+      { label: "待联系", records: actionItems?.pending_contact, reason: () => "等待建立联系" },
+    ];
+    const hasRecords = groups.some(group => Array.isArray(group.records) && group.records.length);
+    if (!hasRecords) {
+      appendEmpty(target, "暂无需要优先处理的事项。");
+      return;
+    }
+    groups.forEach(group => (Array.isArray(group.records) ? group.records : []).forEach(record => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "dashboard-v2-action-item";
+      if (record.creator_id) item.dataset.dashboardCreatorId = String(record.creator_id);
+      if (record.campaign_id) item.dataset.dashboardCampaignId = String(record.campaign_id);
+      const label = document.createElement("span");
+      label.textContent = group.label;
+      const title = document.createElement("strong");
+      title.textContent = record.creator_name || record.campaign || "未命名对象";
+      const detail = document.createElement("small");
+      detail.textContent = `${record.platform || "--"} · ${group.reason(record)}`;
+      item.append(label, title, detail);
+      target.appendChild(item);
+    }));
+  }
+
+  function renderV2Campaigns(campaigns) {
+    const target = element("dashboard-v2-campaign-list");
+    if (!target) return;
+    target.replaceChildren();
+    const rows = Array.isArray(campaigns) ? campaigns.slice(0, 6) : [];
+    if (!rows.length) {
+      appendEmpty(target, "暂无 Campaign。");
+      return;
+    }
+    rows.forEach(campaign => {
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "dashboard-v2-campaign-item";
+      item.dataset.dashboardCampaignId = String(campaign.campaign_id || "");
+      const title = document.createElement("strong");
+      title.textContent = campaign.name || "未命名 Campaign";
+      const detail = document.createElement("span");
+      detail.textContent = `${campaign.status || "--"} · ${formatNumber(campaign.creator_count)} 位达人 · 已发布 ${formatNumber(campaign.published_count)}`;
+      item.append(title, detail);
+      target.appendChild(item);
+    });
+  }
+
+  function renderV2PlatformAccounts(rows) {
+    const target = element("dashboard-v2-platform-list");
+    if (!target) return;
+    target.replaceChildren();
+    const values = Array.isArray(rows) ? rows : [];
+    if (!values.length) {
+      appendEmpty(target, "暂无平台账号数据。");
+      return;
+    }
+    values.forEach(row => {
+      const item = document.createElement("div");
+      item.className = "dashboard-v2-platform-row";
+      const platform = document.createElement("span");
+      platform.textContent = row.platform || "其他";
+      const count = document.createElement("strong");
+      count.textContent = `${formatNumber(row.count)} 个账号`;
+      item.append(platform, count);
+      target.appendChild(item);
+    });
+  }
+
+  function renderV2Dashboard(data) {
+    const snapshot = data?.dashboard_v2 || {};
+    const overview = data?.overview || {};
+    const missing = snapshot.missing || {};
+    setText("dashboard-v2-creator-count", formatNumber(snapshot.creator_count));
+    setText("dashboard-v2-account-count", formatNumber(snapshot.account_count));
+    setText("dashboard-v2-campaign-count", formatNumber((snapshot.campaigns || []).length));
+    setText("dashboard-v2-spend", formatMoneyTotal(overview.cooperation_spend, overview.cooperation_spend_by_currency, overview.cooperation_spend_unknown_currency));
+    setText("dashboard-v2-roi", formatPercent(overview.average_roi));
+    setText("dashboard-v2-missing-email", formatNumber((missing.email_accounts || []).length));
+    setText("dashboard-v2-missing-country", formatNumber((missing.country_creators || []).length));
+    setText("dashboard-v2-missing-language", formatNumber((missing.language_creators || []).length));
+    setText("dashboard-v2-missing-content-type", formatNumber((missing.content_type_creators || []).length));
+    renderV2Today(data?.action_items || {});
+    renderV2Campaigns(snapshot.campaigns);
+    renderV2PlatformAccounts(snapshot.platform_accounts);
+  }
+
+  function renderV2Health(summary) {
+    const total = Number(summary?.total);
+    const score = Number(summary?.score);
+    setText("dashboard-v2-health-score", Number.isFinite(total) && total > 0 && Number.isFinite(score) ? `${formatNumber(score)} 分` : "暂无数据");
+    setText("dashboard-v2-health-healthy", formatNumber(summary?.healthy || 0));
+    setText("dashboard-v2-health-warning", formatNumber(summary?.warning || 0));
+    setText("dashboard-v2-health-critical", formatNumber(summary?.critical || 0));
+  }
+
+  function renderDrawerRows() {
+    const state = global.__kolconnectDashboardV2Drawer;
+    const target = element("dashboard-v2-drawer-list");
+    const query = String(element("dashboard-v2-drawer-search")?.value || "").trim().toLocaleLowerCase();
+    if (!state || !target) return;
+    target.replaceChildren();
+    const rows = state.rows.filter(row => [row.creator_name, row.platform, row.username, row.profile_url, row.country, row.language]
+      .some(value => String(value || "").toLocaleLowerCase().includes(query)));
+    setText("dashboard-v2-drawer-count", `共 ${formatNumber(rows.length)} ${state.unit}`);
+    if (!rows.length) {
+      appendEmpty(target, "没有符合当前搜索条件的对象。");
+      return;
+    }
+    rows.forEach(row => {
+      const item = document.createElement("article");
+      item.className = "dashboard-v2-drawer-item";
+      const title = document.createElement("strong");
+      title.textContent = row.creator_name || "未命名达人";
+      const account = document.createElement("span");
+      account.textContent = [row.platform, row.username ? `@${row.username.replace(/^@/, "")}` : ""].filter(Boolean).join(" · ") || "账号信息未录入";
+      const context = document.createElement("small");
+      context.textContent = [row.country, row.language].filter(Boolean).join(" · ") || "国家/语言待补充";
+      const actions = document.createElement("div");
+      actions.className = "dashboard-v2-drawer-item-actions";
+      if (row.profile_url) {
+        const link = document.createElement("a");
+        link.href = row.profile_url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = readableHomepage(row);
+        actions.appendChild(link);
+      }
+      const view = document.createElement("button");
+      view.type = "button";
+      view.className = "text-btn";
+      view.textContent = "查看达人";
+      view.dataset.dashboardCreatorId = String(row.creator_id || "");
+      actions.appendChild(view);
+      item.append(title, account, context, actions);
+      target.appendChild(item);
+    });
+  }
+
+  function openDrawer(kind) {
+    const snapshot = dashboardData?.dashboard_v2 || {};
+    const missing = snapshot.missing || {};
+    const configurations = {
+      "missing-email": { title: "缺少邮箱的账号", rows: missing.email_accounts || [], unit: "个账号", primary: "批量补全邮箱" },
+      "missing-country": { title: "缺少国家/地区的达人", rows: missing.country_creators || [], unit: "位达人" },
+      "missing-language": { title: "缺少语言的达人", rows: missing.language_creators || [], unit: "位达人" },
+      "missing-content-type": { title: "缺少内容类型的达人", rows: missing.content_type_creators || [], unit: "位达人" },
+    };
+    const config = configurations[kind];
+    if (!config) return;
+    global.__kolconnectDashboardV2Drawer = config;
+    setText("dashboard-v2-drawer-title", config.title);
+    const search = element("dashboard-v2-drawer-search");
+    if (search) search.value = "";
+    const primary = element("dashboard-v2-drawer-primary");
+    if (primary) {
+      primary.hidden = !config.primary;
+      primary.textContent = config.primary || "";
+      primary.dataset.dashboardV2DrawerPrimary = kind;
+    }
+    const drawer = element("dashboard-v2-drawer");
+    if (drawer) drawer.hidden = false;
+    renderDrawerRows();
+    search?.focus();
+  }
+
+  function closeDrawer() {
+    const drawer = element("dashboard-v2-drawer");
+    if (drawer) drawer.hidden = true;
+    global.__kolconnectDashboardV2Drawer = null;
   }
 
   function renderHealthSummary(summary) {
@@ -318,6 +570,8 @@
   function renderGeographyAnalytics(data, failed = false) {
     renderRanking("dashboard-country-list", data?.countries, true);
     renderRanking("dashboard-language-list", data?.languages, false);
+    renderRanking("dashboard-v2-country-list", data?.countries, true);
+    renderRanking("dashboard-v2-language-list", data?.languages, false);
     const error = element("dashboard-geography-error");
     if (error) error.hidden = !failed;
   }
@@ -328,6 +582,7 @@
       .map(row => ({ ...row, average_recorded_roi: row.average_recorded_roi == null ? null : Number(row.average_recorded_roi) }));
     const latest = trend.length ? trend[trend.length - 1].average_recorded_roi : null;
     setText("dashboard-roi-latest", Number.isFinite(latest) ? formatNumber(latest) : "--");
+    setText("dashboard-v2-roi-latest", Number.isFinite(latest) ? `${formatNumber(latest)}%` : "暂无已录入 ROI");
     renderChart("dashboard-roi-trend-chart", "dashboard-roi-trend-empty", {
       type: "line",
       data: {
@@ -460,6 +715,40 @@
   }
 
   function handleDashboardClick(event) {
+    const drawerClose = event.target.closest?.("[data-dashboard-v2-drawer-close]");
+    if (drawerClose) {
+      closeDrawer();
+      return;
+    }
+    const customization = event.target.closest?.("#dashboard-v2-customize");
+    if (customization) {
+      getApp().navigate("settings").catch(getApp().showError);
+      return;
+    }
+    const open = event.target.closest?.("[data-dashboard-v2-open]")?.dataset.dashboardV2Open;
+    if (open?.startsWith("missing-")) {
+      openDrawer(open);
+      return;
+    }
+    if (open === "campaigns") {
+      getApp().navigate("campaigns").catch(getApp().showError);
+      return;
+    }
+    if (open === "accounts") {
+      getApp().navigate("creator-library").catch(getApp().showError);
+      return;
+    }
+    const primary = event.target.closest?.("[data-dashboard-v2-drawer-primary]");
+    if (primary?.dataset.dashboardV2DrawerPrimary === "missing-email") {
+      getApp().navigate("scrape").then(() => {
+        const source = document.querySelector('input[name="email-source"][value="creator_library"]');
+        if (!source) return;
+        source.checked = true;
+        source.dispatchEvent(new Event("change", { bubbles: true }));
+      }).catch(getApp().showError);
+      closeDrawer();
+      return;
+    }
     const campaignItem = event.target.closest?.("[data-dashboard-campaign-id]");
     const campaignId = campaignItem?.dataset.dashboardCampaignId;
     if (campaignId) {
@@ -479,6 +768,8 @@
       resources = global.KOLConnectPageResources.create();
       lifecycleId += 1;
       dashboardData = null;
+      closeDrawer();
+      applyDashboardLayout();
       await Promise.all([
         loadDashboard(), loadRisks(), loadPlatformAnalytics(),
         loadGeographyAnalytics(), loadRecordedRoiTrend(),
@@ -491,6 +782,8 @@
         loadDashboard(), loadPlatformAnalytics(), loadGeographyAnalytics(), loadRecordedRoiTrend(),
       ]));
       resources.listen(document.querySelector('.page[data-page="dashboard"]'), "click", handleDashboardClick);
+      resources.listen(element("dashboard-v2-drawer"), "click", handleDashboardClick);
+      resources.listen(element("dashboard-v2-drawer-search"), "input", renderDrawerRows);
     },
 
     unbind() {
@@ -508,9 +801,24 @@
       resources?.cleanup();
       resources = null;
       dashboardData = null;
+      closeDrawer();
+      applyDashboardLayout();
       destroyCharts();
     },
   };
 
   global.KOLConnectPages.registerPage("dashboard", page);
+  global.KOLConnectDashboardPreferences = {
+    modules: () => MODULES.map(module => ({ ...module })),
+    get: readLayout,
+    setVisible(id, visible) { updateLayout(layout => { if (layout.visible[id] !== undefined && !MODULES.find(module => module.id === id)?.essential) layout.visible[id] = Boolean(visible); }); },
+    move(id, direction) { updateLayout(layout => {
+      if (id === "today") return;
+      const index = layout.order.indexOf(id);
+      const next = index + direction;
+      if (index >= 0 && next > 0 && next < layout.order.length) [layout.order[index], layout.order[next]] = [layout.order[next], layout.order[index]];
+    }); },
+    reset() { saveLayout(defaultLayout()); applyDashboardLayout(); },
+    apply: applyDashboardLayout,
+  };
 })(window);

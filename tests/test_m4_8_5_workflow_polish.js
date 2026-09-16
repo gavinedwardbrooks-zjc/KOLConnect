@@ -15,19 +15,17 @@ function testDashboardReadingOrder() {
   assert.ok(kpis >= 0 && kpis < actions && actions < charts, "KPI < today actions < charts");
 }
 
-function testCaptureModeAndResultActions() {
+function testCaptureAndResultActions() {
   const html = read("webapp/index.html");
   const source = read("webapp/app.js");
-  assert.match(html, /id="capture-mode"[\s\S]*value="automatic">自动抓取[\s\S]*value="manual">人工录入/);
   assert.match(html, /id="capture-automatic-panel"/);
-  assert.match(html, /id="capture-manual-panel" hidden/);
-  assert.match(source, /automaticPanel\.hidden = mode !== "automatic"/);
-  assert.match(source, /manualPanel\.hidden = mode !== "manual"/);
+  assert.doesNotMatch(html, /id="capture-mode"|id="capture-manual-panel"|id="manual-task-create"/);
+  assert.doesNotMatch(source, /\$\("manual-task-create"\)\.addEventListener/);
   assert.match(source, /platforms: selectedTaskPlatforms\(\)/, "platform payload remains unchanged");
-  assert.match(source, /details\.textContent = "查看结果"/);
+  assert.match(source, /review\.textContent = "查看结果"/);
   assert.match(source, /run\.textContent = "继续抓取"/);
   assert.match(source, /moreSummary\.textContent = "更多"/);
-  assert.match(source, /moreActions\.append\(copyAll, copyUnfinished, exportLinks, rename, remove\)/);
+  assert.match(source, /moreActions\.append\(viewOriginal, copyAll, copyUnfinished, exportLinks, rename, remove\)/);
   assert.match(html, /id="scrape-open-results"[^>]*>打开结果文件/);
   assert.match(html, /id="scrape-open-result-folder"[^>]*disabled>打开结果文件夹/);
   assert.match(source, /\/api\/tasks\/\$\{encodeURIComponent\(state\.currentTaskId\)\}\/results\/open-folder/);
@@ -83,7 +81,7 @@ function testChromeAccountLabels() {
 }
 
 testDashboardReadingOrder();
-testCaptureModeAndResultActions();
+testCaptureAndResultActions();
 testCompactReviewAndCreatorLibraryToolbars();
 testRecentMailPaginationContract();
 testChromeAccountLabels();

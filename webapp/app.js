@@ -21,7 +21,7 @@ const I18N = {
     goSettings: "去设置",
     logPreview: "日志预览",
     scrapeTitle: "邮箱抓取",
-    scrapeSubtitle: "抓主页邮箱、外链邮箱和最近发布日期。",
+    scrapeSubtitle: "从现有任务、审核结果或达人库补全公开联系邮箱，也可手动粘贴主页链接。",
     scrapeTask: "抓取任务",
     linksFile: "links.txt 路径",
     taskLinks: "达人链接",
@@ -426,7 +426,7 @@ Object.assign(I18N.zh, {
   reviewPageSize: "每页条数",
   reviewRefresh: "刷新任务",
   reviewPlatform: "平台",
-  reviewLink: "达人链接",
+  reviewLink: "账号主页",
   reviewAccountUid: "账号唯一ID",
   reviewLatestDate: "最近发布日期",
   reviewScrapeStatus: "抓取状态",
@@ -453,7 +453,7 @@ Object.assign(I18N.en, {
   reviewPageSize: "Rows per page",
   reviewRefresh: "Refresh tasks",
   reviewPlatform: "Platform",
-  reviewLink: "Creator link",
+  reviewLink: "Account homepage",
   reviewAccountUid: "Account UID",
   reviewLatestDate: "Latest publish date",
   reviewScrapeStatus: "Scrape status",
@@ -500,7 +500,6 @@ const state = {
     records: [],
     platforms: [],
     platformResults: {},
-    creatorAnalysisAvailable: false,
     reviewTotal: 0,
     reviewedCount: 0,
     pendingCount: 0,
@@ -533,6 +532,12 @@ const state = {
   discover: {
     results: [],
     summary: {}
+  },
+  emailEnrichment: {
+    candidates: [],
+    previewed: false,
+    source: "task",
+    taskId: ""
   },
   mailInbox: {
     messages: [],
@@ -646,6 +651,84 @@ function renderCurrentTask() {
   setText("task-current", value.join("\n"));
 }
 
+function taskPlatformEntries(task) {
+  const progress = task.platform_progress || {};
+  return (task.available_platforms || task.platforms || [])
+    .map(value => {
+      const key = String(value || "").toLowerCase();
+      const label = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" }[key] || String(value || "");
+      const values = progress[label] || { total: 0, processed: 0, unfinished: 0 };
+      return { key, label, total: Number(values.total || 0), processed: Number(values.processed || 0), unfinished: Number(values.unfinished || 0) };
+    })
+    .filter(item => item.key && item.total > 0);
+}
+
+function openContinueScrapeDialog(task) {
+  const entries = taskPlatformEntries(task);
+  if (!entries.length) throw new Error("当前任务没有可继续抓取的原始链接。");
+  const unfinished = entries.filter(item => item.unfinished > 0);
+  const defaultKeys = new Set((unfinished.length ? unfinished : entries).map(item => item.key));
+  const dialog = document.createElement("dialog");
+  dialog.className = "task-continue-dialog";
+  const title = document.createElement("h2");
+  title.textContent = `继续抓取：${task.name || "未命名任务"}`;
+  const hint = document.createElement("p");
+  hint.className = "hint";
+  hint.textContent = "使用此任务已保存的原始链接；本次执行会保留在同一任务下。";
+  const list = document.createElement("div");
+  list.className = "task-continue-platforms";
+  entries.forEach(item => {
+    const label = document.createElement("label");
+    label.className = "task-continue-platform";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = item.key;
+    input.checked = defaultKeys.has(item.key);
+    const name = document.createElement("strong");
+    name.textContent = item.label;
+    const original = document.createElement("span");
+    original.textContent = `原始链接 ${item.total}`;
+    const completed = document.createElement("span");
+    completed.textContent = `当前完成 ${item.processed}${item.unfinished === 0 ? " ✓" : ""}`;
+    label.append(input, name, original, completed);
+    list.appendChild(label);
+  });
+  const actions = document.createElement("div");
+  actions.className = "action-row";
+  const cancel = document.createElement("button");
+  cancel.type = "button";
+  cancel.className = "soft-btn";
+  cancel.textContent = "取消";
+  cancel.addEventListener("click", () => dialog.close());
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "primary-btn";
+  start.textContent = "开始抓取";
+  start.addEventListener("click", async () => {
+    const platforms = [...list.querySelectorAll("input:checked")].map(input => input.value);
+    if (!platforms.length) return showError(new Error("请选择至少一个平台。"));
+    start.disabled = true;
+    try {
+      await apiPost("/api/scrape/start", { taskId: task.id, profile: valueOf("profile-select"), platforms });
+      dialog.close();
+      await refreshScrapeStatus();
+      await loadTaskList();
+    } catch (error) {
+      showError(error);
+      start.disabled = false;
+    }
+  });
+  actions.append(cancel, start);
+  dialog.append(title, hint, list, actions);
+  dialog.addEventListener("close", () => dialog.remove());
+  dialog.addEventListener("click", event => {
+    const rect = dialog.getBoundingClientRect();
+    if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+  });
+  document.body.appendChild(dialog);
+  dialog.showModal();
+}
+
 function renderTaskList() {
   const wrap = $("task-list");
   if (!wrap) return;
@@ -713,39 +796,29 @@ function renderTaskList() {
     });
     const actions = document.createElement("div");
     actions.className = "action-row";
-    const details = document.createElement("button");
-    details.type = "button";
-    details.className = "mini-btn";
-    details.textContent = "查看结果";
-    details.addEventListener("click", async event => {
+    const review = document.createElement("button");
+    review.type = "button";
+    review.className = "mini-btn";
+    review.textContent = "查看结果";
+    review.addEventListener("click", async event => {
       event.stopPropagation();
       try {
-        await openTaskDetails(task.id);
+        state.review.taskId = task.id;
+        await setPage("review");
+        await loadReviewResults();
       } catch (error) {
         showError(error);
       }
     });
-    const canContinue = task.status !== "completed" && task.status !== "failed";
-    const platformSelect = document.createElement("select");
-    platformSelect.multiple = true;
-    platformSelect.className = "task-run-platforms";
-    (task.available_platforms || task.platforms || []).forEach(platform => {
-      const option = new Option(String(platform), String(platform));
-      option.selected = true;
-      platformSelect.add(option);
-    });
+    const hasRunnableLinks = taskPlatformEntries(task).length > 0;
+    const canContinue = task.task_type !== "manual" && hasRunnableLinks;
     const run = document.createElement("button");
     run.type = "button";
     run.className = "mini-btn";
     run.textContent = "继续抓取";
-    run.addEventListener("click", async event => {
+    run.addEventListener("click", event => {
       event.stopPropagation();
-      const platforms = Array.from(platformSelect.selectedOptions).map(option => option.value);
-      if (!platforms.length) return showError(new Error("请选择至少一个平台。"));
-      try {
-        await apiPost("/api/scrape/start", { taskId: task.id, profile: valueOf("profile-select"), platforms });
-        await refreshScrapeStatus();
-      } catch (error) { showError(error); }
+      try { openContinueScrapeDialog(task); } catch (error) { showError(error); }
     });
     const copyTaskLinks = async scope => {
       const data = await apiGet(`/api/tasks/${encodeURIComponent(task.id)}/links?scope=${scope}`);
@@ -782,6 +855,14 @@ function renderTaskList() {
         URL.revokeObjectURL(link.href);
       } catch (error) { showError(error); }
     });
+    const viewOriginal = document.createElement("button");
+    viewOriginal.type = "button";
+    viewOriginal.className = "mini-btn";
+    viewOriginal.textContent = "查看原始链接";
+    viewOriginal.addEventListener("click", async event => {
+      event.stopPropagation();
+      try { await openTaskDetails(task.id); } catch (error) { showError(error); }
+    });
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "mini-btn danger";
@@ -803,7 +884,7 @@ function renderTaskList() {
         showError(error);
       }
     });
-    if (task.task_type === "manual" && canContinue) {
+    if (task.task_type === "manual" && hasRunnableLinks) {
       const supplement = document.createElement("button");
       supplement.type = "button";
       supplement.className = "mini-btn";
@@ -844,10 +925,10 @@ function renderTaskList() {
     moreSummary.textContent = "更多";
     const moreActions = document.createElement("div");
     moreActions.className = "task-card-more-actions";
-    moreActions.append(copyAll, copyUnfinished, exportLinks, rename, remove);
+    moreActions.append(viewOriginal, copyAll, copyUnfinished, exportLinks, rename, remove);
     more.append(moreSummary, moreActions);
-    actions.append(details);
-    if (canContinue) actions.append(platformSelect, run);
+    actions.append(review);
+    if (canContinue) actions.append(run);
     actions.append(more);
     head.append(name, actions);
 
@@ -858,7 +939,7 @@ function renderTaskList() {
       : task.task_type === "email_recheck" ? t("taskTypeEmailRecheck") : t("taskTypeScrape");
     const platforms = task.available_platforms || task.platforms || [task.target_platform || "全部"];
     const timestamp = task.latest_run_at || task.updated_at || task.created_at || "";
-    meta.textContent = `${taskType} · ${platforms.filter(Boolean).join("、") || "全部"} · 原始链接 ${task.total_links || 0} · ${scrapeStatusLabel(task.status || "created")}${timestamp ? ` · ${timestamp}` : ""}`;
+    meta.textContent = `${taskType} · 原始链接 ${task.total_links || 0} · ${scrapeStatusLabel(task.status || "created")}${timestamp ? ` · ${timestamp}` : ""}`;
 
     const track = document.createElement("div");
     track.className = "task-progress-track";
@@ -906,6 +987,7 @@ async function loadTaskList() {
   }
   renderCurrentTask();
   renderTaskList();
+  renderEmailTaskOptions();
   renderScrapeControls();
 }
 
@@ -1212,9 +1294,11 @@ function isRetryableReviewStatus(status) {
 }
 
 function reviewPrimaryResultLabel(status) {
-  if (String(status || "").trim() === "success") return "成功";
-  if (String(status || "").trim() === "partial_success") return "部分获取";
-  return "未获取";
+  const normalized = String(status || "").trim();
+  if (normalized === "success") return "已获取";
+  if (normalized === "partial_success") return "部分待补充";
+  if (["missing_data", "login_required", "platform_error"].includes(normalized)) return "待补充资料";
+  return "抓取异常";
 }
 
 function pendingReviewRecords() {
@@ -1336,14 +1420,191 @@ async function retryFailedReviewRecord(record) {
   await refreshScrapeStatus();
 }
 
+function readableAccountHomepage(rawUrl) {
+  try {
+    const url = new URL(String(rawUrl || ""));
+    const host = url.hostname.replace(/^www\./i, "");
+    let path = url.pathname.replace(/\/$/, "");
+    if (/youtube\.com$/i.test(host) && /^\/channel\/[^/]+/i.test(path)) {
+      const channelId = path.split("/")[2] || "";
+      path = `/channel/${channelId.length > 12 ? `${channelId.slice(0, 12)}…` : channelId}`;
+    }
+    return `${host}${path}` || host;
+  } catch (_error) {
+    return "--";
+  }
+}
+
+function selectedEmailSource() {
+  return document.querySelector('input[name="email-source"]:checked')?.value || "task";
+}
+
+function selectedEmailPlatforms() {
+  return [...document.querySelectorAll(".email-platform-option:checked")].map(input => input.value);
+}
+
+function emailMissingOnly() {
+  return (document.querySelector('input[name="email-scope"]:checked')?.value || "missing") === "missing";
+}
+
+function emailStatusLabel(status) {
+  return {
+    created: "已获取",
+    updated: "已获取",
+    unchanged: "已存在",
+    email_not_found: "未找到",
+    capture_failed: "页面无法访问",
+    login_required: "需要人工确认",
+    platform_error: "页面无法访问",
+    profile_identity_unresolved: "需要人工确认",
+    ambiguous_account: "需要人工确认",
+    email_conflict: "邮箱冲突，未覆盖",
+    pending: "待抓取",
+  }[String(status || "")] || "待抓取";
+}
+
+function renderEmailEnrichmentRows(rows) {
+  const body = $("email-enrichment-results");
+  const wrap = $("email-enrichment-results-wrap");
+  if (!body || !wrap) return;
+  body.textContent = "";
+  rows.forEach(item => {
+    const row = document.createElement("tr");
+    const values = [
+      item.platform || "--",
+      readableAccountHomepage(item.profile_url),
+      item.email || "—",
+      item.email_source || "—",
+      emailStatusLabel(item.status),
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement("td");
+      if (index === 1 && /^https?:\/\//i.test(item.profile_url || "")) {
+        const link = document.createElement("a");
+        link.href = item.profile_url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = value;
+        cell.appendChild(link);
+      } else {
+        cell.textContent = value;
+      }
+      row.appendChild(cell);
+    });
+    body.appendChild(row);
+  });
+  wrap.hidden = rows.length === 0;
+}
+
+function renderEmailSourceControls() {
+  const source = selectedEmailSource();
+  state.emailEnrichment.source = source;
+  $("email-existing-source-fields").hidden = source === "manual";
+  $("email-manual-source-field").hidden = source !== "manual";
+  $("email-scope-selector").hidden = source === "manual";
+  $("email-source-task-field").hidden = source === "creator_library";
+  state.emailEnrichment.previewed = false;
+  $("email-enrichment-start").disabled = true;
+  setText("email-enrichment-summary", "请选择来源并预览待处理账号。");
+  renderEmailEnrichmentRows([]);
+}
+
+function renderEmailTaskOptions() {
+  const select = $("email-source-task");
+  if (!select) return;
+  const selected = select.value || state.currentTaskId;
+  select.replaceChildren();
+  state.tasks.filter(task => task.task_type !== "manual").forEach(task => {
+    select.add(new Option(`${task.name || "未命名任务"} · 原始链接 ${task.total_links || 0}`, task.id));
+  });
+  if ([...select.options].some(option => option.value === selected)) select.value = selected;
+}
+
+async function previewEmailEnrichment() {
+  const source = selectedEmailSource();
+  if (source === "manual") {
+    const links = valueOf("email-manual-links").split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+    if (!links.length) throw new Error("请粘贴至少一个主页或视频链接。");
+    state.emailEnrichment.candidates = links.map(profileUrl => ({ profile_url: profileUrl, status: "pending" }));
+    state.emailEnrichment.previewed = true;
+    setText("email-enrichment-summary", `待处理链接：${links.length}`);
+    renderEmailEnrichmentRows(state.emailEnrichment.candidates);
+    $("email-enrichment-start").disabled = false;
+    return;
+  }
+  const taskId = source === "creator_library" ? "" : valueOf("email-source-task");
+  if (source !== "creator_library" && !taskId) throw new Error("请选择抓取任务。");
+  const params = new URLSearchParams({ source, task_id: taskId, missing_only: String(emailMissingOnly()) });
+  selectedEmailPlatforms().forEach(platform => params.append("platform", platform));
+  const data = await apiGet(`/api/tasks/email-recheck/candidates?${params}`);
+  state.emailEnrichment = { candidates: data.candidates || [], previewed: true, source, taskId };
+  setText("email-enrichment-summary", `总账号：${data.scanned_accounts || 0} · 待处理：${data.candidate_count || 0} · 缺少邮箱：${data.missing_email_count || 0}`);
+  renderEmailEnrichmentRows(state.emailEnrichment.candidates);
+  $("email-enrichment-start").disabled = !state.emailEnrichment.candidates.length;
+}
+
+async function startEmailEnrichment() {
+  if (!state.emailEnrichment.previewed) throw new Error("请先预览待处理账号。");
+  const source = state.emailEnrichment.source;
+  const button = $("email-enrichment-start");
+  button.disabled = true;
+  if (source === "manual") {
+    const results = [];
+    for (const candidate of state.emailEnrichment.candidates) {
+      try {
+        const data = await apiPost("/api/creator-library/email-capture", { url: candidate.profile_url });
+        results.push({
+          platform: data.resolution?.platform || "",
+          profile_url: data.resolution?.canonical_profile_url || candidate.profile_url,
+          email: data.email || "",
+          email_source: data.email_source || "",
+          status: data.status,
+        });
+      } catch (_error) {
+        results.push({ ...candidate, status: "capture_failed" });
+      }
+    }
+    state.emailEnrichment.candidates = results;
+    renderEmailEnrichmentRows(results);
+    const found = results.filter(item => ["created", "updated", "unchanged"].includes(item.status)).length;
+    setText("email-enrichment-summary", `处理完成：${results.length} · 已获取/已有：${found} · 未找到或需处理：${results.length - found}`);
+    button.disabled = false;
+    return;
+  }
+  const data = await apiPost("/api/tasks/email-recheck/scan", {
+    source,
+    task_id: state.emailEnrichment.taskId,
+    platforms: selectedEmailPlatforms(),
+    missing_only: emailMissingOnly(),
+  });
+  if (!data.task) throw new Error("当前范围没有需要抓取邮箱的账号。");
+  state.currentTaskId = data.task.id;
+  state.currentTask = data.task;
+  window.localStorage.setItem("kolconnect.currentTaskId", data.task.id);
+  await apiPost("/api/scrape/start", { taskId: data.task.id, profile: valueOf("profile-select"), platforms: selectedEmailPlatforms() });
+  await loadTaskList();
+  await refreshScrapeStatus();
+  showSaved(`邮箱补全任务已开始：${data.created_count || 0} 个账号。`);
+}
+
+async function openReviewEmailEnrichment() {
+  if (!state.review.taskId) throw new Error("请选择审核任务。");
+  const source = document.querySelector('input[name="email-source"][value="review_results"]');
+  const taskSelect = $("email-source-task");
+  if (!source || !taskSelect) throw new Error("邮箱补全入口暂不可用。");
+  source.checked = true;
+  await setPage("scrape");
+  renderEmailTaskOptions();
+  taskSelect.value = state.review.taskId;
+  renderEmailSourceControls();
+  setText("email-enrichment-summary", "已选中当前审核任务；默认仅处理缺少邮箱的账号。");
+}
+
 function renderReviewResults() {
   const body = $("review-results-body");
   const empty = $("review-empty");
   const summary = $("review-summary");
   if (!body || !empty || !summary) return;
-  const analysisButton = $("review-view-analysis");
-  if (analysisButton) analysisButton.hidden = !state.review.creatorAnalysisAvailable;
-
   body.textContent = "";
   const records = reviewFilteredRecords();
   const pageSize = Number(valueOf("review-page-size", "20")) || 20;
@@ -1380,13 +1641,14 @@ function renderReviewResults() {
       link.href = profileUrl;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      link.textContent = reviewField(record, "账号名") || "打开主页";
+      link.className = "account-homepage-link";
+      link.textContent = readableAccountHomepage(profileUrl);
+      link.title = readableAccountHomepage(profileUrl);
       profileCell.appendChild(link);
     } else profileCell.textContent = "--";
     row.appendChild(profileCell);
     reviewCell(row, reviewPrimaryResultLabel(reviewField(record, "scrape_status")));
     reviewCell(row, reviewField(record, "最近发布日期"));
-    reviewCell(row, reviewField(record, "账号名") || reviewField(record, "达人名称"));
     reviewEditableCell(row, reviewField(record, "邮箱"), "邮箱");
     reviewEditableCell(row, reviewField(record, "粉丝数"), "粉丝数");
     reviewEditableCell(row, reviewField(record, "WhatsApp"), "WhatsApp");
@@ -1441,68 +1703,9 @@ function renderReviewResults() {
   renderReviewPagination(records.length, pageSize);
 }
 
-function formatCreatorAnalysisMetric(value) {
-  const number = Number(value);
-  if (!Number.isFinite(number)) return "-";
-  if (number >= 1000000) return `${(number / 1000000).toFixed(number >= 10000000 ? 0 : 1).replace(".0", "")}M`;
-  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10000 ? 0 : 1).replace(".0", "")}K`;
-  return String(Math.round(number));
-}
-
-function renderCreatorAnalysisList(id, items, fallback) {
-  const list = $(id);
-  if (!list) return;
-  list.replaceChildren(...(items.length ? items : [fallback]).map(item => {
-    const row = document.createElement("li");
-    row.textContent = item;
-    return row;
-  }));
-}
-
-async function viewCreatorAnalysis() {
-  if (!state.review.taskId) throw new Error("请选择任务。");
-  const data = await apiGet(`/api/tasks/${encodeURIComponent(state.review.taskId)}/creator-analysis`);
-  if (!data.available || !data.analysis) throw new Error("当前任务没有可查看的达人分析。");
-  const analysis = data.analysis;
-  const creator = analysis.creator || {};
-  const videoAnalysis = analysis.video_analysis || {};
-  const insight = analysis.creator_insight || {};
-  const panel = $("creator-analysis-panel");
-  if (!panel) return;
-  panel.hidden = false;
-  setText("creator-analysis-summary", `${creator.creator_name || "未命名达人"} · ${creator.platform || ""} · ${creator.profile_url || ""}`);
-  setText("creator-analysis-level", insight.level || insight.grade || "insufficient");
-  const ratio = insight.median_views_to_followers === null || insight.median_views_to_followers === undefined
-    ? "-"
-    : `${(Number(insight.median_views_to_followers) * 100).toFixed(1)}%`;
-  setText(
-    "creator-analysis-metrics",
-    `样本：${videoAnalysis.sample_size || 0} 条；平均播放：${formatCreatorAnalysisMetric(videoAnalysis.average_views)}；中位播放：${formatCreatorAnalysisMetric(videoAnalysis.median_views)}；播放稳定性：${videoAnalysis.view_stability ?? "-"}；播放完整率：${Math.round(Number(videoAnalysis.view_coverage || 0) * 100)}%；中位播放/粉丝：${ratio}；内容类型：${analysis.content_category || "未选择"}`
-  );
-  renderCreatorAnalysisList("creator-analysis-strengths", Array.isArray(insight.strengths) ? insight.strengths : [], "暂无优势结论。");
-  renderCreatorAnalysisList("creator-analysis-risks", Array.isArray(insight.risks) ? insight.risks : [], "暂无风险结论。");
-  setText("creator-analysis-recommendation", `建议：${insight.recommendation || "请结合主页内容进行人工判断。"}`);
-
-  const videos = $("creator-analysis-videos");
-  videos.replaceChildren(...(Array.isArray(analysis.videos) ? analysis.videos : []).map(video => {
-    const row = document.createElement("div");
-    row.className = "creator-analysis-video";
-    const link = document.createElement("a");
-    link.href = video.video_url || "#";
-    link.target = "_blank";
-    link.rel = "noreferrer";
-    link.textContent = video.video_url || video.video_key || "视频";
-    const metrics = document.createElement("span");
-    metrics.textContent = `播放 ${video.views || "-"} · 点赞 ${video.likes || "-"} · 评论 ${video.comments || "-"}`;
-    row.append(link, metrics);
-    return row;
-  }));
-}
-
 async function loadReviewResults() {
   if (!state.review.taskId) {
     state.review.records = [];
-    state.review.creatorAnalysisAvailable = false;
     renderReviewResults();
     return;
   }
@@ -1510,12 +1713,9 @@ async function loadReviewResults() {
   state.review.records = Array.isArray(data.records) ? data.records : [];
   state.review.platforms = Array.isArray(data.platforms) ? data.platforms : [];
   state.review.platformResults = data.platform_results || {};
-  state.review.creatorAnalysisAvailable = Boolean(data.creator_analysis_available);
   state.review.reviewTotal = Number(data.review_total || 0);
   state.review.reviewedCount = Number(data.reviewed_count || 0);
   state.review.pendingCount = Number(data.pending_count || 0);
-  const analysisPanel = $("creator-analysis-panel");
-  if (analysisPanel) analysisPanel.hidden = true;
   renderReviewResults();
 }
 
@@ -1700,33 +1900,6 @@ async function loadSettingsState(options = {}) {
     });
   }
   return data;
-}
-
-async function loadManualSourceContacts() {
-  const wrapper = $("manual-source-contact-field");
-  const select = $("manual-source-contact");
-  if (!wrapper || !select) return;
-
-  select.innerHTML = "";
-  select.add(new Option("不选择来源联系人", ""));
-  try {
-    const data = await apiGet("/api/agency-contacts");
-    if (!data.configured) {
-      wrapper.hidden = true;
-      return;
-    }
-    const contacts = Array.isArray(data.contacts) ? data.contacts : [];
-    contacts.forEach(contact => {
-      const details = [contact.whatsapp, ...(contact.agencies || [])].filter(Boolean).join(" · ");
-      const label = [contact.name || "未命名联系人", details].filter(Boolean).join(" — ");
-      select.add(new Option(label, contact.record_id));
-    });
-    wrapper.hidden = false;
-  } catch (error) {
-    // Contact selection is optional; a read failure must not block manual task creation.
-    console.warn("Unable to load agency contacts", error);
-    wrapper.hidden = true;
-  }
 }
 
 function renderAccounts(accounts) {
@@ -2066,7 +2239,6 @@ async function loadMailInbox() {
 async function loadState(options = {}) {
   const data = await apiGet("/api/state", options);
   const debugMode = renderSettingsState(data);
-  await loadManualSourceContacts();
   renderAccounts(data.accounts || []);
   renderMail(data.mail || {});
   await loadMailInbox();
@@ -2201,14 +2373,6 @@ function updateTaskResultActions() {
   if (folderButton) folderButton.disabled = !state.currentTaskId;
 }
 
-function renderCaptureMode() {
-  const mode = valueOf("capture-mode", "automatic");
-  const automaticPanel = $("capture-automatic-panel");
-  const manualPanel = $("capture-manual-panel");
-  if (automaticPanel) automaticPanel.hidden = mode !== "automatic";
-  if (manualPanel) manualPanel.hidden = mode !== "manual";
-}
-
 async function saveMailConfiguration(payload) {
   await apiPost("/api/settings/mail", payload);
   showSaved(t("mailSaveSuccess"));
@@ -2255,14 +2419,39 @@ function bindTaskPlatformSelector() {
 }
 
 function bindEvents() {
+  // Keep enrichment available, but place it after the primary discovery action.
+  const capturePanel = $("capture-automatic-panel");
+  const emailPanel = $("email-enrichment-card");
+  if (capturePanel && emailPanel && capturePanel.parentElement === emailPanel.parentElement) {
+    capturePanel.after(emailPanel);
+  }
   bindTaskPlatformSelector();
   updateTaskLinkCounts();
-  renderCaptureMode();
   document.querySelectorAll(".nav-btn").forEach(btn => {
     btn.addEventListener("click", () => setPage(btn.dataset.page).catch(showError));
   });
   $("task-links").addEventListener("input", updateTaskLinkCounts);
-  $("capture-mode").addEventListener("change", renderCaptureMode);
+  document.querySelectorAll('input[name="email-source"]').forEach(input => {
+    input.addEventListener("change", renderEmailSourceControls);
+  });
+  ["email-source-task", "email-scope-selector"].forEach(id => {
+    $(id).addEventListener("change", () => {
+      state.emailEnrichment.previewed = false;
+      $("email-enrichment-start").disabled = true;
+    });
+  });
+  document.querySelectorAll(".email-platform-option").forEach(input => {
+    input.addEventListener("change", () => {
+      state.emailEnrichment.previewed = false;
+      $("email-enrichment-start").disabled = true;
+    });
+  });
+  $("email-enrichment-preview").addEventListener("click", () => previewEmailEnrichment().catch(showError));
+  $("email-enrichment-start").addEventListener("click", () => startEmailEnrichment().catch(error => {
+    $("email-enrichment-start").disabled = false;
+    showError(error);
+  }));
+  renderEmailSourceControls();
 
   $("review-task-select").addEventListener("change", async () => {
     try {
@@ -2305,8 +2494,8 @@ function bindEvents() {
   $("review-refresh").addEventListener("click", () => {
     loadReviewTasks().catch(showError);
   });
-  $("review-view-analysis").addEventListener("click", () => {
-    viewCreatorAnalysis().catch(showError);
+  $("review-fill-missing-email").addEventListener("click", () => {
+    openReviewEmailEnrichment().catch(showError);
   });
   $("review-retry-failed").addEventListener("click", async () => {
     try {
@@ -2368,32 +2557,6 @@ function bindEvents() {
       showSaved(state.language === "en"
         ? `Task created: ${data.task.valid_count} valid, ${invalidCount} invalid.`
         : `任务已创建：有效链接 ${data.task.valid_count} 条，异常链接 ${invalidCount} 条。`);
-    } catch (error) {
-      showError(error);
-    }
-  });
-
-  $("manual-task-create").addEventListener("click", async () => {
-    try {
-      const profileUrl = valueOf("manual-profile-url");
-      if (!profileUrl.trim()) throw new Error(state.language === "en" ? "Profile URL is required." : "主页链接不能为空。");
-      const data = await apiPost("/api/tasks/manual", {
-        task_name: valueOf("manual-task-name").trim(),
-        name: valueOf("manual-creator-name").trim(),
-        platform: valueOf("manual-platform"),
-        profile_url: profileUrl,
-        email: valueOf("manual-email").trim(),
-        follower_count: valueOf("manual-follower-count").trim(),
-        whatsapp: valueOf("manual-whatsapp").trim(),
-        note: valueOf("manual-note"),
-        source_contact_record_id: valueOf("manual-source-contact")
-      });
-      state.currentTaskId = data.task?.id || "";
-      state.currentTask = data.task || null;
-      window.localStorage.setItem("kolconnect.currentTaskId", state.currentTaskId);
-      ["manual-task-name", "manual-creator-name", "manual-profile-url", "manual-email", "manual-follower-count", "manual-whatsapp", "manual-note", "manual-source-contact"].forEach(id => setValue(id, ""));
-      await loadTaskList();
-      showSaved(state.language === "en" ? "Manual task created. Review it before syncing." : "人工任务已创建，请审核后再同步到四表。");
     } catch (error) {
       showError(error);
     }

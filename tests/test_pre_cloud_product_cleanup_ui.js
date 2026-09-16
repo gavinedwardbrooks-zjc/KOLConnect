@@ -14,14 +14,17 @@ const detail = read("webapp/pages/creator-library-detail.js");
 // row editing and retry controls remain in the results table.
 assert.doesNotMatch(index, /id="review-queue"/);
 assert.match(index, /id="review-status-filter"/);
-assert.match(index, /账号名/);
+assert.match(index, /<th>待补充<\/th>/);
+assert.doesNotMatch(index, /<th>账号名<\/th>/);
+assert.doesNotMatch(index, /id="creator-analysis-panel"|id="review-view-analysis"/);
 assert.match(app, /review-status-filter/);
 assert.match(app, /retryFailedReviewRecord/);
 
 // Task runs expose one persistent task selection surface, per-platform choices,
 // and clear source-link copy/export actions.
 assert.match(app, /task-selector/);
-assert.match(app, /task-run-platforms/);
+assert.match(app, /openContinueScrapeDialog/);
+assert.match(app, /task-continue-platform/);
 assert.match(app, /继续抓取/);
 assert.match(app, /copyTaskLinks\("all"\)/);
 assert.match(app, /copyTaskLinks\("unfinished"\)/);

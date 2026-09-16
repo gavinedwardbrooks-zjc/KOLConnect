@@ -55,6 +55,7 @@ def capture_result(*, email: str = "creator@example.test", name: str = "Creator"
         "name": name,
         "emails": [email] if email else [],
         "scrape_status": status,
+        "email_source": "Bio" if email else "",
         "latest_publish_date": "",
         "last_scrape_time": "2026-08-31T00:00:00Z",
     }
@@ -93,7 +94,7 @@ class EmailURLCaptureServiceTests(unittest.TestCase):
                 self.assertEqual(1, len(creator_service.saved))
                 self.assertEqual(profile, creator_service.saved[0]["record"]["profile_url"])
 
-    def test_existing_account_and_url_variants_reuse_same_account_uid(self):
+    def test_existing_account_conflict_is_non_destructive_across_url_variants(self):
         account = {
             "account_uid": "tiktok-alice",
             "platform": "TikTok",
@@ -106,11 +107,10 @@ class EmailURLCaptureServiceTests(unittest.TestCase):
         first = service.capture("https://www.tiktok.com/@alice/?lang=en")
         second = service.capture("https://m.tiktok.com/@alice/")
 
-        self.assertEqual("updated", first["status"])
-        self.assertEqual("updated", second["status"])
-        self.assertEqual("tiktok-alice", creator_service.saved[0]["record"]["account_uid"])
-        self.assertEqual("tiktok-alice", creator_service.saved[1]["record"]["account_uid"])
-        self.assertEqual(2, len(creator_service.saved))
+        self.assertEqual("email_conflict", first["status"])
+        self.assertEqual("email_conflict", second["status"])
+        self.assertEqual("tiktok-alice", first["account_uid"])
+        self.assertEqual([], creator_service.saved)
 
     def test_new_profile_repeated_capture_creates_one_account_then_updates_it(self):
         creator_service, service = self.make_service()
@@ -119,11 +119,10 @@ class EmailURLCaptureServiceTests(unittest.TestCase):
         second = service.capture("https://instagram.com/new_creator/?utm_source=share")
 
         self.assertEqual("created", first["status"])
-        self.assertEqual("updated", second["status"])
+        self.assertEqual("unchanged", second["status"])
         self.assertEqual(1, len(creator_service.accounts))
-        self.assertEqual(
-            creator_service.saved[0]["record"]["account_uid"], creator_service.saved[1]["record"]["account_uid"]
-        )
+        self.assertEqual(1, len(creator_service.saved))
+        self.assertEqual("Bio", first["email_source"])
 
     def test_video_with_deterministic_profile_uses_same_account_and_partial_video_fails_closed(self):
         account = {
@@ -262,7 +261,7 @@ class EmailURLCaptureBoundaryTests(unittest.TestCase):
 
 
 class EmailURLCapturePersistenceTests(unittest.TestCase):
-    def test_existing_account_email_update_preserves_creator_videos_and_primary_identity(self):
+    def test_existing_account_email_conflict_preserves_email_videos_and_primary_identity(self):
         profile_url = "https://www.tiktok.com/@alice"
         account_uid = scraper.build_creator_uid({"platform": "TikTok", "url": profile_url})
         original_analysis = {
@@ -296,9 +295,9 @@ class EmailURLCapturePersistenceTests(unittest.TestCase):
             response = capture_service.capture("https://m.tiktok.com/@alice/?lang=en")
             detail = repository.getCreatorDetail(saved["creator_id"])
 
-        self.assertEqual("updated", response["status"])
+        self.assertEqual("email_conflict", response["status"])
         self.assertEqual(1, len(detail["accounts"]))
-        self.assertEqual("new@example.test", detail["accounts"][0]["account_email"])
+        self.assertEqual("old@example.test", detail["accounts"][0]["account_email"])
         self.assertEqual("TikTok", detail["record"]["platform"])
         self.assertEqual(profile_url, detail["record"]["profile_url"])
         self.assertEqual(1, len(detail["analysis"]["videos"]))

@@ -202,6 +202,8 @@ class ExternalAgencyContact:
 
 
 class CreatorPort(Protocol):
+    def get_creator_accounts(self) -> list[dict[str, Any]]: ...
+
     def prepare_four_table_sync(
         self, command: FourTableSyncCommand
     ) -> PreparedFourTableSync: ...

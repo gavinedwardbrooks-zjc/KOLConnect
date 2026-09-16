@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Read-only KPI calculations for the KOLConnect operational dashboard."""
 
+import json
 import math
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -261,9 +262,110 @@ class DashboardService:
             for day in dates
         ]
 
+    def getV2Snapshot(self) -> dict[str, Any]:
+        """Return drill-down-ready dashboard facts from the local authority."""
+        creators = [
+            creator for creator in self._repository.get_creators()
+            if not str(creator.get("archived_at") or "").strip()
+        ]
+        creator_by_id = {
+            str(creator.get("creator_id") or creator.get("analysis_id") or "").strip(): creator
+            for creator in creators
+        }
+        accounts = [
+            account for account in self._repository.get_creator_accounts()
+            if str(account.get("creator_id") or "").strip() in creator_by_id
+        ]
+
+        def creator_row(creator: dict[str, Any]) -> dict[str, Any]:
+            creator_id = str(creator.get("creator_id") or creator.get("analysis_id") or "").strip()
+            account = next(
+                (item for item in accounts if str(item.get("creator_id") or "") == creator_id),
+                {},
+            )
+            return {
+                "creator_id": creator_id,
+                "creator_name": str(creator.get("creator_name") or creator.get("name") or ""),
+                "platform": str(account.get("platform") or creator.get("platform") or ""),
+                "username": str(account.get("username") or ""),
+                "profile_url": str(account.get("profile_url") or creator.get("profile_url") or ""),
+                "country": str(creator.get("country") or ""),
+                "language": str(creator.get("language") or ""),
+                "content_category": str(creator.get("content_category") or ""),
+            }
+
+        def missing_creators(field: str) -> list[dict[str, Any]]:
+            return [creator_row(creator) for creator in creators if not str(creator.get(field) or "").strip()]
+
+        missing_email = []
+        for account in accounts:
+            if str(account.get("account_email") or "").strip():
+                continue
+            creator = creator_by_id.get(str(account.get("creator_id") or ""), {})
+            missing_email.append({
+                **creator_row(creator),
+                "platform": str(account.get("platform") or creator.get("platform") or ""),
+                "username": str(account.get("username") or ""),
+                "profile_url": str(account.get("profile_url") or creator.get("profile_url") or ""),
+            })
+
+        platform_counts: dict[str, int] = {}
+        for account in accounts:
+            platform = str(account.get("platform") or "").strip() or "其他"
+            platform_counts[platform] = platform_counts.get(platform, 0) + 1
+        relations = self._repository.get_campaign_creator_records(creators)
+        campaigns_by_id = {
+            str(campaign.get("campaign_id") or ""): campaign
+            for campaign in self._repository.get_campaigns()
+            if not str(campaign.get("archived_at") or "").strip()
+        }
+        campaign_rows = []
+        for campaign_id, campaign in campaigns_by_id.items():
+            records = [row for row in relations if str(row.get("campaign_id") or "") == campaign_id]
+            published = sum(1 for row in records if self._has_publish_links(row.get("publish_links")))
+            campaign_rows.append({
+                "campaign_id": campaign_id,
+                "name": str(campaign.get("name") or ""),
+                "status": str(campaign.get("status") or ""),
+                "creator_count": len(records),
+                "published_count": published,
+                "start_date": str(campaign.get("start_date") or ""),
+            })
+        campaign_rows.sort(key=lambda row: (row["start_date"] or "9999", row["name"].casefold()))
+        return {
+            "creator_count": len(creators),
+            "account_count": len(accounts),
+            "platform_accounts": [
+                {"platform": platform, "count": count}
+                for platform, count in sorted(platform_counts.items(), key=lambda item: (-item[1], item[0].casefold()))
+            ],
+            "missing": {
+                "email_accounts": missing_email,
+                "country_creators": missing_creators("country"),
+                "language_creators": missing_creators("language"),
+                "content_type_creators": missing_creators("content_category"),
+            },
+            "campaigns": campaign_rows,
+        }
+
     @staticmethod
     def _status_count(creators: list[dict[str, Any]], status: str) -> int:
         return sum(1 for creator in creators if str(creator.get("status") or "") == status)
+
+    @staticmethod
+    def _has_publish_links(value: object) -> bool:
+        if isinstance(value, (list, tuple)):
+            return any(str(item or "").strip() for item in value)
+        text = str(value or "").strip()
+        if not text:
+            return False
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+            except (TypeError, json.JSONDecodeError):
+                return True
+            return not isinstance(parsed, list) or any(str(item or "").strip() for item in parsed)
+        return True
 
     @staticmethod
     def _distribution(

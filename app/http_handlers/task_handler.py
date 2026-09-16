@@ -59,6 +59,18 @@ def handle(handler, request: dict, context: dict) -> bool:
         handler._json(task_service.get_scrape_status())
         return True
 
+    if method == "GET" and path == "/api/tasks/email-recheck/candidates":
+        try:
+            handler._json({"ok": True, **task_service.get_email_enrichment_candidates(
+                source=(request.get("query", {}).get("source") or ["creator_library"])[0],
+                task_id=(request.get("query", {}).get("task_id") or [""])[0],
+                platforms=(request.get("query", {}).get("platform") or []),
+                missing_only=(request.get("query", {}).get("missing_only") or ["true"])[0],
+            )})
+        except ValueError as exc:
+            handler._error(str(exc), status=400)
+        return True
+
     task_match = re.fullmatch(r"/api/tasks/([^/]+)", path)
     # DELETE /api/tasks/{task_id} → 删除本地任务；{"ok": true, "task_id": "...", "deleted": true}
     if method == "DELETE" and task_match:
@@ -229,9 +241,14 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     # POST /api/tasks/email-recheck/scan → 创建邮箱补全任务；{"ok": true, "task": {...}, "scanned_accounts": 0, "created_count": 0, "skipped_count": 0, "skipped": [...], "duplicate_uids": [...]}
     if path == "/api/tasks/email-recheck/scan":
-        request["get_payload"]()
+        payload = request["get_payload"]()
         try:
-            handler._ok(**task_service.create_email_recheck_task())
+            handler._ok(**task_service.create_email_recheck_task(
+                source=payload.get("source"),
+                task_id=payload.get("task_id"),
+                platforms=payload.get("platforms"),
+                missing_only=payload.get("missing_only", True),
+            ))
         except (RuntimeError, ValueError) as exc:
             handler._error(str(exc))
         return True

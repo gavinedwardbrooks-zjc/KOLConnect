@@ -1365,6 +1365,13 @@
       deleteModal.bind();
       mergeModal?.bind();
       listen("creator-library-refresh", "click", () => loadRecords().catch(showError));
+      listen("creator-library-more-filters", "click", event => {
+        const toolbar = element("creator-library-more-filters")?.closest(".creator-library-toolbar");
+        if (!toolbar) return;
+        const expanded = toolbar.classList.toggle("more-filters-open");
+        event.currentTarget.setAttribute("aria-expanded", String(expanded));
+        event.currentTarget.textContent = expanded ? "收起更多筛选" : "更多筛选";
+      });
       listen("creator-library-card-view", "click", () => setViewMode("card").catch(showError));
       listen("creator-library-table-view", "click", () => setViewMode("table").catch(showError));
       [

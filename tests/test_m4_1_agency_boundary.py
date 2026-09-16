@@ -20,21 +20,22 @@ sys.path.insert(0, str(APP_DIR))
 import server
 from repository_factory import RepositoryFactory
 from services.agency_service import AgencyService
+from storage.sqlite_workbook_store import SQLiteWorkbookStore
 
 
 class AgencyBoundaryHttpTests(unittest.TestCase):
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.workbook_path = Path(self.temp_dir.name) / "Creator_Library.xlsx"
-        factory = RepositoryFactory.for_path(self.workbook_path)
-        factory.creator().getCreators()
+        self.database_path = Path(self.temp_dir.name) / "kolconnect.db"
+        SQLiteWorkbookStore.initialize_empty(self.database_path)
+        self.factory = RepositoryFactory(SQLiteWorkbookStore(self.database_path))
         self._seed_creator()
 
         self.patchers = [
             mock.patch.object(
                 server,
-                "_creator_library_workbook_path",
-                return_value=self.workbook_path,
+                "_new_repository_factory",
+                return_value=self.factory,
             ),
             mock.patch.object(
                 server,
@@ -72,21 +73,20 @@ class AgencyBoundaryHttpTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def _seed_creator(self) -> None:
-        workbook = load_workbook(self.workbook_path)
-        sheet = workbook["Creators"]
-        headers = [str(cell.value or "") for cell in sheet[1]]
-        values = {
-            "creator_id": "creator_one",
-            "name": "Creator One",
-            "platform": "TikTok",
-            "profile_url": "https://www.tiktok.com/@creator-one",
-            "status": "discovered",
-            "created_at": "2026-08-01T00:00:00Z",
-            "updated_at": "2026-08-01T00:00:00Z",
-        }
-        sheet.append([values.get(header, "") for header in headers])
-        workbook.save(self.workbook_path)
-        workbook.close()
+        with self.factory.store.factory.write_transaction() as connection:
+            connection.execute(
+                "INSERT INTO creators(creator_id,name,platform,profile_url,status,created_at,updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (
+                    "creator_one",
+                    "Creator One",
+                    "TikTok",
+                    "https://www.tiktok.com/@creator-one",
+                    "discovered",
+                    "2026-08-01T00:00:00Z",
+                    "2026-08-01T00:00:00Z",
+                ),
+            )
 
     def request(
         self,
@@ -184,6 +184,53 @@ class AgencyBoundaryHttpTests(unittest.TestCase):
         status, contacts = self.request("GET", "/api/local/agency-contacts")
         self.assertEqual(200, status)
         self.assertEqual(contact["contact_id"], contacts["contacts"][0]["contact_id"])
+
+        status, blocked_delete = self.request(
+            "DELETE", f"/api/local/agencies/{agency['agency_id']}"
+        )
+        self.assertEqual(409, status)
+        self.assertIn("仍关联 1 位达人", blocked_delete["error"])
+        status, protected = self.request("GET", f"/api/local/agencies/{agency['agency_id']}")
+        self.assertEqual(200, status)
+        self.assertEqual(agency["agency_id"], protected["agency"]["agency_id"])
+
+        status, blocked_contact_delete = self.request(
+            "DELETE", f"/api/local/agency-contacts/{contact['contact_id']}"
+        )
+        self.assertEqual(409, status)
+        self.assertIn("仍被 1 位达人关联", blocked_contact_delete["error"])
+        status, unlinked = self.request(
+            "POST",
+            "/api/creator-library/creator_one/relations",
+            {"agency_id": "", "current_contact_id": "", "source_contact_id": ""},
+        )
+        self.assertEqual(200, status)
+        self.assertEqual("", unlinked["agency_id"])
+        status, deleted_contact = self.request(
+            "DELETE", f"/api/local/agency-contacts/{contact['contact_id']}"
+        )
+        self.assertEqual(200, status)
+        self.assertTrue(deleted_contact["deleted"])
+        status, deleted_agency = self.request(
+            "DELETE", f"/api/local/agencies/{agency['agency_id']}"
+        )
+        self.assertEqual(200, status)
+        self.assertTrue(deleted_agency["deleted"])
+
+        status, disposable = self.request(
+            "POST", "/api/local/agencies", {"name": "Disposable Agency"}
+        )
+        self.assertEqual(200, status)
+        disposable_id = disposable["agency"]["agency_id"]
+        status, deleted = self.request("DELETE", f"/api/local/agencies/{disposable_id}")
+        self.assertEqual(200, status)
+        self.assertTrue(deleted["deleted"])
+        status, agencies_after_delete = self.request("GET", "/api/local/agencies")
+        self.assertEqual(200, status)
+        self.assertNotIn(
+            disposable_id,
+            [item["agency_id"] for item in agencies_after_delete["agencies"]],
+        )
 
         status, error = self.request(
             "POST", "/api/local/agencies", {"name": ""}

@@ -34,6 +34,15 @@
   let campaignBrief = null;
   let contentSubmissions = [];
   let fxRates = new Map();
+  const CURRENCY_LABELS = {
+    USD: "USD · US Dollar",
+    BRL: "BRL · Brazilian Real",
+    CNY: "CNY · Chinese Yuan",
+    EUR: "EUR · Euro",
+    GBP: "GBP · British Pound",
+    JPY: "JPY · Japanese Yen",
+    KRW: "KRW · Korean Won",
+  };
   const submissionReviewFindings = new Map();
   let publicationRefreshPending = false;
   let googleSheetsSyncPending = false;
@@ -741,6 +750,7 @@
           .map(rate => [String(rate?.currency_code || "").trim().toUpperCase(), rate?.rate_per_usd])
           .filter(([code]) => code),
       );
+      renderCurrencyOptions();
       hydrateLatestPublicationObservations();
       if (!campaign) throw new Error("Campaign 数据不存在。");
       if (isArchived()) closeCreatorForm();
@@ -939,6 +949,7 @@
     element("campaign-creator-quote").value = "";
     element("campaign-creator-cost").value = "";
     element("campaign-creator-cost-currency").value = "";
+    updateCampaignFxPreview();
     element("campaign-creator-publish-links").value = "";
     setPublicationRows([]);
     setPlannedDates([]);
@@ -986,12 +997,72 @@
     if (target) target.value = value === "" || value == null ? "" : String(value);
   }
 
+  function renderCurrencyOptions() {
+    const codes = [...new Set(["USD", ...fxRates.keys()])].sort();
+    ["campaign-creator-quote-currency", "campaign-creator-cost-currency"].forEach(id => {
+      const select = element(id);
+      if (!select) return;
+      const selected = select.value;
+      select.replaceChildren();
+      appendOption(select, "", id.includes("cost") ? "默认同报价币种" : "请选择币种");
+      codes.forEach(code => appendOption(select, code, CURRENCY_LABELS[code] || code));
+      if (selected && !codes.includes(selected)) appendOption(select, selected, selected);
+      select.value = selected;
+    });
+  }
+
+  function fxHelper(amountId, currencyId) {
+    const rawAmount = element(amountId)?.value;
+    const amount = Number(rawAmount);
+    const code = String(element(currencyId)?.value || "").trim().toUpperCase();
+    if (!code || rawAmount === "") return "--";
+    if (!Number.isFinite(amount) || amount < 0) return "--";
+    if (code === "USD") return `≈ USD ${formatNumber(amount)}`;
+    const rate = Number(fxRates.get(code));
+    return Number.isFinite(rate) && rate > 0 ? `≈ USD ${formatNumber(amount / rate)}` : `尚未设置 ${code} 汇率`;
+  }
+
+  function inlineFxCurrency() {
+    const quote = String(element("campaign-creator-quote-currency")?.value || "").trim().toUpperCase();
+    const cost = String(element("campaign-creator-cost-currency")?.value || "").trim().toUpperCase();
+    return [quote, cost].find(code => code && code !== "USD" && !(Number(fxRates.get(code)) > 0)) || "";
+  }
+
+  function updateCampaignFxPreview() {
+    const costCurrency = element("campaign-creator-cost-currency");
+    if (costCurrency && !costCurrency.value) costCurrency.value = element("campaign-creator-quote-currency")?.value || "";
+    setText("campaign-creator-quote-unit-usd", fxHelper("campaign-creator-quote-unit-amount", "campaign-creator-quote-currency"));
+    setText("campaign-creator-quote-usd", fxHelper("campaign-creator-quote", "campaign-creator-quote-currency"));
+    setText("campaign-creator-cost-usd", fxHelper("campaign-creator-cost", "campaign-creator-cost-currency"));
+    const code = inlineFxCurrency();
+    const panel = element("campaign-inline-fx");
+    if (!panel) return;
+    panel.hidden = !code;
+    setText("campaign-inline-fx-label", code ? `设置 ${code} 汇率` : "设置汇率");
+    setText("campaign-inline-fx-currency", code || "--");
+    const input = element("campaign-inline-fx-rate");
+    if (input) input.value = code && fxRates.get(code) != null ? String(fxRates.get(code)) : "";
+  }
+
+  async function saveInlineFx() {
+    const code = inlineFxCurrency();
+    const rate = Number(element("campaign-inline-fx-rate")?.value);
+    if (!code || !Number.isFinite(rate) || rate <= 0) return showFormError("请输入大于 0 的汇率。");
+    const rates = Object.fromEntries([...fxRates.entries()].filter(([currency]) => currency !== "USD"));
+    rates[code] = rate;
+    const data = await global.KOLConnectAPI.post("/api/settings/fx", { rates }, { signal: resources?.signal });
+    fxRates = new Map((Array.isArray(data?.rates) ? data.rates : []).map(item => [String(item.currency_code || "").toUpperCase(), item.rate_per_usd]));
+    renderCurrencyOptions();
+    updateCampaignFxPreview();
+  }
+
   function updateStructuredQuoteTotal() {
     const amount = Number(element("campaign-creator-quote-unit-amount").value);
     const quantity = Number(element("campaign-creator-quote-quantity").value);
     element("campaign-creator-quote").value = (
       Number.isFinite(amount) && amount >= 0 && Number.isInteger(quantity) && quantity > 0
     ) ? String(amount * quantity) : "";
+    updateCampaignFxPreview();
   }
 
   function createPlannedDateRow(value = "", removable = true) {
@@ -1133,6 +1204,7 @@
     assignFormValue("campaign-creator-quote", relation.creator_quote);
     assignFormValue("campaign-creator-cost", relation.cost);
     assignFormValue("campaign-creator-cost-currency", relation.cost_currency);
+    updateCampaignFxPreview();
     assignFormValue("campaign-creator-publish-links", parsePublishLinks(relation.publish_links).join("\n"));
     setPlannedDates(
       Array.isArray(relation.planned_publish_dates)
@@ -1402,6 +1474,11 @@
       listen("campaign-creator-id", "change", handleCreatorChange);
       listen("campaign-creator-quote-unit-amount", "input", updateStructuredQuoteTotal);
       listen("campaign-creator-quote-quantity", "input", updateStructuredQuoteTotal);
+      ["campaign-creator-quote-currency", "campaign-creator-cost-currency", "campaign-creator-cost"].forEach(id => {
+        listen(id, "input", updateCampaignFxPreview);
+        listen(id, "change", updateCampaignFxPreview);
+      });
+      listen("campaign-inline-fx-save", "click", () => saveInlineFx().catch(handleError));
       listen("campaign-planned-date-add", "click", handlePlannedDateClick);
       listen("campaign-planned-date-list", "click", handlePlannedDateClick);
       listen("campaign-publication-add", "click", handlePublicationClick);

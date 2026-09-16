@@ -110,6 +110,12 @@ async function run() {
     assert.match(html, new RegExp(`id=["']${id}["']`));
   }
   assert.match(html, /id="dashboard-risk-high"/);
+  assert.match(html, /<h2>数据更新状态<\/h2>/);
+  assert.match(html, /快照新鲜度与可用的播放量或粉丝趋势/);
+  assert.match(html, /<h2>待补充信息<\/h2>/);
+  assert.match(html, /逾期发布信息/);
+  assert.match(html, /资料待补充/);
+  assert.match(html, /待补发布信息/);
   console.log("M5.1 health UI tests passed");
 }
 

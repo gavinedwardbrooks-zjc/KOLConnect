@@ -82,6 +82,25 @@ class EmailURLCaptureService:
             account_uid = scraper_module.build_creator_uid(
                 {"platform": platform, "url": canonical_profile_url}
             )
+        existing_account = next(
+            (
+                account for account in accounts
+                if str(account.get("account_uid") or "").strip() == account_uid
+            ),
+            {},
+        )
+        existing_email = str(existing_account.get("account_email") or "").strip()
+        email_source = str(captured.get("email_source") or "").strip()
+        if existing_email and existing_email != scraper_module.NO_EMAIL:
+            if existing_email.casefold() == emails[0].casefold():
+                return self._result(
+                    "unchanged", resolution, account_uid=account_uid,
+                    email=existing_email, email_source=email_source,
+                )
+            return self._result(
+                "email_conflict", resolution, account_uid=account_uid,
+                email=emails[0], email_source=email_source,
+            )
         task_id = self._task_id_factory()
         imported_at = self._now_provider()
         record = {
@@ -90,6 +109,7 @@ class EmailURLCaptureService:
             "platform": platform,
             "profile_url": canonical_profile_url,
             "email": emails[0],
+            "email_source": email_source,
             "latest_post_date": str(captured.get("latest_publish_date") or "").strip(),
             "last_scrape_time": str(captured.get("last_scrape_time") or imported_at),
             "data_source": "m8_7_profile_email_capture",
@@ -109,6 +129,7 @@ class EmailURLCaptureService:
             creator_id=str((saved.get("creator_ids") or [""])[0] or ""),
             account_uid=account_uid,
             email=emails[0],
+            email_source=email_source,
         )
 
     @staticmethod

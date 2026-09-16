@@ -245,7 +245,7 @@ class TaskManagerAdapter:
             modifications=[],
             metadata_changes={
                 "status": "email_recheck_created",
-                "email_recheck_source": "local_account_empty_email",
+                "email_recheck_source": command.source,
                 "scan_skipped_count": command.skipped_count,
             },
         )

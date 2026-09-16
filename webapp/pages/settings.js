@@ -6,8 +6,10 @@
   let storageMigrationPreview = null;
   let feishuChatPollGeneration = 0;
   const FEISHU_CHAT_POLL_INTERVAL_MS = 1000;
+  const CLOUD_ACCOUNT_POLL_INTERVAL_MS = 1500;
   const storageMigrationSession = `settings-${global.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
   let fxRates = [];
+  let showAllFxRates = false;
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -47,6 +49,50 @@
     if (element) resources.listen(element, type, listener);
   }
 
+  function renderDashboardLayoutSettings() {
+    const target = document.getElementById("dashboard-settings-modules");
+    const preferences = global.KOLConnectDashboardPreferences;
+    if (!target || !preferences) return;
+    const layout = preferences.get();
+    const moduleById = new Map(preferences.modules().map(module => [module.id, module]));
+    target.replaceChildren(...layout.order.map((id, index) => {
+      const module = moduleById.get(id);
+      if (!module) return null;
+      const row = document.createElement("div");
+      row.className = "dashboard-settings-row";
+      if (layout.visible[id] === false) row.classList.add("is-muted");
+      const label = document.createElement("label");
+      label.className = "dashboard-settings-toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = module.essential || layout.visible[id] !== false;
+      input.disabled = Boolean(module.essential);
+      input.dataset.dashboardVisible = id;
+      const text = document.createElement("span");
+      text.className = "dashboard-settings-copy";
+      const title = document.createElement("strong");
+      title.textContent = module.label;
+      const description = document.createElement("small");
+      description.textContent = module.essential ? "固定显示，固定在首位" : (module.description || "");
+      text.append(title, description);
+      label.append(input, text);
+      const actions = document.createElement("div");
+      actions.className = "dashboard-settings-actions";
+      for (const [direction, labelText] of [[-1, "上移"], [1, "下移"]]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "soft-btn compact-btn";
+        button.textContent = labelText;
+        button.dataset.dashboardMove = id;
+        button.dataset.dashboardDirection = String(direction);
+        button.disabled = module.essential || (direction < 0 ? index === 0 : index === layout.order.length - 1);
+        actions.appendChild(button);
+      }
+      row.append(label, actions);
+      return row;
+    }).filter(Boolean));
+  }
+
   function setSyncText(id, value) {
     const element = document.getElementById(id);
     if (element) element.textContent = value ?? "--";
@@ -58,7 +104,7 @@
     const currencies = document.getElementById("fx-calculator-currency");
     if (fields) {
       fields.replaceChildren();
-      fxRates.forEach(rate => {
+      fxRates.filter(rate => showAllFxRates || rate.currency_code === "USD" || rate.rate_per_usd != null).forEach(rate => {
         const label = document.createElement("label");
         label.className = "field";
         const title = document.createElement("span");
@@ -408,6 +454,7 @@
         }
       }
       renderWorkbookPathCapability();
+      renderDashboardLayoutSettings();
       const resetExecute = document.getElementById("clean-reset-execute");
       if (resetExecute) resetExecute.disabled = true;
     },
@@ -434,9 +481,29 @@
         }
       });
 
+      listen("dashboard-settings-modules", "change", event => {
+        const id = event.target?.dataset?.dashboardVisible;
+        if (!id) return;
+        global.KOLConnectDashboardPreferences?.setVisible(id, event.target.checked);
+        renderDashboardLayoutSettings();
+      });
+      listen("dashboard-settings-modules", "click", event => {
+        const button = event.target?.closest?.("[data-dashboard-move]");
+        if (!button) return;
+        global.KOLConnectDashboardPreferences?.move(button.dataset.dashboardMove, Number(button.dataset.dashboardDirection));
+        renderDashboardLayoutSettings();
+      });
+      listen("dashboard-layout-reset", "click", () => {
+        global.KOLConnectDashboardPreferences?.reset();
+        renderDashboardLayoutSettings();
+        app.showSaved("工作台已恢复默认布局。");
+      });
+
       listen("fx-save", "click", async () => {
         try {
-          const rates = {};
+          const rates = Object.fromEntries(fxRates
+            .filter(rate => rate.currency_code !== "USD" && rate.rate_per_usd != null)
+            .map(rate => [rate.currency_code, rate.rate_per_usd]));
           document.querySelectorAll("[data-fx-currency]").forEach(input => {
             if (input.dataset.fxCurrency !== "USD") rates[input.dataset.fxCurrency] = input.value;
           });
@@ -446,6 +513,11 @@
         } catch (error) {
           handleError(error);
         }
+      });
+
+      listen("fx-show-all", "click", () => {
+        showAllFxRates = true;
+        renderFxSettings({ rates: fxRates });
       });
 
       for (const id of ["fx-calculator-amount", "fx-calculator-currency"]) {
@@ -670,6 +742,7 @@
     },
 
     unbind() {
+      stopCloudAccountPolling();
       stopFeishuChatPolling();
       resources?.cleanup();
       resources = null;

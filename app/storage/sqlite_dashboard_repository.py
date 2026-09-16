@@ -8,6 +8,7 @@ from typing import Any
 from creator_repository import CreatorRepository
 from dashboard_repository import DashboardRepository
 from storage.schema import validate_schema
+from storage.sqlite_campaign_repositories import SQLiteCampaignRepository
 
 
 class SQLiteDashboardRepository(DashboardRepository):
@@ -129,3 +130,11 @@ class SQLiteDashboardRepository(DashboardRepository):
             )
             self._campaign_creators.append(relation)
         return self._campaign_creators
+
+    def get_campaigns(self) -> list[dict[str, Any]]:
+        """Keep Dashboard V2 campaign facts on the SQLite read projection."""
+        if self._campaigns is None:
+            self._campaigns = SQLiteCampaignRepository(self._store).getCampaigns(
+                include_archived=True
+            )
+        return self._campaigns

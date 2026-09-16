@@ -23,6 +23,7 @@ from storage.authority import resolve_runtime_authority
 from storage.paths import SQLiteStoragePaths
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
 from storage.sqlite_creator_repository import SQLiteCreatorRepository
+from storage.sqlite_agency_repository import SQLiteAgencyRepository
 from storage.sqlite_campaign_repositories import (
     SQLiteCampaignCreatorRepository,
     SQLiteCampaignRepository,
@@ -131,7 +132,8 @@ class RepositoryFactory:
 
     def agency(self) -> AgencyRepository:
         if self._agency is None:
-            self._agency = AgencyRepository(self.store)
+            repository_type = SQLiteAgencyRepository if isinstance(self.store, SQLiteWorkbookStore) else AgencyRepository
+            self._agency = repository_type(self.store)
         return self._agency
 
     def creator_delete_impact(self) -> CreatorDeleteImpactRepository:

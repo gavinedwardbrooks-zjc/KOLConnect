@@ -748,10 +748,11 @@
       const title = document.createElement("strong");
       title.textContent = `${account?.platform || "未知平台"} · ${accountIdentity(account)}`;
       const open = document.createElement("a");
-      open.href = String(account?.profile_url || "#");
+      const profileUrl = String(account?.profile_url || "");
+      open.href = profileUrl || "#";
       open.target = "_blank";
       open.rel = "noopener noreferrer";
-      open.textContent = "打开主页";
+      open.textContent = profileUrl.replace(/^https?:\/\//i, "") || "主页链接不可用";
       identity.append(title, open);
       const remove = document.createElement("button");
       remove.type = "button";
@@ -769,9 +770,6 @@
     const analysis = detail.analysis || {};
     const creator = analysis.creator || {};
     setValue("creator-edit-name", record.creator_name || creator.creator_name);
-    setValue("creator-edit-platform", record.platform || creator.platform);
-    setValue("creator-edit-profile-url", record.profile_url || creator.profile_url);
-    setValue("creator-edit-followers", record.followers || creator.followers);
     setValue("creator-edit-country", record.country || creator.country);
     setValue("creator-edit-language", record.language || creator.language);
     setValue("creator-edit-whatsapp", record.whatsapp || creator.whatsapp);
@@ -804,8 +802,6 @@
         `/api/creator-library/${encodeURIComponent(creatorId)}`,
         {
           creator_name: valueOf("creator-edit-name").trim(),
-          profile_url: valueOf("creator-edit-profile-url").trim(),
-          followers: valueOf("creator-edit-followers").trim(),
           country: valueOf("creator-edit-country").trim(),
           language: valueOf("creator-edit-language").trim(),
           whatsapp: valueOf("creator-edit-whatsapp").trim(),
@@ -854,14 +850,14 @@
     if (!profileUrl) return showEditMessage("请输入主页链接。");
     showEditMessage("");
     try {
-      await pageContext.api.post(
+      const result = await pageContext.api.post(
         `/api/creator-library/${encodeURIComponent(creatorId)}/accounts`,
         { profile_url: profileUrl }, { signal: pageContext.resources.signal },
       );
       if (input) input.value = "";
       await loadDetail();
       renderEditableAccounts();
-      pageContext.ui.showSaved("平台账号已关联。");
+      pageContext.ui.showSaved(result?.created === false ? "该账号已经属于当前达人。" : "平台账号已关联。");
     } catch (error) {
       const data = error?.responseData || {};
       if (data?.conflict === "ACCOUNT_OWNED_BY_OTHER_CREATOR") {

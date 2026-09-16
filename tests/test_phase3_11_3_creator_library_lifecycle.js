@@ -177,9 +177,9 @@ async function run() {
     "creator-campaign-account-select", "creator-campaign-account-hint",
     "creator-campaign-modal-message", "creator-campaign-submit",
     "creator-edit-modal", "creator-edit-modal-close", "creator-edit-cancel",
-    "creator-edit-form", "creator-edit-name", "creator-edit-platform",
-    "creator-edit-profile-url", "creator-edit-followers", "creator-edit-country", "creator-edit-language",
-    "creator-edit-content-category",
+    "creator-edit-form", "creator-edit-name", "creator-edit-country", "creator-edit-language",
+    "creator-edit-content-category", "creator-edit-whatsapp", "creator-edit-accounts-list",
+    "creator-edit-account-url", "creator-edit-account-add",
     "creator-edit-agency", "creator-edit-bio", "creator-edit-message", "creator-edit-save",
   ];
   const selectIds = new Set(ids.filter(id => id.includes("platform") || id.includes("language")
@@ -600,8 +600,6 @@ async function run() {
   assert.equal(elements.get("creator-edit-country").value, "Brazil");
   assert.equal(elements.get("creator-edit-language").value, "Portuguese");
   elements.get("creator-edit-name").value = "Bella Updated";
-  elements.get("creator-edit-profile-url").value = "https://www.tiktok.com/@bella-updated";
-  elements.get("creator-edit-followers").value = "25K";
   elements.get("creator-edit-country").value = "Brazil";
   elements.get("creator-edit-language").value = "Portuguese";
   elements.get("creator-edit-content-category").value = "Lifestyle";
@@ -613,6 +611,8 @@ async function run() {
   assert.equal(profilePatch.payload.agency_id, "agency_new");
   assert.equal(profilePatch.payload.country, "Brazil");
   assert.equal(profilePatch.payload.language, "Portuguese");
+  assert.equal("profile_url" in profilePatch.payload, false, "Creator PATCH must not pretend one account is the Creator");
+  assert.equal("followers" in profilePatch.payload, false, "account metrics must not be saved as Creator fields");
   assert.match(elements.get("creator-library-detail-summary").textContent, /Bella Updated/);
 
   assert.equal(elements.get("creator-cooperations-body").children.length, 1, "legacy cooperation history must remain visible");

@@ -140,6 +140,7 @@ class EmailRecheckTaskCommand:
     name: str
     platform_summary: Mapping[str, int] = field(default_factory=dict)
     skipped_count: int = 0
+    source: str = "creator_library"
 
 
 @dataclass(frozen=True)

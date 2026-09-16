@@ -57,6 +57,8 @@ class FakeElement {
   }
 
   appendChild(child) {
+    const existingIndex = this.children.indexOf(child);
+    if (existingIndex >= 0) this.children.splice(existingIndex, 1);
     child.parentElement = this;
     this.children.push(child);
     return child;
@@ -71,11 +73,24 @@ class FakeElement {
     this.append(...children);
   }
 
+  querySelectorAll(selector) {
+    if (selector === "[data-dashboard-v2-module]") {
+      return this.children.filter(child => child.dataset.dashboardV2Module);
+    }
+    return [];
+  }
+
   closest(selector) {
     if (selector === "[data-dashboard-campaign-id]" && this.dataset.dashboardCampaignId) return this;
     if (selector === "[data-dashboard-creator-id]" && this.dataset.dashboardCreatorId) return this;
+    if (selector === "[data-dashboard-v2-open]" && this.dataset.dashboardV2Open) return this;
+    if (selector === "[data-dashboard-v2-drawer-close]" && this.dataset.dashboardV2DrawerClose !== undefined) return this;
+    if (selector === "[data-dashboard-v2-drawer-primary]" && this.dataset.dashboardV2DrawerPrimary) return this;
+    if (selector === "#dashboard-v2-customize" && this.id === "dashboard-v2-customize") return this;
     return this.parentElement?.closest(selector) || null;
   }
+
+  focus() {}
 
   async dispatch(type, overrides = {}) {
     const event = { target: this, preventDefault() {}, ...overrides };
@@ -126,6 +141,18 @@ function dashboardResponse(totalCreators = 12) {
       { date: "2026-08-20", count: 1 },
       { date: "2026-08-21", count: 2 },
     ],
+    dashboard_v2: {
+      creator_count: totalCreators,
+      account_count: totalCreators + 3,
+      platform_accounts: [{ platform: "TikTok", count: 8 }],
+      missing: {
+        email_accounts: [{ creator_id: "creator_one", creator_name: "Maria", platform: "TikTok", username: "maria", profile_url: "https://www.tiktok.com/@maria" }],
+        country_creators: [],
+        language_creators: [],
+        content_type_creators: [],
+      },
+      campaigns: [{ campaign_id: "campaign_one", name: "Campaign One", status: "running", creator_count: 2, published_count: 1 }],
+    },
   };
 }
 
@@ -184,6 +211,15 @@ async function run() {
     "dashboard-platform-analytics-error", "dashboard-country-list", "dashboard-language-list",
     "dashboard-geography-error", "dashboard-roi-trend-chart", "dashboard-roi-trend-empty",
     "dashboard-roi-trend-error", "dashboard-roi-latest",
+    "dashboard-v2-creator-count", "dashboard-v2-account-count", "dashboard-v2-campaign-count",
+    "dashboard-v2-spend", "dashboard-v2-roi", "dashboard-v2-missing-email",
+    "dashboard-v2-missing-country", "dashboard-v2-missing-language", "dashboard-v2-missing-content-type",
+    "dashboard-v2-today-list", "dashboard-v2-campaign-list", "dashboard-v2-platform-list",
+    "dashboard-v2-health-score", "dashboard-v2-health-healthy", "dashboard-v2-health-warning",
+    "dashboard-v2-health-critical", "dashboard-v2-country-list", "dashboard-v2-language-list",
+    "dashboard-v2-roi-latest",
+    "dashboard-v2-drawer", "dashboard-v2-drawer-title", "dashboard-v2-drawer-count",
+    "dashboard-v2-drawer-search", "dashboard-v2-drawer-list", "dashboard-v2-drawer-primary",
   ];
   for (const platform of ["tiktok", "instagram", "youtube"]) {
     for (const metric of ["creators", "followers-median", "followers-average", "relations", "publish-rate", "views", "likes", "comments", "engagement", "cost", "roi"]) {
@@ -191,6 +227,14 @@ async function run() {
     }
   }
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
+  const v2Modules = ["today", "missing_info", "campaigns", "creator_overview", "data_freshness", "geography", "roi"];
+  const v2ModuleContainer = new FakeElement("div", "dashboard-v2-modules");
+  v2Modules.forEach(id => {
+    const module = new FakeElement("section");
+    module.dataset.dashboardV2Module = id;
+    v2ModuleContainer.appendChild(module);
+  });
+  elements.set("dashboard-v2-modules", v2ModuleContainer);
   const navButtons = ["dashboard", "products"].map(name => {
     const button = new FakeElement("button", "", ["nav-btn"]);
     button.dataset.page = name;
@@ -268,6 +312,16 @@ async function run() {
     clearInterval,
     setTimeout,
     clearTimeout,
+    Event: class Event { constructor(type, options = {}) { this.type = type; this.bubbles = options.bubbles; } },
+    localStorage: {
+      values: new Map([
+        ["kolconnect-dashboard-layout-v1", JSON.stringify({ order: ["cooperation_overview"], visible: { cooperation_overview: false } })],
+        ["kolconnect-dashboard-layout-v2", JSON.stringify({ version: 2, order: v2Modules, visible: {} })],
+      ]),
+      getItem(key) { return this.values.get(key) || null; },
+      setItem(key, value) { this.values.set(key, String(value)); },
+    },
+    dispatchEvent() {},
   };
   const sandbox = { AbortController, console, document, Intl, window };
   sandbox.globalThis = sandbox;
@@ -313,6 +367,30 @@ async function run() {
   assert.equal(elements.get("dashboard-risk-high").textContent, "0");
   assert.equal(elements.get("dashboard-risk-medium").textContent, "0");
   assert.equal(elements.get("dashboard-risk-low").textContent, "0");
+  assert.equal(elements.get("dashboard-v2-creator-count").textContent, "30");
+  assert.equal(elements.get("dashboard-v2-account-count").textContent, "33");
+  assert.equal(elements.get("dashboard-v2-missing-email").textContent, "1");
+  assert.equal(elements.get("dashboard-v2-campaign-list").children[0].dataset.dashboardCampaignId, "campaign_one");
+  const missingEmailButton = new FakeElement("button");
+  missingEmailButton.dataset.dashboardV2Open = "missing-email";
+  await sections[0].dispatch("click", { target: missingEmailButton });
+  assert.equal(elements.get("dashboard-v2-drawer").hidden, false);
+  assert.equal(elements.get("dashboard-v2-drawer-count").textContent, "共 1 个账号");
+  assert.equal(elements.get("dashboard-v2-drawer-list").children.length, 1, "drawer must use the same collection as the missing-email metric");
+  assert.equal(elements.get("dashboard-v2-drawer-primary").textContent, "批量补全邮箱");
+  const drawerViewCreator = elements.get("dashboard-v2-drawer-list").children[0].children[3].children.at(-1);
+  await elements.get("dashboard-v2-drawer").dispatch("click", { target: drawerViewCreator });
+  assert.equal(navigations.length, 1);
+  assert.equal(navigations[0].pageName, "creator-library-detail", "drawer must open the existing Creator detail workflow");
+  assert.equal(navigations[0].params.creatorId, "creator_one");
+  const campaignOverview = new FakeElement("button");
+  campaignOverview.dataset.dashboardV2Open = "campaigns";
+  await sections[0].dispatch("click", { target: campaignOverview });
+  assert.equal(navigations[1].pageName, "campaigns", "Campaign overview opens the existing Campaign workflow");
+  const accountOverview = new FakeElement("button");
+  accountOverview.dataset.dashboardV2Open = "accounts";
+  await sections[0].dispatch("click", { target: accountOverview });
+  assert.equal(navigations[2].pageName, "creator-library", "Account overview opens the existing Creator Library workflow");
   assert.equal(chartCalls.length, 5);
   assert.deepEqual(chartCalls[0].config.data.labels, ["TikTok", "YouTube"]);
   assert.deepEqual(chartCalls[1].config.data.datasets[0].data, [9, 3]);
@@ -322,20 +400,59 @@ async function run() {
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 1);
   assert.equal(sections[0].listenerCount("click"), 1);
 
+  const preferences = window.KOLConnectDashboardPreferences;
+  assert.deepEqual(Array.from(preferences.get().order), v2Modules, "V2 must ignore retired V1 layouts");
+  assert.equal(preferences.get().visible.today, true, "today remains fixed and visible");
+
+  // This mirrors Settings -> Dashboard without a browser reload: Settings only
+  // mutates the shared preferences, then the page registry reactivates Dashboard.
+  preferences.setVisible("missing_info", false);
+  assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true);
+  assert.equal(v2ModuleContainer.children[0].dataset.dashboardV2Module, "today", "today remains first");
+  preferences.move("campaigns", -1);
+  assert.deepEqual(Array.from(preferences.get().order).slice(0, 3), ["today", "campaigns", "missing_info"]);
+  await window.KOLConnectPages.navigate("products");
+  responses.push(dashboardResponse(30));
+  await window.KOLConnectPages.navigate("dashboard");
+  assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true, "hidden optional section stays absent after Settings -> Dashboard navigation");
+  assert.deepEqual(
+    Array.from(v2ModuleContainer.children).map(node => node.dataset.dashboardV2Module).slice(0, 3),
+    ["today", "campaigns", "missing_info"],
+    "Dashboard reapplies the persisted V2 order when it becomes active",
+  );
+  preferences.setVisible("missing_info", true);
+  await window.KOLConnectPages.navigate("products");
+  const reenabledDashboard = dashboardResponse(30);
+  reenabledDashboard.action_items.incomplete_cooperations = [{
+    cooperation_id: "relation_one",
+    creator_id: "creator_one",
+    creator_name: "Maria",
+    platform: "TikTok",
+    campaign: "Campaign One",
+    campaign_id: "campaign_one",
+  }];
+  responses.push(reenabledDashboard);
+  await window.KOLConnectPages.navigate("dashboard");
+  assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, false, "re-enabled optional section returns without an application reload");
+  preferences.reset();
+  assert.deepEqual(Array.from(preferences.get().order), v2Modules);
+  window.localStorage.setItem("kolconnect-dashboard-layout-v2", "{not-json");
+  assert.deepEqual(Array.from(preferences.get().order), v2Modules, "malformed V2 settings must safely fall back");
+
   const creatorButton = elements.get("dashboard-rising-creators").children[0];
   await sections[0].dispatch("click", { target: creatorButton });
-  assert.equal(navigations.length, 1);
-  assert.equal(navigations[0].pageName, "creator-library-detail");
-  assert.equal(navigations[0].params.creatorId, "creator_one");
+  assert.equal(navigations.length, 4);
+  assert.equal(navigations[3].pageName, "creator-library-detail");
+  assert.equal(navigations[3].params.creatorId, "creator_one");
 
   const reviewButton = elements.get("dashboard-incomplete-cooperations").children[0];
   await sections[0].dispatch("click", { target: reviewButton });
-  assert.equal(navigations.length, 2);
-  assert.equal(navigations[1].pageName, "campaign-detail");
-  assert.equal(navigations[1].params.campaignId, "campaign_one");
+  assert.equal(navigations.length, 5);
+  assert.equal(navigations[4].pageName, "campaign-detail");
+  assert.equal(navigations[4].params.campaignId, "campaign_one");
 
   await window.KOLConnectPages.navigate("products");
-  assert.equal(chartCalls.filter(chart => chart.destroyed).length, 5);
+  assert.equal(chartCalls.filter(chart => chart.destroyed).length, 15, "each Dashboard exit must clean up its own chart set");
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 0);
   assert.equal(sections[0].listenerCount("click"), 0);
   responses.push(dashboardResponse(31));
@@ -382,6 +499,14 @@ async function run() {
   assert.match(html, /id="dashboard-status-chart"/);
   assert.match(html, /id="dashboard-growth-chart"/);
   assert.match(html, /src="pages\/dashboard\.js"/);
+  assert.match(html, /id="dashboard-v2-modules"/);
+  assert.match(html, /id="dashboard-v2-drawer"/);
+  assert.match(html, /data-dashboard-v2-open="missing-email"/);
+  assert.doesNotMatch(read("webapp/pages/dashboard.js"), /account_uid/);
+  const styles = read("webapp/styles.css");
+  assert.match(styles, /\.dashboard-v2-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.2fr\) minmax\(320px, \.8fr\)/);
+  assert.match(styles, /\.dashboard-v2-module\.dashboard-v2-wide \{ grid-column: 1 \/ -1; \}/);
+  assert.match(styles, /\.dashboard-v2-grid \{ grid-template-columns: 1fr; \}/);
   assert.match(html, />活跃 Campaign</);
   assert.match(html, />待复盘</);
   assert.doesNotMatch(html, />合作数量</);

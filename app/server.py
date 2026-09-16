@@ -2255,6 +2255,7 @@ def get_dashboard_data() -> dict:
             "platform_distribution": service.getPlatformDistribution(),
             "creator_status_distribution": service.getCreatorStatusDistribution(),
             "creator_growth_trend": service.getCreatorGrowthTrend(),
+            "dashboard_v2": service.getV2Snapshot(),
         }
 
     return DASHBOARD_RESPONSE_CACHE.get_response(

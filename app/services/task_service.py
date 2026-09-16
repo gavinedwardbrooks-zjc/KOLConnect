@@ -126,7 +126,7 @@ class TaskService:
             completed = {
                 str(row.get(scraper_module.FIELD_URL) or "").strip()
                 for row in repository.read_progress(task_id)
-                if str(row.get(scraper_module.FIELD_STATUS) or "") == "完成"
+                if self._progress_row_succeeded(row)
             }
             links = [link for link in links if link not in completed]
         return {"links": links, "scope": "unfinished" if unfinished_only else "all"}
@@ -300,45 +300,259 @@ class TaskService:
     def open_task_result_folder(self, task_id: str) -> None:
         self._get_task_port().open_task_result_folder(task_id)
 
-    def create_email_recheck_task(self) -> dict[str, object]:
-        scan = self._get_creator_port().get_email_recheck_candidates()
-        if not scan.candidates:
+    def get_email_enrichment_candidates(
+        self,
+        *,
+        source: object = "creator_library",
+        task_id: object = "",
+        platforms: object = None,
+        missing_only: object = True,
+    ) -> dict[str, object]:
+        candidates, scanned, skipped, duplicate_uids = self._build_email_enrichment_candidates(
+            source=source,
+            task_id=task_id,
+            platforms=platforms,
+            missing_only=missing_only,
+        )
+        return {
+            "source": self._normalize_email_source(source),
+            "task_id": str(task_id or "").strip(),
+            "scanned_accounts": scanned,
+            "candidate_count": len(candidates),
+            "missing_email_count": sum(not item["has_email"] for item in candidates),
+            "skipped_count": len(skipped),
+            "duplicate_uids": duplicate_uids,
+            "candidates": [
+                {
+                    "platform": item["platform"],
+                    "profile_url": item["profile_url"],
+                    "username": item["username"],
+                    "has_email": item["has_email"],
+                    "email_source": item["email_source"],
+                    "status": item["status"],
+                }
+                for item in candidates
+            ],
+        }
+
+    def create_email_recheck_task(
+        self,
+        *,
+        source: object = "creator_library",
+        task_id: object = "",
+        platforms: object = None,
+        missing_only: object = True,
+    ) -> dict[str, object]:
+        candidates, scanned, skipped, duplicate_uids = self._build_email_enrichment_candidates(
+            source=source,
+            task_id=task_id,
+            platforms=platforms,
+            missing_only=missing_only,
+        )
+        if not candidates:
             return {
                 "task": None,
-                "scanned_accounts": scan.scanned_accounts,
+                "scanned_accounts": scanned,
                 "created_count": 0,
-                "skipped_count": len(scan.skipped),
-                "skipped": list(scan.skipped),
-                "duplicate_uids": list(scan.duplicate_uids),
+                "skipped_count": len(skipped),
+                "skipped": skipped,
+                "duplicate_uids": duplicate_uids,
             }
 
         platform_counts = {"TikTok": 0, "Instagram": 0, "YouTube": 0}
         items: list[EmailRecheckTaskItem] = []
-        for candidate in scan.candidates:
-            platform_counts[candidate.platform] += 1
+        for candidate in candidates:
+            platform_counts[str(candidate["platform"])] += 1
             items.append(
                 EmailRecheckTaskItem(
-                    account_uid=candidate.account_uid,
-                    platform=candidate.platform,
-                    profile_url=candidate.profile_url,
-                    username=candidate.username,
+                    account_uid=str(candidate["account_uid"]),
+                    platform=str(candidate["platform"]),
+                    profile_url=str(candidate["profile_url"]),
+                    username=str(candidate["username"]),
                 )
             )
+        normalized_source = self._normalize_email_source(source)
+        source_names = {
+            "creator_library": "达人库",
+            "task": "抓取任务",
+            "review_results": "审核结果",
+        }
         created = self._get_task_port().create_email_recheck_task(
             EmailRecheckTaskCommand(
                 items=tuple(items),
-                name=f"缺失邮箱补全-{datetime.now().strftime('%Y%m%d')}",
+                name=f"{source_names[normalized_source]}邮箱补全-{datetime.now().strftime('%Y%m%d')}",
                 platform_summary=platform_counts,
-                skipped_count=len(scan.skipped),
+                skipped_count=len(skipped),
+                source=(
+                    "local_account_empty_email"
+                    if normalized_source == "creator_library"
+                    else normalized_source
+                ),
             )
         )
         return {
             "task": created.task.to_response(),
-            "scanned_accounts": scan.scanned_accounts,
+            "scanned_accounts": scanned,
             "created_count": len(items),
-            "skipped_count": len(scan.skipped),
-            "skipped": list(scan.skipped),
-            "duplicate_uids": list(scan.duplicate_uids),
+            "skipped_count": len(skipped),
+            "skipped": skipped,
+            "duplicate_uids": duplicate_uids,
+        }
+
+    def _build_email_enrichment_candidates(
+        self,
+        *,
+        source: object,
+        task_id: object,
+        platforms: object,
+        missing_only: object,
+    ) -> tuple[list[dict[str, object]], int, list[str], list[str]]:
+        normalized_source = self._normalize_email_source(source)
+        selected_platforms = {
+            str(value or "").strip().lower()
+            for value in (platforms if isinstance(platforms, list) else [])
+            if str(value or "").strip()
+        }
+        only_missing = missing_only not in {False, "false", "0", 0}
+        creator_port = self._get_creator_port()
+        account_getter = getattr(creator_port, "get_creator_accounts", None)
+        legacy_scan = None
+        if normalized_source == "creator_library" and only_missing:
+            legacy_scan = creator_port.get_email_recheck_candidates()
+            accounts = [
+                {
+                    "creator_id": item.creator_id,
+                    "account_id": item.account_id,
+                    "account_uid": item.account_uid,
+                    "platform": item.platform,
+                    "profile_url": item.profile_url,
+                    "username": item.username,
+                    "account_email": item.account_email,
+                }
+                for item in legacy_scan.candidates
+            ]
+        elif callable(account_getter):
+            accounts = account_getter()
+        else:
+            legacy_scan = creator_port.get_email_recheck_candidates()
+            accounts = [
+                {
+                    "creator_id": item.creator_id,
+                    "account_id": item.account_id,
+                    "account_uid": item.account_uid,
+                    "platform": item.platform,
+                    "profile_url": item.profile_url,
+                    "username": item.username,
+                    "account_email": item.account_email,
+                }
+                for item in legacy_scan.candidates
+            ]
+        accounts_by_uid = {
+            str(account.get("account_uid") or "").strip(): account
+            for account in accounts
+            if str(account.get("account_uid") or "").strip()
+        }
+        raw: list[dict[str, object]] = []
+        skipped: list[str] = list(legacy_scan.skipped) if legacy_scan else []
+
+        if normalized_source == "creator_library":
+            raw = [dict(account) for account in accounts]
+        else:
+            normalized_task_id = str(task_id or "").strip()
+            if not normalized_task_id:
+                raise ValueError("请选择抓取任务。")
+            repository = self._get_task_repository()
+            repository.get_task(normalized_task_id)
+            result_rows = repository.read_results(normalized_task_id) if repository.results_exist(normalized_task_id) else []
+            results_by_uid: dict[str, dict[str, object]] = {}
+            for row in result_rows:
+                result = scraper_module.row_to_result(row)
+                uid = scraper_module.build_creator_uid(result)
+                if uid:
+                    results_by_uid[uid] = {**result, "row": row}
+            if normalized_source == "review_results":
+                for uid, value in results_by_uid.items():
+                    row = value["row"]
+                    raw.append({
+                        "account_uid": uid,
+                        "platform": value.get("platform"),
+                        "profile_url": value.get("url"),
+                        "username": value.get("account_name"),
+                        "account_email": row.get(scraper_module.FIELD_EMAIL),
+                        "email_source": row.get(scraper_module.FIELD_EMAIL_SOURCE),
+                        "scrape_status": value.get("scrape_status"),
+                    })
+            else:
+                for link in repository.read_links(normalized_task_id):
+                    normalized = scraper_module.normalize_link_record(link)
+                    profile_url = str(normalized.get("normalized_url") or link)
+                    platform = str(
+                        scraper_module.detect_platform(profile_url)
+                        or normalized.get("platform")
+                        or ""
+                    )
+                    result = scraper_module.build_result(url=profile_url, platform=platform)
+                    uid = scraper_module.build_creator_uid(result)
+                    existing = accounts_by_uid.get(uid, {})
+                    task_result = results_by_uid.get(uid, {})
+                    row = task_result.get("row") if isinstance(task_result.get("row"), dict) else {}
+                    raw.append({
+                        "account_uid": uid,
+                        "platform": platform,
+                        "profile_url": profile_url,
+                        "username": existing.get("username") or result.get("account_name"),
+                        "account_email": existing.get("account_email") or row.get(scraper_module.FIELD_EMAIL),
+                        "email_source": row.get(scraper_module.FIELD_EMAIL_SOURCE),
+                        "scrape_status": task_result.get("scrape_status") or "pending",
+                    })
+
+        candidates: list[dict[str, object]] = []
+        seen: set[str] = set()
+        for item in raw:
+            platform = str(item.get("platform") or "").strip()
+            profile_url = str(item.get("profile_url") or "").strip()
+            uid = str(item.get("account_uid") or "").strip()
+            if platform not in {"TikTok", "Instagram", "YouTube"} or not profile_url or not uid:
+                skipped.append("账号缺少可用的平台、主页链接或身份。")
+                continue
+            if selected_platforms and platform.lower() not in selected_platforms:
+                continue
+            if uid in seen:
+                continue
+            seen.add(uid)
+            email = str(item.get("account_email") or "").strip()
+            has_email = email not in {"", scraper_module.NO_EMAIL}
+            if only_missing and has_email:
+                continue
+            candidates.append({
+                "account_uid": uid,
+                "platform": platform,
+                "profile_url": profile_url,
+                "username": str(item.get("username") or "").strip(),
+                "has_email": has_email,
+                "email_source": str(item.get("email_source") or "").strip(),
+                "status": str(item.get("scrape_status") or "pending").strip(),
+            })
+        scanned = legacy_scan.scanned_accounts if legacy_scan else len(raw)
+        duplicate_uids = list(legacy_scan.duplicate_uids) if legacy_scan else []
+        return candidates, scanned, skipped, duplicate_uids
+
+    @staticmethod
+    def _normalize_email_source(source: object) -> str:
+        normalized = str(source or "creator_library").strip().lower()
+        if normalized not in {"creator_library", "task", "review_results"}:
+            raise ValueError("邮箱抓取来源无效。")
+        return normalized
+
+    @staticmethod
+    def _progress_row_succeeded(row: dict[str, object]) -> bool:
+        if str(row.get(scraper_module.FIELD_STATUS) or "") != "完成":
+            return False
+        scrape_status = str(
+            row.get(scraper_module.FIELD_SCRAPE_STATUS) or ""
+        ).strip()
+        return scrape_status not in {
+            "failed", "missing_data", "login_required", "platform_error"
         }
 
     def delete_task(self, task_id: str) -> dict[str, object]:
@@ -421,12 +635,19 @@ class TaskService:
             selected_links = list(links)
         if not selected_links:
             raise ValueError("所选平台没有原始链接。")
+        progress_rows = repository.read_progress(task_id)
         completed = {
             str(row.get(scraper_module.FIELD_URL) or "").strip()
-            for row in repository.read_progress(task_id)
-            if str(row.get(scraper_module.FIELD_STATUS) or "") == "完成"
+            for row in progress_rows
+            if self._progress_row_succeeded(row)
         }
         unfinished = [url for url in selected_links if url not in completed]
+        attempted_urls = {
+            str(row.get(scraper_module.FIELD_URL) or "").strip()
+            for row in progress_rows
+            if str(row.get(scraper_module.FIELD_URL) or "").strip()
+        }
+        retry_urls = [url for url in unfinished if url in attempted_urls]
         run_id = f"run_{uuid4().hex}"
         now = self._utc_now()
         run = {
@@ -449,6 +670,7 @@ class TaskService:
             active_run_id=run_id,
             active_platforms=selected,
             available_platforms=available,
+            retry_requested_urls=retry_urls,
         )
         return {"run": run, "selected_platforms": selected, "selected_count": len(selected_links), "unfinished_count": len(unfinished)}
 

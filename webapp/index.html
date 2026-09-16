@@ -43,14 +43,77 @@
           <div class="dashboard-page-heading">
             <div>
               <p class="eyebrow">KOL OPERATIONS</p>
-              <h1>今天的 KOL 工作台</h1>
-              <p>先处理最重要的达人跟进、数据更新和合作复盘。</p>
+              <h1>工作台</h1>
+              <p>从当前数据进入具体达人、账号与合作事项。</p>
             </div>
-            <button class="soft-btn" id="dashboard-refresh">刷新数据</button>
+            <div class="dashboard-v2-heading-actions">
+              <button class="soft-btn" id="dashboard-v2-customize">自定义工作台</button>
+              <button class="soft-btn" id="dashboard-refresh">刷新数据</button>
+            </div>
           </div>
         </div>
 
-        <div class="stats-grid dashboard-overview-grid">
+        <section id="dashboard-v2" class="dashboard-v2" aria-label="KOL 运营工作台">
+          <div class="dashboard-v2-summary" aria-label="核心业务摘要">
+            <div class="dashboard-v2-summary-item">
+              <span>达人</span><strong id="dashboard-v2-creator-count">--</strong><small>位 Creator</small>
+            </div>
+            <div class="dashboard-v2-summary-item">
+              <span>平台账号</span><strong id="dashboard-v2-account-count">--</strong><small>个 CreatorAccount</small>
+            </div>
+            <div class="dashboard-v2-summary-item"><span>Campaign</span><strong id="dashboard-v2-campaign-count">--</strong><small>个已保存项目</small></div>
+            <div class="dashboard-v2-summary-item is-static">
+              <span>合作花费</span><strong id="dashboard-v2-spend">--</strong><small>按币种分组</small>
+            </div>
+            <div class="dashboard-v2-summary-item is-static">
+              <span>已录入 ROI</span><strong id="dashboard-v2-roi">--</strong><small>不自动换算</small>
+            </div>
+          </div>
+
+          <div id="dashboard-v2-modules" class="dashboard-v2-grid">
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="today" aria-label="今日待处理">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">TODAY</p><h2>今日待处理</h2></div><span class="dashboard-v2-note">可直接进入对象</span></div>
+              <div class="dashboard-v2-action-list" id="dashboard-v2-today-list"></div>
+            </section>
+
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="missing_info" aria-label="待补充信息">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">DATA COMPLETENESS</p><h2>待补充信息</h2></div><span class="dashboard-v2-note">按实际字段统计</span></div>
+              <div class="dashboard-v2-missing-grid">
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-email"><span>缺邮箱</span><strong id="dashboard-v2-missing-email">--</strong><small>个账号</small></button>
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-country"><span>缺国家/地区</span><strong id="dashboard-v2-missing-country">--</strong><small>位达人</small></button>
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-language"><span>缺语言</span><strong id="dashboard-v2-missing-language">--</strong><small>位达人</small></button>
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-content-type"><span>缺内容类型</span><strong id="dashboard-v2-missing-content-type">--</strong><small>位达人</small></button>
+              </div>
+            </section>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="campaigns" aria-label="Campaign 概览">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">CAMPAIGNS</p><h2>Campaign 概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="campaigns">查看全部</button></div>
+              <div id="dashboard-v2-campaign-list" class="dashboard-v2-campaign-list"></div>
+            </section>
+
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="creator_overview" aria-label="达人数据概览">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">CREATOR LIBRARY</p><h2>达人数据概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="accounts">查看账号</button></div>
+              <div id="dashboard-v2-platform-list" class="dashboard-v2-platform-list"></div>
+            </section>
+
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="data_freshness" aria-label="数据更新状态">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">DATA HEALTH</p><h2>数据更新状态</h2></div><span id="dashboard-v2-health-score" class="dashboard-v2-health-score">--</span></div>
+              <div class="dashboard-v2-health-grid"><div><span>正常</span><strong id="dashboard-v2-health-healthy">--</strong></div><div><span>趋势下滑</span><strong id="dashboard-v2-health-warning">--</strong></div><div><span>数据过期</span><strong id="dashboard-v2-health-critical">--</strong></div></div>
+              <p class="hint">基于达人快照新鲜度与现有趋势数据，不代表合作履约评价。</p>
+            </section>
+
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="geography" aria-label="地区与语言">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">GEOGRAPHY</p><h2>地区与语言</h2></div></div>
+              <div class="dashboard-v2-insight-columns"><div><h3>国家/地区</h3><div id="dashboard-v2-country-list" class="dashboard-ranking-list"></div></div><div><h3>语言</h3><div id="dashboard-v2-language-list" class="dashboard-ranking-list"></div></div></div>
+            </section>
+
+            <section class="section-card dashboard-v2-module dashboard-v2-wide" data-dashboard-v2-module="roi" aria-label="ROI 与表现">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">RECORDED PERFORMANCE</p><h2>ROI / Performance</h2></div><strong id="dashboard-v2-roi-latest">--</strong></div>
+              <p class="hint">仅展示已录入的 ROI；多币种金额不做静默换算。</p>
+            </section>
+          </div>
+        </section>
+
+        <div class="stats-grid dashboard-overview-grid dashboard-v1-retired" aria-hidden="true">
           <div class="stat-card">
             <span class="stat-label">达人资产</span>
             <strong id="dashboard-total-creators">--</strong>
@@ -77,19 +140,20 @@
           </div>
         </div>
 
-        <section class="section-card dashboard-card dashboard-risk-summary" aria-label="数据风险">
+        <div id="dashboard-modules" class="dashboard-modules dashboard-v1-retired" aria-hidden="true">
+        <section class="section-card dashboard-card dashboard-risk-summary" data-dashboard-module="missing_info" aria-label="待补充信息">
           <div class="dashboard-risk-heading">
-            <div><p class="eyebrow">DATA RISKS</p><h2>数据风险</h2></div>
+            <div><p class="eyebrow">ACTION ITEMS</p><h2>待补充信息</h2><p class="hint">包含缺少联系邮箱、Campaign 必填信息，以及已完成合作尚未补充发布信息的记录。</p></div>
             <span id="dashboard-risk-error" class="dashboard-chart-empty" hidden>风险数据暂不可用</span>
           </div>
           <div class="dashboard-risk-grid">
-            <div class="dashboard-risk-card risk-high"><span>高风险</span><strong id="dashboard-risk-high">--</strong></div>
-            <div class="dashboard-risk-card risk-medium"><span>中风险</span><strong id="dashboard-risk-medium">--</strong></div>
-            <div class="dashboard-risk-card risk-low"><span>低风险</span><strong id="dashboard-risk-low">--</strong></div>
+            <div class="dashboard-risk-card risk-high"><span>逾期发布信息</span><strong id="dashboard-risk-high">--</strong></div>
+            <div class="dashboard-risk-card risk-medium"><span>资料待补充</span><strong id="dashboard-risk-medium">--</strong></div>
+            <div class="dashboard-risk-card risk-low"><span>待补发布信息</span><strong id="dashboard-risk-low">--</strong></div>
           </div>
         </section>
 
-        <section class="section-card dashboard-card dashboard-action-center">
+        <section class="section-card dashboard-card dashboard-action-center" data-dashboard-module="today_tasks">
           <h2>今日待处理</h2>
           <div class="dashboard-action-columns">
             <div><h3>数据过期</h3><div id="dashboard-action-expired" class="dashboard-list"></div></div>
@@ -98,7 +162,7 @@
           </div>
         </section>
 
-        <section class="dashboard-visualization-grid" aria-label="达人数据概览">
+        <section class="dashboard-visualization-grid" data-dashboard-module="creator_overview" aria-label="达人数据概览">
           <article class="section-card dashboard-card dashboard-chart-card">
             <div class="dashboard-chart-heading">
               <div><p class="eyebrow">CREATOR MIX</p><h2>平台分布</h2></div>
@@ -130,7 +194,7 @@
           </article>
         </section>
 
-        <section class="section-card dashboard-card dashboard-platform-analytics" aria-label="平台分析">
+        <section class="section-card dashboard-card dashboard-platform-analytics" data-dashboard-module="platform_analytics" aria-label="平台分析">
           <div class="dashboard-chart-heading">
             <div><p class="eyebrow">PLATFORM ANALYTICS</p><h2>平台分析</h2></div>
             <span id="dashboard-platform-analytics-error" class="dashboard-chart-empty" hidden>平台分析暂不可用</span>
@@ -194,7 +258,7 @@
           <p class="dashboard-platform-analytics-note">可见互动率仅按已录入点赞与评论占播放量计算。ROI 基于已录入值，不代表系统根据收入自动计算的财务 ROI。</p>
         </section>
 
-        <section class="dashboard-advanced-analytics" aria-label="高级分析">
+        <section class="dashboard-advanced-analytics" data-dashboard-module="geography_roi" aria-label="高级分析">
           <article class="section-card dashboard-card dashboard-geography-analytics">
             <div class="dashboard-chart-heading">
               <div><p class="eyebrow">GEOGRAPHY</p><h2>达人地域与语言</h2></div>
@@ -226,25 +290,26 @@
           </article>
         </section>
 
-        <section class="section-card dashboard-card dashboard-health-overview" aria-label="达人合作健康">
+        <section class="section-card dashboard-card dashboard-health-overview" data-dashboard-module="data_freshness" aria-label="数据更新状态">
           <div class="dashboard-health-overview-heading">
             <div>
-              <p class="eyebrow">CREATOR HEALTH</p>
-              <h2>达人合作健康</h2>
+              <p class="eyebrow">DATA FRESHNESS AND TREND</p>
+              <h2>数据更新状态</h2>
+              <p class="hint">基于达人快照新鲜度与可用的播放量或粉丝趋势，不代表合作履约评价。</p>
             </div>
             <div class="dashboard-health-score">
-              <span>Health Score</span>
+              <span>数据状态评分</span>
               <strong id="dashboard-health-score">--</strong>
               <small id="dashboard-health-empty" hidden>暂无数据</small>
             </div>
           </div>
           <div class="dashboard-health-summary-grid">
-            <div><span>Healthy</span><strong id="dashboard-health-healthy">0</strong></div>
-            <div><span>Warning</span><strong id="dashboard-health-warning">0</strong></div>
-            <div><span>Critical</span><strong id="dashboard-health-critical">0</strong></div>
+            <div><span>正常</span><strong id="dashboard-health-healthy">0</strong></div>
+            <div><span>趋势下滑</span><strong id="dashboard-health-warning">0</strong></div>
+            <div><span>数据过期</span><strong id="dashboard-health-critical">0</strong></div>
           </div>
-          <div class="dashboard-health-distribution" aria-label="Health Distribution">
-            <span>Health Distribution</span>
+          <div class="dashboard-health-distribution" aria-label="数据状态分布">
+            <span>数据状态分布</span>
             <div class="dashboard-health-bar" aria-hidden="true">
               <i id="dashboard-health-healthy-bar" class="health-healthy"></i>
               <i id="dashboard-health-warning-bar" class="health-warning"></i>
@@ -253,7 +318,7 @@
           </div>
         </section>
 
-        <div class="dashboard-section-grid">
+        <div class="dashboard-section-grid" data-dashboard-module="cooperation_overview">
           <section class="section-card dashboard-card">
             <h2>值得关注的达人</h2>
             <div class="dashboard-health-columns">
@@ -275,32 +340,86 @@
             <div id="dashboard-top-creators" class="dashboard-list"></div>
           </section>
         </div>
+        </div>
 
       </section>
+
+      <aside id="dashboard-v2-drawer" class="dashboard-v2-drawer" hidden aria-label="工作台明细">
+        <div class="dashboard-v2-drawer-backdrop" data-dashboard-v2-drawer-close></div>
+        <section class="dashboard-v2-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="dashboard-v2-drawer-title">
+          <header class="dashboard-v2-drawer-heading">
+            <div><p class="eyebrow">DETAILS</p><h2 id="dashboard-v2-drawer-title">明细</h2><p id="dashboard-v2-drawer-count" class="hint"></p></div>
+            <button type="button" class="icon-btn" aria-label="关闭" data-dashboard-v2-drawer-close>×</button>
+          </header>
+          <label class="dashboard-v2-search"><span>搜索达人或账号</span><input id="dashboard-v2-drawer-search" type="search" autocomplete="off" placeholder="输入名称、平台或账号名"></label>
+          <div id="dashboard-v2-drawer-list" class="dashboard-v2-drawer-list"></div>
+          <footer class="dashboard-v2-drawer-footer">
+            <button id="dashboard-v2-drawer-primary" type="button" class="primary-btn" hidden></button>
+          </footer>
+        </section>
+      </aside>
 
       <section class="page workspace-narrow" data-page="scrape">
         <div class="page-header">
           <h1 data-i18n="scrapeTitle">邮箱抓取</h1>
-          <p data-i18n="scrapeSubtitle">抓主页邮箱、外链邮箱和最近发布日期。</p>
+          <p data-i18n="scrapeSubtitle">从现有任务、审核结果或达人库补全公开联系邮箱，也可手动粘贴主页链接。</p>
         </div>
 
-        <div class="capture-mode-bar">
-          <label class="field capture-mode-field">
-            <span>抓取模式</span>
-            <select id="capture-mode"><option value="automatic">自动抓取</option><option value="manual">人工录入</option></select>
+        <div class="section-card email-enrichment-card" id="email-enrichment-card">
+          <div class="section-title">联系邮箱补全</div>
+          <p class="hint">优先使用 KOLConnect 中已有账号；新结果通过现有服务安全写回 SQLite。</p>
+          <fieldset class="email-source-selector">
+            <legend>你想给哪些达人补邮箱？</legend>
+            <label class="email-source-option"><input type="radio" name="email-source" value="task" checked><span><strong>最近抓取的达人</strong><small>从历史抓取任务中选择一批账号</small></span></label>
+            <label class="email-source-option"><input type="radio" name="email-source" value="review_results"><span><strong>待处理的达人</strong><small>从审核结果中选择需要补邮箱的账号</small></span></label>
+            <label class="email-source-option"><input type="radio" name="email-source" value="creator_library"><span><strong>达人库</strong><small>给已经入库的达人补邮箱</small></span></label>
+            <label class="email-source-option"><input type="radio" name="email-source" value="manual"><span><strong>临时补邮箱</strong><small>粘贴一批达人链接，仅查找并补充邮箱，不创建新的达人抓取任务</small></span></label>
+          </fieldset>
+          <div class="form-grid two" id="email-existing-source-fields">
+            <label class="field" id="email-source-task-field">
+              <span>任务</span>
+              <select id="email-source-task"></select>
+            </label>
+            <fieldset class="field email-platform-filter">
+              <legend>平台</legend>
+              <label><input class="email-platform-option" type="checkbox" value="tiktok" checked> TikTok</label>
+              <label><input class="email-platform-option" type="checkbox" value="instagram" checked> Instagram</label>
+              <label><input class="email-platform-option" type="checkbox" value="youtube" checked> YouTube</label>
+            </fieldset>
+          </div>
+          <fieldset class="email-scope-selector" id="email-scope-selector">
+            <legend>范围</legend>
+            <label><input type="radio" name="email-scope" value="missing" checked> 仅没有邮箱的账号</label>
+            <label><input type="radio" name="email-scope" value="all"> 所有账号</label>
+          </fieldset>
+          <label class="field" id="email-manual-source-field" hidden>
+            <span>主页或视频链接</span>
+            <textarea id="email-manual-links" rows="5" placeholder="一行一个 TikTok、Instagram 或 YouTube 链接"></textarea>
           </label>
+          <p class="email-enrichment-summary" id="email-enrichment-summary">请选择来源并预览待处理账号。</p>
+          <div class="action-row">
+            <button class="soft-btn" id="email-enrichment-preview" type="button">查看待补充范围</button>
+            <button class="primary-btn" id="email-enrichment-start" type="button" disabled>开始抓取邮箱</button>
+          </div>
+          <div class="table-wrap email-enrichment-results-wrap" id="email-enrichment-results-wrap" hidden>
+            <table class="email-enrichment-results">
+              <thead><tr><th>平台</th><th>账号主页</th><th>邮箱</th><th>来源</th><th>状态</th></tr></thead>
+              <tbody id="email-enrichment-results"></tbody>
+            </table>
+          </div>
         </div>
 
         <div class="section-card" id="capture-automatic-panel">
-          <div class="section-title">自动抓取</div>
+          <div class="section-title">批量抓取达人</div>
+          <p class="hint">粘贴 TikTok、Instagram 或 YouTube 达人主页链接，自动抓取账号资料并进入审核。</p>
           <label class="field">
             <span data-i18n="taskName">任务名称</span>
             <input id="task-name" type="text" data-i18n-placeholder="taskNamePlaceholder" placeholder="留空则自动命名">
           </label>
           <div class="scrape-task-grid">
             <label class="field task-links-field scrape-task-links">
-              <span data-i18n="taskLinks">达人链接</span>
-              <textarea id="task-links" rows="6" data-i18n-placeholder="taskLinksPlaceholder" placeholder="一行一个链接"></textarea>
+              <span data-i18n="taskLinks">达人主页链接</span>
+              <textarea id="task-links" rows="6" data-i18n-placeholder="taskLinksPlaceholder" placeholder="一行一个达人主页链接"></textarea>
               <span class="task-link-counts" id="task-link-counts">共 0 行 · 非空 0 行</span>
             </label>
             <label class="field">
@@ -336,58 +455,6 @@
           </div>
         </div>
 
-        <div class="section-card" id="capture-manual-panel" hidden>
-          <div class="section-title">人工录入</div>
-          <p class="hint">主动发现的达人先进入审核流程；主页链接会用于生成账号唯一ID。</p>
-          <div class="form-grid two">
-            <label class="field">
-              <span>任务名称</span>
-              <input id="manual-task-name" type="text" placeholder="留空则自动命名">
-            </label>
-            <label class="field">
-              <span>达人名称</span>
-              <input id="manual-creator-name" type="text" placeholder="可先留空，审核后再补充">
-            </label>
-            <label class="field">
-              <span>平台</span>
-              <select id="manual-platform">
-                <option value="TikTok">TikTok</option>
-                <option value="Instagram">Instagram</option>
-                <option value="YouTube">YouTube</option>
-              </select>
-            </label>
-            <label class="field">
-              <span>主页链接</span>
-              <input id="manual-profile-url" type="url" placeholder="必须填写标准主页或可清洗的主页链接">
-            </label>
-            <label class="field">
-              <span>邮箱</span>
-              <input id="manual-email" type="text" placeholder="可选">
-            </label>
-            <label class="field">
-              <span>粉丝数</span>
-              <input id="manual-follower-count" type="text" placeholder="可选，如 10K、1.2M 或 100000">
-            </label>
-            <label class="field">
-              <span>WhatsApp</span>
-              <input id="manual-whatsapp" type="text" placeholder="可选">
-            </label>
-            <label class="field" id="manual-source-contact-field" hidden>
-              <span>来源联系人</span>
-              <select id="manual-source-contact">
-                <option value="">不选择来源联系人</option>
-              </select>
-            </label>
-          </div>
-          <label class="field">
-            <span>备注</span>
-            <textarea id="manual-note" rows="3" placeholder="可选"></textarea>
-          </label>
-          <div class="action-row manual-task-actions">
-            <button class="primary-btn" id="manual-task-create">创建人工任务</button>
-          </div>
-        </div>
-
         <div class="section-card">
           <div class="task-manager-head">
             <div>
@@ -413,43 +480,43 @@
 
         <div class="section-card">
           <div class="creator-library-toolbar">
-            <label class="field creator-library-search-field">
+            <label class="field creator-library-search-field creator-library-primary-filter">
               <span>搜索达人</span>
               <input id="creator-library-search" type="search" placeholder="达人名称、主页链接或标签">
             </label>
-            <label class="field">
+            <label class="field creator-library-primary-filter">
               <span>国家/地区</span>
               <select id="creator-library-country"><option value="">全部国家/地区</option></select>
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>语言</span>
               <select id="creator-library-language"><option value="">全部语言</option></select>
             </label>
-            <label class="field">
+            <label class="field creator-library-primary-filter">
               <span>内容类型</span>
               <select id="creator-library-category"><option value="">全部内容类型</option></select>
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>Agency</span>
               <select id="creator-library-agency"><option value="">全部 Agency</option></select>
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>标签</span>
               <select id="creator-library-tag"><option value="">全部标签</option></select>
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>AI Tag</span>
               <select id="creator-library-ai-tag"><option value="">全部 AI Tags</option></select>
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>最少粉丝</span>
               <input id="creator-library-followers-min" inputmode="numeric" placeholder="例如 100K">
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>最多粉丝</span>
               <input id="creator-library-followers-max" inputmode="numeric" placeholder="例如 1M">
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>Insight 等级</span>
               <select id="creator-library-level">
                 <option value="">全部等级</option>
@@ -459,7 +526,7 @@
                 <option value="insufficient">insufficient</option>
               </select>
             </label>
-            <label class="field">
+            <label class="field creator-library-primary-filter">
               <span>排序</span>
               <select id="creator-library-sort">
                 <option value="created_at_desc">创建时间（最新添加）</option>
@@ -474,7 +541,7 @@
                 <option value="platform_desc">平台（YouTube → TikTok → Instagram）</option>
               </select>
             </label>
-            <label class="field">
+            <label class="field creator-library-secondary-filter">
               <span>每页显示</span>
               <select id="creator-library-page-size">
                 <option value="12">12</option>
@@ -482,7 +549,7 @@
                 <option value="48">48</option>
               </select>
             </label>
-            <label class="field">
+            <label class="field creator-library-primary-filter">
               <span>当前状态</span>
               <select id="creator-library-status">
                 <option value="">全部状态</option>
@@ -495,6 +562,7 @@
                 <option value="archived">已归档</option>
               </select>
             </label>
+            <button class="soft-btn creator-library-more-filters" id="creator-library-more-filters" type="button" aria-expanded="false">更多筛选</button>
             <div class="creator-library-actions">
               <div class="creator-library-actions-left">
                 <div class="view-toggle" role="group" aria-label="达人库视图">
@@ -722,17 +790,17 @@
             <button class="icon-btn" id="creator-edit-modal-close" type="button" aria-label="关闭">×</button>
           </div>
           <form id="creator-edit-form">
-            <div class="form-grid two-columns">
+            <section class="creator-edit-profile" aria-labelledby="creator-edit-profile-title">
+              <h3 id="creator-edit-profile-title">基本资料</h3>
+              <div class="form-grid two-columns">
               <label class="field"><span>达人名称</span><input id="creator-edit-name" required></label>
-              <label class="field"><span>平台（不可修改）</span><input id="creator-edit-platform" disabled></label>
-              <label class="field"><span>主页链接</span><input id="creator-edit-profile-url" type="url" required></label>
-              <label class="field"><span>粉丝数</span><input id="creator-edit-followers"></label>
               <label class="field"><span>国家/地区</span><input id="creator-edit-country"></label>
               <label class="field"><span>语言</span><input id="creator-edit-language"></label>
               <label class="field"><span>WhatsApp</span><input id="creator-edit-whatsapp" placeholder="可留空"></label>
               <label class="field"><span>内容类型</span><input id="creator-edit-content-category"></label>
               <label class="field"><span>Agency</span><select id="creator-edit-agency"><option value="">No Agency</option></select></label>
             </div>
+            </section>
             <p class="hint">完善国家和语言信息，可提升达人分析准确度。</p>
             <section class="creator-edit-accounts" aria-labelledby="creator-edit-accounts-title">
               <div><h3 id="creator-edit-accounts-title">平台账号</h3><p class="hint">主页链接用于识别平台和账号身份，无需填写内部 ID。</p></div>
@@ -888,7 +956,7 @@
             </label>
             <label class="field review-page-size-field">
               <span>结果筛选</span>
-              <select id="review-status-filter"><option value="">全部</option><option value="attention">需要处理</option><option value="failed">获取失败</option></select>
+              <select id="review-status-filter"><option value="attention" selected>待补充</option><option value="">全部</option><option value="failed">抓取异常</option></select>
             </label>
             <label class="field review-page-size-field">
               <span data-i18n="reviewPageSize">每页条数</span>
@@ -900,35 +968,11 @@
             <div class="review-toolbar-actions">
               <button class="soft-btn" id="review-refresh" data-i18n="reviewRefresh">刷新任务</button>
               <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描达人库缺失邮箱</button>
-              <button class="soft-btn" id="review-view-analysis" hidden>达人分析</button>
+              <button class="soft-btn" id="review-fill-missing-email">补全当前任务邮箱</button>
               <button class="soft-btn" id="review-retry-failed">重新抓取异常记录</button>
             </div>
           </div>
           <p class="hint" id="review-summary">请选择一个已有任务。</p>
-        </div>
-
-        <div class="section-card creator-analysis-card" id="creator-analysis-panel" hidden>
-          <div class="creator-analysis-heading">
-            <div>
-              <h2>达人分析</h2>
-              <p id="creator-analysis-summary" class="hint"></p>
-            </div>
-            <span id="creator-analysis-level" class="creator-analysis-level"></span>
-          </div>
-          <p id="creator-analysis-metrics" class="creator-analysis-metrics"></p>
-          <div class="creator-analysis-columns">
-            <div>
-              <h3>优势</h3>
-              <ul id="creator-analysis-strengths"></ul>
-            </div>
-            <div>
-              <h3>风险</h3>
-              <ul id="creator-analysis-risks"></ul>
-            </div>
-          </div>
-          <p id="creator-analysis-recommendation" class="creator-analysis-recommendation"></p>
-          <h3>最近视频</h3>
-          <div id="creator-analysis-videos" class="creator-analysis-videos"></div>
         </div>
 
         <div class="section-card review-table-card">
@@ -937,10 +981,9 @@
               <thead>
                 <tr>
                   <th data-i18n="reviewPlatform">平台</th>
-                  <th data-i18n="reviewLink">达人链接</th>
-                  <th>结果</th>
+                  <th data-i18n="reviewLink">账号主页</th>
+                  <th>待补充</th>
                   <th data-i18n="reviewLatestDate">最近发布日期</th>
-                  <th>账号名</th>
                   <th data-i18n="reviewEmail">邮箱</th>
                   <th data-i18n="reviewFollowerCount">粉丝数</th>
                   <th>WhatsApp</th>
@@ -1198,7 +1241,7 @@
                 <p class="eyebrow">BASIC INFO</p>
                 <h2>机构资料</h2>
               </div>
-              <span class="status-pill" data-status="active">Read only</span>
+              <div class="action-row"><span class="status-pill" data-status="active">本地资料</span><button class="soft-btn compact-btn" id="agency-detail-edit" type="button">编辑</button><details class="task-card-more"><summary>更多</summary><div class="task-card-more-actions"><button class="mini-btn danger" id="agency-detail-delete" type="button">删除 Agency</button></div></details></div>
             </div>
             <dl class="agency-profile-grid">
               <div><dt>名称</dt><dd id="agency-detail-name">--</dd></div>
@@ -1209,21 +1252,38 @@
               <div><dt>负责人</dt><dd id="agency-detail-owner">--</dd></div>
               <div class="agency-profile-wide"><dt>备注</dt><dd id="agency-detail-note">--</dd></div>
             </dl>
+            <form class="form-grid two agency-edit-form" id="agency-edit-form" hidden>
+              <label class="field"><span>Agency 名称</span><input id="agency-edit-name" required></label>
+              <label class="field"><span>国家/地区</span><input id="agency-edit-country"></label>
+              <label class="field"><span>网站</span><input id="agency-edit-website" type="url"></label>
+              <label class="field"><span>公开邮箱</span><input id="agency-edit-email" type="email"></label>
+              <label class="field"><span>合作阶段</span><input id="agency-edit-stage"></label>
+              <label class="field"><span>负责人</span><input id="agency-edit-owner"></label>
+              <label class="field agency-profile-wide"><span>备注</span><textarea id="agency-edit-note" rows="3"></textarea></label>
+              <div class="action-row"><button class="soft-btn" id="agency-edit-cancel" type="button">取消</button><button class="primary-btn" type="submit">保存 Agency</button></div>
+            </form>
           </section>
 
           <section class="section-card agency-related-card">
             <div class="agency-detail-section-heading"><h2>联系人</h2><span id="agency-contact-count">0 位</span></div>
             <div class="empty-note" id="agency-contacts-empty" hidden>暂无联系人。</div>
             <div class="review-table-wrap" id="agency-contacts-table-wrap" hidden>
-              <table class="review-table"><thead><tr><th>姓名</th><th>职位</th><th>邮箱</th><th>WhatsApp</th><th>状态</th></tr></thead><tbody id="agency-contacts-body"></tbody></table>
+              <table class="review-table agency-related-table"><thead><tr><th>姓名</th><th>职位</th><th>邮箱</th><th>WhatsApp</th><th>状态</th><th>操作</th></tr></thead><tbody id="agency-contacts-body"></tbody></table>
             </div>
+            <form class="form-grid two agency-contact-edit-form" id="agency-contact-edit-form" hidden>
+              <label class="field"><span>姓名</span><input id="agency-contact-edit-name" required></label>
+              <label class="field"><span>职位</span><input id="agency-contact-edit-position"></label>
+              <label class="field"><span>邮箱</span><input id="agency-contact-edit-email" type="email"></label>
+              <label class="field"><span>WhatsApp</span><input id="agency-contact-edit-whatsapp"></label>
+              <div class="action-row"><button class="soft-btn" id="agency-contact-edit-cancel" type="button">取消</button><button class="primary-btn" type="submit">保存联系人</button></div>
+            </form>
           </section>
 
           <section class="section-card agency-related-card">
             <div class="agency-detail-section-heading"><h2>关联达人</h2><span id="agency-creator-count">0 位</span></div>
             <div class="empty-note" id="agency-creators-empty" hidden>暂无关联达人。</div>
             <div class="review-table-wrap" id="agency-creators-table-wrap" hidden>
-              <table class="review-table"><thead><tr><th>达人</th><th>平台</th><th>国家/地区</th><th>状态</th><th></th></tr></thead><tbody id="agency-creators-body"></tbody></table>
+              <table class="review-table agency-related-table"><thead><tr><th>达人</th><th>平台</th><th>国家/地区</th><th>状态</th><th>操作</th></tr></thead><tbody id="agency-creators-body"></tbody></table>
             </div>
           </section>
 
@@ -1268,18 +1328,18 @@
               </select>
             </label>
             <label class="field">
-              <span>Start date</span>
+              <span>开始日期</span>
               <input id="campaign-start-date-from" type="date">
             </label>
             <label class="field">
-              <span>End date</span>
+              <span>结束日期</span>
               <input id="campaign-start-date-to" type="date">
             </label>
             <label class="checkbox-field campaign-archive-filter">
               <input id="campaign-include-archived" type="checkbox">
               <span>显示已归档</span>
             </label>
-            <button class="secondary-btn campaign-filter-apply" id="campaign-date-filter-apply" type="button">Apply</button>
+            <button class="secondary-btn campaign-filter-apply" id="campaign-date-filter-apply" type="button">应用筛选</button>
           </div>
           <p class="campaign-products-error" id="campaign-products-error" role="alert" hidden></p>
         </div>
@@ -1550,11 +1610,12 @@
                   </label>
                   <label class="field">
                     <span>报价币种</span>
-                    <input id="campaign-creator-quote-currency" maxlength="3" pattern="[A-Za-z]{3}" placeholder="USD">
+                    <select id="campaign-creator-quote-currency"></select>
                   </label>
                   <label class="field">
                     <span>报价单价</span>
                     <input id="campaign-creator-quote-unit-amount" type="number" min="0" step="0.01">
+                    <small class="hint" id="campaign-creator-quote-unit-usd">--</small>
                   </label>
                   <label class="field">
                     <span>数量</span>
@@ -1577,14 +1638,16 @@
                     <span>达人报价总额</span>
                     <input id="campaign-creator-quote" type="number" min="0" step="0.01" readonly>
                     <small class="hint">由单价 × 数量自动计算；旧记录可保留 total-only。</small>
+                    <small class="hint" id="campaign-creator-quote-usd">--</small>
                   </label>
                   <label class="field">
                     <span>实际成本</span>
                     <input id="campaign-creator-cost" type="number" min="0" step="0.01">
+                    <small class="hint" id="campaign-creator-cost-usd">--</small>
                   </label>
                   <label class="field">
                     <span>成本币种</span>
-                    <input id="campaign-creator-cost-currency" maxlength="3" pattern="[A-Za-z]{3}" placeholder="默认同报价币种">
+                    <select id="campaign-creator-cost-currency"></select>
                   </label>
                   <div class="field campaign-planned-dates-field">
                     <span>计划发布日期</span>
@@ -1594,6 +1657,11 @@
                       </div>
                     </div>
                     <button class="soft-btn compact-btn" id="campaign-planned-date-add" type="button">+ 添加日期</button>
+                  </div>
+                  <div class="field campaign-inline-fx" id="campaign-inline-fx" hidden>
+                    <span id="campaign-inline-fx-label">设置汇率</span>
+                    <label class="campaign-inline-fx-input">1 USD = <input id="campaign-inline-fx-rate" type="number" min="0" step="any"> <span id="campaign-inline-fx-currency">--</span></label>
+                    <button class="soft-btn compact-btn" id="campaign-inline-fx-save" type="button">保存汇率</button>
                   </div>
                 </div>
 
@@ -1792,6 +1860,13 @@
           </div>
         </div>
 
+        <div class="section-card" id="dashboard-settings-card">
+          <div class="section-title">工作台设置</div>
+          <p class="hint">仅保存在当前设备浏览器中，不会影响业务数据或其他成员。</p>
+          <div id="dashboard-settings-modules" class="dashboard-settings-modules"></div>
+          <div class="action-row"><button class="secondary-btn" id="dashboard-layout-reset" type="button">恢复默认布局</button></div>
+        </div>
+
         <div class="section-card">
           <div class="section-title">系统调试</div>
           <label class="checkbox-field">
@@ -1825,9 +1900,9 @@
 
         <div class="section-card" id="fx-settings-card">
           <div class="section-title">货币与汇率</div>
-          <p class="hint">基准货币：USD。手动输入规则为 1 USD = X 外币；原始金额和币种不会被改写。</p>
+          <p class="hint">Campaign 中使用非 USD 报价时，可在录入过程中直接设置汇率。这里用于统一管理已设置汇率。</p>
           <div class="form-grid two" id="fx-rate-fields"></div>
-          <div class="action-row"><button class="primary-btn" id="fx-save" type="button">保存并更新</button></div>
+          <div class="action-row"><button class="secondary-btn" id="fx-show-all" type="button">添加或管理更多币种</button><button class="primary-btn" id="fx-save" type="button">保存并更新</button></div>
           <div class="section-title">快速换算</div>
           <div class="form-grid two">
             <label class="field"><span>金额</span><input id="fx-calculator-amount" type="number" step="any"></label>

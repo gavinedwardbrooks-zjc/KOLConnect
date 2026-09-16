@@ -83,8 +83,18 @@ class AgencyService:
         self._invalidate_creator_library_cache()
         return result
 
+    def delete_agency(self, agency_id: str) -> dict[str, Any]:
+        result = self._agency_port_provider().delete_agency(agency_id)
+        self._invalidate_creator_library_cache()
+        return result
+
     def save_agency_contact(self, payload: dict[str, Any]) -> dict[str, Any]:
         result = {"contact": self._agency_port_provider().save_contact(payload)}
+        self._invalidate_creator_library_cache()
+        return result
+
+    def delete_agency_contact(self, contact_id: str) -> dict[str, Any]:
+        result = self._agency_port_provider().delete_contact(contact_id)
         self._invalidate_creator_library_cache()
         return result
 

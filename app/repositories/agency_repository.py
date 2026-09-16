@@ -75,6 +75,10 @@ class AgencyRepository(ExcelDataRepository):
             self.upsert_row(workbook["Agencies"], "agency_id", agency_id, values)
         return values
 
+    def delete_agency(self, agency_id: str) -> dict[str, Any]:
+        # Legacy workbook mode has no cross-sheet delete transaction. Fail closed.
+        raise ValueError("当前兼容工作簿模式不支持删除 Agency。")
+
     def list_contacts(self, agency_id: str = "") -> list[dict[str, Any]]:
         agency_id = str(agency_id or "").strip()
         with self.workbook() as workbook:
@@ -145,6 +149,32 @@ class AgencyRepository(ExcelDataRepository):
                 workbook["AgencyContacts"], "contact_id", contact_id, values
             )
         return values
+
+    def delete_contact(self, contact_id: str) -> dict[str, Any]:
+        contact_id = str(contact_id or "").strip()
+        with self.workbook(write=True) as workbook:
+            contact = self.row_by_key(workbook["AgencyContacts"], "contact_id", contact_id)
+            if not contact:
+                raise ValueError("未找到 Agency 联系人。")
+            creator_count = sum(
+                1
+                for creator in self.rows(workbook["Creators"])
+                if contact_id in {
+                    str(creator.get("current_contact_id") or ""),
+                    str(creator.get("source_contact_id") or ""),
+                }
+            )
+            if creator_count:
+                raise ValueError(
+                    f"该联系人仍被 {creator_count} 位达人关联，无法删除。请先解除达人关系。"
+                )
+            sheet = workbook["AgencyContacts"]
+            headers = self.headers(sheet)
+            for row_index, row in enumerate(self.rows(sheet), start=2):
+                if str(row.get("contact_id") or "") == contact_id:
+                    sheet.delete_rows(row_index, 1)
+                    break
+        return {"contact_id": contact_id, "deleted": True}
 
     def upsert_external_contact(
         self,

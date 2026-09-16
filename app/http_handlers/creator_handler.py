@@ -263,9 +263,24 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc), status=404)
         return True
 
+    if method == "DELETE" and agency_match:
+        try:
+            handler._ok(**agency_service.delete_agency(agency_match.group(1)))
+        except ValueError as exc:
+            handler._error(str(exc), status=409)
+        return True
+
     # GET /api/local/agency-contacts → 读取本地 Agency 联系人；{"ok": true, "contacts": [...]}
     if method == "GET" and path == "/api/local/agency-contacts":
         handler._json({"ok": True, **agency_service.get_agency_contacts()})
+        return True
+
+    agency_contact_match = re.fullmatch(r"/api/local/agency-contacts/([^/]+)", path)
+    if method == "DELETE" and agency_contact_match:
+        try:
+            handler._ok(**agency_service.delete_agency_contact(agency_contact_match.group(1)))
+        except ValueError as exc:
+            handler._error(str(exc), status=409)
         return True
 
     # GET /api/agency-contacts → 读取可选 Agency 联系人；{"ok": true, "configured": true, "contacts": [...]}
