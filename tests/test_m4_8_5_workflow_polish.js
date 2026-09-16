@@ -18,6 +18,7 @@ function testDashboardReadingOrder() {
 function testCaptureAndResultActions() {
   const html = read("webapp/index.html");
   const source = read("webapp/app.js");
+  const css = read("webapp/styles.css");
   assert.match(html, /id="capture-automatic-panel"/);
   assert.doesNotMatch(html, /id="capture-mode"|id="capture-manual-panel"|id="manual-task-create"/);
   assert.doesNotMatch(source, /\$\("manual-task-create"\)\.addEventListener/);
@@ -26,6 +27,10 @@ function testCaptureAndResultActions() {
   assert.match(source, /run\.textContent = "继续抓取"/);
   assert.match(source, /moreSummary\.textContent = "更多"/);
   assert.match(source, /moreActions\.append\(viewOriginal, copyAll, copyUnfinished, exportLinks, rename, remove\)/);
+  assert.match(source, /more\.addEventListener\("click", event => event\.stopPropagation\(\)\)/, "More must not re-render its parent task card when opened");
+  assert.match(source, /closeMoreOnOutsideClick/, "More menu must close when focus moves outside it");
+  assert.match(source, /event\.key !== "Escape"/, "More menu supports keyboard close");
+  assert.match(css, /\.task-card-more-actions[\s\S]*z-index:\s*20/, "More menu stays above task cards");
   assert.match(html, /id="scrape-open-results"[^>]*>打开结果文件/);
   assert.match(html, /id="scrape-open-result-folder"[^>]*disabled>打开结果文件夹/);
   assert.match(source, /\/api\/tasks\/\$\{encodeURIComponent\(state\.currentTaskId\)\}\/results\/open-folder/);
@@ -66,6 +71,12 @@ function testRecentMailPaginationContract() {
   assert.match(source, /\$\("mail-page-size"\)[\s\S]*state\.mailInbox\.page = 1/);
 }
 
+function testMailLongTokenContainment() {
+  const css = read("webapp/styles.css");
+  assert.match(css, /\.mail-message-snippet[\s\S]*max-width:\s*100%[\s\S]*overflow-wrap:\s*anywhere[\s\S]*word-break:\s*break-word/, "long unbroken URLs must wrap within a mail card");
+  assert.match(css, /\.page\[data-page="mail"\] \.section-card[\s\S]*min-width:\s*0/, "mail card containers remain shrinkable");
+}
+
 function testChromeAccountLabels() {
   const html = read("webapp/index.html");
   const source = read("webapp/app.js");
@@ -84,5 +95,6 @@ testDashboardReadingOrder();
 testCaptureAndResultActions();
 testCompactReviewAndCreatorLibraryToolbars();
 testRecentMailPaginationContract();
+testMailLongTokenContainment();
 testChromeAccountLabels();
 console.log("M4.8.5 workflow polish tests passed");

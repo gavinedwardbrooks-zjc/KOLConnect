@@ -62,12 +62,8 @@ const I18N = {
     refreshProfiles: "刷新 Profile",
     saveAccounts: "保存账号配置",
     mailTitle: "邮件",
-    mailSubtitle: "同步达人回复并维护合作邮件模板。",
-    mailTemplateTitle: "邮件模板",
+    mailSubtitle: "同步达人回复并管理合作邮箱账户。",
     senderName: "发件人名称",
-    mailSubject: "邮件标题",
-    mailBody: "邮件正文",
-    saveMail: "保存邮件配置",
     settingsTitle: "设置",
     settingsSubtitle: "管理界面语言、默认 Profile 和飞书配置。",
     uiSettingsTitle: "界面设置",
@@ -151,12 +147,8 @@ const I18N = {
     refreshProfiles: "Refresh profiles",
     saveAccounts: "Save account settings",
     mailTitle: "Mail",
-    mailSubtitle: "Prepare sender settings and templates first.",
-    mailTemplateTitle: "Mail template",
+    mailSubtitle: "Sync creator replies and manage collaboration mail accounts.",
     senderName: "Sender name",
-    mailSubject: "Subject",
-    mailBody: "Body",
-    saveMail: "Save mail settings",
     settingsTitle: "Settings",
     settingsSubtitle: "Manage language, default profile and Feishu configuration.",
     uiSettingsTitle: "UI settings",
@@ -189,14 +181,10 @@ Object.assign(I18N.en, {
 
 Object.assign(I18N.zh, {
   mailTitle: "邮件",
-  mailSubtitle: "同步达人回复并维护合作邮件模板。",
+  mailSubtitle: "同步达人回复并管理合作邮箱账户。",
   mailAccountsTitle: "邮箱账户",
   mailAccountsHint: "可配置多个邮箱账号，测试连接时只验证 IMAP/SMTP 登录，不发送真实邮件。",
   mailAddAccount: "新增邮箱账户",
-  mailTemplateTitle: "邮件模板",
-  mailSubject: "邮件标题",
-  mailBody: "邮件正文",
-  saveMail: "保存邮箱设置",
   mailEmptyAccounts: "暂无邮箱账户，请先新增一个账户。",
   mailAccountName: "账户名称",
   mailProvider: "邮箱类型",
@@ -246,14 +234,10 @@ Object.assign(I18N.zh, {
 
 Object.assign(I18N.en, {
   mailTitle: "Mail Accounts",
-  mailSubtitle: "Manage multiple sender accounts and keep the mail template below.",
+  mailSubtitle: "Sync creator replies and manage collaboration mail accounts.",
   mailAccountsTitle: "Mail Accounts",
   mailAccountsHint: "Connection tests verify IMAP/SMTP login only and never send a real email.",
   mailAddAccount: "Add mail account",
-  mailTemplateTitle: "Mail Template",
-  mailSubject: "Subject",
-  mailBody: "Body",
-  saveMail: "Save mail settings",
   mailEmptyAccounts: "No mail accounts yet. Add one to begin.",
   mailAccountName: "Account name",
   mailProvider: "Provider",
@@ -530,8 +514,11 @@ const state = {
     links: []
   },
   discover: {
+    mode: "account",
+    inputs: { account: "", email: "" },
     results: [],
-    summary: {}
+    summary: {},
+    emailResults: {}
   },
   emailEnrichment: {
     candidates: [],
@@ -927,6 +914,23 @@ function renderTaskList() {
     moreActions.className = "task-card-more-actions";
     moreActions.append(viewOriginal, copyAll, copyUnfinished, exportLinks, rename, remove);
     more.append(moreSummary, moreActions);
+    // Task cards select on click; do not let the native details menu trigger
+    // the card-level render that would immediately close it.
+    more.addEventListener("click", event => event.stopPropagation());
+    more.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      more.open = false;
+      moreSummary.focus();
+    });
+    const closeMoreOnOutsideClick = event => {
+      if (more.contains(event.target)) return;
+      more.open = false;
+      document.removeEventListener("click", closeMoreOnOutsideClick, true);
+    };
+    more.addEventListener("toggle", () => {
+      document.removeEventListener("click", closeMoreOnOutsideClick, true);
+      if (more.open) document.addEventListener("click", closeMoreOnOutsideClick, true);
+    });
     actions.append(review);
     if (canContinue) actions.append(run);
     actions.append(more);
@@ -2119,8 +2123,6 @@ function renderMail(mail) {
       accounts.forEach(account => wrap.appendChild(renderMailAccountCard(account)));
     }
   }
-  setValue("mail-template-subject", mail.template_subject || "");
-  setValue("mail-template-body", mail.template_body || "");
 }
 
 function addMailAccount(account = createEmptyMailAccount()) {
@@ -2281,9 +2283,49 @@ function clearDiscoverOutputs() {
   renderDiscoverDetails();
 }
 
+function clearDiscoverEmailOutputs() {
+  state.discover.emailResults = {};
+  setText("discover-email-count-input", "0");
+  setText("discover-email-count-existing", "0");
+  setText("discover-email-count-duplicate", "0");
+  setText("discover-email-count-unrecorded", "0 / 0");
+  setValue("discover-email-duplicates-output", "");
+  setValue("discover-email-unrecorded-output", "");
+  setValue("discover-email-invalid-output", "");
+  const body = $("discover-email-existing-body");
+  if (body) body.textContent = "";
+  const empty = $("discover-email-existing-empty");
+  if (empty) empty.hidden = false;
+}
+
+function setDiscoverMode(mode) {
+  const nextMode = mode === "email" ? "email" : "account";
+  const input = $("discover-input");
+  if (input) state.discover.inputs[state.discover.mode] = input.value;
+  state.discover.mode = nextMode;
+  if (input) input.value = state.discover.inputs[nextMode] || "";
+  const accountMode = nextMode === "account";
+  const copy = accountMode
+    ? { title: "原始链接", label: "一行一个链接", placeholder: "https://www.tiktok.com/@example", action: "清洗链接", subtitle: "整理账号主页链接，方便后续抓取与归档。" }
+    : { title: "邮箱列表", label: "一行一个邮箱", placeholder: "name@example.com", action: "检查邮箱", subtitle: "检查邮箱是否已收录在本地达人账号中，不会修改数据。" };
+  setText("discover-input-title", copy.title);
+  setText("discover-input-label", copy.label);
+  setText("discover-clean", copy.action);
+  setText("discover-subtitle", copy.subtitle);
+  if (input) input.placeholder = copy.placeholder;
+  $("discover-account-results").hidden = !accountMode;
+  $("discover-email-results").hidden = accountMode;
+  $("discover-mode-account").classList.toggle("active", accountMode);
+  $("discover-mode-email").classList.toggle("active", !accountMode);
+  $("discover-mode-account").setAttribute("aria-selected", String(accountMode));
+  $("discover-mode-email").setAttribute("aria-selected", String(!accountMode));
+}
+
 function clearDiscoverAll() {
   setValue("discover-input", "");
-  clearDiscoverOutputs();
+  state.discover.inputs[state.discover.mode] = "";
+  if (state.discover.mode === "email") clearDiscoverEmailOutputs();
+  else clearDiscoverOutputs();
 }
 
 function formatInvalidLinks(items) {
@@ -2360,6 +2402,38 @@ function renderDiscoverResults(data) {
   renderDiscoverDetails();
 }
 
+function renderEmailDeduplicationResults(data) {
+  state.discover.emailResults = data && typeof data === "object" ? data : {};
+  const summary = state.discover.emailResults.summary || {};
+  const existing = Array.isArray(state.discover.emailResults.existing_emails) ? state.discover.emailResults.existing_emails : [];
+  const duplicates = Array.isArray(state.discover.emailResults.input_duplicates) ? state.discover.emailResults.input_duplicates : [];
+  const unrecorded = Array.isArray(state.discover.emailResults.unrecorded_emails) ? state.discover.emailResults.unrecorded_emails : [];
+  const invalid = Array.isArray(state.discover.emailResults.invalid_inputs) ? state.discover.emailResults.invalid_inputs : [];
+  setText("discover-email-count-input", String(summary.non_empty_count || 0));
+  setText("discover-email-count-existing", String(summary.existing_database_count || 0));
+  setText("discover-email-count-duplicate", String(summary.input_duplicate_count || 0));
+  setText("discover-email-count-unrecorded", `${summary.unrecorded_count || 0} / ${summary.invalid_count || 0}`);
+  setValue("discover-email-duplicates-output", duplicates.map(item => {
+    const existingNote = Array.isArray(item.database_matches) && item.database_matches.length ? "；已收录" : "";
+    return `${item.email}（与第 ${item.input_duplicate_of_line} 行重复${existingNote}）`;
+  }).join("\n"));
+  setValue("discover-email-unrecorded-output", unrecorded.join("\n"));
+  setValue("discover-email-invalid-output", invalid.map(item => `第 ${item.line_number} 行：${item.original}（${item.reason || "邮箱格式无效"}）`).join("\n"));
+  const body = $("discover-email-existing-body");
+  if (!body) return;
+  body.textContent = "";
+  existing.forEach(entry => (entry.database_matches || []).forEach(match => {
+    const row = document.createElement("tr");
+    [entry.email, match.creator_name || "--", match.username || "--", match.platform || "--", match.email_source || "--"].forEach(value => {
+      const cell = document.createElement("td");
+      cell.textContent = String(value);
+      row.appendChild(cell);
+    });
+    body.appendChild(row);
+  }));
+  $("discover-email-existing-empty").hidden = body.children.length > 0;
+}
+
 function updateTaskLinkCounts() {
   const text = valueOf("task-links");
   const lines = text ? text.split(/\r?\n/) : [];
@@ -2379,12 +2453,6 @@ async function saveMailConfiguration(payload) {
   await loadState();
 }
 
-async function saveMailTemplate() {
-  await saveMailConfiguration({
-    template_subject: valueOf("mail-template-subject"),
-    template_body: valueOf("mail-template-body")
-  });
-}
 
 async function saveMailAccounts() {
   await saveMailConfiguration({ accounts: collectMailAccounts() });
@@ -2618,14 +2686,25 @@ function bindEvents() {
 
   $("discover-clean").addEventListener("click", async () => {
     try {
-      const data = await apiPost("/api/normalize-links", {
-        text: valueOf("discover-input")
-      });
-      renderDiscoverResults(data);
+      const text = valueOf("discover-input");
+      state.discover.inputs[state.discover.mode] = text;
+      if (state.discover.mode === "email") {
+        const data = await apiPost("/api/normalize-emails", { text });
+        renderEmailDeduplicationResults(data);
+      } else {
+        const data = await apiPost("/api/normalize-links", { text });
+        renderDiscoverResults(data);
+      }
     } catch (error) {
-      clearDiscoverOutputs();
+      if (state.discover.mode === "email") clearDiscoverEmailOutputs();
+      else clearDiscoverOutputs();
       showError(error);
     }
+  });
+  $("discover-mode-account")?.addEventListener("click", () => setDiscoverMode("account"));
+  $("discover-mode-email")?.addEventListener("click", () => setDiscoverMode("email"));
+  $("discover-input")?.addEventListener("input", event => {
+    state.discover.inputs[state.discover.mode] = event.target.value;
   });
   $("discover-clear").addEventListener("click", () => {
     clearDiscoverAll();
@@ -2663,9 +2742,9 @@ function bindEvents() {
     }
   });
 
-  $("mail-save").addEventListener("click", async () => {
+  $("discover-copy-unrecorded-emails")?.addEventListener("click", async () => {
     try {
-      await saveMailTemplate();
+      await copyText(valueOf("discover-email-unrecorded-output"));
     } catch (error) {
       showError(error);
     }

@@ -24,7 +24,7 @@ KOLConnect 是本地应用，**SQLite 是当前应用数据权威（application 
 
 `Creator_Library.xlsx` 是历史导入/兼容性文件，不再是当前权威数据库。KOLConnect 不提供整库 SQLite 到 Excel 的导出；Creator Library 的所选 Creator Excel 导出是独立且受限的导出功能。
 
-Windows 应用通过仅限 localhost 的服务（`127.0.0.1`）和原生 JavaScript 前端运行。默认桌面壳使用 `pywebview`，`Browser Mode` 是本地替代模式。用户设置、日志、任务数据与存储均位于 `%APPDATA%\KOLConnect`，不会写入 release 文件夹。
+Windows 应用通过仅限 localhost 的服务（`127.0.0.1`）和原生 JavaScript 前端运行，桌面壳使用 `pywebview`。用户设置、日志、任务数据与存储均位于 `%APPDATA%\KOLConnect`，不会写入 release 文件夹。
 
 ## Creator 与 CreatorAccount 模型
 

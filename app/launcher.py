@@ -9,7 +9,6 @@ import socket
 import sys
 import threading
 import time
-import webbrowser
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -258,11 +257,6 @@ def run_scraper_worker() -> None:
 def _configure_runtime_mode(mode: str) -> None:
     if mode == "desktop":
         os.environ["KOLCONNECT_DESKTOP"] = "1"
-        os.environ.pop("KOLCONNECT_BROWSER", None)
-        return
-    if mode == "browser":
-        os.environ["KOLCONNECT_BROWSER"] = "1"
-        os.environ.pop("KOLCONNECT_DESKTOP", None)
         return
     raise ValueError(f"Unsupported runtime mode: {mode}")
 
@@ -343,21 +337,6 @@ def run_desktop() -> None:
         runtime.shutdown()
 
 
-def run_browser(
-    *,
-    browser_opener=None,
-    wait_for_exit: bool = True,
-) -> None:
-    runtime = start_local_runtime("browser")
-    opener = browser_opener or webbrowser.open
-    opener(APP_URL)
-    if wait_for_exit:
-        try:
-            runtime.server_thread.join()
-        except KeyboardInterrupt:
-            runtime.shutdown()
-
-
 def check_sqlite_runtime() -> None:
     """Validate the packaged SQLite engine without starting application services."""
     from storage.sqlite_runtime import require_safe_sqlite_runtime
@@ -375,9 +354,6 @@ def main(argv: list[str] | None = None) -> None:
     get_logs_dir()
     if "--scraper-worker" in arguments:
         run_scraper_worker()
-        return
-    if "--browser" in arguments:
-        run_browser()
         return
     run_desktop()
 

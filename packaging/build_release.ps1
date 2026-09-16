@@ -57,6 +57,11 @@ $stagingDirectory = Join-Path $stagingRoot $releaseName
 $stagingZip = Join-Path $stagingRoot "$releaseName.zip"
 New-Item -ItemType Directory -Force -Path $release | Out-Null
 
+# A prior interrupted publication must not become part of the next release.
+# Canonical release artifacts remain untouched until this candidate validates.
+Get-ChildItem -LiteralPath $release -Directory -Filter ".staging-*" -ErrorAction SilentlyContinue |
+  Remove-Item -Recurse -Force
+
 Copy-Item -LiteralPath $builtDirectory -Destination $stagingDirectory -Recurse
 
 $packagedSqlite = @(Get-ChildItem -LiteralPath $stagingDirectory -Recurse -File -Filter "sqlite3.dll")

@@ -163,6 +163,19 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("packaging/.pyinstaller-build-macos/", ignore)
         self.assertIn("packaging/.pyinstaller-dist-macos/", ignore)
 
+    def test_windows_release_publication_cleans_only_named_staging_directories(self):
+        script = (ROOT / "packaging" / "build_release.ps1").read_text(encoding="utf-8")
+        self.assertIn('Get-ChildItem -LiteralPath $release -Directory -Filter ".staging-*"', script)
+        self.assertIn("Canonical release artifacts remain untouched until this candidate validates.", script)
+        self.assertLess(
+            script.index('Get-ChildItem -LiteralPath $release -Directory -Filter ".staging-*"'),
+            script.index("Copy-Item -LiteralPath $builtDirectory -Destination $stagingDirectory -Recurse"),
+        )
+        self.assertLess(
+            script.index("Move-Item -LiteralPath $stagingDirectory -Destination $releaseDirectory"),
+            script.index("Remove-Item -LiteralPath $stagingRoot -Force"),
+        )
+
     def test_macos_intel_packaging_is_architecture_specific(self):
         build = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
         script = (ROOT / "packaging" / "build_macos.sh").read_text(encoding="utf-8")

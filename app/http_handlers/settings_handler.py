@@ -11,7 +11,7 @@ def _merge_mail_configuration_update(payload: dict, existing_mail: dict | None, 
     current = services["normalize_mail_state"](existing_mail)
     supplied = services["merge_masked_mail_passwords"](payload, current)
     merged = dict(current)
-    for field in ("accounts", "template_subject", "template_body"):
+    for field in ("accounts",):
         if field in supplied:
             merged[field] = supplied[field]
     return services["normalize_mail_state"](merged)

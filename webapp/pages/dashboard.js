@@ -65,6 +65,61 @@
     applyDashboardLayout();
   }
 
+  function renderCustomizationDialog() {
+    const target = element("dashboard-customization-modules");
+    if (!target) return;
+    const layout = readLayout();
+    const moduleById = new Map(MODULES.map(module => [module.id, module]));
+    target.replaceChildren(...layout.order.map((id, index) => {
+      const module = moduleById.get(id);
+      if (!module) return null;
+      const row = document.createElement("div");
+      row.className = "dashboard-customization-row";
+      if (layout.visible[id] === false) row.classList.add("is-muted");
+      const label = document.createElement("label");
+      label.className = "dashboard-customization-toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = module.essential || layout.visible[id] !== false;
+      input.disabled = Boolean(module.essential);
+      input.dataset.dashboardVisible = id;
+      const copy = document.createElement("span");
+      copy.className = "dashboard-customization-copy";
+      const title = document.createElement("strong");
+      title.textContent = module.label;
+      const description = document.createElement("small");
+      description.textContent = module.essential ? "固定显示，固定在首位" : (module.description || "");
+      copy.append(title, description);
+      label.append(input, copy);
+      const actions = document.createElement("div");
+      actions.className = "dashboard-customization-actions";
+      for (const [direction, labelText] of [[-1, "上移"], [1, "下移"]]) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "soft-btn compact-btn";
+        button.textContent = labelText;
+        button.dataset.dashboardMove = id;
+        button.dataset.dashboardDirection = String(direction);
+        button.disabled = module.essential || (direction < 0 ? index === 0 : index === layout.order.length - 1);
+        actions.appendChild(button);
+      }
+      row.append(label, actions);
+      return row;
+    }).filter(Boolean));
+  }
+
+  function closeCustomizationDialog() {
+    const dialog = element("dashboard-customization-dialog");
+    if (dialog?.open) dialog.close();
+  }
+
+  function openCustomizationDialog() {
+    const dialog = element("dashboard-customization-dialog");
+    if (!dialog) return;
+    renderCustomizationDialog();
+    if (!dialog.open) dialog.showModal();
+  }
+
   function element(id) {
     return document.getElementById(id);
   }
@@ -722,7 +777,7 @@
     }
     const customization = event.target.closest?.("#dashboard-v2-customize");
     if (customization) {
-      getApp().navigate("settings").catch(getApp().showError);
+      openCustomizationDialog();
       return;
     }
     const open = event.target.closest?.("[data-dashboard-v2-open]")?.dataset.dashboardV2Open;
@@ -784,6 +839,36 @@
       resources.listen(document.querySelector('.page[data-page="dashboard"]'), "click", handleDashboardClick);
       resources.listen(element("dashboard-v2-drawer"), "click", handleDashboardClick);
       resources.listen(element("dashboard-v2-drawer-search"), "input", renderDrawerRows);
+      resources.listen(element("dashboard-customization-modules"), "change", event => {
+        const id = event.target?.dataset?.dashboardVisible;
+        if (!id || MODULES.find(module => module.id === id)?.essential) return;
+        updateLayout(layout => { layout.visible[id] = event.target.checked; });
+        renderCustomizationDialog();
+      });
+      resources.listen(element("dashboard-customization-modules"), "click", event => {
+        const button = event.target?.closest?.("[data-dashboard-move]");
+        if (!button) return;
+        const id = button.dataset.dashboardMove;
+        const direction = Number(button.dataset.dashboardDirection);
+        updateLayout(layout => {
+          const index = layout.order.indexOf(id);
+          const next = index + direction;
+          if (id !== "today" && index >= 0 && next > 0 && next < layout.order.length) {
+            [layout.order[index], layout.order[next]] = [layout.order[next], layout.order[index]];
+          }
+        });
+        renderCustomizationDialog();
+      });
+      resources.listen(element("dashboard-customization-reset"), "click", () => {
+        saveLayout(defaultLayout());
+        applyDashboardLayout();
+        renderCustomizationDialog();
+      });
+      resources.listen(element("dashboard-customization-done"), "click", closeCustomizationDialog);
+      resources.listen(element("dashboard-customization-close"), "click", closeCustomizationDialog);
+      resources.listen(element("dashboard-customization-dialog"), "click", event => {
+        if (event.target === event.currentTarget) closeCustomizationDialog();
+      });
     },
 
     unbind() {

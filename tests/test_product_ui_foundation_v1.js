@@ -45,10 +45,14 @@ assert.match(dashboard, /kolconnect-dashboard-layout-v2/);
 assert.match(dashboard, /setVisible/);
 assert.match(dashboard, /move\(id, direction\)/);
 assert.match(dashboard, /module\.essential \|\| saved\.visible\[module\.id\] !== false/);
-assert.match(settings, /dashboard-settings-modules/);
-assert.match(settings, /dashboard-layout-reset/);
-assert.match(settings, /dashboard-settings-copy/);
-assert.match(styles, /dashboard-settings-copy strong \{ white-space: nowrap/);
+assert.match(html, /id="dashboard-customization-dialog"/);
+assert.match(html, /id="dashboard-customization-modules"/);
+assert.match(html, /id="dashboard-customization-reset"/);
+assert.match(dashboard, /function openCustomizationDialog\(\)/);
+assert.match(dashboard, /function renderCustomizationDialog\(\)/);
+assert.doesNotMatch(dashboard, /navigate\("settings"\)/);
+assert.doesNotMatch(settings, /dashboard-settings-modules|dashboard-layout-reset|dashboard-settings-copy/);
+assert.match(styles, /dashboard-customization-copy strong \{ white-space: nowrap/);
 assert.match(styles, /\.dashboard-v2-module\[hidden\] \{ display: none !important; \}/);
 
 assert.match(html, /id="campaign-creator-quote-currency"/);

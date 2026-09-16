@@ -76,6 +76,81 @@ BLOCKING_SCRAPE_STATUSES = {
 }
 
 
+def normalize_email_for_deduplication(value: object) -> str:
+    """Normalize only the comparison identity; never rewrite persisted email data."""
+    return str(value or "").strip().casefold()
+
+
+def build_email_deduplication_payload(
+    source_lines: list[object], database_matches: dict[str, list[dict[str, str]]]
+) -> dict[str, Any]:
+    """Produce a read-only account-email deduplication result for pasted lines."""
+    first_line_by_email: dict[str, int] = {}
+    unique_inputs: dict[str, dict[str, Any]] = {}
+    input_duplicates: list[dict[str, Any]] = []
+    invalid_inputs: list[dict[str, Any]] = []
+    line_results: list[dict[str, Any]] = []
+
+    for line_number, raw_value in enumerate(source_lines, start=1):
+        original = str(raw_value or "").strip()
+        if not original:
+            continue
+        email = normalize_email_for_deduplication(original)
+        if not REVIEW_EMAIL_PATTERN.fullmatch(email):
+            invalid = {
+                "line_number": line_number,
+                "original": original,
+                "reason": "邮箱格式无效",
+            }
+            invalid_inputs.append(invalid)
+            line_results.append({**invalid, "email": "", "input_duplicate_of_line": None, "database_matches": []})
+            continue
+
+        duplicate_of_line = first_line_by_email.get(email)
+        matches = [dict(match) for match in database_matches.get(email, [])]
+        result = {
+            "line_number": line_number,
+            "original": original,
+            "email": email,
+            "input_duplicate_of_line": duplicate_of_line,
+            "database_matches": matches,
+        }
+        line_results.append(result)
+        if duplicate_of_line is not None:
+            input_duplicates.append(result)
+            continue
+        first_line_by_email[email] = line_number
+        unique_inputs[email] = result
+
+    existing_emails = [
+        {
+            "email": email,
+            "line_number": result["line_number"],
+            "database_matches": result["database_matches"],
+        }
+        for email, result in unique_inputs.items()
+        if result["database_matches"]
+    ]
+    unrecorded_emails = [
+        email for email, result in unique_inputs.items() if not result["database_matches"]
+    ]
+    return {
+        "email_results": line_results,
+        "existing_emails": existing_emails,
+        "input_duplicates": input_duplicates,
+        "unrecorded_emails": unrecorded_emails,
+        "invalid_inputs": invalid_inputs,
+        "summary": {
+            "non_empty_count": len(line_results),
+            "valid_unique_count": len(unique_inputs),
+            "input_duplicate_count": len(input_duplicates),
+            "existing_database_count": len(existing_emails),
+            "unrecorded_count": len(unrecorded_emails),
+            "invalid_count": len(invalid_inputs),
+        },
+    }
+
+
 class CreatorRepositoryReader(Protocol):
     def saveCreator(self, analysis: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -94,6 +169,8 @@ class CreatorRepositoryReader(Protocol):
     def getCreatorSnapshots(self, creator_id: str) -> list[dict[str, Any]]: ...
 
     def getCreatorAccounts(self, creator_id: str = "") -> list[dict[str, Any]]: ...
+
+    def getCreatorInventoryRows(self) -> dict[str, list[dict[str, Any]]]: ...
 
     def getExistingCreatorAccountUids(self, account_uids: set[str]) -> set[str]: ...
 
@@ -739,6 +816,37 @@ class CreatorService:
     def get_creator_accounts(self) -> list[dict[str, Any]]:
         """Expose the existing account read model to bounded service workflows."""
         return self._repository_provider().getCreatorAccounts("")
+
+    def check_email_deduplication(self, source_lines: list[object]) -> dict[str, Any]:
+        """Classify pasted emails against the authoritative CreatorAccount emails.
+
+        This is deliberately a read-only check. Email ownership is account-scoped;
+        Creator-level CRM email fields are not used as account identities here.
+        """
+        inventory = self._repository_provider().getCreatorInventoryRows()
+        creators = {
+            str(row.get("creator_id") or "").strip(): str(row.get("name") or "").strip()
+            for row in inventory.get("creators", [])
+            if str(row.get("creator_id") or "").strip()
+        }
+        database_matches: dict[str, list[dict[str, str]]] = {}
+        for account in inventory.get("accounts", []):
+            stored_email = str(account.get("account_email") or "").strip()
+            normalized_email = normalize_email_for_deduplication(stored_email)
+            if not normalized_email or not REVIEW_EMAIL_PATTERN.fullmatch(normalized_email):
+                continue
+            creator_id = str(account.get("creator_id") or "").strip()
+            database_matches.setdefault(normalized_email, []).append({
+                "creator_id": creator_id,
+                "creator_name": creators.get(creator_id, ""),
+                "account_uid": str(account.get("account_uid") or "").strip(),
+                "platform": str(account.get("platform") or "").strip(),
+                "username": str(account.get("username") or "").strip(),
+                "profile_url": str(account.get("profile_url") or "").strip(),
+                # The persisted account model has no authoritative email-source field.
+                "email_source": str(account.get("email_source") or "").strip(),
+            })
+        return build_email_deduplication_payload(source_lines, database_matches)
 
     def get_creator_task(self, creator_id: str) -> dict[str, Any]:
         """Return the existing review task linked to one Creator."""

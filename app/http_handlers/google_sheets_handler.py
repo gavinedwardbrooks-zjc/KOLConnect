@@ -39,6 +39,16 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "POST" and path == "/api/google-sheets/disconnect":
         handler._json({"ok": True, **services["google_sheets_client"]().disconnect()})
         return True
+    if method == "POST" and path == "/api/google-sheets/sync":
+        try:
+            result = services["google_sheets_data_sync"].sync(
+                services["google_sheets_client"](),
+                services["get_google_sheets_config"]().get("spreadsheet_id", ""),
+            )
+            handler._json({"ok": result["status"] == "SUCCESS", **result})
+        except GoogleSheetsError as exc:
+            _failure(handler, exc)
+        return True
     sync_match = re.fullmatch(r"/api/campaigns/([^/]+)/google-sheets-sync", path)
     if method == "POST" and sync_match:
         try:

@@ -94,13 +94,37 @@ class GoogleSheetsClient:
                 target_valid = True
             except GoogleSheetsError:
                 pass
+        authorization_status = self._authorization_status()
         return {
             "configured": configured,
-            "connected": self.token_store.exists(),
+            "connected": authorization_status == "CONNECTED",
             "target_valid": target_valid,
-            "status": "CONNECTED" if configured and self.token_store.exists() and target_valid
-            else ("NOT_CONNECTED" if configured and target_valid else "NOT_CONFIGURED"),
+            "authorization_status": authorization_status,
+            "status": "CONNECTED" if configured and target_valid and authorization_status == "CONNECTED"
+            else ("AUTH_REQUIRED" if configured and target_valid else "NOT_CONFIGURED"),
         }
+
+    def _authorization_status(self) -> str:
+        """Classify local OAuth state without sending a Google API request."""
+        token = self.token_store.load()
+        if token is None or Credentials is None:
+            return "AUTH_REQUIRED"
+        # OAuth's persisted refresh token is the durable authorization grant.
+        # It remains usable after access-token expiry and is refreshed by
+        # _authorized_session immediately before an API request.
+        if str(token.get("refresh_token") or "").strip():
+            return "CONNECTED"
+        if not str(token.get("token") or "").strip():
+            return "AUTH_REQUIRED"
+        try:
+            credentials = Credentials.from_authorized_user_info(token, [SHEETS_SCOPE])
+        except Exception:
+            return "AUTH_REQUIRED"
+        # An expired access token remains usable only when the canonical refresh
+        # flow has a persisted refresh token to exchange on the next request.
+        if credentials.valid:
+            return "CONNECTED"
+        return "AUTH_REQUIRED"
 
     def connect(self) -> dict[str, Any]:
         self._require_client_config()

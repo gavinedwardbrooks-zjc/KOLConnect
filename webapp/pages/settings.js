@@ -33,63 +33,12 @@
   function renderWorkbookPathCapability() {
     const hint = document.getElementById("creator-library-workbook-path-hint");
     if (!hint) return;
-    const desktopBridgeAvailable = Boolean(global.pywebview?.api?.save_xlsx);
-    hint.dataset.runtimeMode = desktopBridgeAvailable ? "desktop" : "browser";
-    hint.textContent = desktopBridgeAvailable
-      ? "可设置为 WPS 云盘或其他同步文件夹。首次使用时会自动创建所需工作表。"
-      : "高级本地文件设置：请填写运行 KOLConnect 的本机后端可访问路径；浏览器不会提供原生文件选择器，也不会上传工作簿。";
-
-    const browserExitCard = document.getElementById("browser-mode-exit-card");
-    if (browserExitCard) browserExitCard.hidden = desktopBridgeAvailable;
+    hint.textContent = "可设置为 WPS 云盘或其他同步文件夹。首次使用时会自动创建所需工作表。";
   }
 
   function listen(id, type, listener) {
     const element = document.getElementById(id);
     if (element) resources.listen(element, type, listener);
-  }
-
-  function renderDashboardLayoutSettings() {
-    const target = document.getElementById("dashboard-settings-modules");
-    const preferences = global.KOLConnectDashboardPreferences;
-    if (!target || !preferences) return;
-    const layout = preferences.get();
-    const moduleById = new Map(preferences.modules().map(module => [module.id, module]));
-    target.replaceChildren(...layout.order.map((id, index) => {
-      const module = moduleById.get(id);
-      if (!module) return null;
-      const row = document.createElement("div");
-      row.className = "dashboard-settings-row";
-      if (layout.visible[id] === false) row.classList.add("is-muted");
-      const label = document.createElement("label");
-      label.className = "dashboard-settings-toggle";
-      const input = document.createElement("input");
-      input.type = "checkbox";
-      input.checked = module.essential || layout.visible[id] !== false;
-      input.disabled = Boolean(module.essential);
-      input.dataset.dashboardVisible = id;
-      const text = document.createElement("span");
-      text.className = "dashboard-settings-copy";
-      const title = document.createElement("strong");
-      title.textContent = module.label;
-      const description = document.createElement("small");
-      description.textContent = module.essential ? "固定显示，固定在首位" : (module.description || "");
-      text.append(title, description);
-      label.append(input, text);
-      const actions = document.createElement("div");
-      actions.className = "dashboard-settings-actions";
-      for (const [direction, labelText] of [[-1, "上移"], [1, "下移"]]) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "soft-btn compact-btn";
-        button.textContent = labelText;
-        button.dataset.dashboardMove = id;
-        button.dataset.dashboardDirection = String(direction);
-        button.disabled = module.essential || (direction < 0 ? index === 0 : index === layout.order.length - 1);
-        actions.appendChild(button);
-      }
-      row.append(label, actions);
-      return row;
-    }).filter(Boolean));
   }
 
   function setSyncText(id, value) {
@@ -145,7 +94,7 @@
   }
 
   function renderGoogleSheetsResult(data, message = "") {
-    const labels = { CONNECTED: "已连接", NOT_CONNECTED: "未连接", NOT_CONFIGURED: "未配置" };
+    const labels = { CONNECTED: "已连接", AUTH_REQUIRED: "需要授权", NOT_CONNECTED: "未连接", NOT_CONFIGURED: "未配置" };
     setSyncText("google-sheets-status", labels[data?.status] || data?.status || "未配置");
     const result = document.getElementById("google-sheets-result");
     if (result) {
@@ -453,7 +402,6 @@
         }
       }
       renderWorkbookPathCapability();
-      renderDashboardLayoutSettings();
       const resetExecute = document.getElementById("clean-reset-execute");
       if (resetExecute) resetExecute.disabled = true;
     },
@@ -478,24 +426,6 @@
         } catch (error) {
           handleError(error);
         }
-      });
-
-      listen("dashboard-settings-modules", "change", event => {
-        const id = event.target?.dataset?.dashboardVisible;
-        if (!id) return;
-        global.KOLConnectDashboardPreferences?.setVisible(id, event.target.checked);
-        renderDashboardLayoutSettings();
-      });
-      listen("dashboard-settings-modules", "click", event => {
-        const button = event.target?.closest?.("[data-dashboard-move]");
-        if (!button) return;
-        global.KOLConnectDashboardPreferences?.move(button.dataset.dashboardMove, Number(button.dataset.dashboardDirection));
-        renderDashboardLayoutSettings();
-      });
-      listen("dashboard-layout-reset", "click", () => {
-        global.KOLConnectDashboardPreferences?.reset();
-        renderDashboardLayoutSettings();
-        app.showSaved("工作台已恢复默认布局。");
       });
 
       listen("fx-save", "click", async () => {
@@ -589,6 +519,18 @@
           const data = await api.post("/api/google-sheets/disconnect", {}, { signal: resources.signal });
           renderGoogleSheetsResult(data, "Google OAuth 连接已断开。");
         } catch (error) { handleError(error); }
+      });
+
+      listen("google-sheets-sync", "click", async () => {
+        try {
+          const data = await api.post("/api/google-sheets/sync", {}, { signal: resources.signal });
+          const completed = (data.worksheets || []).filter(item => item.status === "SUCCESS").length;
+          renderGoogleSheetsResult(data, `Google Sheets 数据同步完成：${completed} 个工作表。`);
+        } catch (error) {
+          if (error?.responseData?.error === "AUTH_REQUIRED") {
+            renderGoogleSheetsResult({ status: "AUTH_REQUIRED" }, "Google 授权已失效或尚未完成，请重新连接 Google 后再同步。");
+          } else handleError(error);
+        }
       });
 
       listen("feishu-sync-validate", "click", async () => {
@@ -718,18 +660,6 @@
           handleError(error);
         } finally {
           if (button) button.disabled = false;
-        }
-      });
-
-      listen("browser-mode-exit", "click", async () => {
-        const button = document.getElementById("browser-mode-exit");
-        if (button) button.disabled = true;
-        try {
-          await api.post("/api/runtime/shutdown", {});
-          if (button) button.textContent = "KOLConnect 已退出，可关闭此页面";
-        } catch (error) {
-          if (button) button.disabled = false;
-          handleError(error);
         }
       });
 

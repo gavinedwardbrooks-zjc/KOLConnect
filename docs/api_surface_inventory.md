@@ -1,6 +1,6 @@
 # M7.2 HTTP Surface Inventory
 
-All entries below are registered through `server.HANDLERS` (plus the Browser Mode shutdown route), pass the localhost Host gate, and mutations pass the Origin gate. `Compat` means the existing top-level response/error shape is frozen and now receives `trace_id`; `Standard+compat` means an M7.2 envelope is added while old result fields remain.
+All entries below are registered through `server.HANDLERS`, pass the localhost Host gate, and mutations pass the Origin gate. `Compat` means the existing top-level response/error shape is frozen and now receives `trace_id`; `Standard+compat` means an M7.2 envelope is added while old result fields remain.
 
 | Method | Path | Handler | Purpose | R/W | Contract | Frontend | Tests | Legacy |
 |---|---|---|---|---|---|---|---|---|
@@ -54,6 +54,10 @@ All entries below are registered through `server.HANDLERS` (plus the Browser Mod
 | POST | `/api/tasks/manual` | task | Manual task create | W | Compat | Yes | Yes | No |
 | POST | `/api/tasks/email-recheck/scan` | task | Local missing-email scan | W | Compat | Yes | Yes | No |
 | POST | `/api/normalize-links` | task | Normalize links | R | Compat | Yes | Yes | No |
+| POST | `/api/normalize-emails` | task | Read-only account-email deduplication | R SQLite | Compat | Yes | Yes | No |
+| GET/POST | `/api/google-sheets/status\|connect\|disconnect` | google_sheets | OAuth connection state/control | R/W local token | Compat | Yes | Yes | No |
+| POST | `/api/google-sheets/sync` | google_sheets | Manual Creator/Account SQLite replica | W remote | Compat | Yes | Yes | No |
+| POST | `/api/campaigns/{id}/google-sheets-sync` | google_sheets | Manual Campaign performance report | W remote | Compat | Yes | Yes | No |
 | GET | `/api/scrape/status` | task | Runtime status | R | Compat | Yes | Yes | No |
 | POST | `/api/scrape/start|stop|pause|resume` | task | Runtime control | W | Compat | Yes | Yes | No |
 | POST | `/api/feishu-sync/validate` | feishu_sync | Validate config/schema | R remote | Standard+compat | Yes | Yes | No |
@@ -70,7 +74,6 @@ All entries below are registered through `server.HANDLERS` (plus the Browser Mod
 | POST | `/api/mail/test` | settings | Mail connection test | R remote | Compat | Yes | Yes | No |
 | POST | `/api/mail/inbox/sync` | settings | Fetch and match mail | R/W local | Compat | Yes | Yes | No |
 | POST | `/api/mail/inbox/sync-crm-replies` | settings | Apply reply state to Feishu | W remote | Compat | Yes | Yes | No |
-| POST | `/api/runtime/shutdown` | server | Browser Mode exit | W runtime | Compat | Yes | Yes | No |
 | POST/PATCH/PUT/DELETE | `/api/creator-library/{id}/cooperations` | creator | Reject legacy Cooperation writes | W rejected | Frozen 403 | No | Yes | Yes |
 
 Account backfill, Creator backfill, and legacy Creator cleanup runtime modules and routes are removed. Clean Reset is the supported replacement workflow. Static web files are not API routes.

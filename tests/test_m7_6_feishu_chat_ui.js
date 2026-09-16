@@ -24,7 +24,7 @@ function element() {
 
 const ids = [
   "creator-library-backup-workbook", "creator-library-workbook-path-hint",
-  "browser-mode-exit-card", "clean-reset-execute", "feishu-chat-status",
+  "clean-reset-execute", "feishu-chat-status",
   "feishu-chat-transport", "feishu-chat-bot", "feishu-chat-last-connected",
   "feishu-chat-last-error", "feishu-chat-test", "feishu-chat-enable",
   "feishu-chat-disable", "feishu-chat-result",

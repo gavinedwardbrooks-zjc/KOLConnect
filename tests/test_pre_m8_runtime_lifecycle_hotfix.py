@@ -60,11 +60,23 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         build = (ROOT / "packaging" / "build_release.ps1").read_text(
             encoding="utf-8-sig"
         )
+        installer = (ROOT / "packaging" / "installer" / "KOLConnect.iss").read_text(
+            encoding="utf-8-sig"
+        )
         self.assertIn("exclude_binaries=True", spec)
         self.assertIn("COLLECT(", spec)
         self.assertIn('RELEASE_NAME = "KOLConnect_v1.0.0"', spec)
         self.assertIn('Write-Host "RELEASE_FORMAT = ONEDIR"', build)
-        self.assertIn("Compress-Archive -LiteralPath $releaseDirectory", build)
+        self.assertIn('$release = Join-Path $root "release"', build)
+        self.assertIn('$releaseDirectory = Join-Path $release $releaseName', build)
+        self.assertIn('$releaseZip = Join-Path $release "$releaseName.zip"', build)
+        self.assertIn("[System.IO.Compression.ZipFile]::CreateFromDirectory(", build)
+        self.assertIn('$stagingRoot = Join-Path $release ".staging-', build)
+        self.assertIn('Get-ChildItem -LiteralPath $release -Directory -Filter ".staging-*"', build)
+        self.assertIn('Move-Item -LiteralPath $stagingDirectory -Destination $releaseDirectory', build)
+        self.assertIn('Move-Item -LiteralPath $stagingZip -Destination $releaseZip', build)
+        self.assertIn('OutputDir={#SourcePath}\\..\\..\\release', installer)
+        self.assertNotIn("GetEnv('USERPROFILE')", installer)
         self.assertIn("Expected exactly one packaged sqlite3.dll", build)
 
     def test_desktop_close_and_finalizer_share_idempotent_runtime_shutdown(self) -> None:

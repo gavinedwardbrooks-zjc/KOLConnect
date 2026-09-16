@@ -230,6 +230,16 @@ def handle(handler, request: dict, context: dict) -> bool:
         )
         return True
 
+    # POST /api/normalize-emails → 仅检查输入邮箱和本地 SQLite 账号邮箱，不写入数据。
+    if path == "/api/normalize-emails":
+        payload = request["get_payload"]()
+        if isinstance(payload.get("emails"), list):
+            source_lines = [str(item or "") for item in payload.get("emails", [])]
+        else:
+            source_lines = str(payload.get("text") or "").splitlines()
+        handler._ok(**services["creator"].check_email_deduplication(source_lines))
+        return True
+
     # POST /api/tasks/manual → 创建人工任务；{"ok": true, "task": {...}, "account_uid": "...", "creator_library_import": {...}}
     if path == "/api/tasks/manual":
         payload = request["get_payload"]()

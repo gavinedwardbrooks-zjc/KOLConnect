@@ -344,6 +344,21 @@
 
       </section>
 
+      <dialog id="dashboard-customization-dialog" class="dashboard-customization-dialog" aria-labelledby="dashboard-customization-title">
+        <div class="dashboard-customization-header">
+          <div>
+            <h2 id="dashboard-customization-title">自定义工作台</h2>
+            <p class="hint">选择显示内容并调整排列顺序，仅保存在当前设备浏览器中。</p>
+          </div>
+          <button class="soft-btn compact-btn" id="dashboard-customization-close" type="button" aria-label="关闭">关闭</button>
+        </div>
+        <div id="dashboard-customization-modules" class="dashboard-customization-modules"></div>
+        <div class="action-row dashboard-customization-footer">
+          <button class="secondary-btn" id="dashboard-customization-reset" type="button">恢复默认布局</button>
+          <button class="primary-btn" id="dashboard-customization-done" type="button">完成</button>
+        </div>
+      </dialog>
+
       <aside id="dashboard-v2-drawer" class="dashboard-v2-drawer" hidden aria-label="工作台明细">
         <div class="dashboard-v2-drawer-backdrop" data-dashboard-v2-drawer-close></div>
         <section class="dashboard-v2-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="dashboard-v2-drawer-title">
@@ -1032,22 +1047,27 @@
 
       <section class="page workspace-narrow" data-page="discover">
         <div class="page-header">
-          <h1 data-i18n="discoverTitle">链接清洗</h1>
-          <p data-i18n="discoverSubtitle">将原始达人链接整理为标准主页链接。</p>
+          <h1>账号清洗查重</h1>
+          <p id="discover-subtitle">整理账号主页链接，或检查邮箱是否已收录在达人账号中。</p>
         </div>
 
         <div class="section-card">
-          <div class="section-title" data-i18n="discoverRawTitle">原始链接</div>
+          <div class="discover-mode-switch" role="tablist" aria-label="清洗类型">
+            <button class="detail-tab active" id="discover-mode-account" type="button" role="tab" aria-selected="true">账号</button>
+            <button class="detail-tab" id="discover-mode-email" type="button" role="tab" aria-selected="false">邮箱</button>
+          </div>
+          <div class="section-title" id="discover-input-title">原始链接</div>
           <label class="field">
-            <span data-i18n="discoverInputLabel">一行一个链接</span>
+            <span id="discover-input-label">一行一个链接</span>
             <textarea id="discover-input" rows="10" placeholder="https://www.tiktok.com/@example"></textarea>
           </label>
           <div class="action-row">
-            <button class="primary-btn" id="discover-clean" data-i18n="cleanLinks">清洗链接</button>
+            <button class="primary-btn" id="discover-clean">清洗链接</button>
             <button class="soft-btn" id="discover-clear" data-i18n="discoverClear">清空</button>
           </div>
         </div>
 
+        <div id="discover-account-results">
         <div class="section-card">
           <div class="discover-summary-grid" aria-label="清洗结果汇总">
             <div class="discover-summary-card"><span>非空输入</span><strong id="discover-count-input">0</strong></div>
@@ -1087,6 +1107,43 @@
             </table>
           </div>
           <p class="review-empty" id="discover-detail-empty">清洗后将在这里显示每一条非空输入的处理结果。</p>
+        </div>
+        </div>
+
+        <div id="discover-email-results" hidden>
+          <div class="section-card">
+            <div class="discover-summary-grid" aria-label="邮箱检查结果汇总">
+              <div class="discover-summary-card"><span>非空输入</span><strong id="discover-email-count-input">0</strong></div>
+              <div class="discover-summary-card discover-summary-success"><span>已存在</span><strong id="discover-email-count-existing">0</strong></div>
+              <div class="discover-summary-card discover-summary-duplicate"><span>本批重复</span><strong id="discover-email-count-duplicate">0</strong></div>
+              <div class="discover-summary-card discover-summary-invalid"><span>未收录 / 无效</span><strong id="discover-email-count-unrecorded">0 / 0</strong></div>
+            </div>
+          </div>
+          <div class="section-card">
+            <div class="section-title">已存在</div>
+            <div class="review-table-wrap">
+              <table class="review-table discover-email-table">
+                <thead><tr><th>邮箱</th><th>Creator</th><th>账号</th><th>平台</th><th>邮箱来源</th></tr></thead>
+                <tbody id="discover-email-existing-body"></tbody>
+              </table>
+            </div>
+            <p class="review-empty" id="discover-email-existing-empty">没有匹配到已收录邮箱。</p>
+          </div>
+          <div class="discover-output-panels">
+            <div class="section-card discover-result-card">
+              <div class="section-title">本批重复</div>
+              <textarea id="discover-email-duplicates-output" rows="7" readonly></textarea>
+            </div>
+            <div class="section-card discover-result-card">
+              <div class="section-title">未收录</div>
+              <textarea id="discover-email-unrecorded-output" rows="7" readonly></textarea>
+              <div class="action-row"><button class="soft-btn" id="discover-copy-unrecorded-emails" type="button">复制未收录邮箱</button></div>
+            </div>
+          </div>
+          <div class="section-card discover-result-card">
+            <div class="section-title">无效输入</div>
+            <textarea id="discover-email-invalid-output" rows="4" readonly></textarea>
+          </div>
         </div>
       </section>
 
@@ -1804,14 +1861,6 @@
           </div>
         </div>
 
-        <div class="section-card">
-          <div class="section-title" data-i18n="mailTemplateTitle">邮件模板</div>
-          <label class="field"><span data-i18n="mailSubject">邮件标题</span><input id="mail-template-subject" type="text"></label>
-          <label class="field"><span data-i18n="mailBody">邮件正文</span><textarea id="mail-template-body" rows="10"></textarea></label>
-          <div class="action-row">
-            <button class="primary-btn" id="mail-save" data-i18n="saveMail">保存邮箱设置</button>
-          </div>
-        </div>
       </section>
 
       <section class="page workspace-narrow" data-page="mail-accounts">
@@ -1860,30 +1909,26 @@
           </div>
         </div>
 
-        <div class="section-card" id="dashboard-settings-card">
-          <div class="section-title">工作台设置</div>
-          <p class="hint">仅保存在当前设备浏览器中，不会影响业务数据或其他成员。</p>
-          <div id="dashboard-settings-modules" class="dashboard-settings-modules"></div>
-          <div class="action-row"><button class="secondary-btn" id="dashboard-layout-reset" type="button">恢复默认布局</button></div>
-        </div>
+        <div class="section-card system-tools-card">
+          <div class="section-title">系统工具</div>
+          <section class="system-tools-section" aria-labelledby="system-debug-title">
+            <h3 id="system-debug-title" class="system-tools-subtitle">系统调试</h3>
+            <label class="checkbox-field system-debug-toggle">
+              <input id="debug-mode" type="checkbox">
+              <span>开启 Debug 模式</span>
+            </label>
+            <p class="hint">开启后显示本机运行信息，不会显示密码、Token 或邮件授权码。</p>
+            <div id="debug-system-info" class="system-info" hidden></div>
+          </section>
 
-        <div class="section-card">
-          <div class="section-title">系统调试</div>
-          <label class="checkbox-field">
-            <input id="debug-mode" type="checkbox">
-            <span>开启 Debug 模式</span>
-          </label>
-          <p class="hint">开启后显示本机运行信息，不会显示密码、Token 或邮件授权码。</p>
-          <div id="debug-system-info" class="system-info" hidden></div>
-        </div>
-
-        <div class="section-card">
-          <div class="section-title">系统健康检查</div>
-          <p class="hint">检查本地数据目录、达人库 Excel、插件最近导入记录与飞书配置，不会写入 Excel 或发送飞书请求。</p>
-          <div class="action-row">
-            <button class="secondary-btn" id="system-health-run">运行健康检查</button>
-          </div>
-          <div id="system-health-result" class="system-health-result" hidden></div>
+          <section class="system-tools-section system-health-section" aria-labelledby="system-health-title">
+            <h3 id="system-health-title" class="system-tools-subtitle">系统健康检查</h3>
+            <p class="hint">检查本地数据目录、达人库 Excel、插件最近导入记录与飞书配置，不会写入 Excel 或发送飞书请求。</p>
+            <div class="action-row">
+              <button class="secondary-btn" id="system-health-run">运行健康检查</button>
+            </div>
+            <div id="system-health-result" class="system-health-result" hidden></div>
+          </section>
         </div>
 
         <div class="section-card">
@@ -1960,14 +2005,6 @@
           </div>
           <p class="form-message" id="clean-reset-result" hidden></p>
         </div>
-        <div class="section-card" id="browser-mode-exit-card" hidden>
-          <div class="section-title">浏览器模式</div>
-          <p class="hint">关闭浏览器标签不会停止本机服务。完成使用后，请在这里安全退出 KOLConnect。</p>
-          <div class="action-row">
-            <button class="secondary-btn" id="browser-mode-exit">退出浏览器模式</button>
-          </div>
-        </div>
-
         <div class="section-card">
           <div class="section-title" data-i18n="feishuSettingsTitle">飞书配置（同一个 App）</div>
           <div class="form-grid two">
@@ -1987,8 +2024,8 @@
         </div>
 
         <div class="section-card" id="google-sheets-card">
-          <div class="section-title">Google Sheets Campaign 报告</div>
-          <p class="hint">手动将当前 Campaign 的 Summary、Publications 和 Performance History 写入指定 Spreadsheet。SQLite 始终是权威数据源，不会从 Google 回写。</p>
+          <div class="section-title">Google Sheets 数据同步</div>
+          <p class="hint">手动将当前 SQLite 达人与账号数据同步到指定 Spreadsheet；Campaign 页面仍可单独导出 Campaign 报告。SQLite 始终是权威数据源，不会从 Google 回写。</p>
           <div class="form-grid two">
             <label class="field"><span>OAuth Client ID</span><input id="google-sheets-client-id" type="text"></label>
             <label class="field"><span>OAuth Client Secret</span><input id="google-sheets-client-secret" type="password" placeholder="留空表示不修改"></label>
@@ -1999,6 +2036,7 @@
             <button class="secondary-btn" id="google-sheets-save" type="button">保存配置</button>
             <button class="primary-btn" id="google-sheets-connect" type="button">连接 Google</button>
             <button class="soft-btn" id="google-sheets-disconnect" type="button">断开连接</button>
+            <button class="primary-btn" id="google-sheets-sync" type="button">同步数据到 Google Sheets</button>
           </div>
           <p class="form-message" id="google-sheets-result" hidden></p>
         </div>

@@ -22,6 +22,14 @@ class FakeClassList {
     return this.values.has(value);
   }
 
+  add(value) {
+    this.values.add(value);
+  }
+
+  remove(value) {
+    this.values.delete(value);
+  }
+
   toggle(value, enabled) {
     if (enabled) this.values.add(value);
     else this.values.delete(value);
@@ -40,6 +48,7 @@ class FakeElement {
     this.parentElement = null;
     this.textContent = "";
     this.type = "";
+    this.open = false;
   }
 
   addEventListener(type, listener) {
@@ -92,8 +101,16 @@ class FakeElement {
 
   focus() {}
 
+  showModal() {
+    this.open = true;
+  }
+
+  close() {
+    this.open = false;
+  }
+
   async dispatch(type, overrides = {}) {
-    const event = { target: this, preventDefault() {}, ...overrides };
+    const event = { target: this, currentTarget: this, preventDefault() {}, ...overrides };
     for (const listener of [...(this.listeners.get(type) || [])]) await listener(event);
   }
 
@@ -220,6 +237,8 @@ async function run() {
     "dashboard-v2-roi-latest",
     "dashboard-v2-drawer", "dashboard-v2-drawer-title", "dashboard-v2-drawer-count",
     "dashboard-v2-drawer-search", "dashboard-v2-drawer-list", "dashboard-v2-drawer-primary",
+    "dashboard-v2-customize", "dashboard-customization-dialog", "dashboard-customization-modules",
+    "dashboard-customization-reset", "dashboard-customization-done", "dashboard-customization-close",
   ];
   for (const platform of ["tiktok", "instagram", "youtube"]) {
     for (const metric of ["creators", "followers-median", "followers-average", "relations", "publish-rate", "views", "likes", "comments", "engagement", "cost", "roi"]) {
@@ -403,6 +422,23 @@ async function run() {
   const preferences = window.KOLConnectDashboardPreferences;
   assert.deepEqual(Array.from(preferences.get().order), v2Modules, "V2 must ignore retired V1 layouts");
   assert.equal(preferences.get().visible.today, true, "today remains fixed and visible");
+
+  const customizeButton = elements.get("dashboard-v2-customize");
+  await sections[0].dispatch("click", { target: customizeButton });
+  const customizationDialog = elements.get("dashboard-customization-dialog");
+  const customizationModules = elements.get("dashboard-customization-modules");
+  assert.equal(customizationDialog.open, true, "customization opens in the Dashboard modal");
+  assert.equal(customizationModules.children.length, v2Modules.length, "modal renders every V2 module");
+  const todayInput = customizationModules.children[0].children[0].children[0];
+  assert.equal(todayInput.disabled, true, "Today Actions remains fixed first and visible");
+  const missingInfoInput = customizationModules.children[1].children[0].children[0];
+  missingInfoInput.checked = false;
+  await customizationModules.dispatch("change", { target: missingInfoInput });
+  assert.equal(preferences.get().visible.missing_info, false, "modal visibility control persists through V2 preferences");
+  await elements.get("dashboard-customization-reset").dispatch("click");
+  assert.deepEqual(Array.from(preferences.get().order), v2Modules, "modal reset restores V2 defaults");
+  await elements.get("dashboard-customization-done").dispatch("click");
+  assert.equal(customizationDialog.open, false, "Done closes the modal");
 
   // This mirrors Settings -> Dashboard without a browser reload: Settings only
   // mutates the shared preferences, then the page registry reactivates Dashboard.

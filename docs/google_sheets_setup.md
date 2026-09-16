@@ -1,6 +1,6 @@
-# Google Sheets Campaign 报告设置
+# Google Sheets 数据同步设置
 
-KOLConnect 通过 Google Sheets API 将单个 Campaign 的绩效报告手动写入用户指定的现有 Spreadsheet。SQLite 始终是业务数据权威；Google Sheets 只是单向报告副本。
+KOLConnect 通过 Google Sheets API 手动写入用户指定的现有 Spreadsheet。SQLite 始终是业务数据权威；Google Sheets 只是单向只读副本，绝不会从 Google 回写。
 
 ## Google Cloud 配置
 
@@ -20,13 +20,18 @@ https://www.googleapis.com/auth/spreadsheets
 
 ## Spreadsheet 合同
 
-目标 Spreadsheet 必须已存在，并允许当前 Google 账号编辑。KOLConnect 只管理以下 worksheet 的 `A:AZ` 范围：
+目标 Spreadsheet 必须已存在，并允许当前 Google 账号编辑。Settings 中的“同步数据到 Google Sheets”只管理以下 worksheet 的 `A:AZ` 范围：
+
+- `KOLConnect Creators`
+- `KOLConnect Creator Accounts`
+
+Campaign 详情页的报告导出仍独立管理：
 
 - `Campaign Summary`
 - `Publications`
 - `Performance History`
 
-缺失 worksheet 会自动创建。若同名 worksheet 已包含非 KOLConnect 内容，操作会以 `WORKSHEET_NAME_CONFLICT` 失败，不会清除用户内容。重复同步按 `publication_id` 和 `observation_id` 生成确定性报告，不会写回 SQLite。
+缺失 worksheet 会自动创建。若同名 worksheet 已包含非 KOLConnect 内容，操作会以 `WORKSHEET_NAME_CONFLICT` 失败，不会清除用户内容。重复同步生成确定性副本，不会写回 SQLite；不相关 worksheet 不会被读取、清空或修改。
 
 ## 本地凭据
 

@@ -7,7 +7,6 @@ from urllib.parse import urlparse
 
 MUTATING_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 EXTENSION_MUTATION_PATHS = frozenset({"/api/extension/import"})
-RUNTIME_SHUTDOWN_PATH = "/api/runtime/shutdown"
 STORAGE_MIGRATION_PREFIX = "/api/settings/storage-migration/"
 
 
@@ -40,7 +39,3 @@ def allowed_mutation_origin(origin_header: object, path: str, port: int) -> bool
         and parsed.netloc
         and not parsed.path
     )
-
-
-def browser_shutdown_allowed(path: str, browser_mode: object) -> bool:
-    return path == RUNTIME_SHUTDOWN_PATH and str(browser_mode or "") == "1"

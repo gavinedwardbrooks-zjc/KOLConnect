@@ -21,7 +21,6 @@ import sys
 import task_manager
 import threading
 import time
-import webbrowser
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -120,7 +119,6 @@ from local_request_security import (
     MUTATING_METHODS,
     allowed_host_header,
     allowed_mutation_origin,
-    browser_shutdown_allowed,
 )
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
@@ -142,6 +140,7 @@ from http_handlers import (
 from services.feishu_sync_service import FeishuSyncService
 from services.feishu_chat_transport import FeishuChatTransport
 from services.google_campaign_report_service import GoogleCampaignReportService
+from services.google_sheets_data_sync_service import GoogleSheetsDataSyncService
 from services.feishu_delete_intent_service import (
     FeishuDeleteIntentStore,
     FeishuDeleteReconciliationService,
@@ -223,8 +222,6 @@ DEFAULT_STATE = {
     "fx": {"rates": {}},
     "mail": {
         "accounts": [],
-        "template_subject": "",
-        "template_body": "",
     },
     "creator_library": {
         "workbook_path": str(DEFAULT_CREATOR_LIBRARY_WORKBOOK),
@@ -303,8 +300,6 @@ def normalize_mail_state(raw_mail: dict | None) -> dict:
                 for item in raw_mail["accounts"]
                 if isinstance(item, dict) and str(item.get("name") or item.get("email") or item.get("username") or "").strip()
             ],
-            "template_subject": str(raw_mail.get("template_subject") or ""),
-            "template_body": str(raw_mail.get("template_body") or ""),
         }
     return clone_default_state()["mail"]
 
@@ -2052,6 +2047,10 @@ def get_google_campaign_report_service() -> GoogleCampaignReportService:
     )
 
 
+def get_google_sheets_data_sync_service() -> GoogleSheetsDataSyncService:
+    return GoogleSheetsDataSyncService(get_creator_repository())
+
+
 def get_workbook_backup_service() -> WorkbookBackupService:
     return WorkbookBackupService(
         _creator_library_workbook_path,
@@ -2525,17 +2524,6 @@ class Handler(BaseHTTPRequestHandler):
             return False
         return True
 
-    def _handle_runtime_shutdown(self, path: str) -> bool:
-        """Stop only a Browser Mode server after its local response is delivered."""
-        if path != "/api/runtime/shutdown":
-            return False
-        if not browser_shutdown_allowed(path, os.environ.get("KOLCONNECT_BROWSER")):
-            self._json({"error": "LOCAL_REQUEST_REJECTED"}, status=403)
-            return True
-        self._ok(shutting_down=True)
-        request_runtime_shutdown()
-        return True
-
     def _normalize_save_state_and_ok(self) -> None:
         global STATE
         STATE = normalize_state(STATE)
@@ -2618,6 +2606,7 @@ class Handler(BaseHTTPRequestHandler):
                 "assistant": get_assistant_service(),
                 "analytics": get_analytics_service(),
                 "google_campaign_report": get_google_campaign_report_service(),
+                "google_sheets_data_sync": get_google_sheets_data_sync_service(),
                 "google_sheets_client": get_google_sheets_client,
                 "workbook_backup": get_workbook_backup_service(),
                 "clean_reset": get_clean_reset_service(),
@@ -2738,8 +2727,6 @@ class Handler(BaseHTTPRequestHandler):
         if not self._allow_local_request():
             return
         parsed = urlparse(self.path)
-        if self._handle_runtime_shutdown(parsed.path):
-            return
         request = self._request_context(parsed, parse_qs(parsed.query))
         try:
             with self._repository_request_scope():
@@ -2827,11 +2814,6 @@ def run() -> None:
         "KOLConnect Start",
         f"version={APP_DISPLAY_VERSION} | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
     )
-    if (
-        os.environ.get("KOLCONNECT_DESKTOP") != "1"
-        and os.environ.get("KOLCONNECT_BROWSER") != "1"
-    ):
-        webbrowser.open(f"http://{HOST}:{PORT}/?v={int(time.time())}")
     if STATE.get("feishu", {}).get("chat_enabled"):
         chat_transport.start()
     threading.Thread(

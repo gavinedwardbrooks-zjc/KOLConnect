@@ -44,7 +44,7 @@ async function run() {
     "storage-migration-check", "storage-migration-prepare", "storage-migration-confirm",
     "storage-migration-cancel", "storage-migration-recover", "storage-migration-authority",
     "storage-migration-status", "storage-migration-backup", "storage-migration-id",
-    "storage-migration-result", "clean-reset-execute", "browser-mode-exit-card",
+    "storage-migration-result", "clean-reset-execute",
     "creator-library-backup-workbook", "creator-library-workbook-path-hint",
   ];
   const elements = new Map(ids.map(id => [id, new Element(id)]));
