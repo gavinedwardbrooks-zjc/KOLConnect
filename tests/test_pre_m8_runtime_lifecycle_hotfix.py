@@ -143,14 +143,17 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         runtime = test_artifact_path("pre_m8_lifecycle_subprocess")
         runtime.mkdir(parents=True, exist_ok=True)
         script = r'''
-import socket
 import sys
+print("CHILD_START", file=sys.stderr, flush=True)
+import socket
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 sys.path.insert(0, str(Path.cwd() / "app"))
+print("BEFORE_SERVER_IMPORT", file=sys.stderr, flush=True)
 import server
+print("AFTER_SERVER_IMPORT", file=sys.stderr, flush=True)
 
 def checkpoint(label):
     print(label, file=sys.stderr, flush=True)
@@ -179,7 +182,9 @@ def cycle(port):
     httpd = None
     thread = None
     try:
+        checkpoint("BEFORE_HTTP_SERVER_CREATE")
         httpd = TestHTTPServer(("127.0.0.1", port), Handler)
+        checkpoint("AFTER_HTTP_SERVER_CREATE")
         checkpoint("CYCLE_CREATED")
         with server._RUNTIME_SERVER_LOCK:
             server._RUNTIME_SERVER = httpd
@@ -225,9 +230,12 @@ def cycle(port):
         checkpoint("CYCLE_END")
 
 probe = socket.socket()
+checkpoint("BEFORE_PROBE_BIND")
 probe.bind(("127.0.0.1", 0))
+checkpoint("AFTER_PROBE_BIND")
 port = probe.getsockname()[1]
 probe.close()
+checkpoint("BEFORE_FIRST_CYCLE")
 for _ in range(3):
     cycle(port)
 
