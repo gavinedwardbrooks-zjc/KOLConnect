@@ -177,6 +177,30 @@ class EmailURLCaptureServiceTests(unittest.TestCase):
                 self.assertEqual(expected, response["status"])
                 self.assertEqual([], creator_service.saved)
 
+    def test_instagram_login_page_operator_email_never_reaches_writeback(self):
+        existing = [{
+            "account_uid": scraper.build_creator_uid({
+                "platform": "Instagram",
+                "url": "https://www.instagram.com/alice/",
+            }),
+            "platform": "Instagram",
+            "profile_url": "https://www.instagram.com/alice/",
+            "account_email": "",
+        }]
+        creator_service = FakeCreatorService(existing)
+        service = EmailURLCaptureService(
+            creator_service,
+            task_id_factory=lambda: "task_20260831T000000Z_deadbeef",
+            now_provider=lambda: "2026-08-31T00:00:00Z",
+        )
+        page = "<html><body>Log in to Instagram operator@local.test</body></html>"
+        with patch.object(scraper, "load_page_source_with_context", return_value=(page, "browser")):
+            response = service.capture("https://www.instagram.com/alice/")
+
+        self.assertEqual("login_required", response["status"])
+        self.assertEqual([], creator_service.saved)
+        self.assertEqual("", creator_service.accounts[0]["account_email"])
+
     def test_multi_account_creator_and_cross_platform_same_username_remain_isolated(self):
         accounts = [
             {"account_uid": "creator-a-tiktok", "platform": "TikTok", "username": "alice"},
@@ -195,6 +219,67 @@ class EmailURLCaptureServiceTests(unittest.TestCase):
 
 
 class EmailURLCaptureBoundaryTests(unittest.TestCase):
+    def test_public_profile_email_entities_are_captured_for_every_platform(self):
+        pages = {
+            "TikTok": "<html><body>合作：tiktok&#64;creator.test</body></html>",
+            "Instagram": (
+                '<html><head><meta property="og:url" '
+                'content="https://www.instagram.com/alice/"></head>'
+                '<body>合作：instagram&commat;creator.test</body></html>'
+            ),
+            "YouTube": "<html><body>Business: youtube&#64;creator.test</body></html>",
+        }
+        urls = {
+            "TikTok": "https://www.tiktok.com/@alice",
+            "Instagram": "https://www.instagram.com/alice/",
+            "YouTube": "https://www.youtube.com/@alice",
+        }
+        for platform, page in pages.items():
+            with self.subTest(platform=platform), patch.object(
+                scraper, "load_page_source_with_context", return_value=(page, "browser")
+            ):
+                result = scraper.capture_profile_email(platform, urls[platform])
+                self.assertEqual([f"{platform.lower()}@creator.test"], result["emails"])
+
+    def test_instagram_login_page_never_captures_operator_email(self):
+        page = "<html><body>Log in to Instagram operator@local.test</body></html>"
+        with patch.object(scraper, "load_page_source_with_context", return_value=(page, "browser")):
+            result = scraper.capture_profile_email("Instagram", "https://www.instagram.com/alice/")
+
+        self.assertEqual([], result["emails"])
+        self.assertEqual("login_required", result["scrape_status"])
+        self.assertIn("INSTAGRAM_SESSION_LOGGED_OUT", result["status_reason"])
+        self.assertEqual(
+            ("login_required", result["status_reason"]),
+            scraper.reclassify_result_status(result),
+        )
+
+    def test_instagram_unverified_or_challenge_page_never_captures_non_target_email(self):
+        for page in (
+            "<html><body>Security challenge operator@local.test</body></html>",
+            '<html><head><meta property="og:url" content="https://www.instagram.com/other/"></head>'
+            "<body>other@creator.test</body></html>",
+        ):
+            with self.subTest(page=page), patch.object(
+                scraper, "load_page_source_with_context", return_value=(page, "browser")
+            ):
+                result = scraper.capture_profile_email("Instagram", "https://www.instagram.com/alice/")
+
+            self.assertEqual([], result["emails"])
+            self.assertEqual("failed", result["scrape_status"])
+            self.assertIn("PROFILE_EMAIL_NOT_CAPTURED", result["status_reason"])
+
+    def test_instagram_confirmed_target_profile_captures_public_email(self):
+        page = (
+            '<html><head><meta property="og:url" content="https://www.instagram.com/alice/"></head>'
+            "<body><a href='mailto:alice@creator.test'>contact</a></body></html>"
+        )
+        with patch.object(scraper, "load_page_source_with_context", return_value=(page, "browser")):
+            result = scraper.capture_profile_email("Instagram", "https://www.instagram.com/alice/")
+
+        self.assertEqual(["alice@creator.test"], result["emails"])
+        self.assertEqual("success", result["scrape_status"])
+
     def test_m8_7_profile_capture_never_uses_external_site_fallback(self):
         page = "<html><body><a href='https://external.example/contact'>contact</a></body></html>"
         with (

@@ -521,11 +521,13 @@ def clean_email_candidates(candidates: list[str]) -> list[str]:
 
 
 def extract_emails_from_text(text: str) -> list[str]:
-    return clean_email_candidates(EMAIL_REGEX.findall(text or ""))
+    # Profile HTML frequently encodes the @ sign for display. Decode before
+    # matching so a public email remains captureable without guessing it.
+    return clean_email_candidates(EMAIL_REGEX.findall(html.unescape(text or "")))
 
 
 def extract_mailto_emails(text: str) -> list[str]:
-    matches = re.findall(r"mailto:([^?\"'\s>]+)", text or "", flags=re.I)
+    matches = re.findall(r"mailto:([^?\"'\s>]+)", html.unescape(text or ""), flags=re.I)
     return clean_email_candidates([item for item in matches if "@" in item])
 
 
@@ -713,7 +715,9 @@ def detect_scrape_access(platform: str, page: str, source: str) -> tuple[str, st
         )
         matched_login_marker = next((marker for marker in login_markers if marker in text), "")
         if matched_login_marker:
-            return "login_required", _status_reason("login_required", matched_login_marker)
+            return "login_required", _status_reason(
+                "INSTAGRAM_SESSION_LOGGED_OUT", matched_login_marker
+            )
     warning_markers = (
         "出错了",
         "请稍后重试",
@@ -829,6 +833,18 @@ def reclassify_result_status(result: dict) -> tuple[str, str]:
     """Recompute a stored result while retaining any legacy access warning as audit context."""
     legacy_status = str(result.get("scrape_status") or "").strip()
     access_reason = str(result.get("status_reason") or "").strip()
+    # These Instagram reasons are emitted only after the target-profile
+    # ownership boundary rejects a page. Do not let the URL-derived account
+    # label later reclassify that unsafe page as a partial success.
+    if (
+        str(result.get("platform") or "").strip() == "Instagram"
+        and legacy_status in {"failed", "login_required", "platform_error"}
+        and any(
+            marker in access_reason
+            for marker in ("INSTAGRAM_SESSION_LOGGED_OUT", "PROFILE_EMAIL_NOT_CAPTURED")
+        )
+    ):
+        return legacy_status, access_reason
     if not access_reason:
         access_reason = {
             "platform_error": "legacy_platform_error",
@@ -1203,6 +1219,46 @@ def _instagram_target_name(page: str, target_url: str) -> str:
     return ""
 
 
+def _instagram_profile_page_matches_target(page: str, target_url: str) -> bool:
+    """Require target-profile evidence before accepting any Instagram email."""
+    target_username = _instagram_target_username(target_url)
+    if not target_username:
+        return False
+
+    def url_matches_target(value: object) -> bool:
+        parsed = urlparse(str(value or ""))
+        host = parsed.netloc.casefold().removeprefix("www.")
+        return (
+            host == "instagram.com"
+            and _instagram_target_username(parsed.path) == target_username
+        )
+
+    if url_matches_target(_meta_content(page, "property", "og:url")):
+        return True
+
+    soup = BeautifulSoup(page or "", "html.parser")
+    for link in soup.find_all("link"):
+        rel = link.get("rel") or []
+        if isinstance(rel, str):
+            rel = [rel]
+        if any(str(value).casefold() == "canonical" for value in rel) and url_matches_target(link.get("href")):
+            return True
+
+    for script in soup.find_all("script"):
+        raw = script.string or script.get_text() or ""
+        if not raw.strip() or target_username not in raw.casefold():
+            continue
+        for payload in _script_json_payloads(raw):
+            for item in _iter_json_objects(payload):
+                username = next(
+                    (item.get(key) for key in ("username", "user_name", "owner_username") if item.get(key)),
+                    "",
+                )
+                if str(username).lstrip("@").casefold() == target_username:
+                    return True
+    return False
+
+
 def extract_creator_name(platform: str, page: str, target_url: str = "") -> str:
     candidates: list[str] = []
     if platform == "TikTok":
@@ -1273,20 +1329,39 @@ def scrape_instagram(
     allow_external_email_fallback: bool = True,
 ) -> dict:
     page, source = load_page_source_with_context(url, driver, session)
-    emails, external = collect_page_emails(
-        "Instagram", page, session,
-        allow_external_fallback=allow_external_email_fallback,
+    access_status, access_reason = detect_scrape_access("Instagram", page, source)
+    account_name = account_name_from_url(url, "Instagram")
+    emails: list[str] = []
+    external = {"email": "", "link": "", "source": "", "status": ""}
+
+    # A logged-out, challenge, error, or unrelated authenticated shell can
+    # contain the operator's own email. Never treat page-wide text as Creator
+    # contact data unless the response proves it represents the requested
+    # profile.
+    profile_confirmed = (
+        access_status not in {"failed", "login_required", "platform_error"}
+        and _instagram_profile_page_matches_target(page, url)
     )
+    if profile_confirmed:
+        emails, external = collect_page_emails(
+            "Instagram", page, session,
+            allow_external_fallback=allow_external_email_fallback,
+        )
+    elif access_status == "success":
+        access_status = "failed"
+        access_reason = _status_reason(
+            "PROFILE_EMAIL_NOT_CAPTURED", "target_profile_unverified"
+        )
+
     # Page titles are not a trustworthy person identity. The task UI uses the
     # account label derived from the canonical profile URL instead.
     name = ""
     latest_publish_date = extract_latest_publish_date(page)
-    access_status, access_reason = detect_scrape_access("Instagram", page, source)
-    return build_result(
+    result = build_result(
         url=url,
         platform="Instagram",
         name=name,
-        account_name=account_name_from_url(url, "Instagram"),
+        account_name=account_name,
         emails=emails,
         email_source="主页" if emails and not external["email"] else ("外链" if external["email"] else ""),
         external_link=external["link"],
@@ -1297,7 +1372,7 @@ def scrape_instagram(
             platform="Instagram",
             profile_url=url,
             name=name,
-            account_name=account_name_from_url(url, "Instagram"),
+            account_name=account_name,
             emails=emails,
             latest_publish_date=latest_publish_date,
         ),
@@ -1307,11 +1382,14 @@ def scrape_instagram(
             platform="Instagram",
             profile_url=url,
             name=name,
-            account_name=account_name_from_url(url, "Instagram"),
+            account_name=account_name,
             emails=emails,
         ),
         last_scrape_time=datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
     )
+    if not profile_confirmed:
+        result["scrape_status"] = access_status
+    return result
 
 
 def scrape_tiktok(
