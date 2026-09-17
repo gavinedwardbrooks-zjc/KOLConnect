@@ -146,9 +146,8 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
 import sys
 print("CHILD_START", file=sys.stderr, flush=True)
 import socket
-import socketserver
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 
 sys.path.insert(0, str(Path.cwd() / "app"))
@@ -158,26 +157,6 @@ print("AFTER_SERVER_IMPORT", file=sys.stderr, flush=True)
 
 def checkpoint(label):
     print(label, file=sys.stderr, flush=True)
-
-class TestHTTPServer(ThreadingHTTPServer):
-    daemon_threads = True
-
-    def server_bind(self):
-        checkpoint("SERVER_BIND_ENTER")
-        checkpoint("TCP_BIND_START")
-        socketserver.TCPServer.server_bind(self)
-        checkpoint("TCP_BIND_END")
-        host, port = self.server_address[:2]
-        checkpoint("GETFQDN_START")
-        self.server_name = socket.getfqdn(host)
-        checkpoint("GETFQDN_END")
-        self.server_port = port
-        checkpoint("SERVER_BIND_EXIT")
-
-    def server_activate(self):
-        checkpoint("SERVER_ACTIVATE_START")
-        super().server_activate()
-        checkpoint("SERVER_ACTIVATE_END")
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
@@ -201,8 +180,10 @@ def cycle(port):
     thread = None
     try:
         checkpoint("BEFORE_HTTP_SERVER_CREATE")
-        httpd = TestHTTPServer(("127.0.0.1", port), Handler)
+        httpd = server.KOLConnectHTTPServer(("127.0.0.1", port), Handler)
         checkpoint("AFTER_HTTP_SERVER_CREATE")
+        assert httpd.server_name == "127.0.0.1"
+        assert httpd.server_port == port
         checkpoint("CYCLE_CREATED")
         with server._RUNTIME_SERVER_LOCK:
             server._RUNTIME_SERVER = httpd

@@ -16,6 +16,7 @@ import mail_sync as mail_sync_module
 import os
 import re
 import smtplib
+import socketserver
 import subprocess
 import sys
 import task_manager
@@ -2782,6 +2783,16 @@ _RUNTIME_SERVER = None
 _RUNTIME_SHUTDOWN_THREAD: threading.Thread | None = None
 
 
+class KOLConnectHTTPServer(ThreadingHTTPServer):
+    """Local-only HTTP server that avoids reverse DNS during startup."""
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
+
+
 def request_runtime_shutdown() -> bool:
     """Idempotently stop the active local server through one lifecycle path."""
     global _RUNTIME_SHUTDOWN_THREAD
@@ -2804,7 +2815,7 @@ def run() -> None:
     global _RUNTIME_SERVER, _RUNTIME_SHUTDOWN_THREAD
     # Resolve storage before accepting concurrent first-page API requests.
     _new_repository_factory(bootstrap_new_install=True)
-    server = ThreadingHTTPServer((HOST, PORT), Handler)
+    server = KOLConnectHTTPServer((HOST, PORT), Handler)
     with _RUNTIME_SERVER_LOCK:
         _RUNTIME_SERVER = server
         _RUNTIME_SHUTDOWN_THREAD = None

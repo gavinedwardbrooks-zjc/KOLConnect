@@ -37,7 +37,7 @@ class M89RuntimeStorageBootstrapTests(unittest.TestCase):
             if isinstance(statement, ast.Assign)
             and isinstance(statement.value, ast.Call)
             and isinstance(statement.value.func, ast.Name)
-            and statement.value.func.id == "ThreadingHTTPServer"
+            and statement.value.func.id == "KOLConnectHTTPServer"
         )
         call = function.body[bootstrap_index].value
 
