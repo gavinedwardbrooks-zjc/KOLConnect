@@ -3,7 +3,9 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -110,6 +112,70 @@ class DiscoveryWorkflowPolishTests(unittest.TestCase):
         self.assertEqual(
             [self.links[2]], self.repository.get_task(self.task["id"])["retry_requested_urls"]
         )
+
+    def test_default_run_uses_each_saved_platform_selection(self) -> None:
+        for selected, expected_count in ((["tiktok"], 1), (["youtube"], 1), (["instagram"], 1), (["tiktok", "youtube"], 2)):
+            with self.subTest(selected=selected):
+                task = self.repository.create_task(
+                    self.links,
+                    [],
+                    len(self.links),
+                    name="已选平台任务",
+                    platforms=selected,
+                    platform_summary={"TikTok": 1, "Instagram": 1, "YouTube": 1},
+                )
+                initial = self.service.prepare_task_run(task["id"], platforms=None, profile="Default")
+                self.assertEqual(selected, initial["selected_platforms"])
+                self.assertEqual(expected_count, initial["selected_count"])
+                self.assertEqual(selected, self.repository.get_task(task["id"])["active_platforms"])
+
+    def test_resumed_run_preserves_last_active_platform_selection(self) -> None:
+        task = self.repository.create_task(
+            self.links,
+            [],
+            len(self.links),
+            name="已选平台任务",
+            platforms=["tiktok", "youtube"],
+            platform_summary={"TikTok": 1, "Instagram": 1, "YouTube": 1},
+        )
+        self.service.prepare_task_run(task["id"], platforms=["tiktok", "youtube"], profile="Default")
+
+        resumed = self.service.prepare_task_run(task["id"], platforms=None, profile="Default")
+        self.assertEqual(["tiktok", "youtube"], resumed["selected_platforms"])
+        self.assertEqual(2, len(self.repository.read_runs(task["id"])))
+        self.assertEqual(self.links, self.repository.read_links(task["id"]))
+
+    def test_unselected_platform_never_reaches_scrape_navigation(self) -> None:
+        task_file = Path(self.temp_dir.name) / "task.json"
+        task_file.write_text(
+            json.dumps({"active_platforms": ["tiktok", "youtube"]}),
+            encoding="utf-8",
+        )
+        progress_file = Path(self.temp_dir.name) / "progress.csv"
+        invoked: list[str] = []
+
+        def capture(platform: str):
+            def scrape(url: str, **_kwargs: object) -> dict:
+                invoked.append(platform)
+                return scraper.build_result(url=url, platform=platform)
+            return scrape
+
+        with (
+            mock.patch.object(scraper, "make_session", return_value=object()),
+            mock.patch.object(scraper, "scrape_tiktok", side_effect=capture("TikTok")),
+            mock.patch.object(scraper, "scrape_youtube", side_effect=capture("YouTube")),
+            mock.patch.object(scraper, "scrape_instagram", side_effect=capture("Instagram")) as instagram,
+            mock.patch.object(scraper, "REQUEST_DELAY", (0, 0)),
+        ):
+            results = scraper.scrape_all(
+                self.links,
+                progress_file=str(progress_file),
+                task_file=str(task_file),
+            )
+
+        self.assertEqual(["TikTok", "YouTube"], invoked)
+        instagram.assert_not_called()
+        self.assertEqual([self.links[0], self.links[2]], [row["url"] for row in results])
 
     def test_all_and_unfinished_original_link_contracts(self) -> None:
         failed = scraper.result_to_row(

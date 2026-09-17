@@ -1767,6 +1767,33 @@ def wait_for_task_control(task_file: str | None) -> bool:
     return True
 
 
+def _selected_task_platforms(task_file: str | None) -> set[str]:
+    """Return the persisted execution selection without changing task inputs."""
+    control = _read_task_control(task_file)
+    platform_values = control.get("active_platforms") or control.get("platforms", [])
+    if not isinstance(platform_values, list):
+        platform_values = [platform_values]
+    return {
+        str(platform or "").strip().lower()
+        for platform in platform_values
+        if str(platform or "").strip()
+    }
+
+
+def _filter_urls_for_task_platforms(
+    urls: list[str], task_file: str | None
+) -> list[str]:
+    """Build the runnable queue before Chrome can navigate to any profile."""
+    selected_platforms = _selected_task_platforms(task_file)
+    if not selected_platforms:
+        return list(urls)
+    return [
+        url
+        for url in urls
+        if str(detect_platform(url) or "").lower() in selected_platforms
+    ]
+
+
 def scrape_all(
     urls: list[str], driver=None, progress_file: str = PROGRESS_FILE, task_file: str | None = None,
 ) -> list[dict]:
@@ -1781,14 +1808,7 @@ def scrape_all(
         for url in control.get("retry_requested_urls", [])
         if str(url or "").strip()
     }
-    platform_values = control.get("active_platforms") or control.get("platforms", [])
-    if not isinstance(platform_values, list):
-        platform_values = [platform_values]
-    selected_platforms = {
-        str(platform or "").strip().lower()
-        for platform in platform_values
-        if str(platform or "").strip()
-    }
+    urls = _filter_urls_for_task_platforms(urls, task_file)
     results_by_url = {url: done[url] for url in urls if url in done}
     pending = [url for url in urls if url not in done or url in retry_urls]
     instagram_error_count = 0
@@ -1798,9 +1818,6 @@ def scrape_all(
         if not wait_for_task_control(task_file):
             break
         platform = detect_platform(url)
-        if selected_platforms and platform.lower() not in selected_platforms:
-            log.warning("[%s] 不在本任务目标平台范围内，跳过。", platform or "Unknown")
-            continue
         if platform == "Instagram" and instagram_circuit_open:
             result = build_result(
                 url=url,
@@ -2470,6 +2487,12 @@ def main() -> None:
     urls = normalize_urls(urls)
     if not urls:
         sys.exit("没有可处理的链接")
+
+    # Filter task-local originals before creating Chrome so unselected
+    # platforms never enter this execution's Selenium navigation queue.
+    urls = _filter_urls_for_task_platforms(urls, args.task_file)
+    if not urls:
+        sys.exit("所选平台没有可处理的链接")
 
     if args.reset and Path(args.progress_file).exists():
         with shared_storage_lock():

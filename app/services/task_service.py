@@ -622,7 +622,20 @@ class TaskService:
             for item in requested_values
             if str(item).strip()
         ]
-        selected = list(dict.fromkeys(requested or available))
+        # An initial start does not carry a platforms payload from the task
+        # card. Reuse the task's saved selection instead of widening to every
+        # platform represented in its immutable original-link set. A resumed
+        # run keeps its last active selection for the same reason.
+        persisted = [
+            str(item).lower()
+            for item in (
+                task.get("active_platforms")
+                or task.get("platforms")
+                or available
+            )
+            if str(item).strip()
+        ]
+        selected = list(dict.fromkeys(requested or persisted))
         selected_links = [
             url for url in links
             if str(scraper_module.detect_platform(url) or "").lower() in selected
