@@ -146,6 +146,7 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
 import sys
 print("CHILD_START", file=sys.stderr, flush=True)
 import socket
+import socketserver
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -160,6 +161,23 @@ def checkpoint(label):
 
 class TestHTTPServer(ThreadingHTTPServer):
     daemon_threads = True
+
+    def server_bind(self):
+        checkpoint("SERVER_BIND_ENTER")
+        checkpoint("TCP_BIND_START")
+        socketserver.TCPServer.server_bind(self)
+        checkpoint("TCP_BIND_END")
+        host, port = self.server_address[:2]
+        checkpoint("GETFQDN_START")
+        self.server_name = socket.getfqdn(host)
+        checkpoint("GETFQDN_END")
+        self.server_port = port
+        checkpoint("SERVER_BIND_EXIT")
+
+    def server_activate(self):
+        checkpoint("SERVER_ACTIVATE_START")
+        super().server_activate()
+        checkpoint("SERVER_ACTIVATE_END")
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
