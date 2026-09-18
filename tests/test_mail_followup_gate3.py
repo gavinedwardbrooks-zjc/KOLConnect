@@ -189,11 +189,11 @@ class MailFollowupGate3Tests(unittest.TestCase):
                 "('a1','a','a@example.com'),('a2','a','alias-a@example.com'),('b1','b','b@example.com')"
             )
         self.sync_sent({
-            "1": make_message(to="a@example.com, outside@example.com", message_id="<one@example.com>"),
-            "2": make_message(to="a@example.com, alias-a@example.com", message_id="<multi@example.com>"),
-            "3": make_message(to="a@example.com, b@example.com", message_id="<to-conflict@example.com>"),
-            "4": make_message(to="a@example.com", cc="b@example.com", message_id="<cc-conflict@example.com>"),
-            "5": make_message(to="outside@example.com", cc="a@example.com", message_id="<cc-only@example.com>"),
+            "1": make_message("owner@example.com", to="a@example.com, outside@example.com", message_id="<one@example.com>"),
+            "2": make_message("owner@example.com", to="a@example.com, alias-a@example.com", message_id="<multi@example.com>"),
+            "3": make_message("owner@example.com", to="a@example.com, b@example.com", message_id="<to-conflict@example.com>"),
+            "4": make_message("owner@example.com", to="a@example.com", cc="b@example.com", message_id="<cc-conflict@example.com>"),
+            "5": make_message("owner@example.com", to="outside@example.com", cc="a@example.com", message_id="<cc-only@example.com>"),
         })
         facts = {row["rfc_message_id"]: row for row in self.rows("mail_messages")}
         self.assertEqual(("outbound", "matched", "a"), tuple(facts["<one@example.com>"][key] for key in ("direction", "match_status", "matched_creator_id")))
@@ -201,6 +201,22 @@ class MailFollowupGate3Tests(unittest.TestCase):
         for key in ("<to-conflict@example.com>", "<cc-conflict@example.com>"):
             self.assertEqual(("ambiguous", None), (facts[key]["match_status"], facts[key]["matched_creator_id"]))
         self.assertEqual(("unmatched", None), (facts["<cc-only@example.com>"]["match_status"], facts["<cc-only@example.com>"]["matched_creator_id"]))
+        addresses = {
+            rfc_id: {
+                (row["role"], row["normalized_address"]): row
+                for row in self.rows("mail_message_addresses")
+                if row["mail_message_id"] == fact["mail_message_id"]
+            }
+            for rfc_id, fact in facts.items()
+        }
+        single = addresses["<one@example.com>"]
+        self.assertEqual(("unmatched", None, None), tuple(single[("from", "owner@example.com")][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
+        self.assertEqual(("matched", "a", "a1"), tuple(single[("to", "a@example.com")][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
+        self.assertEqual(("unmatched", None, None), tuple(single[("to", "outside@example.com")][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
+        conflict = addresses["<cc-conflict@example.com>"]
+        self.assertEqual(("unmatched", None, None), tuple(conflict[("from", "owner@example.com")][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
+        self.assertEqual(("matched", "a", "a1"), tuple(conflict[("to", "a@example.com")][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
+        self.assertEqual(("unmatched", None, None), tuple(conflict[("cc", "b@example.com")][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
 
     def test_sent_fact_persistence_does_not_invoke_legacy_feishu_matching(self):
         with self.factory.write_transaction() as connection:

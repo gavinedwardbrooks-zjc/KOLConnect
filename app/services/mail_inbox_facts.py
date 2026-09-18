@@ -147,6 +147,18 @@ def _match_outbound(connection, to_addresses: list[str], cc_addresses: list[str]
     return to_status, creator_id, account_uid, correspondent
 
 
+def _address_snapshot(connection, direction: str, role: str, address: str,
+                      own_addresses: set[str]) -> tuple[str, str | None, str | None]:
+    """Persist exact address evidence without changing fact-level ownership."""
+    if direction == "inbound" and role == "from":
+        status, creator_id, account_uid, _correspondent = _match_inbound(connection, address, own_addresses)
+        return status, creator_id, account_uid
+    if direction == "outbound" and role == "to" and address not in own_addresses:
+        status, creator_id, account_uid, _correspondent = _match_addresses(connection, [address])
+        return status, creator_id, account_uid
+    return "unmatched", None, None
+
+
 def _mailbox_name_from_list_item(item: object) -> tuple[str, str] | None:
     raw = item.decode("utf-8", errors="replace") if isinstance(item, bytes) else str(item or "")
     # IMAP LIST commonly returns: (\\HasNoChildren \\Sent) "/" "Sent Mail".
@@ -222,10 +234,13 @@ def _persist_observation(factory, account_id: str, mailbox_id: str, uidvalidity:
         )
         for role, items in addresses.items():
             for position, (original, normalized) in enumerate(items):
+                address_match, address_creator_id, address_account_uid = _address_snapshot(
+                    connection, direction, role, normalized, own_addresses
+                )
                 connection.execute(
                     "INSERT INTO mail_message_addresses(mail_message_id,role,position,original_address,normalized_address,match_status,matched_creator_id,matched_account_uid) VALUES (?,?,?,?,?,?,?,?)",
-                    (fact_id, role, position, original, normalized, match if role == "from" else "unmatched",
-                     creator_id if role == "from" else None, account_uid if role == "from" else None),
+                    (fact_id, role, position, original, normalized, address_match,
+                     address_creator_id, address_account_uid),
                 )
     return True, {"mail_message_id": fact_id, "match_status": match, "matched_creator_id": creator_id,
                   "matched_account_uid": account_uid, "from_email": sender, "received_at": date or "",

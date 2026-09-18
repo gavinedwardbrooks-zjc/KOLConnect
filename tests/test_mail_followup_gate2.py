@@ -268,6 +268,20 @@ class MailFollowupGate2Tests(unittest.TestCase):
                          tuple(facts["other@example.com"][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
         self.assertEqual("unmatched", facts["nobody@example.com"]["match_status"])
         self.assertEqual("inbound", facts["owner@example.com"]["direction"])
+        matched_fact_id = facts["other@example.com"]["mail_message_id"]
+        matched_addresses = {
+            (row["role"], row["normalized_address"]): row
+            for row in self.rows("mail_message_addresses")
+            if row["mail_message_id"] == matched_fact_id
+        }
+        self.assertEqual(("matched", "c2", "a3"), tuple(
+            matched_addresses[("from", "other@example.com")][key]
+            for key in ("match_status", "matched_creator_id", "matched_account_uid")
+        ))
+        self.assertEqual(("unmatched", None, None), tuple(
+            matched_addresses[("to", "owner@example.com")][key]
+            for key in ("match_status", "matched_creator_id", "matched_account_uid")
+        ))
         with self.factory.write_transaction() as connection:
             connection.execute("UPDATE creator_accounts SET creator_id='c2' WHERE account_uid='a2'")
         self.assertEqual("c1", next(row for row in self.rows("mail_messages") if row["correspondent_email"] == "creator@example.com")["matched_creator_id"])
