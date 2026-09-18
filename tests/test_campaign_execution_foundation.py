@@ -68,6 +68,9 @@ class CampaignExecutionFoundationTests(unittest.TestCase):
                 ") VALUES ('relation',0,'https://example.test/video','publication','manual')"
             )
             connection.execute("INSERT INTO publication_performance_observations(observation_id,publication_id,refresh_operation_id,observed_at,source,confidence) VALUES ('observation','publication','refresh','2026-01-01T00:00:00Z','manual','high')")
+            for table in ("mail_message_addresses", "mail_message_observations", "mail_messages",
+                          "mailbox_sync_states", "mail_accounts", "mail_follow_up_preferences"):
+                connection.execute(f"DROP TABLE {table}")
             connection.execute("UPDATE storage_metadata SET value='4' WHERE key='schema_version'")
         with self.store.factory.read_connection() as connection:
             self.assertEqual(CURRENT_SCHEMA_VERSION, apply_schema_migrations(connection))

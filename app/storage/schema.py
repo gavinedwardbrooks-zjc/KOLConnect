@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from storage.errors import SQLiteSchemaUnsupportedError
 
 
-CURRENT_SCHEMA_VERSION = 5
+CURRENT_SCHEMA_VERSION = 6
 
 
 SCHEMA_V1_SQL = r"""
@@ -519,6 +519,28 @@ def apply_schema_migrations(connection, *, migration_reference: str = "") -> int
             )
             connection.commit()
             current = 5
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 5:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            for statement in (
+                "CREATE TABLE mail_accounts (mail_account_id TEXT PRIMARY KEY, identity_key TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL)",
+                "CREATE TABLE mailbox_sync_states (mailbox_id TEXT PRIMARY KEY, mail_account_id TEXT NOT NULL REFERENCES mail_accounts(mail_account_id), folder_name TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('inbox','sent')), uidvalidity TEXT, high_water_uid INTEGER, first_sync_completed_at TEXT, history_coverage TEXT NOT NULL DEFAULT 'unknown' CHECK(history_coverage IN ('unknown','bounded','partial')), last_sync_at TEXT, UNIQUE(mail_account_id,folder_name))",
+                "CREATE TABLE mail_messages (mail_message_id TEXT PRIMARY KEY, mail_account_id TEXT NOT NULL REFERENCES mail_accounts(mail_account_id), direction TEXT NOT NULL CHECK(direction IN ('inbound','outbound','unknown')), rfc_message_id TEXT, in_reply_to TEXT, reference_ids TEXT, subject TEXT, message_at TEXT, observed_at TEXT NOT NULL, correspondent_email TEXT, match_status TEXT NOT NULL, matched_creator_id TEXT, matched_account_uid TEXT)",
+                "CREATE TABLE mail_message_observations (observation_id TEXT PRIMARY KEY, mail_message_id TEXT NOT NULL REFERENCES mail_messages(mail_message_id), mailbox_id TEXT NOT NULL REFERENCES mailbox_sync_states(mailbox_id), uidvalidity TEXT NOT NULL, imap_uid TEXT NOT NULL, observed_at TEXT NOT NULL, UNIQUE(mailbox_id,uidvalidity,imap_uid))",
+                "CREATE TABLE mail_message_addresses (mail_message_id TEXT NOT NULL REFERENCES mail_messages(mail_message_id), role TEXT NOT NULL CHECK(role IN ('from','to','cc')), position INTEGER NOT NULL, original_address TEXT NOT NULL, normalized_address TEXT NOT NULL, match_status TEXT NOT NULL, matched_creator_id TEXT, matched_account_uid TEXT, PRIMARY KEY(mail_message_id,role,position))",
+                "CREATE TABLE mail_follow_up_preferences (creator_id TEXT NOT NULL, correspondent_email_normalized TEXT NOT NULL, snooze_until TEXT, stopped_at TEXT, export_queue_added_at TEXT, notes TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(creator_id,correspondent_email_normalized))",
+                "CREATE INDEX idx_mail_messages_account_time ON mail_messages(mail_account_id,message_at DESC)",
+                "CREATE INDEX idx_mail_messages_rfc_id ON mail_messages(mail_account_id,rfc_message_id)",
+                "CREATE INDEX idx_mail_addresses_email ON mail_message_addresses(normalized_address)",
+                "CREATE INDEX idx_mail_addresses_creator ON mail_message_addresses(matched_creator_id,match_status)",
+            ):
+                connection.execute(statement)
+            connection.execute("UPDATE storage_metadata SET value='6' WHERE key='schema_version'")
+            connection.commit()
+            current = 6
         except Exception:
             connection.rollback()
             raise

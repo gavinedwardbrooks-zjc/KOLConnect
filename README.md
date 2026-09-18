@@ -20,7 +20,7 @@ KOLConnect 是本地应用，**SQLite 是当前应用数据权威（application 
 %APPDATA%\KOLConnect\storage_authority.json
 ~~~
 
-当前 SQLite schema version 为 **5**。`storage_authority.json` 记录活动数据权威与预期 schema，应用会在启动时验证。
+当前 SQLite schema version 为 **6**。`storage_authority.json` 记录活动数据权威与预期 schema，应用会在启动时验证。
 
 `Creator_Library.xlsx` 是历史导入/兼容性文件，不再是当前权威数据库。KOLConnect 不提供整库 SQLite 到 Excel 的导出；Creator Library 的所选 Creator Excel 导出是独立且受限的导出功能。
 

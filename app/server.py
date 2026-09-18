@@ -1688,6 +1688,13 @@ def get_creator_repository() -> CreatorRepository:
     return factory.creator()
 
 
+def get_mail_connection_factory():
+    factory = get_active_repository_factory() or _new_repository_factory()
+    if not getattr(factory.store, "is_sqlite_authority", False):
+        raise RuntimeError("Mail facts require SQLite authority.")
+    return factory.store.factory
+
+
 def get_agency_repository() -> AgencyRepository:
     factory = get_active_repository_factory() or _new_repository_factory()
     return factory.agency()
@@ -2633,6 +2640,7 @@ class Handler(BaseHTTPRequestHandler):
                 "invalidate_dashboard_response_cache": DASHBOARD_RESPONSE_CACHE.invalidate,
                 "get_agency_contact_options": get_agency_contact_options,
                 "get_four_table_feishu_config": get_four_table_feishu_config,
+                "get_mail_connection_factory": get_mail_connection_factory,
                 "get_google_sheets_config": get_google_sheets_config,
                 "get_profiles": get_profiles,
                 "get_system_health": get_system_health,

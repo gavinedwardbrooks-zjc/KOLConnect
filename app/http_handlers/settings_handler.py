@@ -249,16 +249,9 @@ def handle(handler, request: dict, context: dict) -> bool:
         if not enabled_accounts:
             handler._error("没有启用的邮箱账户。")
             return True
-        limit_per_account = payload.get("limit_per_account") or 20
-        four_table_config = services["get_four_table_feishu_config"]()
-        required_keys = ("app_id", "app_secret", "app_token", "creator_table_id", "account_table_id")
-        missing_keys = [key for key in required_keys if not four_table_config.get(key)]
-        if missing_keys:
-            handler._error(f"四表飞书配置不完整：缺少 {', '.join(missing_keys)}。")
-            return True
         result = modules["mail_sync"].sync_enabled_mail_accounts(
             enabled_accounts,
-            {"limit_per_account": limit_per_account, "four_table_config": four_table_config},
+            {"connection_factory": services["get_mail_connection_factory"]()},
         )
         handler._ok(
             updated_at=str(result.get("updated_at") or ""),

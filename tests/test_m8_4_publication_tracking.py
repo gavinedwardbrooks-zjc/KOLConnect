@@ -142,6 +142,9 @@ class M84PublicationTrackingTests(unittest.TestCase):
             connection.execute("INSERT INTO creator_snapshots(snapshot_id,creator_id) VALUES ('snapshot_1','creator_1')")
             connection.execute("INSERT INTO video_snapshots(video_snapshot_id,snapshot_id,creator_id,video_id) VALUES ('vs_1','snapshot_1','creator_1','video_1')")
             connection.execute("DROP TABLE publication_performance_observations")
+            for table in ("mail_message_addresses", "mail_message_observations", "mail_messages",
+                          "mailbox_sync_states", "mail_accounts", "mail_follow_up_preferences"):
+                connection.execute(f"DROP TABLE {table}")
             connection.execute("UPDATE storage_metadata SET value='3' WHERE key='schema_version'")
         with self.store.factory.read_connection() as connection:
             self.assertEqual(CURRENT_SCHEMA_VERSION, apply_schema_migrations(connection))

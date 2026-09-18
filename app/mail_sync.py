@@ -20,6 +20,7 @@ from runtime_paths import (
     load_json_with_backup,
 )
 from feishu_relation import relation_record_ids
+from services.mail_inbox_facts import inbox_fact_projection, mail_account_identity, sync_inbox
 
 DATA_DIR = get_app_data_dir()
 MAIL_MESSAGES_FILE = DATA_DIR / "mail_messages.json"
@@ -577,15 +578,19 @@ def sync_one_mail_account(account: dict, options: dict, existing_data: dict) -> 
 
 def sync_enabled_mail_accounts(accounts: list[dict], options: dict | None = None) -> dict:
     options = options or {}
+    factory = options["connection_factory"]
     store = load_mail_messages()
     enabled_accounts = [item for item in accounts if isinstance(item, dict) and item.get("enabled")]
+    identities = [mail_account_identity(item)[0] for item in enabled_accounts]
+    if len(set(identities)) != len(identities):
+        raise ValueError("同一邮箱身份配置了多次；请保留一个启用的账户。")
     summary = {
         "updated_at": utc_now_iso(),
         "accounts_checked": 0,
         "messages_fetched": 0,
         "messages_new": 0,
         "matched_messages": 0,
-        "messages_total": len(store.get("messages", [])),
+        "messages_total": 0,
         "errors": [],
     }
 
@@ -593,25 +598,34 @@ def sync_enabled_mail_accounts(accounts: list[dict], options: dict | None = None
         summary["accounts_checked"] += 1
         account_key = build_account_key(account)
         try:
-            result = sync_one_mail_account(account, options, store)
+            result = sync_inbox(account, factory, imap_factory=options.get("imap_factory"))
             summary["messages_fetched"] += int(result.get("fetched") or 0)
             summary["messages_new"] += int(result.get("new") or 0)
             if result.get("messages"):
-                store["messages"].extend(result["messages"])
+                for observed in result["messages"]:
+                    projected = parse_email_message(account_key, account, observed["uid"], observed["raw"], [])
+                    projected["id"] = observed["mail_message_id"]
+                    projected["matched_creator_id"] = observed.get("matched_creator_id") or ""
+                    projected["matched_account_uid"] = observed.get("matched_account_uid") or ""
+                    projected["matched_creator_email"] = observed.get("from_email") or ""
+                    projected["match_status"] = observed["match_status"]
+                    projected["reply_status"] = "matched" if observed["match_status"] in {"matched", "matched_multi_account"} else "unmatched"
+                    store["messages"].append(projected)
             previous_account = store.get("accounts", {}).get(account_key, {})
             store["accounts"][account_key] = {
                 "account_key": account_key,
                 "account_name": str(account.get("name") or "").strip(),
                 "email": str(account.get("email") or "").strip(),
                 "last_sync_at": summary["updated_at"],
-                "last_uid": result["messages"][0]["imap_uid"] if result.get("messages") else str(previous_account.get("last_uid") or ""),
-                "last_message_id": result["messages"][0]["message_id"] if result.get("messages") else str(previous_account.get("last_message_id") or ""),
+                "last_uid": str(result["high_water_uid"]),
+                "last_message_id": str(message_from_bytes(result["messages"][-1]["raw"], policy=default).get("Message-ID") or "") if result.get("messages") else str(previous_account.get("last_message_id") or ""),
                 "last_result": {
                     "fetched": int(result.get("fetched") or 0),
                     "new": int(result.get("new") or 0),
                     "matched": 0,
                     "errors": result.get("errors") or [],
                 },
+                "history_coverage": result["history_coverage"],
             }
         except Exception as exc:
             error_item = {
@@ -636,38 +650,46 @@ def sync_enabled_mail_accounts(accounts: list[dict], options: dict | None = None
                 },
             }
 
-    four_table_config = options.get("four_table_config") if isinstance(options.get("four_table_config"), dict) else None
-    if not four_table_config:
-        raise RuntimeError("缺少四表飞书配置，无法执行邮件匹配。")
-    try:
-        account_records, creator_records = fetch_four_table_match_records(four_table_config)
-        store["messages"] = match_messages_to_four_tables(store.get("messages", []), account_records, creator_records)
-    except Exception as exc:
-        summary["errors"].append({"account_key": "four_tables", "account_name": "四表匹配", "error": str(exc)})
-
+    cached_ids = {str(item.get("id") or "") for item in store["messages"] if isinstance(item, dict)}
+    for account in enabled_accounts:
+        account_key = build_account_key(account)
+        for fact in inbox_fact_projection(factory, mail_account_identity(account)[0]):
+            if fact["mail_message_id"] in cached_ids:
+                continue
+            store["messages"].append({
+                "id": fact["mail_message_id"], "account_key": account_key,
+                "account_name": str(account.get("name") or "").strip(),
+                "imap_uid": fact["imap_uid"], "from_email": fact["correspondent_email"] or "",
+                "to_email": fact["to_email"] or "", "subject": fact["subject"] or "",
+                "received_at": fact["message_at"] or "", "synced_at": fact["observed_at"],
+                "matched_creator_id": fact["matched_creator_id"] or "",
+                "matched_account_uid": fact["matched_account_uid"] or "",
+                "match_status": fact["match_status"],
+                "reply_status": "matched" if fact["match_status"] in {"matched", "matched_multi_account"} else "unmatched",
+            })
+            cached_ids.add(fact["mail_message_id"])
     store["messages"] = sorted(
         [normalize_mail_message(item) for item in store.get("messages", []) if isinstance(item, dict)],
         key=lambda item: str(item.get("received_at") or item.get("synced_at") or ""),
         reverse=True,
     )
     store["updated_at"] = summary["updated_at"]
-    summary["messages_total"] = len(store["messages"])
-    summary["matched_messages"] = sum(
-        1 for item in store["messages"] if isinstance(item, dict) and item.get("reply_status") == "matched"
-    )
-    accounts_map = store.get("accounts", {})
-    if isinstance(accounts_map, dict):
-        for account_key, account_state in accounts_map.items():
+    with factory.read_connection() as connection:
+        total, matched = connection.execute(
+            "SELECT COUNT(*),COALESCE(SUM(CASE WHEN match_status IN ('matched','matched_multi_account') THEN 1 ELSE 0 END),0) FROM mail_messages"
+        ).fetchone()
+        summary["messages_total"] = total
+        summary["matched_messages"] = matched
+        for account in enabled_accounts:
+            account_key = build_account_key(account)
+            account_state = store["accounts"].get(account_key)
             if not isinstance(account_state, dict):
                 continue
-            matched_for_account = sum(
-                1
-                for item in store["messages"]
-                if isinstance(item, dict) and item.get("account_key") == account_key and item.get("reply_status") == "matched"
-            )
-            last_result = account_state.get("last_result") if isinstance(account_state.get("last_result"), dict) else {}
-            last_result["matched"] = matched_for_account
-            account_state["last_result"] = last_result
+            matched_for_account = connection.execute(
+                "SELECT COUNT(*) FROM mail_messages WHERE mail_account_id=? AND match_status IN ('matched','matched_multi_account')",
+                (mail_account_identity(account)[0],),
+            ).fetchone()[0]
+            account_state["last_result"]["matched"] = matched_for_account
     save_mail_messages(store)
     return summary
 
@@ -700,6 +722,14 @@ def sync_creator_replies(config: dict) -> dict:
     """Manually sync cached four-table reply matches to their linked creator records."""
     store = load_mail_messages()
     messages = [normalize_mail_message(item) for item in store.get("messages", []) if isinstance(item, dict)]
+    # The explicit Feishu action resolves remote record IDs at execution time.
+    # Local Inbox facts never depend on this optional replica lookup.
+    if messages:
+        account_records, creator_records = fetch_four_table_match_records(config)
+        remote_matches = match_messages_to_four_tables(messages, account_records, creator_records)
+        for original, remote in zip(messages, remote_matches):
+            if remote.get("matched_creator_id") == original.get("matched_creator_id"):
+                original["matched_creator_record_id"] = remote.get("matched_creator_record_id") or ""
     syncable_statuses = {"matched", "matched_multi_account"}
     pending_messages = [
         item
