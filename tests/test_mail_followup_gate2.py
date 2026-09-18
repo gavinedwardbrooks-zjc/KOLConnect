@@ -231,7 +231,9 @@ class MailFollowupGate2Tests(unittest.TestCase):
         self.sync({"1": make_message("login@example.com")}, account=first_account)
         self.sync({"1": make_message("creator@example.com")}, account=second_account)
         self.assertEqual(2, len(self.rows("mail_accounts")))
-        self.assertEqual({"unknown", "inbound"}, {row["direction"] for row in self.rows("mail_messages")})
+        # Mailbox context, rather than sender heuristics, is the authoritative
+        # direction source once Gate 3 Sent observations exist.
+        self.assertEqual({"inbound"}, {row["direction"] for row in self.rows("mail_messages")})
 
     def test_server_change_does_not_reuse_old_mailbox_cursor(self):
         self.sync({"1": make_message()})
@@ -265,7 +267,7 @@ class MailFollowupGate2Tests(unittest.TestCase):
         self.assertEqual(("matched", "c2", "a3"),
                          tuple(facts["other@example.com"][key] for key in ("match_status", "matched_creator_id", "matched_account_uid")))
         self.assertEqual("unmatched", facts["nobody@example.com"]["match_status"])
-        self.assertEqual("unknown", facts["owner@example.com"]["direction"])
+        self.assertEqual("inbound", facts["owner@example.com"]["direction"])
         with self.factory.write_transaction() as connection:
             connection.execute("UPDATE creator_accounts SET creator_id='c2' WHERE account_uid='a2'")
         self.assertEqual("c1", next(row for row in self.rows("mail_messages") if row["correspondent_email"] == "creator@example.com")["matched_creator_id"])

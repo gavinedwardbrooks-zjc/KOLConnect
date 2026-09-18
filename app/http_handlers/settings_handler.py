@@ -99,7 +99,7 @@ def handle(handler, request: dict, context: dict) -> bool:
         "/api/settings/google-sheets",
         "/api/settings/fx",
         "/api/settings/creator-library", "/api/settings/creator-library/backup",
-        "/api/mail/test", "/api/mail/inbox/sync",
+        "/api/mail/test", "/api/mail/inbox/sync", "/api/mail/sent/sync",
         "/api/mail/inbox/sync-crm-replies",
     }
     if path not in settings_paths:
@@ -259,6 +259,27 @@ def handle(handler, request: dict, context: dict) -> bool:
             messages_fetched=int(result.get("messages_fetched") or 0),
             messages_new=int(result.get("messages_new") or 0),
             matched_messages=int(result.get("matched_messages") or 0),
+            messages_total=int(result.get("messages_total") or 0),
+            errors=result.get("errors") if isinstance(result.get("errors"), list) else [],
+        )
+        return True
+
+    # POST /api/mail/sent/sync → 发现并同步已发送邮件；仅观察，不发送邮件。
+    if path == "/api/mail/sent/sync":
+        accounts = state.get("mail", {}).get("accounts") if isinstance(state.get("mail"), dict) else []
+        enabled_accounts = [item for item in accounts if isinstance(item, dict) and item.get("enabled")]
+        if not enabled_accounts:
+            handler._error("没有启用的邮箱账户。")
+            return True
+        result = modules["mail_sync"].sync_enabled_sent_mail_accounts(
+            enabled_accounts,
+            {"connection_factory": services["get_mail_connection_factory"]()},
+        )
+        handler._ok(
+            updated_at=str(result.get("updated_at") or ""),
+            accounts_checked=int(result.get("accounts_checked") or 0),
+            messages_fetched=int(result.get("messages_fetched") or 0),
+            messages_new=int(result.get("messages_new") or 0),
             messages_total=int(result.get("messages_total") or 0),
             errors=result.get("errors") if isinstance(result.get("errors"), list) else [],
         )

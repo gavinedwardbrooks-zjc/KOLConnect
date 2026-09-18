@@ -20,7 +20,7 @@ from runtime_paths import (
     load_json_with_backup,
 )
 from feishu_relation import relation_record_ids
-from services.mail_inbox_facts import inbox_fact_projection, mail_account_identity, sync_inbox
+from services.mail_inbox_facts import inbox_fact_projection, mail_account_identity, sync_inbox, sync_sent
 
 DATA_DIR = get_app_data_dir()
 MAIL_MESSAGES_FILE = DATA_DIR / "mail_messages.json"
@@ -691,6 +691,37 @@ def sync_enabled_mail_accounts(accounts: list[dict], options: dict | None = None
             ).fetchone()[0]
             account_state["last_result"]["matched"] = matched_for_account
     save_mail_messages(store)
+    return summary
+
+
+def sync_enabled_sent_mail_accounts(accounts: list[dict], options: dict | None = None) -> dict:
+    """Observe configured Sent mailboxes into SQLite without changing the Inbox UI cache."""
+    options = options or {}
+    factory = options["connection_factory"]
+    enabled_accounts = [item for item in accounts if isinstance(item, dict) and item.get("enabled")]
+    identities = [mail_account_identity(item)[0] for item in enabled_accounts]
+    if len(set(identities)) != len(identities):
+        raise ValueError("同一邮箱身份配置了多次；请保留一个启用的账户。")
+    summary = {
+        "updated_at": utc_now_iso(), "accounts_checked": 0, "messages_fetched": 0,
+        "messages_new": 0, "messages_total": 0, "errors": [],
+    }
+    for account in enabled_accounts:
+        summary["accounts_checked"] += 1
+        try:
+            result = sync_sent(account, factory, imap_factory=options.get("imap_factory"))
+            summary["messages_fetched"] += int(result.get("fetched") or 0)
+            summary["messages_new"] += int(result.get("new") or 0)
+        except Exception as exc:
+            summary["errors"].append({
+                "account_key": build_account_key(account),
+                "account_name": str(account.get("name") or account.get("email") or "邮箱账户"),
+                "error": str(exc),
+            })
+    with factory.read_connection() as connection:
+        summary["messages_total"] = connection.execute(
+            "SELECT COUNT(*) FROM mail_messages WHERE direction='outbound'"
+        ).fetchone()[0]
     return summary
 
 
