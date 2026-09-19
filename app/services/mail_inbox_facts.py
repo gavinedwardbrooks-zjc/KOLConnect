@@ -361,10 +361,21 @@ def sync_sent(account: dict, factory, *, imap_factory=None, now: datetime | None
             pass
     # Discovery uses one short-lived connection. The synchronized connection still
     # reads actual UIDVALIDITY and treats the discovered folder as account-scoped.
-    return _sync_mailbox(
+    result = _sync_mailbox(
         account, factory, folder_name=folder_name, role="sent", direction="outbound",
         imap_factory=imap_factory, now=now,
     )
+    # Preferences are never allowed to block authoritative Sent observation.
+    try:
+        from services.mail_follow_up_preferences import reconcile_export_queue_from_sent
+
+        result["export_queue_reconciled"] = reconcile_export_queue_from_sent(
+            factory, (item.get("mail_message_id") for item in result["messages"]), now=now,
+        )
+    except Exception as exc:
+        result["export_queue_reconciled"] = 0
+        result["export_queue_reconciliation_error"] = str(exc)
+    return result
 
 
 def rfc_correlation(factory, *, in_reply_to: object = None, references: object = None) -> dict:
