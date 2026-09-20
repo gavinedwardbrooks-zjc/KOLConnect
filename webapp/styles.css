@@ -1638,6 +1638,21 @@ button {
   max-width: 100%;
 }
 
+.mail-followup-heading,
+.mail-followup-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.mail-followup-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.mail-followup-filters .active { background: var(--brand); color: #fff; border-color: var(--brand); }
+.mail-followup-table { min-width: 1120px; }
+.mail-followup-table td { vertical-align: top; }
+.mail-followup-actions { display: flex; flex-wrap: wrap; gap: 6px; min-width: 220px; }
+.mail-followup-actions .compact-btn { white-space: nowrap; }
+
 .page[data-page="mail"] { min-width: 0; max-width: 100%; }
 .page[data-page="mail"] .section-card,
 .page[data-page="mail"] .mail-list-heading,
@@ -3031,6 +3046,8 @@ button {
 
   .creator-library-actions,
   .mail-list-heading,
+  .mail-followup-heading,
+  .mail-followup-toolbar,
   .mail-pagination {
     align-items: stretch;
     flex-direction: column;

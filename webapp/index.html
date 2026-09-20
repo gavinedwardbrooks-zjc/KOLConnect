@@ -31,6 +31,7 @@
         <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail">Agency</button>
         <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign</button>
         <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件</button>
+        <button class="nav-btn nav-sub" data-page="mail-follow-up" data-primary="mail">邮件跟进</button>
         <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">Chrome 账号</button>
         <button class="nav-btn nav-sub" data-page="mail-accounts" data-primary="settings">邮箱账户</button>
         <button class="nav-btn nav-sub" data-page="logs" data-primary="settings" data-i18n="navLogs">日志</button>
@@ -1883,6 +1884,55 @@
         </div>
       </section>
 
+      <section class="page workspace-wide" data-page="mail-follow-up">
+        <div class="page-header mail-followup-heading">
+          <div>
+            <h1>邮件跟进</h1>
+            <p>根据已同步的收发邮件记录查看当前跟进状态；不会发送邮件或改变达人、Campaign 状态。</p>
+          </div>
+          <div class="action-row">
+            <button class="soft-btn" id="mail-followup-sync" type="button">同步邮件</button>
+            <button class="soft-btn" id="mail-followup-refresh" type="button">刷新</button>
+          </div>
+        </div>
+
+        <section class="section-card">
+          <div class="mail-followup-toolbar">
+            <div class="mail-followup-filters" role="group" aria-label="跟进状态筛选">
+              <button class="soft-btn compact-btn active" data-followup-filter="actionable" type="button">待处理</button>
+              <button class="soft-btn compact-btn" data-followup-filter="all" type="button">全部</button>
+              <button class="soft-btn compact-btn" data-followup-filter="me" type="button">待我回复</button>
+              <button class="soft-btn compact-btn" data-followup-filter="creator" type="button">待对方回复</button>
+              <button class="soft-btn compact-btn" data-followup-filter="unknown" type="button">状态未知</button>
+            </div>
+            <div class="action-row">
+              <button class="secondary-btn compact-btn" id="mail-followup-show-export" type="button">导出队列</button>
+              <button class="soft-btn compact-btn" id="mail-followup-export-csv" type="button">导出 CSV</button>
+              <button class="soft-btn compact-btn" id="mail-followup-export-xlsx" type="button">导出 Excel</button>
+            </div>
+          </div>
+          <p class="hint" id="mail-followup-summary">正在读取邮件跟进状态…</p>
+          <div class="review-table-wrap">
+            <table class="review-table mail-followup-table">
+              <thead><tr><th>Creator</th><th>联系邮箱</th><th>状态</th><th>等待</th><th>最近邮件</th><th>收件</th><th>发件</th><th>历史</th><th>操作</th></tr></thead>
+              <tbody id="mail-followup-list"></tbody>
+            </table>
+          </div>
+          <div class="empty-note" id="mail-followup-empty" hidden>暂无待跟进邮件。同步邮件后，这里会根据收发记录显示待跟进状态。</div>
+        </section>
+
+        <section class="section-card" id="mail-followup-export-panel" hidden>
+          <div class="mail-followup-toolbar">
+            <div><div class="section-title">导出队列</div><p class="hint">导出仅生成文件，不代表已发送邮件，也不会移除队列成员。</p></div>
+            <button class="soft-btn compact-btn" id="mail-followup-hide-export" type="button">关闭</button>
+          </div>
+          <div class="review-table-wrap">
+            <table class="review-table mail-followup-table"><thead><tr><th>Creator</th><th>联系邮箱</th><th>状态</th><th>等待</th><th>最近邮件</th><th>操作</th></tr></thead><tbody id="mail-followup-export-list"></tbody></table>
+          </div>
+          <div class="empty-note" id="mail-followup-export-empty" hidden>导出队列为空。</div>
+        </section>
+      </section>
+
       <section class="page workspace-narrow" data-page="settings">
         <div class="page-header">
           <h1 data-i18n="settingsTitle">设置</h1>
@@ -2119,5 +2169,6 @@
 <script src="pages/campaign-execution.js"></script>
 <script src="pages/campaign-detail.js"></script>
   <script src="pages/settings.js"></script>
+  <script src="pages/mail-follow-up.js"></script>
 </body>
 </html>

@@ -20,6 +20,7 @@
     "campaign-execution": "mail",
     "campaign-detail": "mail",
     mail: "mail",
+    "mail-follow-up": "mail",
     settings: "settings",
     accounts: "settings",
     "mail-accounts": "settings",
