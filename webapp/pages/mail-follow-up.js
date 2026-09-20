@@ -19,10 +19,22 @@
     return ({ me: "待我回复", creator: "待对方回复", unknown: "状态未知" })[value] || "状态未知";
   }
 
+  function waitingHelp(value) {
+    return value === "unknown"
+      ? "当前邮件时间或联系人归属证据不足，暂时无法可靠判断由谁继续回复。"
+      : "";
+  }
+
   function historyLabel(value) {
     if (value === true) return "部分历史";
-    if (value === null || value === undefined) return "历史完整性未知";
+    if (value === null || value === undefined) return "历史范围未知";
     return "已同步范围内";
+  }
+
+  function historyHelp(value) {
+    return value === null || value === undefined
+      ? "当前同步的数据无法确认是否包含该联系人全部历史邮件，但不影响系统基于已同步邮件判断当前跟进状态。"
+      : "";
   }
 
   function daysLabel(value) {
@@ -75,16 +87,21 @@
   function appendGroupRow(body, group, queueOnly = false) {
     const row = document.createElement("tr");
     const cells = [
-      text(group.creator_name || group.creator_id),
-      text(group.correspondent_email),
-      waitingLabel(group.waiting_for),
-      daysLabel(group.days_waiting),
-      text(group.last_mail_at),
+      [text(group.creator_name, "未命名达人")],
+      [text(group.correspondent_email)],
+      [waitingLabel(group.waiting_for), waitingHelp(group.waiting_for)],
+      [daysLabel(group.days_waiting)],
+      [text(group.last_mail_at)],
     ];
-    if (!queueOnly) cells.push(text(group.synced_inbound_count, "0"), text(group.synced_outbound_count, "0"), historyLabel(group.partial_history));
-    cells.forEach(value => {
+    if (!queueOnly) cells.push(
+      [text(group.synced_inbound_count, "0")],
+      [text(group.synced_outbound_count, "0")],
+      [historyLabel(group.partial_history), historyHelp(group.partial_history)],
+    );
+    cells.forEach(([value, help]) => {
       const cell = document.createElement("td");
       cell.textContent = value;
+      if (help) cell.title = help;
       row.appendChild(cell);
     });
     const actions = document.createElement("td");

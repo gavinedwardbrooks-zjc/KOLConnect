@@ -286,7 +286,7 @@ Object.assign(I18N.en, {
 });
 
 Object.assign(I18N.zh, {
-  mailSyncCrmReplies: "同步回复状态到达人表",
+  mailSyncCrmReplies: "同步回复状态到飞书表",
   mailCrmSyncStatus: "达人表同步状态",
   mailCrmPending: "达人表未同步",
   mailCrmSynced: "达人表已同步",
@@ -298,7 +298,7 @@ Object.assign(I18N.zh, {
 });
 
 Object.assign(I18N.en, {
-  mailSyncCrmReplies: "Sync reply status to Creator Table",
+  mailSyncCrmReplies: "Sync reply status to Feishu",
   mailCrmSyncStatus: "Creator Table Sync Status",
   mailCrmPending: "Creator Table Pending",
   mailCrmSynced: "Creator Table Synced",

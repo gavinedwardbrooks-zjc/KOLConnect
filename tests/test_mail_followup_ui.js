@@ -10,11 +10,15 @@ const read = relative => fs.readFileSync(path.join(root, relative), "utf8");
 const html = read("webapp/index.html");
 const pageSource = read("webapp/pages/mail-follow-up.js");
 const registry = read("webapp/core/page-registry.js");
+const appSource = read("webapp/app.js");
 
 assert.match(html, /data-page="mail-follow-up"[\s\S]*邮件跟进/);
 assert.match(html, /pages\/mail-follow-up\.js/);
 assert.match(registry, /"mail-follow-up": "mail"/);
 assert.doesNotMatch(pageSource, /innerHTML/);
+assert.match(html, /id="mail-sync-crm-replies"[^>]*>同步回复状态到飞书表</);
+assert.doesNotMatch(html, /同步回复状态到达人表/);
+assert.match(appSource, /mail-sync-crm-replies[\s\S]*apiPost\("\/api\/mail\/inbox\/sync-crm-replies", \{\}\)/);
 
 class Element {
   constructor() {
@@ -106,9 +110,17 @@ async function loadPage(harnessResult) {
 const alpha = {
   creator_id: "creator-a", creator_name: "Creator <script>Alpha</script>", correspondent_email: "a@example.com",
   waiting_for: "me", days_waiting: 2, last_mail_at: "2026-09-20T10:00:00Z", synced_inbound_count: 1,
-  synced_outbound_count: 0, partial_history: null, actionability: "normal", export_queue_added_at: null,
+  synced_outbound_count: 0, partial_history: true, actionability: "normal", export_queue_added_at: null,
 };
-const beta = { ...alpha, correspondent_email: "b@example.com", waiting_for: "unknown", days_waiting: null, partial_history: true };
+const beta = {
+  ...alpha,
+  creator_id: "creator_123",
+  creator_name: "",
+  correspondent_email: "b@example.com",
+  waiting_for: "unknown",
+  days_waiting: null,
+  partial_history: null,
+};
 
 async function run() {
   const h = harness({ groups: [[alpha, beta], [{ ...alpha, creator_name: "Creator Updated" }]], queue: [beta] });
@@ -118,8 +130,14 @@ async function run() {
   assert.match(h.get("mail-followup-list").text, /待我回复/);
   assert.match(h.get("mail-followup-list").text, /状态未知/);
   assert.match(h.get("mail-followup-list").text, /2 天/);
-  assert.match(h.get("mail-followup-list").text, /历史完整性未知/);
+  assert.match(h.get("mail-followup-list").text, /未命名达人/);
+  assert.doesNotMatch(h.get("mail-followup-list").text, /creator_123/);
+  assert.match(h.get("mail-followup-list").text, /历史范围未知/);
+  assert.doesNotMatch(h.get("mail-followup-list").text, /历史完整性未知/);
   assert.match(h.get("mail-followup-list").text, /部分历史/);
+  const unnamedRow = h.get("mail-followup-list").children[1];
+  assert.match(unnamedRow.children[2].title, /无法可靠判断由谁继续回复/);
+  assert.match(unnamedRow.children[7].title, /无法确认是否包含该联系人全部历史邮件/);
 
   await h.get("mail-followup-refresh").click();
   assert.equal(h.calls.gets.filter(url => url === "/api/mail/follow-up").length, 2);
@@ -166,7 +184,7 @@ async function run() {
   await clickAction(persisted.get("mail-followup-list"), findAction(persisted.get("mail-followup-list"), "export_remove"));
   assert.deepEqual(persisted.calls.posts.at(-1).payload, { creator_id: "creator-a", correspondent_email: "a@example.com", action: "export_remove" });
   await clickAction(persisted.get("mail-followup-list"), findAction(persisted.get("mail-followup-list"), "resume"));
-  assert.deepEqual(persisted.calls.posts.at(-1).payload, { creator_id: "creator-a", correspondent_email: "b@example.com", action: "resume" });
+  assert.deepEqual(persisted.calls.posts.at(-1).payload, { creator_id: "creator_123", correspondent_email: "b@example.com", action: "resume" });
 
   console.log("Mail Follow-up UI behavioral integration: OK");
 }
