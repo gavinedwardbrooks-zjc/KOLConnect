@@ -22,6 +22,7 @@ import server
 from campaign_creator_repository import CampaignCreatorRepository
 from campaign_repository import CampaignRepository
 from product_repository import ProductRepository
+from repository_factory import RepositoryFactory
 
 
 def append_mapping(sheet, values: dict) -> None:
@@ -56,6 +57,13 @@ class LegacyCooperationReadOnlyTests(unittest.TestCase):
                 server,
                 "get_campaign_creator_repository",
                 side_effect=lambda: CampaignCreatorRepository(self.workbook_path),
+            ),
+            # The production handler creates a SQLite-backed request scope. This
+            # legacy workbook fixture must explicitly provide its Excel scope.
+            mock.patch.object(
+                server.Handler,
+                "_repository_request_scope",
+                side_effect=lambda: RepositoryFactory.for_path(self.workbook_path).request_scope(),
             ),
             mock.patch.object(server, "log_event"),
             mock.patch.object(server, "log_error"),
@@ -163,7 +171,7 @@ class LegacyCooperationReadOnlyTests(unittest.TestCase):
         before_rows, before_status = self.workbook_state()
         path = "/api/creator-library/creator_legacy/cooperations"
         for method in ("POST", "PUT", "PATCH", "DELETE"):
-            status, body = self.request(method, path, {"campaign": "Forbidden"})
+            status, body = self.request(method, path)
             self.assertEqual(403, status, (method, body))
             self.assertIn("请使用 Campaign 创建新的合作", body["error"])
 
