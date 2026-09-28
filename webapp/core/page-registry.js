@@ -103,6 +103,7 @@
     if (thisNavigation !== navigationId || currentPage?.name !== pageName) return null;
 
     await nextPage.bind({ ...pageContext, loadError });
+    global.KOLConnectI18n?.apply(document.querySelector(`.page[data-page="${pageName}"]`) || document);
     if (loadError) throw loadError;
     return pageContext;
   }
@@ -113,6 +114,10 @@
     navigate,
     getCurrentPage() {
       return currentPage?.name || null;
+    },
+    refreshCurrent() {
+      if (!currentPage) return Promise.resolve(null);
+      return navigate(currentPage.name, currentPage.context);
     },
   });
 })(window);

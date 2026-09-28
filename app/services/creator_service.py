@@ -815,7 +815,20 @@ class CreatorService:
 
     def get_creator_accounts(self) -> list[dict[str, Any]]:
         """Expose the existing account read model to bounded service workflows."""
-        return self._repository_provider().getCreatorAccounts("")
+        repository = self._repository_provider()
+        accounts = repository.getCreatorAccounts("")
+        names_by_creator = {
+            str(record.get("creator_id") or ""): str(record.get("creator_name") or "")
+            for record in self._get_creator_library_snapshot(repository).get("creators", [])
+            if str(record.get("creator_id") or "")
+        }
+        return [
+            {
+                **account,
+                "creator_name": names_by_creator.get(str(account.get("creator_id") or ""), ""),
+            }
+            for account in accounts
+        ]
 
     def check_email_deduplication(self, source_lines: list[object]) -> dict[str, Any]:
         """Classify pasted emails against the authoritative CreatorAccount emails.

@@ -1,22 +1,15 @@
 (function registerCampaignDetailPage(global) {
   "use strict";
 
-  const STAGE_LABELS = Object.freeze({
-    pending_contact: "待联系",
-    contacted: "已联系",
-    quoted: "已报价",
-    negotiating: "谈判中",
-    agreed: "已确认",
-    executing: "执行中",
-    completed: "已完成",
-    rejected: "已拒绝",
+  const STAGE_KEYS = Object.freeze({
+    pending_contact: "campaignDetailStagePendingContact", contacted: "campaignDetailStageContacted",
+    quoted: "campaignDetailStageQuoted", negotiating: "campaignDetailStageNegotiating",
+    agreed: "campaignDetailStageAgreed", executing: "campaignDetailStageExecuting",
+    completed: "campaignDetailStageCompleted", rejected: "campaignDetailStageRejected",
   });
-
-  const STATUS_LABELS = Object.freeze({
-    draft: "Draft",
-    sourcing: "Sourcing",
-    running: "Running",
-    completed: "Completed",
+  const STATUS_KEYS = Object.freeze({
+    draft: "campaignStatusDraft", sourcing: "campaignStatusSourcing",
+    running: "campaignStatusRunning", completed: "campaignStatusCompleted",
   });
 
   let resources = null;
@@ -34,15 +27,7 @@
   let campaignBrief = null;
   let contentSubmissions = [];
   let fxRates = new Map();
-  const CURRENCY_LABELS = {
-    USD: "USD · US Dollar",
-    BRL: "BRL · Brazilian Real",
-    CNY: "CNY · Chinese Yuan",
-    EUR: "EUR · Euro",
-    GBP: "GBP · British Pound",
-    JPY: "JPY · Japanese Yen",
-    KRW: "KRW · Korean Won",
-  };
+  const CURRENCY_KEYS = { USD: "campaignDetailCurrencyUsd", BRL: "campaignDetailCurrencyBrl", CNY: "campaignDetailCurrencyCny", EUR: "campaignDetailCurrencyEur", GBP: "campaignDetailCurrencyGbp", JPY: "campaignDetailCurrencyJpy", KRW: "campaignDetailCurrencyKrw" };
   const submissionReviewFindings = new Map();
   let publicationRefreshPending = false;
   let googleSheetsSyncPending = false;
@@ -81,8 +66,19 @@
     if (value === "" || value == null) return "--";
     const number = Number(value);
     if (!Number.isFinite(number)) return String(value);
-    return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(number);
+    const locale = global.KOLConnectI18n?.getLocale?.() === "en" ? "en-US" : "zh-CN";
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(number);
   }
+
+  function t(key, params) {
+    return global.KOLConnectApp?.t?.(key, params)
+      || global.KOLConnectI18n?.t?.(key, params)
+      || key;
+  }
+
+  function stageLabel(value) { return t(STAGE_KEYS[value]) || value || "--"; }
+  function statusLabel(value) { return t(STATUS_KEYS[value]) || value || "--"; }
+  function currencyLabel(code) { return t(CURRENCY_KEYS[code]) || code; }
 
   function formatMoney(value, currency) {
     const amount = formatNumber(value);
@@ -143,29 +139,29 @@
   }
 
   function renderOverview() {
-    element("campaign-detail-title").textContent = campaign?.name || "Campaign 详情";
+    element("campaign-detail-title").textContent = campaign?.name || t("campaignDetailTitle");
     element("campaign-detail-subtitle").textContent = campaign?.product_name
-      ? `${campaign.product_name} · Campaign 执行与合作记录`
-      : "Campaign 执行与合作记录";
+      ? t("campaignDetailProductSubtitle", { product: campaign.product_name })
+      : t("campaignDetailSubtitle");
 
     const overview = element("campaign-detail-overview");
     overview.replaceChildren();
-    appendOverviewItem("产品", campaign?.product_name);
-    appendOverviewItem("国家/地区", campaign?.country);
+    appendOverviewItem(t("campaignDetailProduct"), campaign?.product_name);
+    appendOverviewItem(t("campaignDetailCountry"), campaign?.country);
     const platforms = Array.isArray(campaign?.platforms) ? campaign.platforms : [];
-    appendOverviewItem("平台", platforms.length ? platforms.join("、") : "不限平台");
-    appendOverviewItem("开始日期", campaign?.start_date);
-    appendOverviewItem("结束日期", campaign?.end_date);
-    appendOverviewItem("预算", formatNumber(campaign?.budget));
-    appendOverviewItem("负责人", campaign?.owner);
-    appendOverviewItem("创建时间", campaign?.created_at);
+    appendOverviewItem(t("campaignDetailPlatform"), platforms.length ? platforms.join("、") : t("campaignAnyPlatform"));
+    appendOverviewItem(t("campaignDetailStartDate"), campaign?.start_date);
+    appendOverviewItem(t("campaignDetailEndDate"), campaign?.end_date);
+    appendOverviewItem(t("campaignDetailBudget"), formatNumber(campaign?.budget));
+    appendOverviewItem(t("campaignDetailOwner"), campaign?.owner);
+    appendOverviewItem(t("campaignDetailCreatedAt"), campaign?.created_at);
     element("campaign-detail-goal").textContent = valueOrDash(campaign?.goal);
 
     const badges = element("campaign-detail-badges");
     badges.replaceChildren();
     const status = String(campaign?.status || "draft");
-    badges.appendChild(createBadge(STATUS_LABELS[status] || status, status));
-    badges.appendChild(createBadge(isArchived() ? "Archived" : "Active", isArchived() ? "archived" : "active"));
+    badges.appendChild(createBadge(statusLabel(status), status));
+    badges.appendChild(createBadge(isArchived() ? t("campaignArchived") : t("campaignActive"), isArchived() ? "archived" : "active"));
 
     element("campaign-detail-readonly").hidden = !isArchived();
     element("campaign-creator-add-open").disabled = isArchived();
@@ -199,7 +195,7 @@
         link.href = url;
         link.target = "_blank";
         link.rel = "noopener noreferrer";
-        link.textContent = links.length === 1 ? "查看发布内容" : `发布内容 ${index + 1}`;
+        link.textContent = links.length === 1 ? t("campaignDetailViewPublication") : t("campaignDetailPublicationNumber", { number: index + 1 });
         container.appendChild(link);
       });
       cell.appendChild(container);
@@ -212,7 +208,7 @@
     const empty = element("campaign-creator-empty");
     const table = element("campaign-creator-table-wrap");
     body.replaceChildren();
-    element("campaign-creator-count").textContent = `${relations.length} 位达人`;
+    element("campaign-creator-count").textContent = t("campaignDetailCreatorCount", { count: relations.length });
     empty.hidden = relations.length !== 0;
     table.hidden = relations.length === 0;
 
@@ -229,7 +225,7 @@
         accountLink.href = accountUrl;
         accountLink.target = "_blank";
         accountLink.rel = "noopener noreferrer";
-        accountLink.textContent = "查看账号";
+        accountLink.textContent = t("campaignDetailViewAccount");
         accountCell.appendChild(accountLink);
       } else {
         accountCell.textContent = "--";
@@ -239,7 +235,7 @@
 
       const stageCell = document.createElement("td");
       const stage = String(relation.stage || "pending_contact");
-      stageCell.appendChild(createBadge(STAGE_LABELS[stage] || stage, stage));
+      stageCell.appendChild(createBadge(stageLabel(stage), stage));
       row.appendChild(stageCell);
       row.appendChild(createCell(formatMoney(relation.creator_quote, relation.quote_currency)));
       row.appendChild(createCell(formatMoney(relation.cost, relation.cost_currency)));
@@ -254,7 +250,7 @@
         editButton.className = "mini-btn";
         editButton.dataset.campaignCreatorAction = "edit";
         editButton.dataset.campaignCreatorId = String(relation.id || "");
-        editButton.textContent = "编辑";
+        editButton.textContent = t("campaignEdit");
         actionCell.appendChild(editButton);
       }
       const removeButton = document.createElement("button");
@@ -262,7 +258,7 @@
       removeButton.className = "mini-btn danger";
       removeButton.dataset.campaignCreatorAction = "remove";
       removeButton.dataset.campaignCreatorId = String(relation.id || "");
-      removeButton.textContent = "移除";
+      removeButton.textContent = t("campaignDetailRemove");
       actionCell.appendChild(removeButton);
       row.appendChild(actionCell);
       body.appendChild(row);
@@ -276,12 +272,12 @@
     const today = new Date().toISOString().slice(0, 10);
     const terminal = new Set(["completed", "rejected", "cancelled"]);
     const cards = [
-      ["今天要处理", relations.filter(item => item.due_date === today).length],
-      ["即将到期", relations.filter(item => item.due_date && item.due_date >= today && item.due_date <= new Date(Date.now() + 172800000).toISOString().slice(0, 10) && !terminal.has(item.stage)).length],
-      ["已超时", relations.filter(item => item.due_date && item.due_date < today && !terminal.has(item.stage)).length],
-      ["等待达人", relations.filter(item => item.waiting_on === "creator").length],
-      ["等待内部", relations.filter(item => item.waiting_on === "internal").length],
-      ["需要决策", relations.filter(item => item.need_my_decision).length],
+      [t("campaignDetailDueToday"), relations.filter(item => item.due_date === today).length],
+      [t("campaignDetailDueSoon"), relations.filter(item => item.due_date && item.due_date >= today && item.due_date <= new Date(Date.now() + 172800000).toISOString().slice(0, 10) && !terminal.has(item.stage)).length],
+      [t("campaignDetailOverdue"), relations.filter(item => item.due_date && item.due_date < today && !terminal.has(item.stage)).length],
+      [t("campaignDetailWaitingCreator"), relations.filter(item => item.waiting_on === "creator").length],
+      [t("campaignDetailWaitingInternal"), relations.filter(item => item.waiting_on === "internal").length],
+      [t("campaignDetailNeedsDecision"), relations.filter(item => item.need_my_decision).length],
     ];
     summary.replaceChildren(...cards.map(([label, count]) => {
       const card = document.createElement("article");
@@ -299,9 +295,9 @@
       const stalled = item.last_progress_at && !terminal.has(item.stage)
         && (Date.now() - new Date(item.last_progress_at).getTime()) >= 3 * 86400000;
       [
-        item.creator_name || "--", STAGE_LABELS[item.stage] || item.stage || "--", item.owner || "--",
-        item.next_action || "--", { creator: "达人", internal: "内部", client: "客户", self: "本人决策", none: "无" }[item.waiting_on] || "无",
-        item.due_date || "--", overdue ? "已超时" : stalled ? "已卡住" : item.need_my_decision ? "需要决策" : "正常",
+        item.creator_name || "--", stageLabel(item.stage), item.owner || "--",
+        item.next_action || "--", t({ creator: "campaignDetailWaitingCreator", internal: "campaignDetailWaitingInternal", client: "campaignDetailWaitingClient", self: "campaignDetailWaitingSelf", none: "campaignDetailNone" }[item.waiting_on] || "campaignDetailNone"),
+        item.due_date || "--", overdue ? t("campaignDetailOverdue") : stalled ? t("campaignDetailStalled") : item.need_my_decision ? t("campaignDetailNeedsDecision") : t("campaignDetailNormal"),
       ].forEach(value => row.appendChild(createCell(value)));
       body.appendChild(row);
     });
@@ -328,17 +324,17 @@
       const card = document.createElement("article");
       card.className = "campaign-publication-performance-card";
       const title = document.createElement("strong");
-      title.textContent = `${item.content_type} · ${item.review_status === "pending" ? "待人工审核" : item.review_status}`;
+      title.textContent = `${item.content_type} · ${item.review_status === "pending" ? t("campaignDetailPendingHumanReview") : item.review_status}`;
       const reference = document.createElement("p");
       reference.textContent = item.content_reference || "--";
       const note = document.createElement("small");
-      note.textContent = item.review_note || "AI 一审：未配置（不影响人工审核）";
+      note.textContent = item.review_note || t("campaignDetailAiReviewUnavailable");
       const actions = document.createElement("div");
       const firstPass = document.createElement("button");
       firstPass.className = "soft-btn compact-btn";
       firstPass.type = "button";
       firstPass.dataset.submissionAiReview = item.submission_id;
-      firstPass.textContent = "规则一审";
+      firstPass.textContent = t("campaignDetailRulesFirstPass");
       actions.appendChild(firstPass);
       ["approved", "changes_requested", "rejected"].forEach(status => {
         const button = document.createElement("button");
@@ -346,7 +342,7 @@
         button.type = "button";
         button.dataset.submissionReview = item.submission_id;
         button.dataset.reviewStatus = status;
-        button.textContent = { approved: "通过", changes_requested: "要求修改", rejected: "拒绝" }[status];
+        button.textContent = t({ approved: "campaignDetailReviewApproved", changes_requested: "campaignDetailReviewChangesRequested", rejected: "campaignDetailReviewRejected" }[status]);
         actions.appendChild(button);
       });
       const findings = submissionReviewFindings.get(item.submission_id);
@@ -354,8 +350,8 @@
         const result = document.createElement("small");
         result.className = "hint";
         result.textContent = findings.length
-          ? `规则一审发现 ${findings.length} 项，人工审核状态未改变。`
-          : "规则一审未发现 Brief 明确规则冲突，仍需人工审核。";
+          ? t("campaignDetailFirstPassFindings", { count: findings.length })
+          : t("campaignDetailFirstPassClear");
         card.append(title, reference, note, result, actions);
       } else {
         card.append(title, reference, note, actions);
@@ -381,7 +377,7 @@
     });
     const data = await global.KOLConnectAPI.request("PUT", `/api/campaigns/${encodeURIComponent(campaignId)}/brief`, { payload, signal: resources.signal });
     campaignBrief = data.brief || null;
-    getApp().showSaved("Campaign Brief 已保存。");
+    getApp().showSaved(t("campaignDetailBriefSaved"));
   }
 
   async function createSubmission() {
@@ -423,10 +419,10 @@
     const count = element("campaign-missing-publish-count");
     if (!body || !empty || !table || !count) return;
     body.replaceChildren();
-    count.textContent = missingPublishError ? "--" : `${missingPublishLinks.length} 条`;
+    count.textContent = missingPublishError ? "--" : t("campaignDetailRecordCount", { count: missingPublishLinks.length });
     empty.textContent = missingPublishError
-      ? "缺失发布信息暂不可用，请稍后重试。"
-      : "暂无缺失发布信息。";
+      ? t("campaignDetailMissingPublishUnavailable")
+      : t("campaignDetailNoMissingPublish");
     empty.hidden = missingPublishLinks.length !== 0 && !missingPublishError;
     table.hidden = missingPublishLinks.length === 0;
     missingPublishLinks.forEach(record => {
@@ -446,7 +442,7 @@
   }
 
   function coverageText(coverage) {
-    return `${coverage?.valid_count || 0} / ${coverage?.total_publications || 0} 条有数据`;
+    return t("campaignDetailCoverage", { valid: coverage?.valid_count || 0, total: coverage?.total_publications || 0 });
   }
 
   function currencyGroupsText(groups) {
@@ -478,22 +474,22 @@
       setText(`campaign-performance-${metric}-coverage`, coverageText(totals[metric]));
     });
     setText("campaign-performance-average-er", data?.average_er == null ? "—" : `${formatNumber(data.average_er)}%`);
-    setText("campaign-performance-er-coverage", `${data?.valid_er_count || 0} / ${data?.total_publications || 0} 条有数据`);
+    setText("campaign-performance-er-coverage", t("campaignDetailCoverage", { valid: data?.valid_er_count || 0, total: data?.total_publications || 0 }));
 
     const highlights = element("campaign-performance-highlights");
     if (highlights) highlights.replaceChildren();
-    appendPerformanceHighlight("Top Creator", data?.top_creator?.creator_name, data?.top_creator ? `累计播放 ${formatNumber(data.top_creator.views)}` : "暂无可用播放数据");
-    appendPerformanceHighlight("Top Video", data?.top_video?.creator_name, data?.top_video ? `${data.top_video.publication_id} · 播放 ${formatNumber(data.top_video.views)}` : "暂无可用播放数据");
-    appendPerformanceHighlight("最高互动率", data?.highest_er?.creator_name, data?.highest_er ? `${data.highest_er.publication_id} · ${formatNumber(data.highest_er.engagement_rate)}%` : "暂无可用互动率");
+    appendPerformanceHighlight(t("campaignDetailTopCreator"), data?.top_creator?.creator_name, data?.top_creator ? t("campaignDetailTotalViews", { count: formatNumber(data.top_creator.views) }) : t("campaignDetailNoViews"));
+    appendPerformanceHighlight(t("campaignDetailTopVideo"), data?.top_video?.creator_name, data?.top_video ? t("campaignDetailPublicationViews", { publication: data.top_video.publication_id, count: formatNumber(data.top_video.views) }) : t("campaignDetailNoViews"));
+    appendPerformanceHighlight(t("campaignDetailHighestEngagement"), data?.highest_er?.creator_name, data?.highest_er ? `${data.highest_er.publication_id} · ${formatNumber(data.highest_er.engagement_rate)}%` : t("campaignDetailNoEngagement"));
     const fastest = data?.fastest_growing;
     appendPerformanceHighlight(
-      "最快增长（播放/天）",
+      t("campaignDetailFastestGrowth"),
       fastest?.creator_name,
-      fastest ? `${formatNumber(fastest.growth_rate)} / 天 · ${fastest.start_observed_at} 至 ${fastest.end_observed_at}` : "至少需要两个不同时间的播放观察",
+      fastest ? t("campaignDetailGrowthPeriod", { rate: formatNumber(fastest.growth_rate), start: fastest.start_observed_at, end: fastest.end_observed_at }) : t("campaignDetailNeedTwoObservations"),
     );
     setText(
       "campaign-performance-money",
-      `确认成本：${currencyGroupsText(data?.total_cost_by_currency)} · 历史报价：${currencyGroupsText(data?.total_quote_by_currency)} · 未知币种成本/报价记录 ${data?.unknown_currency_records?.cost || 0}/${data?.unknown_currency_records?.quote || 0}（不纳入币种汇总） · ROI：—（缺少权威回报数据）`,
+      t("campaignDetailMoneySummary", { cost: currencyGroupsText(data?.total_cost_by_currency), quote: currencyGroupsText(data?.total_quote_by_currency), unknownCost: data?.unknown_currency_records?.cost || 0, unknownQuote: data?.unknown_currency_records?.quote || 0 }),
     );
 
     const trends = element("campaign-performance-trends");
@@ -504,14 +500,14 @@
       if (!series.length) return;
       const section = document.createElement("section");
       const heading = document.createElement("h3");
-      heading.textContent = `${publication.creator_name || "未命名达人"} · ${publication.platform || "未知平台"}`;
+      heading.textContent = `${publication.creator_name || t("unnamedCreator")} · ${publication.platform || t("creatorUnknownPlatform")}`;
       const identity = document.createElement("small");
-      identity.textContent = `${publication.publication_id} · ${publication.actual_account_uid || "账号未记录"}`;
+      identity.textContent = `${publication.publication_id} · ${publication.actual_account_uid || t("campaignDetailAccountUnrecorded")}`;
       const table = document.createElement("table");
       table.className = "campaign-performance-trend-table";
       const head = document.createElement("thead");
       const headRow = document.createElement("tr");
-      ["观察时间", "播放", "点赞", "评论", "互动率"].forEach(label => headRow.appendChild(createCell(label)));
+      ["campaignDetailObservedAt", "campaignDetailViews", "campaignDetailLikes", "campaignDetailComments", "campaignDetailEngagementRate"].forEach(key => headRow.appendChild(createCell(t(key))));
       head.appendChild(headRow);
       const body = document.createElement("tbody");
       series.forEach(point => {
@@ -524,12 +520,12 @@
       section.append(heading, identity, table);
       const growth = document.createElement("p");
       growth.className = "hint";
-      growth.textContent = [["views", "播放"], ["likes", "点赞"], ["comments", "评论"], ["engagement_rate", "ER（百分点）"]]
+      growth.textContent = [["views", "campaignDetailViews"], ["likes", "campaignDetailLikes"], ["comments", "campaignDetailComments"], ["engagement_rate", "campaignDetailEngagementRatePoints"]]
         .map(([metric, label]) => {
           const delta = publication.growth?.[metric];
-          if (!delta) return `${label}增长 —`;
-          const percentage = delta.percentage == null ? "百分比不可用" : `${formatNumber(delta.percentage)}%`;
-          return `${label}增长 ${formatNumber(delta.absolute)} (${percentage}) · ${delta.start_observed_at} 至 ${delta.end_observed_at}${delta.status === "decrease" ? " · 观察值下降" : ""}`;
+          if (!delta) return t("campaignDetailGrowthUnavailable", { label: t(label) });
+          const percentage = delta.percentage == null ? t("campaignDetailPercentageUnavailable") : `${formatNumber(delta.percentage)}%`;
+          return t("campaignDetailGrowthValue", { label: t(label), value: formatNumber(delta.absolute), percentage, start: delta.start_observed_at, end: delta.end_observed_at, decrease: delta.status === "decrease" ? t("campaignDetailObservationDecreased") : "" });
         }).join("；");
       section.appendChild(growth);
       trends.appendChild(section);
@@ -570,7 +566,7 @@
     if (!list || !empty || !count || !refreshAll) return;
     const publications = allPublications();
     list.replaceChildren();
-    count.textContent = `${publications.length} 条`;
+    count.textContent = t("campaignDetailRecordCount", { count: publications.length });
     empty.hidden = publications.length !== 0;
     refreshAll.disabled = publicationRefreshPending || publications.length === 0;
     publications.forEach(({ relation, publication }) => {
@@ -584,9 +580,9 @@
       heading.className = "campaign-publication-performance-heading";
       const identity = document.createElement("div");
       const title = document.createElement("strong");
-      title.textContent = relation.creator_name || "未命名达人";
+      title.textContent = relation.creator_name || t("unnamedCreator");
       const meta = document.createElement("small");
-      meta.textContent = `${publication.platform || "未知平台"} · ${observation ? `最近检查 ${observation.observed_at}` : "尚未检查"}`;
+      meta.textContent = `${publication.platform || t("creatorUnknownPlatform")} · ${observation ? t("campaignDetailLastChecked", { observedAt: observation.observed_at }) : t("campaignDetailNotChecked")}`;
       identity.append(title, meta);
       const refresh = document.createElement("button");
       refresh.type = "button";
@@ -594,15 +590,15 @@
       refresh.dataset.publicationRefresh = publicationId;
       refresh.dataset.campaignCreatorId = String(relation.id || "");
       refresh.disabled = publicationRefreshPending;
-      refresh.textContent = "刷新";
+      refresh.textContent = t("campaignDetailRefresh");
       heading.append(identity, refresh);
 
       const metrics = document.createElement("div");
       metrics.className = "campaign-publication-metrics";
       [
-        ["播放", observation?.views], ["点赞", observation?.likes],
-        ["评论", observation?.comments], ["分享", observation?.shares],
-        ["互动率", observation?.engagement_rate == null ? null : `${observation.engagement_rate}%`],
+        [t("campaignDetailViews"), observation?.views], [t("campaignDetailLikes"), observation?.likes],
+        [t("campaignDetailComments"), observation?.comments], [t("campaignDetailShares"), observation?.shares],
+        [t("campaignDetailEngagementRate"), observation?.engagement_rate == null ? null : `${observation.engagement_rate}%`],
       ].forEach(([label, value]) => {
         const item = document.createElement("span");
         const labelNode = document.createElement("small");
@@ -615,8 +611,8 @@
       const source = document.createElement("small");
       source.className = "hint";
       source.textContent = observation
-        ? `来源 ${observation.source} · 置信度 ${observation.confidence}`
-        : "追踪状态：Unavailable";
+        ? t("campaignDetailObservationSource", { source: observation.source, confidence: observation.confidence })
+        : t("campaignDetailTrackingUnavailable");
       card.append(heading, metrics, source);
       list.appendChild(card);
     });
@@ -653,11 +649,11 @@
       if (result.observation) publicationObservations.set(publicationId, result.observation);
       await reloadCampaignPerformanceAnalytics();
       setPublicationStatus(
-        result.status === "SUCCESS" ? "发布内容指标已刷新。" : `暂不可刷新：${result.reason || result.status}`,
+        result.status === "SUCCESS" ? t("campaignDetailPublicationRefreshed") : t("campaignDetailRefreshUnavailable", { reason: result.reason || result.status }),
         result.status !== "SUCCESS",
       );
     } catch (error) {
-      if (error?.name !== "AbortError") setPublicationStatus(error.message || "刷新失败。", true);
+      if (error?.name !== "AbortError") setPublicationStatus(error.message || t("campaignDetailRefreshFailed"), true);
     } finally {
       publicationRefreshPending = false;
       renderPublicationPerformance();
@@ -681,12 +677,12 @@
       await reloadCampaignPerformanceAnalytics();
       setPublicationStatus(
         result.status === "SUCCESS"
-          ? "全部发布内容指标已刷新。"
-          : `批量刷新 ${result.status || "FAILED"}：成功 ${result.succeeded || 0}，未完成 ${result.failed || 0}。`,
+          ? t("campaignDetailAllPublicationsRefreshed")
+          : t("campaignDetailBatchRefreshResult", { status: result.status || "FAILED", succeeded: result.succeeded || 0, failed: result.failed || 0 }),
         result.status !== "SUCCESS",
       );
     } catch (error) {
-      if (error?.name !== "AbortError") setPublicationStatus(error.message || "批量刷新失败。", true);
+      if (error?.name !== "AbortError") setPublicationStatus(error.message || t("campaignDetailBatchRefreshFailed"), true);
     } finally {
       publicationRefreshPending = false;
       renderPublicationPerformance();
@@ -752,7 +748,7 @@
       );
       renderCurrencyOptions();
       hydrateLatestPublicationObservations();
-      if (!campaign) throw new Error("Campaign 数据不存在。");
+      if (!campaign) throw new Error(t("campaignDetailCampaignMissing"));
       if (isArchived()) closeCreatorForm();
       renderOverview();
       renderRelations();
@@ -771,8 +767,8 @@
       setDetailState(
         "error",
         error?.status === 404
-          ? "Campaign 不存在或已删除。"
-          : "Campaign 详情加载失败，请稍后重试。",
+          ? t("campaignDetailNotFound")
+          : t("campaignDetailLoadFailed"),
       );
     }
   }
@@ -787,12 +783,12 @@
   function renderCreatorOptions(selectedId = "") {
     const select = element("campaign-creator-id");
     select.replaceChildren();
-    appendOption(select, "", "请选择达人");
+    appendOption(select, "", t("campaignDetailSelectCreator"));
     const assigned = new Set(relations.map(item => String(item.creator_id || "")));
     creators
       .filter(creator => !assigned.has(String(creator.creator_id || "")) || String(creator.creator_id) === String(selectedId))
       .forEach(creator => {
-        const name = creator.creator_name || "未命名达人";
+        const name = creator.creator_name || t("unnamedCreator");
         const platform = creator.platform ? ` · ${creator.platform}` : "";
         appendOption(select, String(creator.creator_id || ""), `${name}${platform}`);
       });
@@ -807,7 +803,7 @@
     const select = element("campaign-creator-id");
     select.disabled = true;
     select.replaceChildren();
-    appendOption(select, "", "正在加载达人...");
+    appendOption(select, "", t("campaignDetailLoadingCreators"));
     try {
       const data = await global.KOLConnectAPI.get("/api/creator-library", {
         signal: creatorsController.signal,
@@ -820,8 +816,8 @@
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
       select.replaceChildren();
-      appendOption(select, "", "达人列表加载失败");
-      showFormError(error.message || "达人列表加载失败，请稍后重试。");
+      appendOption(select, "", t("campaignDetailCreatorListLoadFailed"));
+      showFormError(error.message || t("campaignDetailCreatorListLoadFailedRetry"));
     }
   }
 
@@ -848,7 +844,7 @@
     select.replaceChildren();
     optionsContainer?.replaceChildren();
     eligible.forEach(account => {
-      const platform = account.platform || "未知平台";
+      const platform = account.platform || t("creatorUnknownPlatform");
       const profile = account.username
         ? `@${String(account.username).replace(/^@/, "")}`
         : account.profile_url || account.account_uid || account.account_id || "";
@@ -891,12 +887,12 @@
     if (!summary) return;
     const selected = Array.from(select?.selectedOptions || []);
     if (selected.length === 1) {
-      summary.textContent = `已选择：${selected[0].textContent || selected[0].text || selected[0].value}`;
+      summary.textContent = t("campaignDetailSelectedAccount", { account: selected[0].textContent || selected[0].text || selected[0].value });
     } else if (selected.length > 1) {
-      summary.textContent = `已选择 ${selected.length} 个账号`;
+      summary.textContent = t("campaignDetailSelectedAccounts", { count: selected.length });
     } else {
       const count = eligibleCount == null ? Number(select?.options?.length || 0) : eligibleCount;
-      summary.textContent = count ? "请选择计划发布账号" : "该达人暂无符合平台的账号";
+      summary.textContent = count ? t("campaignDetailSelectPlannedAccount") : t("campaignDetailNoEligibleAccounts");
     }
   }
 
@@ -922,7 +918,7 @@
     const select = element("campaign-creator-account-id");
     select.disabled = true;
     select.replaceChildren();
-    appendOption(select, "", "正在加载账号...");
+    appendOption(select, "", t("campaignDetailLoadingAccounts"));
     try {
       const data = await global.KOLConnectAPI.get(
         `/api/creator-library/${encodeURIComponent(normalizedId)}`,
@@ -936,7 +932,7 @@
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
       renderAccountOptions([]);
-      showFormError(error.message || "达人账号加载失败，请稍后重试。");
+      showFormError(error.message || t("campaignDetailAccountLoadFailed"));
     }
   }
 
@@ -977,7 +973,7 @@
     resetFormValues();
     const creatorSelect = element("campaign-creator-id");
     creatorSelect.replaceChildren();
-    appendOption(creatorSelect, "", "请选择达人");
+    appendOption(creatorSelect, "", t("campaignDetailSelectCreator"));
     creatorSelect.disabled = false;
     renderAccountOptions([]);
     element("campaign-creator-form-card").hidden = true;
@@ -986,7 +982,7 @@
   async function openAddForm() {
     if (isArchived()) return;
     closeCreatorForm();
-    element("campaign-creator-form-title").textContent = "添加达人";
+    element("campaign-creator-form-title").textContent = t("campaignDetailAddCreator");
     element("campaign-creator-form-card").hidden = false;
     await loadCreatorOptions();
     renderCreatorOptions();
@@ -1004,8 +1000,8 @@
       if (!select) return;
       const selected = select.value;
       select.replaceChildren();
-      appendOption(select, "", id.includes("cost") ? "默认同报价币种" : "请选择币种");
-      codes.forEach(code => appendOption(select, code, CURRENCY_LABELS[code] || code));
+      appendOption(select, "", id.includes("cost") ? t("campaignDetailCostCurrencyDefault") : t("campaignDetailSelectCurrency"));
+      codes.forEach(code => appendOption(select, code, currencyLabel(code)));
       if (selected && !codes.includes(selected)) appendOption(select, selected, selected);
       select.value = selected;
     });
@@ -1019,7 +1015,7 @@
     if (!Number.isFinite(amount) || amount < 0) return "--";
     if (code === "USD") return `≈ USD ${formatNumber(amount)}`;
     const rate = Number(fxRates.get(code));
-    return Number.isFinite(rate) && rate > 0 ? `≈ USD ${formatNumber(amount / rate)}` : `尚未设置 ${code} 汇率`;
+    return Number.isFinite(rate) && rate > 0 ? `≈ USD ${formatNumber(amount / rate)}` : t("campaignDetailRateUnset", { currency: code });
   }
 
   function inlineFxCurrency() {
@@ -1038,7 +1034,7 @@
     const panel = element("campaign-inline-fx");
     if (!panel) return;
     panel.hidden = !code;
-    setText("campaign-inline-fx-label", code ? `设置 ${code} 汇率` : "设置汇率");
+    setText("campaign-inline-fx-label", code ? t("campaignDetailSetCurrencyRate", { currency: code }) : t("campaignDetailSetRate"));
     setText("campaign-inline-fx-currency", code || "--");
     const input = element("campaign-inline-fx-rate");
     if (input) input.value = code && fxRates.get(code) != null ? String(fxRates.get(code)) : "";
@@ -1047,7 +1043,7 @@
   async function saveInlineFx() {
     const code = inlineFxCurrency();
     const rate = Number(element("campaign-inline-fx-rate")?.value);
-    if (!code || !Number.isFinite(rate) || rate <= 0) return showFormError("请输入大于 0 的汇率。");
+    if (!code || !Number.isFinite(rate) || rate <= 0) return showFormError(t("campaignDetailRateInvalid"));
     const rates = Object.fromEntries([...fxRates.entries()].filter(([currency]) => currency !== "USD"));
     rates[code] = rate;
     const data = await global.KOLConnectAPI.post("/api/settings/fx", { rates }, { signal: resources?.signal });
@@ -1079,7 +1075,7 @@
       remove.type = "button";
       remove.className = "soft-btn compact-btn";
       remove.dataset.removePlannedDate = "";
-      remove.textContent = "移除";
+      remove.textContent = t("campaignDetailRemove");
       row.appendChild(remove);
     }
     return row;
@@ -1127,11 +1123,11 @@
 
     const account = document.createElement("select");
     account.dataset.publicationAccount = "";
-    appendOption(account, "", "实际账号未知");
+    appendOption(account, "", t("campaignDetailActualAccountUnknown"));
     const creatorId = String(element("campaign-creator-id")?.value || "");
     (accountCache.get(creatorId) || []).forEach(item => {
       const accountId = String(item.account_id || "");
-      appendOption(account, accountId, `${item.platform || "未知平台"} · ${item.username || item.profile_url || accountId}`);
+      appendOption(account, accountId, `${item.platform || t("creatorUnknownPlatform")} · ${item.username || item.profile_url || accountId}`);
     });
     account.value = publication.actual_account_id || "";
 
@@ -1143,14 +1139,14 @@
     const observed = document.createElement("small");
     observed.className = "hint";
     observed.textContent = publication.observed_at
-      ? `记录于 ${publication.observed_at}`
-      : "保存时记录观察时间";
+      ? t("campaignDetailRecordedAt", { observedAt: publication.observed_at })
+      : t("campaignDetailObservationAtSave");
 
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "soft-btn compact-btn";
     remove.dataset.removePublication = "";
-    remove.textContent = "移除";
+    remove.textContent = t("campaignDetailRemove");
     row.dataset.publicationId = publication.publication_id || "";
     row.append(url, account, publishedAt, observed, remove);
     return row;
@@ -1190,10 +1186,10 @@
     if (!relation) return;
     closeCreatorForm();
     editingRelationId = String(relation.id);
-    element("campaign-creator-form-title").textContent = `编辑合作记录 · ${relation.creator_name || "达人"}`;
+    element("campaign-creator-form-title").textContent = t("campaignDetailEditRelation", { creator: relation.creator_name || t("campaignDetailCreator") });
     const creatorSelect = element("campaign-creator-id");
     creatorSelect.replaceChildren();
-    appendOption(creatorSelect, String(relation.creator_id || ""), relation.creator_name || "未命名达人");
+    appendOption(creatorSelect, String(relation.creator_id || ""), relation.creator_name || t("unnamedCreator"));
     creatorSelect.value = String(relation.creator_id || "");
     creatorSelect.disabled = true;
     assignFormValue("campaign-creator-stage", relation.stage || "pending_contact");
@@ -1278,16 +1274,16 @@
     saving = value;
     const button = element("campaign-creator-form-save");
     button.disabled = value;
-    button.textContent = value ? "正在保存..." : "保存合作记录";
+    button.textContent = value ? t("campaignSaving") : t("campaignDetailSaveRelation");
   }
 
   async function saveRelation(event) {
     event.preventDefault();
     if (saving || !resources || isArchived()) return;
     const payload = formPayload();
-    if (!payload.account_ids.length) return showFormError("请选择本次合作使用的执行账号。");
+    if (!payload.account_ids.length) return showFormError(t("campaignDetailExecutionAccountRequired"));
     if (!editingRelationId && !element("campaign-creator-id").value) {
-      return showFormError("请选择要加入 Campaign 的达人。");
+      return showFormError(t("campaignDetailCreatorRequired"));
     }
 
     setSaving(true);
@@ -1299,19 +1295,19 @@
           payload,
           { signal: resources.signal },
         );
-        getApp().showSaved("达人合作记录已更新。");
+        getApp().showSaved(t("campaignDetailRelationUpdated"));
       } else {
         savedRelation = await global.KOLConnectAPI.post(
           `/api/campaigns/${encodeURIComponent(campaignId)}/creators`,
           { ...payload, creator_id: element("campaign-creator-id").value },
           { signal: resources.signal },
         );
-        getApp().showSaved("达人已加入 Campaign。");
+        getApp().showSaved(t("campaignDetailCreatorAdded"));
       }
       closeCreatorForm();
       await loadDetail();
     } catch (error) {
-      if (error?.name !== "AbortError") showFormError(error.message || "合作记录保存失败。");
+      if (error?.name !== "AbortError") showFormError(error.message || t("campaignDetailRelationSaveFailed"));
     } finally {
       setSaving(false);
     }
@@ -1342,15 +1338,15 @@
   async function removeRelation(relationId) {
     if (deleting || !resources) return;
     const relation = relations.find(item => String(item.id || "") === String(relationId || ""));
-    const creatorName = relation?.creator_name || "该达人";
-    if (!global.confirm(`确认从 Campaign 移除“${creatorName}”？达人资料和其他 Campaign 关系将保留。`)) return;
+    const creatorName = relation?.creator_name || t("campaignDetailCreator");
+    if (!global.confirm(t("campaignDetailRemoveCreatorConfirm", { creator: creatorName }))) return;
     deleting = true;
     try {
       await global.KOLConnectAPI.delete(
         `/api/campaign-creators/${encodeURIComponent(relationId)}`,
         { signal: resources.signal },
       );
-      getApp().showSaved("达人已从 Campaign 移除，达人资料保持不变。");
+      getApp().showSaved(t("campaignDetailCreatorRemoved"));
       closeCreatorForm();
       await loadDetail();
     } catch (error) {
@@ -1362,14 +1358,14 @@
 
   async function deleteCampaign() {
     if (deleting || !resources || !campaignId) return;
-    if (!global.confirm("删除 Campaign 后，该 Campaign 与达人关系会被删除，但达人资料不会删除。")) return;
+    if (!global.confirm(t("campaignDetailDeleteConfirm"))) return;
     deleting = true;
     try {
       await global.KOLConnectAPI.delete(
         `/api/campaigns/${encodeURIComponent(campaignId)}`,
         { signal: resources.signal },
       );
-      getApp().showSaved("Campaign 已删除，达人资料保持不变。");
+      getApp().showSaved(t("campaignDetailDeleted"));
       await global.KOLConnectPages.navigate("campaigns");
     } catch (error) {
       if (error?.name !== "AbortError") getApp().showError(error);
@@ -1384,7 +1380,7 @@
     const button = element("campaign-google-sheets-sync");
     if (button) {
       button.disabled = true;
-      button.textContent = "正在同步...";
+      button.textContent = t("campaignSaving");
     }
     const requestedCampaignId = campaignId;
     const requestedLifecycle = lifecycleId;
@@ -1397,20 +1393,20 @@
       if (result.status !== "SUCCESS") {
         throw new Error(
           result.status === "PARTIAL"
-            ? "Google Sheets 报告仅部分写入，请检查各工作表状态后重试。"
-            : `Google Sheets 报告同步失败：${result.error || result.status || "UNKNOWN"}`,
+            ? t("campaignDetailGoogleSheetsPartial")
+            : t("campaignDetailGoogleSheetsFailed", { reason: result.error || result.status || "UNKNOWN" }),
         );
       }
       const detail = (result.worksheets || [])
-        .map(item => `${item.worksheet}: ${item.row_count ?? 0} 行`).join("；");
-      getApp().showSaved(`Google Sheets 报告同步成功。${detail}`);
+        .map(item => t("campaignDetailWorksheetRows", { worksheet: item.worksheet, count: item.row_count ?? 0 })).join("; ");
+      getApp().showSaved(t("campaignDetailGoogleSheetsSynced", { detail }));
     } catch (error) {
       if (error?.name !== "AbortError") getApp().showError(error);
     } finally {
       googleSheetsSyncPending = false;
       if (button) {
         button.disabled = false;
-        button.textContent = "同步报告到 Google Sheets";
+        button.textContent = t("campaignDetailGoogleSheetsSync");
       }
     }
   }
@@ -1457,7 +1453,7 @@
       accountCache.clear();
       closeCreatorForm();
       if (!campaignId) {
-        setDetailState("error", "缺少 Campaign ID，请返回列表重新进入。");
+        setDetailState("error", t("campaignDetailMissingId"));
         return;
       }
       await loadDetail();

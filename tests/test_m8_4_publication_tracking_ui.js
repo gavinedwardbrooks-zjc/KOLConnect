@@ -17,7 +17,7 @@ assert.match(page, /publications\/\$\{encodeURIComponent\(publicationId\)\}\/ref
 assert.match(page, /campaigns\/\$\{encodeURIComponent\(campaignId\)\}\/publications\/refresh/);
 assert.match(page, /value === null \|\| value === undefined \|\| value === "" \? "—"/);
 assert.match(page, /result\.status === "SUCCESS"/);
-assert.match(page, /批量刷新/);
+assert.match(page, /campaignDetailBatchRefreshResult/);
 assert.doesNotMatch(html, /publication-performance-chart/);
 assert.doesNotMatch(page, /setInterval\s*\(/);
 

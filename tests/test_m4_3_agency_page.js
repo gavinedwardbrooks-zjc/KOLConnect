@@ -214,6 +214,10 @@ function createEnvironment() {
       navigate(page, params) { navigation.push({ page, params }); },
       showSaved(message) { notifications.saved.push(message); },
       showError(error) { notifications.errors.push(error.message); },
+      t(key, values = {}) {
+        const templates = { agencyCount: "{count} 个 Agency", agencyContacts: "{count} 位联系人", agencyCreators: "{count} 位达人", agencyMore: "更多", agencyDelete: "删除 Agency", agencyListLoadFailed: "Agency 列表加载失败，请稍后重试。", agencyProfileSaved: "Agency 资料已保存。", agencyDeleteConfirm: "删除 Agency？\n删除后无法恢复。", agencyDeleted: "Agency 已删除。", agencyContactSaved: "联系人资料已保存。", agencyContactDeleted: "联系人已删除。", agencyUnlinked: "已解除达人与 Agency 的关联。" };
+        return String(templates[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
+      },
     },
     setInterval,
     clearInterval,
@@ -326,7 +330,7 @@ async function run() {
   assert.doesNotMatch(source, /\bfetch\s*\(/);
   assert.match(source, /KOLConnectAPI\.post\("\/api\/local\/agencies"/);
   assert.match(source, /KOLConnectAPI\.delete\(`/);
-  assert.match(source, /删除 Agency？/);
+  assert.match(source, /agencyDeleteConfirm/);
   assert.match(source, /确定删除联系人/);
   assert.match(source, /解除该达人与此 Agency 的关联/);
   assert.match(source, /\/api\/local\/agencies/);

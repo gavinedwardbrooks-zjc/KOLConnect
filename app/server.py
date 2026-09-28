@@ -455,6 +455,12 @@ def resolve_chrome_launch_config(profile: str | None) -> tuple[Path, str]:
     return CHROME_USER_DATA, selected
 
 
+def normalize_ui_language(value: object) -> str:
+    """Return the only two persisted UI locale values from legacy input forms."""
+    normalized = str(value or "").strip().lower().replace("_", "-")
+    return "en" if normalized in {"en", "en-us", "english"} else "zh"
+
+
 def normalize_state(raw: dict | None) -> dict:
     """Normalize persisted application state into the current structure."""
     state = clone_default_state()
@@ -462,8 +468,7 @@ def normalize_state(raw: dict | None) -> dict:
 
     if isinstance(raw.get("ui"), dict):
         state["ui"].update(raw["ui"])
-    if state["ui"].get("language") not in {"zh", "en"}:
-        state["ui"]["language"] = "zh"
+    state["ui"]["language"] = normalize_ui_language(state["ui"].get("language"))
     state["ui"]["debug_mode"] = bool(state["ui"].get("debug_mode"))
 
     if isinstance(raw.get("profiles"), dict):
@@ -1868,6 +1873,9 @@ class _CreatorAnalysisPortAdapter:
             creator_id=creator_id,
             analysis=detail["analysis"],
         )
+
+    def get_creator_accounts(self) -> list[dict[str, object]]:
+        return self._service().get_creator_accounts()
 
     def get_email_recheck_candidates(self) -> EmailRecheckCandidateScan:
         return self._service().get_email_recheck_candidates()

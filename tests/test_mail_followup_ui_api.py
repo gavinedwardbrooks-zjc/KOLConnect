@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import unittest
+from unittest import mock
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
@@ -11,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
 from http_handlers import mail_follow_up_handler  # noqa: E402
+from google_sheets_client import GoogleSheetsError  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
 from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
@@ -106,6 +108,46 @@ class MailFollowUpUiApiTests(unittest.TestCase):
         self.assertIn(b"a@example.com", csv_result.binary[0])
         self.assertEqual("KOLConnect_Mail_Follow_Up_Queue.xlsx", xlsx_result.binary[2])
         self.assertGreater(len(xlsx_result.binary[0]), 100)
+
+    def test_google_sheets_sync_is_explicit_and_does_not_mutate_sqlite(self):
+        handler = Handler()
+        context = {"services": {
+            "get_mail_connection_factory": lambda: self.factory,
+            "google_sheets_client": lambda: object(),
+            "get_google_sheets_config": lambda: {"spreadsheet_id": "a-valid_sheet-ID_123456789"},
+        }}
+        with mock.patch.object(mail_follow_up_handler.MailFollowUpGoogleSheetsReplicaService, "sync", return_value={
+            "status": "SUCCESS", "worksheet": "Mail Follow-up", "created": 1, "updated": 0, "row_count": 1,
+        }) as sync:
+            handled = mail_follow_up_handler.handle(handler, {
+                "method": "POST", "path": "/api/mail/follow-up/sync-google-sheets", "query": {}, "get_payload": lambda: {},
+            }, context)
+        self.assertTrue(handled)
+        self.assertEqual(200, handler.status)
+        self.assertTrue(handler.payload["ok"])
+        self.assertEqual("SUCCESS", handler.payload["status"])
+        sync.assert_called_once()
+        with self.factory.read_connection() as connection:
+            self.assertEqual(0, connection.execute("SELECT COUNT(*) FROM mail_follow_up_preferences").fetchone()[0])
+
+    def test_google_sheets_sync_returns_safe_configuration_and_auth_errors(self):
+        context = {"services": {
+            "get_mail_connection_factory": lambda: self.factory,
+            "google_sheets_client": lambda: object(),
+            "get_google_sheets_config": lambda: {"spreadsheet_id": ""},
+        }}
+        for code in ("NOT_CONFIGURED", "AUTH_REQUIRED", "REMOTE_ERROR"):
+            handler = Handler()
+            with mock.patch.object(
+                mail_follow_up_handler.MailFollowUpGoogleSheetsReplicaService,
+                "sync", side_effect=GoogleSheetsError(code),
+            ):
+                mail_follow_up_handler.handle(handler, {
+                    "method": "POST", "path": "/api/mail/follow-up/sync-google-sheets", "query": {}, "get_payload": lambda: {},
+                }, context)
+            self.assertEqual(400, handler.status)
+            self.assertEqual({"ok": False, "error": code}, handler.payload)
+            self.assertNotIn("secret", str(handler.payload).lower())
 
 
 if __name__ == "__main__":

@@ -1064,7 +1064,7 @@ class CreatorRepository:
             if search:
                 searchable = " ".join(str(record.get(field) or "") for field in (
                     "creator_name", "platform", "profile_url", "country", "language",
-                    "content_category", "tags", "agency_name",
+                    "content_category", "tags", "agency_name", "account_email",
                 )).casefold()
                 if search.casefold() not in searchable:
                     return False
@@ -1232,12 +1232,17 @@ class CreatorRepository:
                 ),
                 creator_accounts[0] if creator_accounts else {},
             )
+            # Creator contact data is account-scoped. Keep the selected
+            # account's email distinct from emails on other platform accounts.
+            primary_email = str(primary_account.get("account_email") or "").strip()
             agency_id = str(crm.get("agency_id") if "agency_id" in crm else creator.get("agency_id") or "")
             records.append({
                 "analysis_id": creator_id,
                 "creator_id": creator_id,
                 "task_id": str(meta.get("task_id") or ""),
                 "account_uid": str(primary_account.get("account_uid") or metadata_uid),
+                "account_email": primary_email,
+                "account_username": str(primary_account.get("username") or "").strip(),
                 "creator_name": str(crm.get("creator_name") or creator.get("name") or ""),
                 "platform": str(primary_account.get("platform") or creator.get("platform") or ""),
                 "profile_url": str(crm.get("profile_url") or primary_account.get("profile_url") or creator.get("profile_url") or ""),

@@ -209,6 +209,50 @@ class GoogleSheetsClient:
             "worksheets": statuses,
         }
 
+    def upsert_managed_worksheet(self, spreadsheet, title, headers, rows, key_headers):
+        """Append/update keyed rows without clearing unrelated replica rows."""
+        spreadsheet_id = parse_spreadsheet_id(spreadsheet)
+        session = self._authorized_session()
+        metadata = self._request(session, "get", f"{SHEETS_API}/{spreadsheet_id}", params={"fields": "sheets.properties(sheetId,title)"})
+        titles = {str(s.get("properties", {}).get("title") or "") for s in metadata.get("sheets", [])}
+        if title not in titles:
+            self._request(session, "post", f"{SHEETS_API}/{spreadsheet_id}:batchUpdate", json={"requests": [{"addSheet": {"properties": {"title": title}}}]})
+        escaped = title.replace("'", "''")
+        range_all = quote("'%s'!A:AZ" % escaped, safe="")
+        values = self._request(session, "get", f"{SHEETS_API}/{spreadsheet_id}/values/{range_all}").get("values") or []
+        if not values:
+            range_header = quote("'%s'!A1" % escaped, safe="")
+            self._request(session, "put", f"{SHEETS_API}/{spreadsheet_id}/values/{range_header}", params={"valueInputOption": "RAW"}, json={"values": [headers]})
+            values = [headers]
+        if list(values[0]) != list(headers): raise GoogleSheetsError("WORKSHEET_NAME_CONFLICT")
+        indexes = [headers.index(key) for key in key_headers]
+        existing = {
+            tuple(str((row + [""] * len(headers))[index]) for index in indexes): row_number
+            for row_number, row in enumerate(values[1:], 2)
+        }
+        created = updated = 0
+        processed_keys = set()
+        for row in rows:
+            key = tuple(str(row[i]) for i in indexes)
+            if key in processed_keys:
+                continue
+            processed_keys.add(key)
+            if key in existing:
+                cell = f"'{escaped}'!A{existing[key]}"
+                self._request(
+                    session, "put", f"{SHEETS_API}/{spreadsheet_id}/values/{quote(cell, safe='')}",
+                    params={"valueInputOption": "RAW"}, json={"values": [row]},
+                )
+                updated += 1
+            else:
+                cell = f"'{escaped}'!A:AZ"
+                self._request(
+                    session, "post", f"{SHEETS_API}/{spreadsheet_id}/values/{quote(cell, safe='')}:append",
+                    params={"valueInputOption": "RAW"}, json={"values": [row]},
+                )
+                created += 1
+        return {"status": "SUCCESS", "spreadsheet_id": spreadsheet_id, "worksheet": title, "created": created, "updated": updated, "row_count": len(rows)}
+
     def _require_client_config(self) -> None:
         if not self.config.get("client_id") or not self.config.get("client_secret"):
             raise GoogleSheetsError("NOT_CONFIGURED")

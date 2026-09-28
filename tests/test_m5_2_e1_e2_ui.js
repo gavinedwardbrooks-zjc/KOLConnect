@@ -12,8 +12,15 @@ const campaign = fs.readFileSync(path.join(root, "webapp", "pages", "campaign-de
 for (const id of ["dashboard-risk-high", "dashboard-risk-medium", "dashboard-risk-low"]) {
   assert.match(html, new RegExp(`id=["']${id}["']`));
 }
-for (const heading of ["Campaign", "Creator", "Stage", "Publish Date", "Publish Link", "Risk"]) {
-  assert.match(html, new RegExp(`<th>${heading}</th>`));
+for (const key of [
+  "campaignDetailTableCampaign",
+  "campaignDetailTableCreator",
+  "campaignDetailTableStage",
+  "campaignDetailTablePublishDate",
+  "campaignDetailTablePublishLink",
+  "campaignDetailTableRisk",
+]) {
+  assert.match(html, new RegExp(`<th data-i18n="${key}">`));
 }
 assert.match(dashboard, /KOLConnectAPI\.get\("\/api\/risks"/);
 assert.match(dashboard, /renderRiskSummary/);

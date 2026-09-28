@@ -151,6 +151,26 @@ async function run() {
       };
     },
     btoa: binary => Buffer.from(binary, "binary").toString("base64"),
+    KOLConnectApp: {
+      t(key, params = {}) {
+        const labels = {
+          creatorLibraryExportSelectedCount: "导出选中达人（{count}）", creatorLibraryExportSelected: "导出选中达人",
+          creatorLibraryBatchSelected: "已选择 {count} 位达人", creatorLibraryBatchAdded: "成功加入 {count}",
+          creatorLibraryBatchRestored: "恢复 {count}", creatorLibraryBatchPresent: "已存在 {count}", creatorLibraryBatchFailed: "失败 {count}",
+          creatorLibraryUnknownCreator: "未知达人", creatorLibraryAddFailed: "加入失败", creatorLibraryChooseCampaign: "加入 Campaign",
+          creatorLibraryLoading: "正在加载...", creatorLibraryConfirmAdd: "确认加入", creatorLibraryJoining: "正在加入...",
+          creatorLibraryNoCampaigns: "暂无可用 Campaign", creatorLibraryNoCampaignsMessage: "当前没有可加入的 Campaign。",
+          creatorLibraryCampaignSelectedRequired: "请选择 Campaign。", creatorLibraryBatchAddFailed: "批量加入 Campaign 失败。",
+          creatorLibraryTemplateSaved: "模板已保存到：{path}", creatorLibraryExportSaved: "已保存到：{path}", creatorLibraryExported: "已导出 {count} 位达人。",
+          creatorLibraryAllAgencies: "全部 Agency", creatorLibraryAllContentCategories: "全部内容类型",
+          creatorLibraryAllCountries: "全部国家/地区", creatorLibraryAllLanguages: "全部语言", creatorLibraryAllTags: "全部标签", creatorLibraryAllAiTags: "全部 AI Tags",
+          creatorStatusDiscovered: "已发现", creatorStatusContacted: "已联系", creatorLibraryCountry: "国家", creatorLibraryLanguage: "语言",
+          creatorLibraryCategory: "分类", creatorLibraryEmail: "邮箱", creatorLibraryFollowers: "粉丝", creatorLibraryAverageViews: "平均播放",
+          creatorLibraryViewCreator: "查看达人", creatorLibraryMore: "更多 ▼", creatorLibraryArchiveCreator: "归档达人", creatorLibraryMergeCreator: "合并达人", creatorLibraryDeleteCreator: "永久删除",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
+    },
   };
   const document = {
     body,

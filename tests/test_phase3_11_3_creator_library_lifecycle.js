@@ -164,12 +164,6 @@ async function run() {
     "creator-library-risks", "creator-library-snapshots", "creator-library-snapshots-empty",
     "creator-library-videos", "creator-library-detail-back", "creator-library-detail-task",
     "creator-library-detail-edit", "creator-library-detail-archive",
-    "cooperation-stat-count", "cooperation-stat-spend", "cooperation-stat-views",
-    "cooperation-stat-roi", "creator-cooperations-body", "creator-cooperations-empty",
-    "cooperation-platform", "cooperation-campaign", "cooperation-contact-date",
-    "cooperation-price", "cooperation-published-count", "cooperation-total-views",
-    "cooperation-average-views", "cooperation-roi", "cooperation-result",
-    "cooperation-note", "cooperation-status", "cooperation-save",
     "creator-library-detail-add-campaign", "creator-campaigns-body", "creator-campaigns-empty",
     "creator-campaigns-error", "creator-campaign-modal", "creator-campaign-modal-close",
     "creator-campaign-modal-cancel", "creator-campaign-modal-title", "creator-campaign-creator-name",
@@ -195,12 +189,12 @@ async function run() {
   elements.get("creator-campaign-modal").hidden = true;
   elements.get("creator-edit-modal").hidden = true;
 
-  const tabs = ["overview", "content", "history", "cooperations"].map(name => {
+  const tabs = ["overview", "content", "history"].map(name => {
     const tab = new FakeElement("button");
     tab.dataset.detailTab = name;
     return tab;
   });
-  const panels = ["overview", "content", "history", "cooperations"].map(name => {
+  const panels = ["overview", "content", "history"].map(name => {
     const panel = new FakeElement("section");
     panel.dataset.detailPanel = name;
     return panel;
@@ -258,20 +252,6 @@ async function run() {
       { account_id: "account_b_ig", platform: "Instagram", username: "bella.ig" },
       { account_id: "account_b_tt", platform: "TikTok", username: "bella.tt" },
     ]),
-  };
-  details.creator_b.cooperations = [{
-    cooperation_id: "legacy_one",
-    campaign: "Legacy Project",
-    platform: "TikTok",
-    price: 500,
-    average_views: 1000,
-    roi: 2,
-  }];
-  details.creator_b.cooperation_statistics = {
-    cooperation_count: 1,
-    total_spend: 500,
-    average_views: 1000,
-    average_roi: 2,
   };
   const campaigns = [
     { campaign_id: "campaign_one", name: "Launch One", product_name: "Product A", platform: "TikTok", status: "running", start_date: "2026-08-01", end_date: "2026-08-31" },
@@ -424,6 +404,37 @@ async function run() {
     confirm: () => true,
     KOLConnectCreatorCampaignModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
     KOLConnectCreatorMergeModal: { create() { return { bind() {}, destroy() {}, open() {} }; } },
+    KOLConnectApp: {
+      t(key, params = {}) {
+        const labels = {
+          unnamedCreator: "未命名达人", creatorLibraryNoAccountsHint: "该达人暂无可用社交账号，请先完善达人账号信息。",
+          creatorLibraryAllAgencies: "全部 Agency", creatorLibraryAllContentCategories: "全部内容类型",
+          creatorLibraryAllCountries: "全部国家/地区", creatorLibraryAllLanguages: "全部语言",
+          creatorLibraryAllTags: "全部标签", creatorLibraryAllAiTags: "全部 AI Tags",
+          creatorStatusDiscovered: "已发现", creatorStatusContacted: "已联系", creatorStatusNegotiating: "洽谈中",
+          creatorStatusCooperating: "合作中", creatorStatusCompleted: "已完成", creatorStatusRejected: "已拒绝",
+          creatorLibraryCountry: "国家", creatorLibraryLanguage: "语言", creatorLibraryCategory: "分类", creatorLibraryEmail: "邮箱",
+          creatorLibraryFollowers: "粉丝", creatorLibraryAverageViews: "平均播放", creatorLibraryInsufficientData: "⚠ 数据不足",
+          creatorLibraryViewCreator: "查看达人", creatorLibraryRestoreCreator: "恢复达人", creatorLibraryChooseCampaign: "请选择 Campaign",
+          creatorLibraryMore: "更多 ▼", creatorLibraryArchiveCreator: "归档达人", creatorLibraryMergeCreator: "合并达人",
+          creatorLibraryDeleteCreator: "永久删除", creatorLibraryViewAnalysis: "查看分析", creatorLibraryRestore: "恢复",
+          creatorLibraryCreateTask: "创建合作任务", creatorLibraryArchive: "归档", creatorLibraryArchived: "已归档",
+          creatorLibraryCampaignAlreadyAdded: "该达人已经加入此 Campaign。", creatorLibraryLoading: "正在加载...",
+          creatorLibraryConfirmAdd: "确认加入", creatorLibraryJoining: "正在加入...", creatorLibraryNoCampaignsMessage: "当前没有可加入的 Campaign。",
+          creatorAnalysisTimeUnknown: "分析时间未知", creatorFreshnessFresh: "最新（{days} 天前）", creatorFreshnessUpdate: "建议更新（{days} 天前）",
+          creatorFreshnessStale: "数据过期（{days} 天前）", creatorAccount: "账号", creatorUnknownPlatform: "未知平台", creatorFollowers: "粉丝 {count}",
+          creatorAccountCount: "{count} 个", creatorDataLoading: "正在加载达人资料...", creatorSummaryGenerate: "生成摘要",
+          creatorSummaryPrompt: "点击“生成摘要”查看本地确定性分析。", creatorFieldName: "达人名称", creatorFieldPlatform: "平台",
+          creatorFieldProfileUrl: "主页链接", creatorFieldEmail: "邮箱", creatorFieldFollowers: "粉丝数", creatorFieldCountry: "国家/地区",
+          creatorFieldLanguage: "语言", creatorFieldContentType: "内容类型", creatorFieldBio: "简介", creatorFieldSampleSize: "样本数量",
+          creatorFieldAverageViews: "平均播放", creatorFieldMedianViews: "中位播放", creatorFieldMaxViews: "最高播放", creatorFieldMinViews: "最低播放",
+          creatorFieldViewStability: "播放稳定性", creatorFieldViewCoverage: "播放完整率", creatorManualReview: "请结合主页内容进行人工判断。",
+          creatorNoStrengths: "暂无优势结论。", creatorNoRisks: "暂无风险结论。", creatorArchive: "归档达人", creatorRestore: "恢复达人",
+          creatorMissingId: "缺少 Creator ID，请返回达人库重新进入。", creatorSimilarityMethod: "仅基于本地达人库的结构化证据评分；缺失维度不计零分。",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
+    },
   };
   const sandbox = { window, document, console, AbortController, Option: FakeOption, Intl, Date, Set, Map };
   sandbox.globalThis = sandbox;
@@ -458,7 +469,7 @@ async function run() {
       resources: window.KOLConnectPageResources.create(),
       params,
       navigate,
-      ui: { showSaved: message => notices.push(message), showError: error => { throw error; } },
+      ui: { showSaved: message => notices.push(message), showError: error => { throw error; }, t: window.KOLConnectApp.t },
     } : params);
   }
 
@@ -615,10 +626,6 @@ async function run() {
   assert.equal("followers" in profilePatch.payload, false, "account metrics must not be saved as Creator fields");
   assert.match(elements.get("creator-library-detail-summary").textContent, /Bella Updated/);
 
-  assert.equal(elements.get("creator-cooperations-body").children.length, 1, "legacy cooperation history must remain visible");
-  assert.equal(elements.get("cooperation-save").listenerCount("click"), 0, "legacy cooperation must be read-only");
-  assert.equal(calls.some(call => call.url.endsWith("/cooperations")), false);
-
   const campaignDetailButton = findNode(
     elements.get("creator-campaigns-body"),
     node => node.dataset.creatorCampaignId === "campaign_one",
@@ -674,13 +681,13 @@ async function run() {
   const html = fs.readFileSync(path.join(root, "webapp/index.html"), "utf8");
   assert.match(html, /pages\/creator-library\.js/);
   assert.match(html, /pages\/creator-library-detail\.js/);
-  assert.match(html, /Legacy Cooperation/);
-  assert.match(html, /历史合作（只读）/);
-  assert.doesNotMatch(html, /id="cooperation-save"/);
-  assert.doesNotMatch(html, /新增合作记录/);
+  assert.match(html, /data-detail-tab="overview" data-i18n="creatorOverview">概览</);
+  assert.match(html, /data-detail-tab="content" data-i18n="creatorContentPerformance">内容表现</);
+  assert.match(html, /data-detail-tab="history" data-i18n="creatorHistoryTrend">历史趋势</);
+  assert.equal((html.match(/class="detail-tabs"/g) || []).length, 1);
+  assert.doesNotMatch(html, /Legacy Cooperation|data-detail-tab="cooperations"|历史合作（只读）/);
   const detailSource = fs.readFileSync(path.join(root, "webapp/pages/creator-library-detail.js"), "utf8");
-  assert.doesNotMatch(detailSource, /saveCooperation/);
-  assert.doesNotMatch(detailSource, /\/cooperations`/);
+  assert.doesNotMatch(detailSource, /renderCooperations|data-detail-tab="cooperations"/);
   console.log("Phase 3.11.3 Creator Library lifecycle migration: OK");
 }
 

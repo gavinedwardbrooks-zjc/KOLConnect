@@ -23,16 +23,16 @@ function testCaptureAndResultActions() {
   assert.doesNotMatch(html, /id="capture-mode"|id="capture-manual-panel"|id="manual-task-create"/);
   assert.doesNotMatch(source, /\$\("manual-task-create"\)\.addEventListener/);
   assert.match(source, /platforms: selectedTaskPlatforms\(\)/, "platform payload remains unchanged");
-  assert.match(source, /review\.textContent = "查看结果"/);
-  assert.match(source, /run\.textContent = "继续抓取"/);
-  assert.match(source, /moreSummary\.textContent = "更多"/);
+  assert.match(source, /review\.textContent = t\("discoveryViewResults"\)/);
+  assert.match(source, /run\.textContent = t\("discoveryContinue"\)/);
+  assert.match(source, /moreSummary\.textContent = t\("discoveryMore"\)/);
   assert.match(source, /moreActions\.append\(viewOriginal, copyAll, copyUnfinished, exportLinks, rename, remove\)/);
   assert.match(source, /more\.addEventListener\("click", event => event\.stopPropagation\(\)\)/, "More must not re-render its parent task card when opened");
   assert.match(source, /closeMoreOnOutsideClick/, "More menu must close when focus moves outside it");
   assert.match(source, /event\.key !== "Escape"/, "More menu supports keyboard close");
   assert.match(css, /\.task-card-more-actions[\s\S]*z-index:\s*20/, "More menu stays above task cards");
-  assert.match(html, /id="scrape-open-results"[^>]*>打开结果文件/);
-  assert.match(html, /id="scrape-open-result-folder"[^>]*disabled>打开结果文件夹/);
+  assert.match(html, /id="scrape-open-results"[^>]*data-i18n="openResults"/);
+  assert.match(html, /id="scrape-open-result-folder"[^>]*disabled[^>]*data-i18n="scrapeOpenFolder"/);
   assert.match(source, /\/api\/tasks\/\$\{encodeURIComponent\(state\.currentTaskId\)\}\/results\/open-folder/);
   assert.doesNotMatch(source, /open-folder[^\n]*(path|directory)\s*:/i, "frontend must not submit a path");
 }
@@ -48,7 +48,7 @@ function testCompactReviewAndCreatorLibraryToolbars() {
   assert.match(css, /\.review-toolbar-actions[\s\S]*grid-column:\s*1 \/ -1/);
   assert.match(html, /class="creator-library-actions-left"/);
   assert.match(html, /class="creator-library-actions-right"/);
-  assert.match(html, /id="creator-library-selected-count">已选 0 人/);
+  assert.match(html, /id="creator-library-selected-count"[^>]*data-i18n="creatorLibrarySelectedCount"/);
   [
     "creator-library-card-view", "creator-library-table-view", "creator-library-select-all",
     "creator-library-export", "creator-library-batch-campaign", "creator-library-template-download",

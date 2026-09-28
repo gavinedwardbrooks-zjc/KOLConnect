@@ -14,14 +14,14 @@ const styles = read("webapp/styles.css");
 
 // Assert the production modal rather than a detached helper: account data uses
 // the dedicated endpoints and no longer presents legacy single-account inputs.
-assert.match(html, /id="creator-edit-profile-title">基本资料/);
-assert.match(html, /id="creator-edit-accounts-title">平台账号/);
+assert.match(html, /id="creator-edit-profile-title" data-i18n="creatorBasicProfileTitle">基本资料/);
+assert.match(html, /id="creator-edit-accounts-title" data-i18n="dashboardPlatformAccounts">平台账号/);
 assert.doesNotMatch(html, /id="creator-edit-platform"/);
 assert.doesNotMatch(html, /id="creator-edit-profile-url"/);
 assert.doesNotMatch(html, /id="creator-edit-followers"/);
 assert.match(detail, /\/accounts`/);
 assert.match(detail, /ACCOUNT_OWNED_BY_OTHER_CREATOR/);
-assert.match(detail, /该账号无法移除/);
+assert.match(detail, /creatorAccountRemoveBlocked/);
 assert.doesNotMatch(detail, /profile_url:\s*valueOf\("creator-edit-profile-url"\)/);
 
 for (const [value, title] of [
@@ -60,7 +60,7 @@ assert.match(html, /id="campaign-creator-quote-unit-usd"/);
 assert.match(html, /id="campaign-creator-quote-usd"/);
 assert.match(html, /id="campaign-creator-cost-usd"/);
 assert.match(html, /id="campaign-inline-fx-save"/);
-assert.match(campaignDetail, /尚未设置 \$\{code\} 汇率/);
+assert.match(campaignDetail, /campaignDetailRateUnset/);
 assert.match(campaignDetail, /amount \/ rate/);
 assert.match(campaignDetail, /\/api\/settings\/fx/);
 assert.match(styles, /\.mail-message-item \{/);
@@ -94,6 +94,6 @@ assert.equal(preferences.get().order[0], "today", "today must remain first");
 local.set("kolconnect-dashboard-layout-v2", "not-json");
 assert.equal(preferences.get().visible.today, true, "malformed preferences must fail safe");
 preferences.reset();
-assert.equal(preferences.get().order.join(","), "today,missing_info,campaigns,creator_overview,data_freshness,geography,roi");
+assert.equal(preferences.get().order.join(","), "today,mail_follow_up,missing_info,campaigns,creator_overview,data_freshness,geography,roi");
 
 console.log("Product UI Foundation V1: OK");

@@ -126,7 +126,26 @@ async function run() {
     state: { creatorLibrary: {} },
     params: { creatorId: "creator_one" },
     resources,
-    ui: { showError() {}, showSaved() {} },
+    ui: {
+      showError() {}, showSaved() {},
+      t(key, params = {}) {
+        const labels = {
+          creatorSummaryGenerating: "正在生成本地摘要...", creatorSummaryPartial: "摘要已生成，部分数据仍待补充。",
+          creatorSummaryInsufficient: "数据不足。当前缺少可用于表现分析的数据。", creatorFreshnessStaleDecision: "数据更新时间较早，请在决策前重新采集",
+          creatorSummaryUnavailable: "摘要暂时无法生成，原始达人资料仍可正常查看", creatorSummaryGenerate: "生成摘要",
+          creatorSummaryPrompt: "点击“生成摘要”查看本地确定性分析。", creatorFieldVideoCount: "视频数量", creatorDataPartial: "部分数据可用",
+          creatorDataInsufficient: "数据不足", creatorDataSufficient: "数据较完整", creatorSummaryNoFacts: "暂无可展示的事实摘要。",
+          creatorSummaryNoLimits: "当前未发现额外数据限制。", creatorFieldName: "达人名称", creatorFieldPlatform: "平台", creatorFieldFollowers: "粉丝数",
+          creatorFieldCountry: "国家/地区", creatorFieldLanguage: "语言", creatorFieldContentType: "内容类型", creatorFieldAverageViews: "平均播放",
+          creatorFieldMedianViews: "中位播放", creatorFieldStability: "稳定性", creatorFreshnessRecommended: "建议更新数据", creatorFreshnessUnknown: "数据更新时间未知",
+          creatorSummaryTimeUnknown: "时间未知", dashboardUnnamedCreator: "未命名达人", creatorAccountCount: "{count} 个", creatorFollowers: "粉丝 {count}",
+          creatorAnalysisTimeUnknown: "分析时间未知", creatorFreshnessFresh: "最新（{days} 天前）", creatorFreshnessUpdate: "建议更新（{days} 天前）", creatorFreshnessStale: "数据过期（{days} 天前）",
+          creatorAccount: "账号", creatorUnknownPlatform: "未知平台", creatorDataLoading: "正在加载达人资料...", creatorManualReview: "请结合主页内容进行人工判断。",
+          creatorNoStrengths: "暂无优势结论。", creatorNoRisks: "暂无风险结论。", creatorArchive: "归档达人", creatorRestore: "恢复达人",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
+    },
     navigate: async () => {},
     api: {
       async get(url) {

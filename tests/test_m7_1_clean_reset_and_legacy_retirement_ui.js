@@ -108,6 +108,13 @@ async function run() {
       valueOf: () => "",
       checkedOf: () => false,
       showError: error => { throw error; },
+      t: (key, values = {}) => ({
+        settingsResetPreviewDone: "清理预览已完成。请确认业务数据清理范围后再执行。",
+        settingsResetDone: `本地业务数据已清空。备份文件：${values.backup || "--"}`,
+        settingsOperationNotRun: `操作未执行：${values.reason || "--"}`,
+        settingsListSeparator: "、",
+        settingsResetConfirm: `即将清空本地业务数据：\nCreators: ${values.creators}\nChrome 配置：保留\n飞书配置：保留`,
+      }[key] || key),
     },
   };
   const document = { getElementById: id => elements.get(id) || null };

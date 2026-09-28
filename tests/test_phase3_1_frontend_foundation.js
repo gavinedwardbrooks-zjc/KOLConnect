@@ -189,6 +189,10 @@ async function testSettingsRepeatedEntry() {
     renderCurrentTask: () => {},
     showSaved: message => { notices.push(message); },
     showError: error => { throw error; },
+    t: key => ({
+      settingsWorkbookPathHint: "该路径仅用于旧 Creator_Library.xlsx 的手动备份和导出，不是当前运行数据源。",
+      settingsBackupCreated: "达人库 Excel 备份已创建。",
+    }[key] || key),
   };
 
   runScript("webapp/core/page-resources.js", sandbox);

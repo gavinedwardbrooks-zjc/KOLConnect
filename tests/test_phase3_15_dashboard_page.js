@@ -207,6 +207,18 @@ function roiTrendResponse() {
   };
 }
 
+function mailFollowUpResponse() {
+  return {
+    groups: [
+      { creator_id: "creator_internal", creator_name: "邮件达人", correspondent_email: "creator@example.com", waiting_for: "me", actionability: "normal" },
+      { creator_id: "creator_internal_2", creator_name: "", correspondent_email: "reply@example.com", waiting_for: "creator", actionability: "normal" },
+      { creator_id: "creator_internal_3", creator_name: "待确认达人", correspondent_email: "unknown@example.com", waiting_for: "unknown", actionability: "normal" },
+      { creator_id: "creator_internal_4", creator_name: "已停止达人", correspondent_email: "stopped@example.com", waiting_for: "me", actionability: "stopped" },
+      { creator_id: "creator_internal_5", creator_name: "已延后达人", correspondent_email: "snoozed@example.com", waiting_for: "creator", actionability: "snoozed" },
+    ],
+  };
+}
+
 function deferred() {
   let resolve;
   const promise = new Promise(next => { resolve = next; });
@@ -232,6 +244,9 @@ async function run() {
     "dashboard-v2-spend", "dashboard-v2-roi", "dashboard-v2-missing-email",
     "dashboard-v2-missing-country", "dashboard-v2-missing-language", "dashboard-v2-missing-content-type",
     "dashboard-v2-today-list", "dashboard-v2-campaign-list", "dashboard-v2-platform-list",
+    "dashboard-v2-mail-waiting-me", "dashboard-v2-mail-waiting-creator", "dashboard-v2-mail-waiting-unknown",
+    "dashboard-v2-mail-actionable-total", "dashboard-v2-mail-followup-list", "dashboard-v2-mail-followup-empty",
+    "dashboard-v2-mail-followup-error",
     "dashboard-v2-health-score", "dashboard-v2-health-healthy", "dashboard-v2-health-warning",
     "dashboard-v2-health-critical", "dashboard-v2-country-list", "dashboard-v2-language-list",
     "dashboard-v2-roi-latest",
@@ -246,7 +261,7 @@ async function run() {
     }
   }
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
-  const v2Modules = ["today", "missing_info", "campaigns", "creator_overview", "data_freshness", "geography", "roi"];
+  const v2Modules = ["today", "mail_follow_up", "missing_info", "campaigns", "creator_overview", "data_freshness", "geography", "roi"];
   const v2ModuleContainer = new FakeElement("div", "dashboard-v2-modules");
   v2Modules.forEach(id => {
     const module = new FakeElement("section");
@@ -291,6 +306,7 @@ async function run() {
   const navigations = [];
   const errors = [];
   const responses = [];
+  const mailFollowUpResponses = [];
   const chartCalls = [];
   class FakeChart {
     constructor(context, config) {
@@ -311,6 +327,10 @@ async function run() {
       if (url === "/api/analytics/platforms") return clone(platformAnalyticsResponse());
       if (url === "/api/analytics/geography") return clone(geographyResponse());
       if (url === "/api/analytics/roi-trend") return clone(roiTrendResponse());
+      if (url === "/api/mail/follow-up") {
+        const response = mailFollowUpResponses.length ? mailFollowUpResponses.shift() : mailFollowUpResponse();
+        return response instanceof Promise ? response : clone(response);
+      }
       if (url !== "/api/dashboard") throw new Error(`Unexpected GET ${url}`);
       const response = responses.length ? responses.shift() : dashboardResponse();
       return response instanceof Promise ? response : clone(response);
@@ -322,6 +342,28 @@ async function run() {
     Chart: FakeChart,
     KOLConnectApp: {
       showError(error) { errors.push(error); },
+      t(key, values = {}) {
+        const translations = {
+          dashboardDrawerCount: "共 {count} {unit}", dashboardAccountUnit: "个账号", dashboardBulkFillEmail: "批量补全邮箱",
+          dashboardUnnamedCreator: "未命名达人", dashboardNoRisingCreators: "暂无上升达人。", dashboardNoFallingCreators: "暂无下滑达人。",
+          dashboardNoExpiredData: "暂无过期数据。", dashboardNoDataToUpdate: "暂无需要更新的数据。", dashboardNoPendingContact: "暂无待联系达人。",
+          dashboardNoReviewItems: "暂无待复盘事项。", dashboardNoCooperationData: "暂无合作数据。", dashboardRecentAnalysis: "最近分析：{time}",
+          dashboardExpiredDays: "已过期 {days} 天", dashboardPendingContactStatus: "状态：待联系", dashboardCampaignLabel: "Campaign：{campaign}",
+          dashboardUnnamedCampaign: "未命名 Campaign", dashboardRoiUnavailable: "ROI 暂无", dashboardCampaignSummary: "{count} 个 Campaign · {roi}",
+          dashboardNoPriorityItems: "暂无需要优先处理的事项。", dashboardDataExpired: "数据过期", dashboardPendingContact: "待联系",
+          dashboardWaitingToConnect: "等待建立联系", dashboardUnnamedObject: "未命名对象", dashboardNoCampaigns: "暂无 Campaign。",
+          dashboardCampaignProgress: "{status} · {creators} 位达人 · 已发布 {published}", dashboardNoPlatformAccounts: "暂无平台账号数据。",
+          dashboardOtherPlatform: "其他", dashboardAccountCount: "{count} 个账号", dashboardHealthScore: "{score} 分", dashboardNoData: "暂无数据",
+          dashboardNoSearchMatches: "没有符合当前搜索条件的对象。", dashboardAccountUnavailable: "账号信息未录入", dashboardCountryLanguageMissing: "国家/语言待补充",
+          dashboardViewCreator: "查看达人", dashboardMissingEmailAccounts: "缺少邮箱的账号", dashboardMissingCountryCreators: "缺少国家/地区的达人",
+          dashboardMissingLanguageCreators: "缺少语言的达人", dashboardMissingContentTypeCreators: "缺少内容类型的达人", dashboardCreatorUnit: "位达人",
+          dashboardCreatorChart: "达人", dashboardCooperationChart: "合作", dashboardPublishedChart: "已发布", dashboardActiveCreators: "活跃 {count}",
+          dashboardNoRecordedRoi: "暂无已录入 ROI", dashboardNoTrend: "暂无趋势数据", dashboardMedianViews: "中位播放", dashboardFollowers: "粉丝",
+          dashboardGrowth: "增长", dashboardDecline: "下降", dashboardUnspecifiedCurrency: "未标币种", mailFollowupWaitingMe: "待我回复",
+          mailFollowupWaitingCreator: "待对方回复", mailFollowupWaitingUnknown: "状态未知",
+        };
+        return String(translations[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
+      },
       navigate(pageName, params) {
         navigations.push({ pageName, params });
         return Promise.resolve();
@@ -365,22 +407,25 @@ async function run() {
   }];
   responses.push(initialDashboard);
   await window.KOLConnectPages.navigate("dashboard");
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
   const dashboardCall = calls.find(call => call.url === "/api/dashboard");
   const riskCall = calls.find(call => call.url === "/api/risks");
   const analyticsCall = calls.find(call => call.url === "/api/analytics/platforms");
   const geographyCall = calls.find(call => call.url === "/api/analytics/geography");
   const roiTrendCall = calls.find(call => call.url === "/api/analytics/roi-trend");
+  const mailFollowUpCall = calls.find(call => call.url === "/api/mail/follow-up");
   assert.ok(dashboardCall, "Dashboard should request its existing aggregate payload");
   assert.ok(riskCall, "Dashboard should request the independent risk summary");
   assert.ok(analyticsCall, "Dashboard should request independent platform analytics");
   assert.ok(geographyCall, "Dashboard should request independent geography analytics");
   assert.ok(roiTrendCall, "Dashboard should request independent recorded ROI trend");
+  assert.ok(mailFollowUpCall, "Dashboard should request the canonical Mail Follow-up read model");
   assert.ok(dashboardCall.signal instanceof AbortSignal);
   assert.ok(riskCall.signal instanceof AbortSignal);
   assert.ok(analyticsCall.signal instanceof AbortSignal);
   assert.ok(geographyCall.signal instanceof AbortSignal);
   assert.ok(roiTrendCall.signal instanceof AbortSignal);
+  assert.ok(mailFollowUpCall.signal instanceof AbortSignal);
   assert.equal(elements.get("dashboard-total-creators").textContent, "30");
   assert.equal(elements.get("dashboard-campaigns").textContent, "3");
   assert.equal(elements.get("dashboard-risk-high").textContent, "0");
@@ -389,6 +434,13 @@ async function run() {
   assert.equal(elements.get("dashboard-v2-creator-count").textContent, "30");
   assert.equal(elements.get("dashboard-v2-account-count").textContent, "33");
   assert.equal(elements.get("dashboard-v2-missing-email").textContent, "1");
+  assert.equal(elements.get("dashboard-v2-mail-waiting-me").textContent, "1");
+  assert.equal(elements.get("dashboard-v2-mail-waiting-creator").textContent, "1");
+  assert.equal(elements.get("dashboard-v2-mail-waiting-unknown").textContent, "1");
+  assert.equal(elements.get("dashboard-v2-mail-actionable-total").textContent, "3");
+  assert.equal(elements.get("dashboard-v2-mail-followup-list").children.length, 3);
+  assert.match(elements.get("dashboard-v2-mail-followup-list").children[0].children[0].textContent, /邮件达人/);
+  assert.doesNotMatch(elements.get("dashboard-v2-mail-followup-list").children.map(row => row.children.map(child => child.textContent).join("")).join(""), /creator_internal/);
   assert.equal(elements.get("dashboard-v2-campaign-list").children[0].dataset.dashboardCampaignId, "campaign_one");
   const missingEmailButton = new FakeElement("button");
   missingEmailButton.dataset.dashboardV2Open = "missing-email";
@@ -410,6 +462,10 @@ async function run() {
   accountOverview.dataset.dashboardV2Open = "accounts";
   await sections[0].dispatch("click", { target: accountOverview });
   assert.equal(navigations[2].pageName, "creator-library", "Account overview opens the existing Creator Library workflow");
+  const mailFollowUpOverview = new FakeElement("button");
+  mailFollowUpOverview.dataset.dashboardV2Open = "mail-follow-up";
+  await sections[0].dispatch("click", { target: mailFollowUpOverview });
+  assert.equal(navigations[3].pageName, "mail-follow-up", "Mail Follow-up overview opens the existing Mail Follow-up page");
   assert.equal(chartCalls.length, 5);
   assert.deepEqual(chartCalls[0].config.data.labels, ["TikTok", "YouTube"]);
   assert.deepEqual(chartCalls[1].config.data.datasets[0].data, [9, 3]);
@@ -431,7 +487,7 @@ async function run() {
   assert.equal(customizationModules.children.length, v2Modules.length, "modal renders every V2 module");
   const todayInput = customizationModules.children[0].children[0].children[0];
   assert.equal(todayInput.disabled, true, "Today Actions remains fixed first and visible");
-  const missingInfoInput = customizationModules.children[1].children[0].children[0];
+  const missingInfoInput = customizationModules.children.find(row => row.children[0].children[0].dataset.dashboardVisible === "missing_info").children[0].children[0];
   missingInfoInput.checked = false;
   await customizationModules.dispatch("change", { target: missingInfoInput });
   assert.equal(preferences.get().visible.missing_info, false, "modal visibility control persists through V2 preferences");
@@ -446,14 +502,14 @@ async function run() {
   assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true);
   assert.equal(v2ModuleContainer.children[0].dataset.dashboardV2Module, "today", "today remains first");
   preferences.move("campaigns", -1);
-  assert.deepEqual(Array.from(preferences.get().order).slice(0, 3), ["today", "campaigns", "missing_info"]);
+  assert.deepEqual(Array.from(preferences.get().order).slice(0, 4), ["today", "mail_follow_up", "campaigns", "missing_info"]);
   await window.KOLConnectPages.navigate("products");
   responses.push(dashboardResponse(30));
   await window.KOLConnectPages.navigate("dashboard");
   assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true, "hidden optional section stays absent after Settings -> Dashboard navigation");
   assert.deepEqual(
-    Array.from(v2ModuleContainer.children).map(node => node.dataset.dashboardV2Module).slice(0, 3),
-    ["today", "campaigns", "missing_info"],
+    Array.from(v2ModuleContainer.children).map(node => node.dataset.dashboardV2Module).slice(0, 4),
+    ["today", "mail_follow_up", "campaigns", "missing_info"],
     "Dashboard reapplies the persisted V2 order when it becomes active",
   );
   preferences.setVisible("missing_info", true);
@@ -477,15 +533,15 @@ async function run() {
 
   const creatorButton = elements.get("dashboard-rising-creators").children[0];
   await sections[0].dispatch("click", { target: creatorButton });
-  assert.equal(navigations.length, 4);
-  assert.equal(navigations[3].pageName, "creator-library-detail");
-  assert.equal(navigations[3].params.creatorId, "creator_one");
+  assert.equal(navigations.length, 5);
+  assert.equal(navigations[4].pageName, "creator-library-detail");
+  assert.equal(navigations[4].params.creatorId, "creator_one");
 
   const reviewButton = elements.get("dashboard-incomplete-cooperations").children[0];
   await sections[0].dispatch("click", { target: reviewButton });
-  assert.equal(navigations.length, 5);
-  assert.equal(navigations[4].pageName, "campaign-detail");
-  assert.equal(navigations[4].params.campaignId, "campaign_one");
+  assert.equal(navigations.length, 6);
+  assert.equal(navigations[5].pageName, "campaign-detail");
+  assert.equal(navigations[5].params.campaignId, "campaign_one");
 
   await window.KOLConnectPages.navigate("products");
   assert.equal(chartCalls.filter(chart => chart.destroyed).length, 15, "each Dashboard exit must clean up its own chart set");
@@ -508,6 +564,17 @@ async function run() {
   assert.equal(elements.get("dashboard-growth-chart-empty").hidden, false);
   assert.equal(elements.get("dashboard-total-creators").textContent, "32");
 
+  mailFollowUpResponses.push({ groups: [{ creator_id: "hidden_creator", creator_name: "已停止", correspondent_email: "stopped@example.com", waiting_for: "me", actionability: "stopped" }] });
+  await elements.get("dashboard-refresh").dispatch("click");
+  assert.equal(elements.get("dashboard-v2-mail-actionable-total").textContent, "0");
+  assert.equal(elements.get("dashboard-v2-mail-followup-list").children.length, 0, "stopped and snoozed groups are not actionable Dashboard items");
+  assert.equal(elements.get("dashboard-v2-mail-followup-empty").hidden, false);
+
+  mailFollowUpResponses.push(Promise.reject(new Error("mail follow-up unavailable")));
+  await elements.get("dashboard-refresh").dispatch("click");
+  assert.equal(elements.get("dashboard-v2-mail-followup-error").hidden, false, "Mail Follow-up failure must degrade without breaking Dashboard");
+  assert.equal(elements.get("dashboard-v2-mail-actionable-total").textContent, "--");
+
   const stale = deferred();
   responses.push(stale.promise);
   const callsBeforeStaleRefresh = calls.length;
@@ -519,7 +586,7 @@ async function run() {
   assert.equal(staleCall.signal.aborted, true, "leaving Dashboard must abort its active request");
   stale.resolve(dashboardResponse(999));
   await refreshPromise;
-  assert.equal(elements.get("dashboard-total-creators").textContent, "32", "stale responses must not update Dashboard DOM");
+  assert.equal(elements.get("dashboard-total-creators").textContent, "12", "stale responses must not update Dashboard DOM");
   assert.equal(errors.length, 0);
 
   const appSource = read("webapp/app.js");
@@ -538,6 +605,8 @@ async function run() {
   assert.match(html, /id="dashboard-v2-modules"/);
   assert.match(html, /id="dashboard-v2-drawer"/);
   assert.match(html, /data-dashboard-v2-open="missing-email"/);
+  assert.match(html, /data-dashboard-v2-module="mail_follow_up"/);
+  assert.match(html, /data-dashboard-v2-open="mail-follow-up"/);
   assert.doesNotMatch(read("webapp/pages/dashboard.js"), /account_uid/);
   const styles = read("webapp/styles.css");
   assert.match(styles, /\.dashboard-v2-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.2fr\) minmax\(320px, \.8fr\)/);

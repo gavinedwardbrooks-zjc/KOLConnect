@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
+const indexHtml = fs.readFileSync(path.join(root, "webapp/index.html"), "utf8");
 
 class FakeElement {
   constructor(id = "") {
@@ -78,6 +79,7 @@ async function run() {
     account_id: "account_youtube", creator_id: "creator_insa",
     account_uid: "youtube|https://www.youtube.com/@insa011", platform: "YouTube",
     username: "insa011", profile_url: "https://www.youtube.com/@insa011",
+    account_email: "insa@example.test",
     followers: "1.14M", last_scrape_time: "2026-08-24T08:05:38Z",
     data_source: "系统抓取", updated_at: "2026-08-24T08:20:22Z",
   };
@@ -147,7 +149,23 @@ async function run() {
   const context = {
     params: { creatorId: "creator_insa", accountId: "account_youtube" },
     api, resources: resources(), state: { creatorLibrary: {} },
-    navigate() {}, ui: { showError(error) { throw error; }, showSaved() {} },
+    navigate() {}, ui: {
+      showError(error) { throw error; }, showSaved() {},
+      t(key, params = {}) {
+        const labels = {
+          creatorAccountCount: "{count} 个", creatorFollowers: "粉丝 {count}", creatorUnknownPlatform: "未知平台",
+          creatorAnalysisTimeUnknown: "分析时间未知", creatorFreshnessFresh: "最新（{days} 天前）", creatorFreshnessUpdate: "建议更新（{days} 天前）",
+          creatorFreshnessStale: "数据过期（{days} 天前）", creatorAccount: "账号", creatorDataLoading: "正在加载达人资料...",
+          creatorFieldName: "达人名称", creatorFieldPlatform: "平台", creatorFieldProfileUrl: "主页链接", creatorFieldEmail: "邮箱",
+          creatorFieldFollowers: "粉丝数", creatorFieldCountry: "国家/地区", creatorFieldLanguage: "语言", creatorFieldContentType: "内容类型",
+          creatorFieldBio: "简介", creatorFieldSampleSize: "样本数量", creatorFieldAverageViews: "平均播放", creatorFieldMedianViews: "中位播放",
+          creatorFieldMaxViews: "最高播放", creatorFieldMinViews: "最低播放", creatorFieldViewStability: "播放稳定性", creatorFieldViewCoverage: "播放完整率",
+          creatorManualReview: "请结合主页内容进行人工判断。", creatorNoStrengths: "暂无优势结论。", creatorNoRisks: "暂无风险结论。",
+          creatorArchive: "归档达人", creatorRestore: "恢复达人", creatorSummaryGenerate: "生成摘要", creatorSummaryPrompt: "点击“生成摘要”查看本地确定性分析。",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
+    },
   };
   await registeredPage.load(context);
   registeredPage.bind();
@@ -158,6 +176,7 @@ async function run() {
   assert.equal(values["平台"], "YouTube");
   assert.equal(values["账号"], "@insa011");
   assert.equal(values["主页链接"], youtube.profile_url);
+  assert.equal(values["邮箱"], "insa@example.test");
   assert.equal(values["粉丝数"], "1.14M");
   assert.equal(definitionValues(elements.get("creator-library-video-metrics"))["平均播放"], "120,000");
   const aiStatus = elements.get("creator-ai-summary-status").textContent;
@@ -197,6 +216,13 @@ async function run() {
   assert.equal(elements.get("creator-account-options").children.length, 3);
   assert.equal(definitionValues(elements.get("creator-library-basic"))["平台"], "YouTube");
   assert.equal(response.accounts.map(account => account.account_uid).join("|"), [tiktok, youtube, instagram].map(account => account.account_uid).join("|"));
+  assert.equal((indexHtml.match(/class="detail-tabs"/g) || []).length, 1, "detail navigation must not be duplicated");
+  assert.ok(indexHtml.indexOf('id="creator-account-options"') < indexHtml.indexOf('class="detail-tabs"'));
+  assert.match(indexHtml, /data-detail-tab="overview" data-i18n="creatorOverview">概览</);
+  assert.match(indexHtml, /data-detail-tab="content" data-i18n="creatorContentPerformance">内容表现</);
+  assert.match(indexHtml, /data-detail-tab="history" data-i18n="creatorHistoryTrend">历史趋势</);
+  assert.doesNotMatch(indexHtml, /Legacy Cooperation|data-detail-tab="cooperations"|历史合作（只读）/);
+  assert.ok(indexHtml.indexOf("参与 Campaign") < indexHtml.indexOf("AI 达人摘要"));
   console.log("M7.1g multi-account Creator Detail UI: OK");
 }
 

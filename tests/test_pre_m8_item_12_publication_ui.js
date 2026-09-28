@@ -22,7 +22,7 @@ assert.match(script, /observed_at/);
 assert.match(script, /publications:\s*publicationPayload\(\)|publications,/);
 assert.match(script, /publish_links:\s*publications\.map/);
 assert.match(script, /option\.selected = checkbox\.checked/);
-assert.match(script, /已选择 \$\{selected\.length\} 个账号/);
+assert.match(script, /campaignDetailSelectedAccounts", \{ count: selected\.length \}/);
 assert.match(script, /campaign-account-option\$\{checkbox\.checked \? " is-selected"/);
 assert.match(script, /!picker\.contains\(event\.target\).*picker\.open = false/);
 

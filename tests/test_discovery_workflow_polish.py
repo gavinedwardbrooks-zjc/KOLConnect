@@ -47,6 +47,8 @@ class DiscoveryWorkflowPolishTests(unittest.TestCase):
                 "profile_url": self.links[0],
                 "username": "done",
                 "account_email": "known@example.test",
+                "creator_id": "creator_done",
+                "creator_name": "Done Creator",
             }
         ]
         self.creator_port = CreatorAccountsPort(self.accounts)
@@ -233,6 +235,23 @@ class DiscoveryWorkflowPolishTests(unittest.TestCase):
         self.assertEqual(self.links[1], review["candidates"][0]["profile_url"])
         self.assertEqual(1, library["candidate_count"])
         self.assertTrue(library["candidates"][0]["has_email"])
+
+    def test_review_results_add_creator_navigation_only_for_exact_account_identity(self) -> None:
+        linked = scraper.result_to_row(
+            scraper.build_result(url=self.links[0], platform="TikTok", account_name="done")
+        )
+        unlinked = scraper.result_to_row(
+            scraper.build_result(url=self.links[1], platform="Instagram", account_name="pending")
+        )
+        self.repository.write_results(self.task["id"], [linked, unlinked], scraper.OUTPUT_FIELDS)
+
+        records = self.service.get_task_results(self.task["id"])["records"]
+        linked_record, unlinked_record = records
+        self.assertEqual("creator_done", linked_record["creator_id"])
+        self.assertEqual("Done Creator", linked_record["creator_name"])
+        self.assertEqual("done", linked_record["account_username"])
+        self.assertNotIn("creator_id", unlinked_record)
+        self.assertNotIn("creator_name", unlinked_record)
 
     def test_email_recheck_creation_rebuilds_selection_and_keeps_source_task(self) -> None:
         response = self.service.create_email_recheck_task(

@@ -11,14 +11,26 @@ const html = read("webapp/index.html");
 const pageSource = read("webapp/pages/mail-follow-up.js");
 const registry = read("webapp/core/page-registry.js");
 const appSource = read("webapp/app.js");
+const styles = read("webapp/styles.css");
 
 assert.match(html, /data-page="mail-follow-up"[\s\S]*邮件跟进/);
 assert.match(html, /pages\/mail-follow-up\.js/);
+assert.equal((html.match(/id="mail-followup-google-sheets"/g) || []).length, 1, "Google sync must have one Mail-page entry point");
+assert.doesNotMatch(pageSource, /mail-followup-sync/);
+assert.doesNotMatch(pageSource, /\/api\/mail\/(inbox|sent)\/sync/);
 assert.match(registry, /"mail-follow-up": "mail"/);
 assert.doesNotMatch(pageSource, /innerHTML/);
+assert.match(pageSource, /cell\.textContent = value/);
+assert.doesNotMatch(pageSource, /user-select|webkit-user-select/);
+assert.doesNotMatch(styles, /\.mail-followup-table[^}]*user-select\s*:\s*none/i);
+assert.match(styles, /\.mail-followup-actions/);
 assert.match(html, /id="mail-sync-crm-replies"[^>]*>同步回复状态到飞书表</);
+assert.match(html, /data-page="mail"[\s\S]*id="mail-followup-google-sheets"[^>]*>同步邮件跟进到 Google Sheets</);
+assert.match(html, /data-page="mail-follow-up"[\s\S]*id="mail-followup-refresh"[^>]*>刷新</);
 assert.doesNotMatch(html, /同步回复状态到达人表/);
 assert.match(appSource, /mail-sync-crm-replies[\s\S]*apiPost\("\/api\/mail\/inbox\/sync-crm-replies", \{\}\)/);
+assert.match(appSource, /mail-followup-google-sheets[\s\S]*apiPost\("\/api\/mail\/follow-up\/sync-google-sheets", \{\}\)/);
+assert.doesNotMatch(pageSource, /sync-google-sheets/);
 
 class Element {
   constructor() {
@@ -53,7 +65,7 @@ async function clickAction(container, button) {
   for (let turn = 0; turn < 3; turn += 1) await new Promise(resolve => setImmediate(resolve));
 }
 
-function harness({ groups, queue, prompt = () => "", postFailure = null }) {
+function harness({ groups, queue, prompt = () => "", postFailure = null, postGate = null }) {
   const elements = new Map();
   const filters = ["actionable", "all", "me", "creator", "unknown"].map(value => {
     const button = new Element();
@@ -70,6 +82,11 @@ function harness({ groups, queue, prompt = () => "", postFailure = null }) {
     querySelectorAll(selector) { return selector === "[data-followup-filter]" ? filters : []; },
   };
   const calls = { gets: [], posts: [], fetches: [], saved: [], errors: [] };
+  const translations = {
+    mailFollowupWaitingMe: "待我回复", mailFollowupWaitingCreator: "待对方回复", mailFollowupWaitingUnknown: "状态未知",
+    mailFollowupHistoryPartial: "部分历史", mailFollowupHistoryUnknown: "历史范围未知", mailFollowupHistorySynced: "已同步范围内",
+    mailFollowupDays: "{days} 天", mailFollowupResume: "恢复跟进", mailFollowupSnooze: "稍后处理 ▼", mailFollowupTomorrow: "明天再处理", mailFollowupThreeDays: "3 天后再处理", mailFollowupChooseDate: "选择日期…", mailFollowupClearSnooze: "取消稍后处理", mailFollowupStop: "停止跟进", mailFollowupExportAdd: "加入导出队列", mailFollowupExportRemove: "移出导出队列", unnamedCreator: "未命名达人", mailFollowupUnknownHelp: "当前邮件时间或联系人归属证据不足，暂时无法可靠判断由谁继续回复。", mailFollowupHistoryHelp: "当前同步的数据无法确认是否包含该联系人全部历史邮件，但不影响系统基于已同步邮件判断当前跟进状态。", mailFollowupUpdated: "邮件跟进状态已更新。",
+  };
   let readCount = 0;
   const window = {
     confirm: () => true,
@@ -77,7 +94,12 @@ function harness({ groups, queue, prompt = () => "", postFailure = null }) {
     btoa: value => Buffer.from(value, "binary").toString("base64"),
     URL: { createObjectURL: () => "blob:test", revokeObjectURL() {} },
     KOLConnectPageResources: { create: () => ({ signal: undefined, cleanup() {}, listen(element, event, listener) { element.listeners.set(event, listener); } }) },
-    KOLConnectApp: { showSaved: value => calls.saved.push(value), showError: error => calls.errors.push(String(error.message || error)) },
+    KOLConnectApp: {
+      t(key, values) {
+        return String(translations[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values?.[name] ?? ""));
+      },
+      showSaved: value => calls.saved.push(value), showError: error => calls.errors.push(String(error.message || error)),
+    },
     KOLConnectAPI: {
       get: async url => {
         calls.gets.push(url);
@@ -87,7 +109,8 @@ function harness({ groups, queue, prompt = () => "", postFailure = null }) {
       },
       post: async (url, payload) => {
         calls.posts.push({ url, payload });
-        if (postFailure) throw new Error(postFailure);
+        if (postGate) await postGate;
+        if (postFailure) throw (typeof postFailure === "string" ? new Error(postFailure) : postFailure);
         return { ok: true };
       },
     },
@@ -151,18 +174,14 @@ async function run() {
   await clickAction(h.get("mail-followup-list"), add);
   assert.deepEqual(h.calls.posts.at(-1), { url: "/api/mail/follow-up/actions", payload: { creator_id: "creator-a", correspondent_email: "a@example.com", action: "export_add" } });
 
-  const custom = findAction(h.get("mail-followup-list"), "snooze:custom");
-  h.window.prompt = () => "not-a-date";
-  const beforeInvalid = h.calls.posts.length;
-  await clickAction(h.get("mail-followup-list"), custom);
-  assert.equal(h.calls.posts.length, beforeInvalid, "invalid snooze must not persist");
-  assert.match(h.calls.errors.at(-1), /提醒时间格式无效/);
-
-  h.window.prompt = () => "2026-12-01T09:00:00Z";
-  await clickAction(h.get("mail-followup-list"), custom);
-  assert.deepEqual(h.calls.posts.at(-1), { url: "/api/mail/follow-up/actions", payload: {
-    creator_id: "creator-a", correspondent_email: "a@example.com", action: "snooze", until: "2026-12-01T09:00:00.000Z",
-  } });
+  assert.doesNotMatch(pageSource, /明天提醒|3 天后"|自定义提醒/);
+  assert.match(pageSource, /mail-followup-defer-menu/);
+  assert.match(pageSource, /mailFollowupSnooze|mailFollowupTomorrow|mailFollowupThreeDays|mailFollowupChooseDate|mailFollowupClearSnooze/);
+  assert.doesNotMatch(pageSource, /followupSnoozeMenu/);
+  await clickAction(h.get("mail-followup-list"), findAction(h.get("mail-followup-list"), "snooze:1"));
+  assert.equal(h.calls.posts.at(-1).url, "/api/mail/follow-up/actions");
+  assert.equal(h.calls.posts.at(-1).payload.action, "snooze");
+  assert.ok(h.calls.posts.at(-1).payload.until, "snooze must retain its existing explicit until payload");
 
   await h.get("mail-followup-export-csv").click();
   await h.get("mail-followup-export-xlsx").click();

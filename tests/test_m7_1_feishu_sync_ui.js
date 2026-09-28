@@ -94,6 +94,22 @@ async function run() {
       valueOf: () => "",
       checkedOf: () => false,
       showError: error => { throw error; },
+      t: (key, values = {}) => ({
+        settingsFeishuValidationPassed: "连接与字段合同验证通过。",
+        settingsFeishuDryRunComplete: "Dry Run 已完成，未写入飞书。",
+        settingsFeishuSyncComplete: "同步已完成。",
+        settingsFeishuSyncPartial: "同步部分完成；后续批次已停止。",
+        settingsFeishuSchemaNeedsReview: "飞书表结构需要补充或调整：",
+        settingsFeishuMissingFields: `${values.table || ""} 表缺少：`,
+        settingsFeishuIncompatibleFields: `${values.table || ""} 表字段类型不兼容:`,
+        settingsFeishuCurrentType: `${values.field || ""}（当前类型：${values.type || ""}）`,
+        settingsOperationNotRun: `操作未执行：${values.reason || "--"}`,
+        settingsAvailable: "可用",
+        settingsUnavailable: "不可用",
+        settingsNeedsAttention: "需要处理",
+        settingsConfigurationError: "配置错误",
+        settingsUnknown: "未知",
+      }[key] || key),
     },
   };
   const sandbox = { AbortController, console, document, window };

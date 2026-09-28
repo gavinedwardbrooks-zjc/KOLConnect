@@ -3,6 +3,14 @@ const I18N = {
     appTitle: "KOL联系助手",
     appSubtitle: "海外达人管理与合作工具",
     navDashboard: "控制台",
+    navDiscoverCreators: "发现达人",
+    navCreatorLibrary: "达人库",
+    navPartnerships: "合作管理",
+    navProducts: "产品",
+    navAgencies: "机构",
+    navCampaigns: "合作项目",
+    navMailFollowUp: "邮件跟进",
+    navMailAccounts: "邮箱账户",
     navScrape: "邮箱抓取",
     navDiscover: "链接清洗",
     navAccounts: "Chrome 账号",
@@ -59,7 +67,9 @@ const I18N = {
     accountsTitle: "Chrome 账号",
     accountsSubtitle: "配置用于达人抓取的 Chrome Profile；移除配置不会删除浏览器数据。",
     profilesTitle: "Chrome Profile",
-    refreshProfiles: "刷新 Profile",
+    accountsConfigurationTitle: "Chrome Profile 配置",
+    refreshProfiles: "刷新 Chrome 账号",
+    addAccountConfiguration: "+ 添加账号配置",
     saveAccounts: "保存账号配置",
     mailTitle: "邮件",
     mailSubtitle: "同步达人回复并管理合作邮箱账户。",
@@ -81,13 +91,31 @@ const I18N = {
     saveFailed: "保存失败",
     noAccounts: "暂无账号配置",
     profile: "Profile",
+    accountsProfileLabel: "Chrome Profile",
     alias: "备注名",
+    notes: "备注",
+    accountsAutomationProfile: "KOLConnect 独立自动化 Profile",
+    accountsAvailable: "可用",
+    accountsUnavailable: "不可用",
+    accountsCurrentDefaultProfile: "当前默认 Profile",
+    accountsOpenBrowser: "打开浏览器",
+    accountsRemoveConfiguration: "移除配置",
+    accountsOpened: "已打开：{profile}{alias}",
+    accountsRemoveConfirm: "删除 {profile} 的 KOLConnect 配置？不会删除 Chrome 浏览器资料。",
     open: "打开",
   },
   en: {
-    appTitle: "KOL Connect",
+    appTitle: "KOLConnect",
     appSubtitle: "Global creator management and partnerships",
     navDashboard: "Dashboard",
+    navDiscoverCreators: "Discover Creators",
+    navCreatorLibrary: "Creator Library",
+    navPartnerships: "Partnerships",
+    navProducts: "Products",
+    navAgencies: "Agencies",
+    navCampaigns: "Campaigns",
+    navMailFollowUp: "Mail Follow-up",
+    navMailAccounts: "Mail Accounts",
     navScrape: "Scrape",
     navDiscover: "Link Cleanup",
     navAccounts: "Accounts",
@@ -141,11 +169,13 @@ const I18N = {
     discoverInputLabel: "One link per line",
     discoverOutputTitle: "Normalized result",
     cleanLinks: "Normalize links",
-    accountsTitle: "Account Management",
-    accountsSubtitle: "Configure Chrome profiles for creator capture; removing a configuration never deletes browser data.",
-    profilesTitle: "Profile list",
-    refreshProfiles: "Refresh profiles",
-    saveAccounts: "Save account settings",
+    accountsTitle: "Accounts",
+    accountsSubtitle: "Manage Chrome Profile configurations used for creator discovery. Deleting a configuration does not delete browser data.",
+    profilesTitle: "Chrome Profile",
+    accountsConfigurationTitle: "Chrome Profile Configuration",
+    refreshProfiles: "Refresh Chrome Accounts",
+    addAccountConfiguration: "+ Add Account Configuration",
+    saveAccounts: "Save Account Configuration",
     mailTitle: "Mail",
     mailSubtitle: "Sync creator replies and manage collaboration mail accounts.",
     senderName: "Sender name",
@@ -166,7 +196,17 @@ const I18N = {
     saveFailed: "Save failed",
     noAccounts: "No accounts",
     profile: "Profile",
+    accountsProfileLabel: "Chrome Profile",
     alias: "Alias",
+    notes: "Notes",
+    accountsAutomationProfile: "KOLConnect Dedicated Automation Profile",
+    accountsAvailable: "Available",
+    accountsUnavailable: "Unavailable",
+    accountsCurrentDefaultProfile: "Current Default Profile",
+    accountsOpenBrowser: "Open Browser",
+    accountsRemoveConfiguration: "Remove Configuration",
+    accountsOpened: "Opened: {profile}{alias}",
+    accountsRemoveConfirm: "Remove the KOLConnect configuration for {profile}? Chrome browser data will not be deleted.",
     open: "Open",
   }
 };
@@ -455,6 +495,34 @@ Object.assign(I18N.en, {
   reviewSaved: "Review result saved.",
 });
 
+Object.assign(I18N.zh, {
+  discoveryResumeTask: "恢复任务", discoveryAllPlatforms: "全部平台", discoveryInstagramLogin: "登录状态异常，请重新登录后继续。", discoveryRetryRound: "异常重试：第 {round} 轮", discoveryNoOriginalLinks: "当前任务没有可继续抓取的原始链接。", discoveryContinueTitle: "继续抓取：{name}", discoveryUnnamedTask: "未命名任务", discoveryContinueHint: "使用此任务已保存的原始链接；本次执行会保留在同一任务下。", discoveryOriginalLinkCount: "原始链接 {count}", discoveryCompletedCount: "当前完成 {count}{check}", discoverySelectPlatformRequired: "请选择至少一个平台。", discoveryViewResults: "查看结果", discoveryContinue: "继续抓取", discoveryCopyAllOriginal: "复制全部原始链接", discoveryCopiedAllOriginal: "全部原始链接已复制。", discoveryCopyUnfinished: "复制未完成链接", discoveryCopiedUnfinished: "未完成链接已复制。", discoveryExportOriginal: "导出全部原始链接", discoveryViewOriginal: "查看原始链接", discoveryMore: "更多", discoveryTaskMeta: "{type} · 原始链接 {count} · {status}{timestamp}", discoveryUnfinishedCount: "未完成 {count}",
+  reviewFirst: "首页", reviewPrevious: "上一页", reviewNext: "下一页", reviewLast: "尾页", reviewJumpTo: "跳转到", reviewGo: "确认", reviewStatusSuccess: "正常完成", reviewStatusPartial: "部分完成", reviewStatusMissing: "缺少有效数据", reviewStatusFailed: "抓取失败", reviewStatusLoginRequired: "需要重新登录", reviewStatusPlatformError: "平台异常", reviewResultCaptured: "已获取", reviewResultPartial: "部分待补充", reviewResultAttention: "待补充资料", reviewResultError: "抓取异常", reviewRetry: "重新抓取", reviewUnnamedCreator: "未命名达人", reviewSelectTaskRequired: "请选择任务。", reviewRetryStarted: "已在当前任务中开始重新抓取（{count} 条）。",
+  linkRawLinks: "原始链接", linkEmailList: "邮箱列表", linkOnePerLine: "一行一个链接", linkOneEmailPerLine: "一行一个邮箱", linkClean: "清洗链接", linkCheckEmail: "检查邮箱", linkAccountSubtitle: "整理账号主页链接，方便后续抓取与归档。", linkEmailSubtitle: "检查邮箱是否已收录在本地达人账号中，不会修改数据。", linkReason: "原因：{reason}", linkStatusValid: "有效", linkStatusNormalized: "已标准化", linkStatusDuplicate: "重复", linkStatusInvalid: "无效", linkStatusUnknown: "未知", linkDuplicateLine: "，与第 {line} 行重复", linkDatabaseRecorded: "；已收录", linkEmailDuplicate: "{email}（与第 {line} 行重复{existing}）", linkInvalidEmail: "邮箱格式无效", linkInvalidEmailLine: "第 {line} 行：{value}（{reason}）", linkCountSummary: "共 {total} 行 · 非空 {nonEmpty} 行 · 原样重复 {duplicates} 行",
+  taskDetailSelectTask: "请选择任务。", taskDetailSummary: "创建时间：{createdAt}\n进度：{completed}/{total}，剩余 {pending}\n平台：TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}", taskDetailEdit: "修改", taskDetailEditPrompt: "修改达人主页链接", taskDetailDelete: "删除", taskDetailDeleteConfirm: "确定删除第 {index} 条待处理链接吗？", taskDetailCompletedProtected: "已完成，受保护", taskDetailUrlRequired: "请输入达人主页链接。",
+  reviewNoRetryable: "当前任务没有需要重新抓取的异常记录。", reviewRetryConfirm: "将在当前任务中重新抓取 {count} 条异常记录，是否继续？", reviewTaskCreated: "任务已创建：有效链接 {valid} 条，异常链接 {invalid} 条。", reviewPasteLinkRequired: "请粘贴至少一个链接。", reviewCreateTaskFirst: "请先创建任务。",
+  emailStatusCaptured: "已获取", emailStatusExisting: "已存在", emailStatusNotFound: "未找到", emailStatusUnavailable: "页面无法访问", emailStatusConfirm: "需要人工确认", emailStatusConflict: "邮箱冲突，未覆盖", emailStatusPending: "待抓取", emailSelectSource: "请选择来源并预览待处理账号。", emailTaskOption: "{name} · 原始链接 {count}", emailManualUrlRequired: "请粘贴至少一个主页或视频链接。", emailCandidateLinks: "待处理链接：{count}", emailSelectTask: "请选择抓取任务。", emailCandidateSummary: "总账号：{total} · 待处理：{candidates} · 缺少邮箱：{missing}", emailPreviewRequired: "请先预览待处理账号。", emailCompleteSummary: "处理完成：{total} · 已获取/已有：{found} · 未找到或需处理：{remaining}", emailNoCandidates: "当前范围没有需要抓取邮箱的账号。", emailTaskStarted: "邮箱补全任务已开始：{count} 个账号。", emailSelectReviewTask: "请选择审核任务。", emailEntryUnavailable: "邮箱补全入口暂不可用。", emailReviewSelected: "已选中当前审核任务；默认仅处理缺少邮箱的账号。", scrapeAllPlatforms: "全部平台", scrapeSelectPlatform: "请选择平台",
+  emailEnrichmentTitle: "联系邮箱补全", emailEnrichmentHint: "优先使用 KOLConnect 中已有账号；新结果通过现有服务安全写回 SQLite。", emailSourceQuestion: "你想给哪些达人补邮箱？", emailSourceTask: "最近抓取的达人", emailSourceTaskHint: "从历史抓取任务中选择一批账号", emailSourceReview: "待处理的达人", emailSourceReviewHint: "从审核结果中选择需要补邮箱的账号", emailSourceLibrary: "达人库", emailSourceLibraryHint: "给已经入库的达人补邮箱", emailSourceManual: "临时补邮箱", emailSourceManualHint: "粘贴一批达人链接，仅查找并补充邮箱，不创建新的达人抓取任务", emailScope: "范围", emailScopeMissing: "仅没有邮箱的账号", emailScopeAll: "所有账号", emailUrlLabel: "主页或视频链接", emailUrlPlaceholder: "一行一个 TikTok、Instagram 或 YouTube 链接", emailPreview: "查看待补充范围", emailStart: "开始抓取邮箱", emailSource: "来源", emailResultStatus: "状态", scrapeBatchTitle: "批量抓取达人", scrapeBatchHint: "粘贴 TikTok、Instagram 或 YouTube 达人主页链接，自动抓取账号资料并进入审核。", scrapeAll: "全部", scrapeNoTask: "尚未创建任务", scrapeIdleStatus: "当前状态：空闲", scrapeCompleteHint: "抓取完成后，请在“审核结果”页核对数据。", scrapeOpenFolder: "打开结果文件夹", taskLogWaiting: "等待运行...",
+  reviewFilter: "结果筛选", reviewAttention: "待补充", reviewAll: "全部", reviewFailed: "抓取异常", reviewFillEmail: "补全当前任务邮箱", reviewRetryFailed: "重新抓取异常记录", reviewCreator: "达人", reviewCompletion: "待补充", reviewEmpty: "请选择任务后查看结果。", reviewOpenTaskRequired: "请选择任务。", reviewPlatformAll: "全部", reviewStatusSummary: "成功：{success} / 部分成功：{partial} / 缺少数据：{missing} / 失败：{failed}", reviewRunSummary: "本次抓取：{platforms}\n结果：TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}",
+  taskDetailTitle: "任务详情", taskDetailSubtitle: "查看任务链接、进度和待处理队列；仅可修改尚未完成的链接。", taskDetailBack: "返回任务管理", taskDetailRefresh: "刷新详情", taskDetailSearch: "搜索链接", taskDetailSearchPlaceholder: "链接、平台或状态", taskDetailPlatform: "平台", taskDetailStatus: "状态", taskDetailAll: "全部", taskDetailCompleted: "已完成", taskDetailRunning: "处理中", taskDetailWaiting: "等待", taskDetailAddPlaceholder: "新增达人主页链接", taskDetailAdd: "新增链接", taskDetailNumber: "编号", taskDetailLink: "链接", taskDetailAction: "操作", taskDetailEmpty: "没有可显示的链接。",
+  linkTitle: "账号清洗查重", linkMode: "清洗类型", linkAccount: "账号", linkEmail: "邮箱", linkSummary: "清洗结果汇总", linkInputCount: "非空输入", linkAcceptedCount: "有效且唯一", linkDuplicateCount: "重复", linkInvalidCount: "无效", linkDetails: "逐行处理明细", linkStatusFilter: "状态筛选", linkAllStatus: "全部状态", linkRow: "行", linkCanonicalLink: "标准链接", linkReasonLabel: "说明", linkDetailEmpty: "清洗后将在这里显示每一条非空输入的处理结果。", linkEmailSummary: "邮箱检查结果汇总", linkExisting: "已存在", linkBatchDuplicate: "本批重复", linkUnrecordedInvalid: "未收录 / 无效", linkEmailSource: "邮箱来源",
+  linkNoRecordedEmail: "没有匹配到已收录邮箱。", linkUnrecorded: "未收录", linkCopyUnrecorded: "复制未收录邮箱", linkInvalidInput: "无效输入",
+});
+
+Object.assign(I18N.en, {
+  discoveryResumeTask: "Resume task", discoveryAllPlatforms: "All platforms", discoveryInstagramLogin: "Login is unavailable. Sign in again before continuing.", discoveryRetryRound: "Retry round {round}", discoveryNoOriginalLinks: "This task has no original links available to continue.", discoveryContinueTitle: "Continue scraping: {name}", discoveryUnnamedTask: "Unnamed task", discoveryContinueHint: "Use this task's saved original links. This run remains under the same task.", discoveryOriginalLinkCount: "Original links {count}", discoveryCompletedCount: "Completed {count}{check}", discoverySelectPlatformRequired: "Select at least one platform.", discoveryViewResults: "View results", discoveryContinue: "Continue scraping", discoveryCopyAllOriginal: "Copy all original links", discoveryCopiedAllOriginal: "All original links copied.", discoveryCopyUnfinished: "Copy unfinished links", discoveryCopiedUnfinished: "Unfinished links copied.", discoveryExportOriginal: "Export all original links", discoveryViewOriginal: "View original links", discoveryMore: "More", discoveryTaskMeta: "{type} · {count} original links · {status}{timestamp}", discoveryUnfinishedCount: "{count} unfinished",
+  reviewFirst: "First", reviewPrevious: "Previous", reviewNext: "Next", reviewLast: "Last", reviewJumpTo: "Go to", reviewGo: "Go", reviewStatusSuccess: "Completed", reviewStatusPartial: "Partial", reviewStatusMissing: "No usable data", reviewStatusFailed: "Capture failed", reviewStatusLoginRequired: "Sign in again", reviewStatusPlatformError: "Platform error", reviewResultCaptured: "Captured", reviewResultPartial: "Partially complete", reviewResultAttention: "Needs completion", reviewResultError: "Capture error", reviewRetry: "Retry", reviewUnnamedCreator: "Unnamed Creator", reviewSelectTaskRequired: "Select a task.", reviewRetryStarted: "Retry started for {count} records in this task.",
+  linkRawLinks: "Raw links", linkEmailList: "Email list", linkOnePerLine: "One link per line", linkOneEmailPerLine: "One email per line", linkClean: "Clean links", linkCheckEmail: "Check emails", linkAccountSubtitle: "Organize account homepage links for later capture and filing.", linkEmailSubtitle: "Check whether emails are already recorded in local creator accounts. This does not modify data.", linkReason: "Reason: {reason}", linkStatusValid: "Valid", linkStatusNormalized: "Normalized", linkStatusDuplicate: "Duplicate", linkStatusInvalid: "Invalid", linkStatusUnknown: "Unknown", linkDuplicateLine: ", duplicate of line {line}", linkDatabaseRecorded: "; already recorded", linkEmailDuplicate: "{email} (duplicate of line {line}{existing})", linkInvalidEmail: "Invalid email format", linkInvalidEmailLine: "Line {line}: {value} ({reason})", linkCountSummary: "{total} lines · {nonEmpty} non-empty · {duplicates} exact duplicates",
+  taskDetailSelectTask: "Select a task.", taskDetailSummary: "Created: {createdAt}\nProgress: {completed}/{total}, {pending} remaining\nPlatforms: TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}", taskDetailEdit: "Edit", taskDetailEditPrompt: "Edit creator profile URL", taskDetailDelete: "Delete", taskDetailDeleteConfirm: "Delete pending link #{index}?", taskDetailCompletedProtected: "Completed and protected", taskDetailUrlRequired: "Enter a creator profile URL.",
+  reviewNoRetryable: "This task has no abnormal records to retry.", reviewRetryConfirm: "Retry {count} abnormal records in this task?", reviewTaskCreated: "Task created: {valid} valid links, {invalid} invalid links.", reviewPasteLinkRequired: "Paste at least one link.", reviewCreateTaskFirst: "Create a task first.",
+  emailStatusCaptured: "Captured", emailStatusExisting: "Already exists", emailStatusNotFound: "Not found", emailStatusUnavailable: "Page unavailable", emailStatusConfirm: "Needs manual review", emailStatusConflict: "Email conflict; existing value kept", emailStatusPending: "Pending", emailSelectSource: "Select a source and preview the accounts to process.", emailTaskOption: "{name} · {count} original links", emailManualUrlRequired: "Paste at least one profile or video URL.", emailCandidateLinks: "Links to process: {count}", emailSelectTask: "Select a capture task.", emailCandidateSummary: "Accounts: {total} · To process: {candidates} · Missing email: {missing}", emailPreviewRequired: "Preview the accounts to process first.", emailCompleteSummary: "Complete: {total} · Captured/already present: {found} · Not found or needs review: {remaining}", emailNoCandidates: "There are no accounts in this scope that need email capture.", emailTaskStarted: "Email enrichment task started for {count} accounts.", emailSelectReviewTask: "Select a review task.", emailEntryUnavailable: "Email enrichment is currently unavailable.", emailReviewSelected: "The current review task is selected; only accounts without email are included by default.", scrapeAllPlatforms: "All platforms", scrapeSelectPlatform: "Select platform",
+  emailEnrichmentTitle: "Contact email enrichment", emailEnrichmentHint: "Use existing KOLConnect accounts first; new results write back safely through the current SQLite service.", emailSourceQuestion: "Which creators need email enrichment?", emailSourceTask: "Recently captured creators", emailSourceTaskHint: "Choose a batch of accounts from historical capture tasks", emailSourceReview: "Creators needing attention", emailSourceReviewHint: "Choose accounts needing email from review results", emailSourceLibrary: "Creator Library", emailSourceLibraryHint: "Enrich email for creators already in the library", emailSourceManual: "One-time enrichment", emailSourceManualHint: "Paste creator links to find and add email only; no new creator capture task is created", emailScope: "Scope", emailScopeMissing: "Only accounts without email", emailScopeAll: "All accounts", emailUrlLabel: "Profile or video URLs", emailUrlPlaceholder: "One TikTok, Instagram, or YouTube URL per line", emailPreview: "Preview accounts to enrich", emailStart: "Start email capture", emailSource: "Source", emailResultStatus: "Status", scrapeBatchTitle: "Batch creator capture", scrapeBatchHint: "Paste TikTok, Instagram, or YouTube creator profile links to capture account data for review.", scrapeAll: "All", scrapeNoTask: "No task created", scrapeIdleStatus: "Current status: idle", scrapeCompleteHint: "After capture, review the data on the Review Results page.", scrapeOpenFolder: "Open results folder", taskLogWaiting: "Waiting to run...",
+  reviewFilter: "Result filter", reviewAttention: "Needs completion", reviewAll: "All", reviewFailed: "Capture errors", reviewFillEmail: "Enrich email for this task", reviewRetryFailed: "Retry abnormal records", reviewCreator: "Creator", reviewCompletion: "Needs completion", reviewEmpty: "Select a task to view results.", reviewOpenTaskRequired: "Select a task.", reviewPlatformAll: "All", reviewStatusSummary: "Succeeded: {success} / Partial: {partial} / Missing data: {missing} / Failed: {failed}", reviewRunSummary: "This capture: {platforms}\nResults: TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}",
+  taskDetailTitle: "Task details", taskDetailSubtitle: "View task links, progress, and pending work. Only unfinished links can be changed.", taskDetailBack: "Back to task management", taskDetailRefresh: "Refresh details", taskDetailSearch: "Search links", taskDetailSearchPlaceholder: "Link, platform, or status", taskDetailPlatform: "Platform", taskDetailStatus: "Status", taskDetailAll: "All", taskDetailCompleted: "Completed", taskDetailRunning: "Running", taskDetailWaiting: "Waiting", taskDetailAddPlaceholder: "Add creator profile URL", taskDetailAdd: "Add link", taskDetailNumber: "No.", taskDetailLink: "Link", taskDetailAction: "Action", taskDetailEmpty: "No links to display.",
+  linkTitle: "Account link cleanup", linkMode: "Cleanup type", linkAccount: "Account", linkEmail: "Email", linkSummary: "Cleanup summary", linkInputCount: "Non-empty input", linkAcceptedCount: "Valid and unique", linkDuplicateCount: "Duplicate", linkInvalidCount: "Invalid", linkDetails: "Line-by-line details", linkStatusFilter: "Status filter", linkAllStatus: "All statuses", linkRow: "Row", linkCanonicalLink: "Canonical link", linkReasonLabel: "Reason", linkDetailEmpty: "Processing results for each non-empty input will appear here.", linkEmailSummary: "Email check summary", linkExisting: "Already exists", linkBatchDuplicate: "Duplicate in this batch", linkUnrecordedInvalid: "Unrecorded / invalid", linkEmailSource: "Email source",
+  linkNoRecordedEmail: "No recorded emails matched.", linkUnrecorded: "Unrecorded", linkCopyUnrecorded: "Copy unrecorded emails", linkInvalidInput: "Invalid input",
+});
+
 const MAIL_PROVIDER_DEFAULTS = {
   gmail: {
     imap_host: "imap.gmail.com",
@@ -469,6 +537,8 @@ const MAIL_PROVIDER_DEFAULTS = {
     smtp_port: "465"
   }
 };
+
+window.KOLConnectI18n?.register(I18N);
 
 const state = {
   language: "zh",
@@ -595,7 +665,7 @@ function renderScrapeControls(job = {}) {
   stop.textContent = t("stopTask");
   stop.disabled = stopping;
   start.textContent = status === "interrupted" || resumablePaused
-    ? (state.language === "en" ? "Resume task" : "恢复任务")
+    ? t("discoveryResumeTask")
     : t(["stopped", "completed", "failed"].includes(status) ? "restartTask" : "startTask");
   setText("scrape-control-status", `${t("currentStatus")}：${scrapeStatusLabel(status)}`);
 }
@@ -616,7 +686,7 @@ function renderCurrentTask() {
     `${t("taskCurrent")}：${task.name || task.id || state.currentTaskId}`,
     `${t("taskOriginalLinks")}：${task.input_count ?? totalLinks}`,
     `${t("taskDetected")}：TikTok ${summary.TikTok || 0} / Instagram ${summary.Instagram || 0} / YouTube ${summary.YouTube || 0}`,
-    `${t("taskSelectedPlatform")}：${task.target_platform || "全部"}`,
+    `${t("taskSelectedPlatform")}：${task.target_platform || t("platformAll")}`,
     `${t("taskActualLinks")}：${totalLinks}`,
     `${t("taskFilteredLinks")}：${task.filtered_count || 0}`,
     `${t("taskProgress")}：${task.completed_links || 0}/${totalLinks} (${task.progress || 0}%)`,
@@ -630,10 +700,10 @@ function renderCurrentTask() {
     );
   }
   if (task.instagram_status === "login_required") {
-    value.push(`Instagram：${task.instagram_message || "登录状态异常，请重新登录后继续。"}`);
+    value.push(`Instagram: ${task.instagram_message || t("discoveryInstagramLogin")}`);
   }
   if (Number(task.retry_round) > 0) {
-    value.push(`异常重试：第 ${task.retry_round} 轮`);
+    value.push(t("discoveryRetryRound", { round: task.retry_round }));
   }
   setText("task-current", value.join("\n"));
 }
@@ -652,16 +722,16 @@ function taskPlatformEntries(task) {
 
 function openContinueScrapeDialog(task) {
   const entries = taskPlatformEntries(task);
-  if (!entries.length) throw new Error("当前任务没有可继续抓取的原始链接。");
+  if (!entries.length) throw new Error(t("discoveryNoOriginalLinks"));
   const unfinished = entries.filter(item => item.unfinished > 0);
   const defaultKeys = new Set((unfinished.length ? unfinished : entries).map(item => item.key));
   const dialog = document.createElement("dialog");
   dialog.className = "task-continue-dialog";
   const title = document.createElement("h2");
-  title.textContent = `继续抓取：${task.name || "未命名任务"}`;
+  title.textContent = t("discoveryContinueTitle", { name: task.name || t("discoveryUnnamedTask") });
   const hint = document.createElement("p");
   hint.className = "hint";
-  hint.textContent = "使用此任务已保存的原始链接；本次执行会保留在同一任务下。";
+  hint.textContent = t("discoveryContinueHint");
   const list = document.createElement("div");
   list.className = "task-continue-platforms";
   entries.forEach(item => {
@@ -674,9 +744,9 @@ function openContinueScrapeDialog(task) {
     const name = document.createElement("strong");
     name.textContent = item.label;
     const original = document.createElement("span");
-    original.textContent = `原始链接 ${item.total}`;
+    original.textContent = t("discoveryOriginalLinkCount", { count: item.total });
     const completed = document.createElement("span");
-    completed.textContent = `当前完成 ${item.processed}${item.unfinished === 0 ? " ✓" : ""}`;
+    completed.textContent = t("discoveryCompletedCount", { count: item.processed, check: item.unfinished === 0 ? " ✓" : "" });
     label.append(input, name, original, completed);
     list.appendChild(label);
   });
@@ -685,15 +755,15 @@ function openContinueScrapeDialog(task) {
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.className = "soft-btn";
-  cancel.textContent = "取消";
+  cancel.textContent = t("commonCancel");
   cancel.addEventListener("click", () => dialog.close());
   const start = document.createElement("button");
   start.type = "button";
   start.className = "primary-btn";
-  start.textContent = "开始抓取";
+  start.textContent = t("startTask");
   start.addEventListener("click", async () => {
     const platforms = [...list.querySelectorAll("input:checked")].map(input => input.value);
-    if (!platforms.length) return showError(new Error("请选择至少一个平台。"));
+    if (!platforms.length) return showError(new Error(t("discoverySelectPlatformRequired")));
     start.disabled = true;
     try {
       await apiPost("/api/scrape/start", { taskId: task.id, profile: valueOf("profile-select"), platforms });
@@ -786,7 +856,7 @@ function renderTaskList() {
     const review = document.createElement("button");
     review.type = "button";
     review.className = "mini-btn";
-    review.textContent = "查看结果";
+    review.textContent = t("discoveryViewResults");
     review.addEventListener("click", async event => {
       event.stopPropagation();
       try {
@@ -802,7 +872,7 @@ function renderTaskList() {
     const run = document.createElement("button");
     run.type = "button";
     run.className = "mini-btn";
-    run.textContent = "继续抓取";
+    run.textContent = t("discoveryContinue");
     run.addEventListener("click", event => {
       event.stopPropagation();
       try { openContinueScrapeDialog(task); } catch (error) { showError(error); }
@@ -814,23 +884,23 @@ function renderTaskList() {
     const copyAll = document.createElement("button");
     copyAll.type = "button";
     copyAll.className = "mini-btn";
-    copyAll.textContent = "复制全部原始链接";
+    copyAll.textContent = t("discoveryCopyAllOriginal");
     copyAll.addEventListener("click", async event => {
       event.stopPropagation();
-      try { await navigator.clipboard.writeText(await copyTaskLinks("all")); showSaved("全部原始链接已复制。"); } catch (error) { showError(error); }
+      try { await navigator.clipboard.writeText(await copyTaskLinks("all")); showSaved(t("discoveryCopiedAllOriginal")); } catch (error) { showError(error); }
     });
     const copyUnfinished = document.createElement("button");
     copyUnfinished.type = "button";
     copyUnfinished.className = "mini-btn";
-    copyUnfinished.textContent = "复制未完成链接";
+    copyUnfinished.textContent = t("discoveryCopyUnfinished");
     copyUnfinished.addEventListener("click", async event => {
       event.stopPropagation();
-      try { await navigator.clipboard.writeText(await copyTaskLinks("unfinished")); showSaved("未完成链接已复制。"); } catch (error) { showError(error); }
+      try { await navigator.clipboard.writeText(await copyTaskLinks("unfinished")); showSaved(t("discoveryCopiedUnfinished")); } catch (error) { showError(error); }
     });
     const exportLinks = document.createElement("button");
     exportLinks.type = "button";
     exportLinks.className = "mini-btn";
-    exportLinks.textContent = "导出全部原始链接";
+    exportLinks.textContent = t("discoveryExportOriginal");
     exportLinks.addEventListener("click", async event => {
       event.stopPropagation();
       try {
@@ -845,7 +915,7 @@ function renderTaskList() {
     const viewOriginal = document.createElement("button");
     viewOriginal.type = "button";
     viewOriginal.className = "mini-btn";
-    viewOriginal.textContent = "查看原始链接";
+    viewOriginal.textContent = t("discoveryViewOriginal");
     viewOriginal.addEventListener("click", async event => {
       event.stopPropagation();
       try { await openTaskDetails(task.id); } catch (error) { showError(error); }
@@ -894,7 +964,7 @@ function renderTaskList() {
       const recover = document.createElement("button");
       recover.type = "button";
       recover.className = "mini-btn";
-      recover.textContent = "恢复任务";
+      recover.textContent = t("discoveryResumeTask");
       recover.addEventListener("click", async event => {
         event.stopPropagation();
         try {
@@ -909,7 +979,7 @@ function renderTaskList() {
     const more = document.createElement("details");
     more.className = "task-card-more";
     const moreSummary = document.createElement("summary");
-    moreSummary.textContent = "更多";
+    moreSummary.textContent = t("discoveryMore");
     const moreActions = document.createElement("div");
     moreActions.className = "task-card-more-actions";
     moreActions.append(viewOriginal, copyAll, copyUnfinished, exportLinks, rename, remove);
@@ -941,9 +1011,9 @@ function renderTaskList() {
     const taskType = task.task_type === "manual"
       ? t("taskTypeManual")
       : task.task_type === "email_recheck" ? t("taskTypeEmailRecheck") : t("taskTypeScrape");
-    const platforms = task.available_platforms || task.platforms || [task.target_platform || "全部"];
+    const platforms = task.available_platforms || task.platforms || [task.target_platform || t("platformAll")];
     const timestamp = task.latest_run_at || task.updated_at || task.created_at || "";
-    meta.textContent = `${taskType} · 原始链接 ${task.total_links || 0} · ${scrapeStatusLabel(task.status || "created")}${timestamp ? ` · ${timestamp}` : ""}`;
+    meta.textContent = t("discoveryTaskMeta", { type: taskType, count: task.total_links || 0, status: scrapeStatusLabel(task.status || "created"), timestamp: timestamp ? ` · ${timestamp}` : "" });
 
     const track = document.createElement("div");
     track.className = "task-progress-track";
@@ -963,13 +1033,13 @@ function renderTaskList() {
     platformProgress.className = "task-card-progress-row";
     platformProgress.textContent = Object.entries(task.platform_progress || {})
       .filter(([, value]) => Number(value?.total || 0) > 0)
-      .map(([platform, value]) => `${platform} ${value.processed || 0}/${value.total || 0}，未完成 ${value.unfinished || 0}`)
+      .map(([platform, value]) => `${platform} ${value.processed || 0}/${value.total || 0} · ${t("discoveryUnfinishedCount", { count: value.unfinished || 0 })}`)
       .join(" · ");
     if (platformProgress.textContent) card.appendChild(platformProgress);
     if (task.instagram_status === "login_required") {
       const warning = document.createElement("div");
       warning.className = "task-instagram-warning";
-      warning.textContent = `Instagram：${task.instagram_message || "登录状态异常，请重新登录后继续。"}`;
+      warning.textContent = `Instagram: ${task.instagram_message || t("discoveryInstagramLogin")}`;
       card.appendChild(warning);
     }
     wrap.appendChild(card);
@@ -1007,6 +1077,16 @@ function taskDetailsFilteredLinks() {
   });
 }
 
+function taskDetailStatusLabel(status) {
+  const normalized = String(status || "").trim();
+  const labels = {
+    "已完成": "taskDetailCompleted", completed: "taskDetailCompleted",
+    "处理中": "taskDetailRunning", running: "taskDetailRunning",
+    "等待": "taskDetailWaiting", pending: "taskDetailWaiting",
+  };
+  return labels[normalized] ? t(labels[normalized]) : normalized;
+}
+
 function renderTaskDetails() {
   const body = $("task-detail-body");
   const empty = $("task-detail-empty");
@@ -1014,19 +1094,19 @@ function renderTaskDetails() {
   if (!body || !empty) return;
   body.textContent = "";
   if (!task) {
-    setText("task-detail-summary", "请选择任务。");
+    setText("task-detail-summary", t("taskDetailSelectTask"));
     empty.hidden = false;
     return;
   }
   setText(
     "task-detail-summary",
-    `${task.name || task.id}\n创建时间：${String(task.created_at || "").replace("T", " ").replace("Z", "")}\n进度：${task.completed_links || 0}/${task.total_links || 0}，剩余 ${task.pending_links || 0}\n平台：TikTok ${task.platform_summary?.TikTok || 0} / Instagram ${task.platform_summary?.Instagram || 0} / YouTube ${task.platform_summary?.YouTube || 0}`
+    `${task.name || task.id}\n${t("taskDetailSummary", { createdAt: String(task.created_at || "").replace("T", " ").replace("Z", ""), completed: task.completed_links || 0, total: task.total_links || 0, pending: task.pending_links || 0, tiktok: task.platform_summary?.TikTok || 0, instagram: task.platform_summary?.Instagram || 0, youtube: task.platform_summary?.YouTube || 0 })}`
   );
   const records = taskDetailsFilteredLinks();
   empty.hidden = records.length > 0;
   records.forEach(item => {
     const row = document.createElement("tr");
-    [item.index, item.url, item.platform, item.status].forEach(value => {
+    [item.index, item.url, item.platform, taskDetailStatusLabel(item.status)].forEach(value => {
       const cell = document.createElement("td");
       cell.textContent = String(value || "");
       row.appendChild(cell);
@@ -1036,9 +1116,9 @@ function renderTaskDetails() {
       const edit = document.createElement("button");
       edit.type = "button";
       edit.className = "mini-btn";
-      edit.textContent = "修改";
+      edit.textContent = t("taskDetailEdit");
       edit.addEventListener("click", async () => {
-        const nextUrl = window.prompt("修改达人主页链接", item.url || "");
+        const nextUrl = window.prompt(t("taskDetailEditPrompt"), item.url || "");
         if (nextUrl === null || nextUrl.trim() === item.url) return;
         try {
           await apiPost(`/api/tasks/${encodeURIComponent(state.taskDetails.taskId)}/links`, {
@@ -1051,9 +1131,9 @@ function renderTaskDetails() {
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "mini-btn danger";
-      remove.textContent = "删除";
+      remove.textContent = t("taskDetailDelete");
       remove.addEventListener("click", async () => {
-        if (!window.confirm(`确定删除第 ${item.index} 条待处理链接吗？`)) return;
+        if (!window.confirm(t("taskDetailDeleteConfirm", { index: item.index }))) return;
         try {
           await apiPost(`/api/tasks/${encodeURIComponent(state.taskDetails.taskId)}/links`, {
             action: "delete", index: item.index
@@ -1064,7 +1144,7 @@ function renderTaskDetails() {
       });
       actions.append(edit, remove);
     } else {
-      actions.textContent = "已完成，受保护";
+      actions.textContent = t("taskDetailCompletedProtected");
     }
     row.appendChild(actions);
     body.appendChild(row);
@@ -1107,8 +1187,12 @@ async function apiDelete(url, options = {}) {
   return window.KOLConnectAPI.delete(url, options);
 }
 
-function t(key) {
-  return (I18N[state.language] && I18N[state.language][key]) || key;
+function t(key, params) {
+  const localized = window.KOLConnectI18n?.t(key, params);
+  const value = localized && !localized.startsWith("[missing:")
+    ? localized
+    : (I18N[state.language] && I18N[state.language][key]) || key;
+  return String(value).replace(/\{(\w+)\}/g, (_match, name) => params?.[name] ?? "");
 }
 
 function showToast(message) {
@@ -1151,14 +1235,14 @@ function crmSyncStatusTone(message) {
 
 async function openResults() {
   if (!state.currentTaskId) {
-    throw new Error(state.language === "en" ? "Select a task first." : "请选择任务。")
+    throw new Error(t("reviewOpenTaskRequired"))
   }
   await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/results/open`, {});
 }
 
 async function openResultFolder() {
   if (!state.currentTaskId) {
-    throw new Error(state.language === "en" ? "Select a task first." : "请选择任务。")
+    throw new Error(t("reviewOpenTaskRequired"))
   }
   await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/results/open-folder`, {});
 }
@@ -1231,11 +1315,11 @@ function renderReviewPagination(total, pageSize) {
     item.addEventListener("click", () => goToPage(page));
     return item;
   };
-  pagination.append(button(state.language === "en" ? "First" : "首页", 1, state.review.page <= 1));
+  pagination.append(button(t("reviewFirst"), 1, state.review.page <= 1));
   const previous = document.createElement("button");
   previous.type = "button";
   previous.className = "mini-btn";
-  previous.textContent = state.language === "en" ? "Previous" : "上一页";
+  previous.textContent = t("reviewPrevious");
   previous.disabled = state.review.page <= 1;
   previous.addEventListener("click", () => goToPage(state.review.page - 1));
   pagination.appendChild(previous);
@@ -1257,13 +1341,13 @@ function renderReviewPagination(total, pageSize) {
   const next = document.createElement("button");
   next.type = "button";
   next.className = "mini-btn";
-  next.textContent = state.language === "en" ? "Next" : "下一页";
+  next.textContent = t("reviewNext");
   next.disabled = state.review.page >= totalPages;
   next.addEventListener("click", () => goToPage(state.review.page + 1));
-  pagination.append(next, button(state.language === "en" ? "Last" : "尾页", totalPages, state.review.page >= totalPages));
+  pagination.append(next, button(t("reviewLast"), totalPages, state.review.page >= totalPages));
 
   const jumpLabel = document.createElement("span");
-  jumpLabel.textContent = state.language === "en" ? "Go to" : "跳转到";
+  jumpLabel.textContent = t("reviewJumpTo");
   const jumpInput = document.createElement("input");
   jumpInput.type = "number";
   jumpInput.min = "1";
@@ -1273,7 +1357,7 @@ function renderReviewPagination(total, pageSize) {
   const jumpButton = document.createElement("button");
   jumpButton.type = "button";
   jumpButton.className = "mini-btn";
-  jumpButton.textContent = state.language === "en" ? "Go" : "确认";
+  jumpButton.textContent = t("reviewGo");
   jumpButton.addEventListener("click", () => goToPage(jumpInput.value));
   jumpInput.addEventListener("keydown", event => {
     if (event.key === "Enter") goToPage(jumpInput.value);
@@ -1283,12 +1367,9 @@ function renderReviewPagination(total, pageSize) {
 
 function reviewScrapeStatusLabel(status) {
   const labels = {
-    success: "正常完成",
-    partial_success: "部分完成",
-    missing_data: "缺少有效数据",
-    failed: "抓取失败",
-    login_required: "需要重新登录",
-    platform_error: "平台异常"
+    success: t("reviewStatusSuccess"), partial_success: t("reviewStatusPartial"),
+    missing_data: t("reviewStatusMissing"), failed: t("reviewStatusFailed"),
+    login_required: t("reviewStatusLoginRequired"), platform_error: t("reviewStatusPlatformError")
   };
   return labels[String(status || "success").trim()] || String(status || "success");
 }
@@ -1299,10 +1380,10 @@ function isRetryableReviewStatus(status) {
 
 function reviewPrimaryResultLabel(status) {
   const normalized = String(status || "").trim();
-  if (normalized === "success") return "已获取";
-  if (normalized === "partial_success") return "部分待补充";
-  if (["missing_data", "login_required", "platform_error"].includes(normalized)) return "待补充资料";
-  return "抓取异常";
+  if (normalized === "success") return t("reviewResultCaptured");
+  if (normalized === "partial_success") return t("reviewResultPartial");
+  if (["missing_data", "login_required", "platform_error"].includes(normalized)) return t("reviewResultAttention");
+  return t("reviewResultError");
 }
 
 function pendingReviewRecords() {
@@ -1403,11 +1484,11 @@ function renderReviewQueue() {
 }
 
 async function retryAllFailedReviewRecords() {
-  if (!state.review.taskId) throw new Error("请选择任务。");
+  if (!state.review.taskId) throw new Error(t("taskDetailSelectTask"));
   const data = await apiPost(`/api/tasks/${encodeURIComponent(state.review.taskId)}/results/retry-failed`, {
     profile: valueOf("profile-select")
   });
-  showSaved(`已在当前任务中开始重新抓取（${data.retried_count || 0} 条）。`);
+  showSaved(t("reviewRetryStarted", { count: data.retried_count || 0 }));
   await loadTaskList();
   await refreshScrapeStatus();
 }
@@ -1419,7 +1500,7 @@ async function retryFailedReviewRecord(record) {
     account_uids: [accountUid],
     profile: valueOf("profile-select")
   });
-  showSaved(`已在当前任务中开始重新抓取（${data.retried_count || 0} 条）。`);
+  showSaved(t("reviewRetryStarted", { count: data.retried_count || 0 }));
   await loadTaskList();
   await refreshScrapeStatus();
 }
@@ -1453,18 +1534,12 @@ function emailMissingOnly() {
 
 function emailStatusLabel(status) {
   return {
-    created: "已获取",
-    updated: "已获取",
-    unchanged: "已存在",
-    email_not_found: "未找到",
-    capture_failed: "页面无法访问",
-    login_required: "需要人工确认",
-    platform_error: "页面无法访问",
-    profile_identity_unresolved: "需要人工确认",
-    ambiguous_account: "需要人工确认",
-    email_conflict: "邮箱冲突，未覆盖",
-    pending: "待抓取",
-  }[String(status || "")] || "待抓取";
+    created: t("emailStatusCaptured"), updated: t("emailStatusCaptured"), unchanged: t("emailStatusExisting"),
+    email_not_found: t("emailStatusNotFound"), capture_failed: t("emailStatusUnavailable"),
+    login_required: t("emailStatusConfirm"), platform_error: t("emailStatusUnavailable"),
+    profile_identity_unresolved: t("emailStatusConfirm"), ambiguous_account: t("emailStatusConfirm"),
+    email_conflict: t("emailStatusConflict"), pending: t("emailStatusPending"),
+  }[String(status || "")] || t("emailStatusPending");
 }
 
 function renderEmailEnrichmentRows(rows) {
@@ -1509,7 +1584,7 @@ function renderEmailSourceControls() {
   $("email-source-task-field").hidden = source === "creator_library";
   state.emailEnrichment.previewed = false;
   $("email-enrichment-start").disabled = true;
-  setText("email-enrichment-summary", "请选择来源并预览待处理账号。");
+  setText("email-enrichment-summary", t("emailSelectSource"));
   renderEmailEnrichmentRows([]);
 }
 
@@ -1519,7 +1594,7 @@ function renderEmailTaskOptions() {
   const selected = select.value || state.currentTaskId;
   select.replaceChildren();
   state.tasks.filter(task => task.task_type !== "manual").forEach(task => {
-    select.add(new Option(`${task.name || "未命名任务"} · 原始链接 ${task.total_links || 0}`, task.id));
+    select.add(new Option(t("emailTaskOption", { name: task.name || t("discoveryUnnamedTask"), count: task.total_links || 0 }), task.id));
   });
   if ([...select.options].some(option => option.value === selected)) select.value = selected;
 }
@@ -1528,27 +1603,27 @@ async function previewEmailEnrichment() {
   const source = selectedEmailSource();
   if (source === "manual") {
     const links = valueOf("email-manual-links").split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-    if (!links.length) throw new Error("请粘贴至少一个主页或视频链接。");
+    if (!links.length) throw new Error(t("emailManualUrlRequired"));
     state.emailEnrichment.candidates = links.map(profileUrl => ({ profile_url: profileUrl, status: "pending" }));
     state.emailEnrichment.previewed = true;
-    setText("email-enrichment-summary", `待处理链接：${links.length}`);
+    setText("email-enrichment-summary", t("emailCandidateLinks", { count: links.length }));
     renderEmailEnrichmentRows(state.emailEnrichment.candidates);
     $("email-enrichment-start").disabled = false;
     return;
   }
   const taskId = source === "creator_library" ? "" : valueOf("email-source-task");
-  if (source !== "creator_library" && !taskId) throw new Error("请选择抓取任务。");
+  if (source !== "creator_library" && !taskId) throw new Error(t("emailSelectTask"));
   const params = new URLSearchParams({ source, task_id: taskId, missing_only: String(emailMissingOnly()) });
   selectedEmailPlatforms().forEach(platform => params.append("platform", platform));
   const data = await apiGet(`/api/tasks/email-recheck/candidates?${params}`);
   state.emailEnrichment = { candidates: data.candidates || [], previewed: true, source, taskId };
-  setText("email-enrichment-summary", `总账号：${data.scanned_accounts || 0} · 待处理：${data.candidate_count || 0} · 缺少邮箱：${data.missing_email_count || 0}`);
+  setText("email-enrichment-summary", t("emailCandidateSummary", { total: data.scanned_accounts || 0, candidates: data.candidate_count || 0, missing: data.missing_email_count || 0 }));
   renderEmailEnrichmentRows(state.emailEnrichment.candidates);
   $("email-enrichment-start").disabled = !state.emailEnrichment.candidates.length;
 }
 
 async function startEmailEnrichment() {
-  if (!state.emailEnrichment.previewed) throw new Error("请先预览待处理账号。");
+  if (!state.emailEnrichment.previewed) throw new Error(t("emailPreviewRequired"));
   const source = state.emailEnrichment.source;
   const button = $("email-enrichment-start");
   button.disabled = true;
@@ -1571,7 +1646,7 @@ async function startEmailEnrichment() {
     state.emailEnrichment.candidates = results;
     renderEmailEnrichmentRows(results);
     const found = results.filter(item => ["created", "updated", "unchanged"].includes(item.status)).length;
-    setText("email-enrichment-summary", `处理完成：${results.length} · 已获取/已有：${found} · 未找到或需处理：${results.length - found}`);
+    setText("email-enrichment-summary", t("emailCompleteSummary", { total: results.length, found, remaining: results.length - found }));
     button.disabled = false;
     return;
   }
@@ -1581,27 +1656,27 @@ async function startEmailEnrichment() {
     platforms: selectedEmailPlatforms(),
     missing_only: emailMissingOnly(),
   });
-  if (!data.task) throw new Error("当前范围没有需要抓取邮箱的账号。");
+  if (!data.task) throw new Error(t("emailNoCandidates"));
   state.currentTaskId = data.task.id;
   state.currentTask = data.task;
   window.localStorage.setItem("kolconnect.currentTaskId", data.task.id);
   await apiPost("/api/scrape/start", { taskId: data.task.id, profile: valueOf("profile-select"), platforms: selectedEmailPlatforms() });
   await loadTaskList();
   await refreshScrapeStatus();
-  showSaved(`邮箱补全任务已开始：${data.created_count || 0} 个账号。`);
+  showSaved(t("emailTaskStarted", { count: data.created_count || 0 }));
 }
 
 async function openReviewEmailEnrichment() {
-  if (!state.review.taskId) throw new Error("请选择审核任务。");
+  if (!state.review.taskId) throw new Error(t("emailSelectReviewTask"));
   const source = document.querySelector('input[name="email-source"][value="review_results"]');
   const taskSelect = $("email-source-task");
-  if (!source || !taskSelect) throw new Error("邮箱补全入口暂不可用。");
+  if (!source || !taskSelect) throw new Error(t("emailEntryUnavailable"));
   source.checked = true;
   await setPage("scrape");
   renderEmailTaskOptions();
   taskSelect.value = state.review.taskId;
   renderEmailSourceControls();
-  setText("email-enrichment-summary", "已选中当前审核任务；默认仅处理缺少邮箱的账号。");
+  setText("email-enrichment-summary", t("emailReviewSelected"));
 }
 
 function renderReviewResults() {
@@ -1629,15 +1704,30 @@ function renderReviewResults() {
       if (Object.hasOwn(statusCounts, status)) statusCounts[status] += 1;
     });
     const labels = { tiktok: "TikTok", instagram: "Instagram", youtube: "YouTube" };
-    const platforms = (state.review.platforms || []).map(item => labels[item] || item).join("、") || "全部";
+    const platforms = (state.review.platforms || []).map(item => labels[item] || item).join("、") || t("reviewPlatformAll");
     const counts = state.review.platformResults || {};
-    summary.textContent += `\n成功：${statusCounts.success} / 部分成功：${statusCounts.partial_success} / 缺少数据：${statusCounts.missing_data} / 失败：${statusCounts.failed + statusCounts.login_required + statusCounts.platform_error}`;
-    summary.textContent += `\n本次抓取：${platforms}\n结果：TikTok ${counts.TikTok || 0} / Instagram ${counts.Instagram || 0} / YouTube ${counts.YouTube || 0}`;
+    summary.textContent += `\n${t("reviewStatusSummary", { success: statusCounts.success, partial: statusCounts.partial_success, missing: statusCounts.missing_data, failed: statusCounts.failed + statusCounts.login_required + statusCounts.platform_error })}`;
+    summary.textContent += `\n${t("reviewRunSummary", { platforms, tiktok: counts.TikTok || 0, instagram: counts.Instagram || 0, youtube: counts.YouTube || 0 })}`;
   }
 
   visible.forEach(record => {
     const row = document.createElement("tr");
     reviewCell(row, reviewField(record, "平台"));
+    const linkedCreatorId = reviewField(record, "creator_id").trim();
+    const creatorName = reviewField(record, "creator_name").trim()
+      || reviewField(record, "账号名").trim()
+      || reviewField(record, "account_username").trim()
+      || t("reviewUnnamedCreator");
+    const creatorCell = document.createElement("td");
+    if (linkedCreatorId) {
+      const creatorLink = document.createElement("button");
+      creatorLink.type = "button";
+      creatorLink.className = "text-link";
+      creatorLink.textContent = creatorName;
+      creatorLink.addEventListener("click", () => setPage("creator-library-detail", { creatorId: linkedCreatorId }));
+      creatorCell.appendChild(creatorLink);
+    } else creatorCell.textContent = creatorName;
+    row.appendChild(creatorCell);
     const profileUrl = reviewField(record, "达人链接");
     const profileCell = document.createElement("td");
     if (/^https?:\/\//i.test(profileUrl)) {
@@ -1688,7 +1778,7 @@ function renderReviewResults() {
       const retryButton = document.createElement("button");
       retryButton.type = "button";
       retryButton.className = "mini-btn";
-      retryButton.textContent = "重新抓取";
+      retryButton.textContent = t("reviewRetry");
       retryButton.addEventListener("click", async () => {
         retryButton.disabled = true;
         try {
@@ -1829,6 +1919,7 @@ function registerLegacyPages() {
 }
 
 function renderStaticText() {
+  window.KOLConnectI18n?.apply(document);
   document.title = t("appTitle");
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const key = el.dataset.i18n;
@@ -1872,17 +1963,32 @@ function renderCreatorLibraryConfig(config) {
   setValue("creator-library-workbook-path", config?.workbook_path || "");
 }
 
+function refreshDiscoveryLocale() {
+  renderCurrentTask();
+  renderTaskList();
+  updateTaskLinkCounts();
+  if (state.review.taskId) renderReviewResults();
+  if (state.taskDetails.task) renderTaskDetails();
+  setDiscoverMode(state.discover.mode);
+  renderDiscoverDetails();
+  renderEmailDeduplicationResults(state.discover.emailResults);
+  renderEmailEnrichmentRows(state.emailEnrichment.candidates);
+}
+
 function renderGoogleSheetsConfig(config) {
   setValue("google-sheets-client-id", config?.client_id || "");
   setValue("google-sheets-client-secret", "");
   setValue("google-sheets-spreadsheet-id", config?.spreadsheet_id || "");
-  const labels = { CONNECTED: "已连接", NOT_CONNECTED: "未连接", NOT_CONFIGURED: "未配置" };
-  setText("google-sheets-status", labels[config?.status] || "未配置");
+  const labels = { CONNECTED: "settingsConnected", NOT_CONNECTED: "settingsNotConnected", NOT_CONFIGURED: "settingsNotConfigured" };
+  setText("google-sheets-status", t(labels[config?.status] || "settingsNotConfigured"));
 }
 
 function renderSettingsState(data) {
-  state.language = data.ui?.language || "zh";
-  setValue("ui-language", state.language);
+  const i18n = window.KOLConnectI18n;
+  // Only the first persisted response initializes the running locale.  Later
+  // responses can arrive out of order and must not undo an active UI choice.
+  state.language = i18n?.hydrateLocale(data.ui?.language) || state.language;
+  setValue("ui-language", i18n?.getLocale?.() || state.language);
   const debugMode = !!data.ui?.debug_mode;
   const debugInput = $("debug-mode");
   if (debugInput) debugInput.checked = debugMode;
@@ -1932,27 +2038,30 @@ function renderAccounts(accounts) {
       return wrap;
     };
     row.append(
-      field("Chrome Profile", "profile", account.profile, true),
-      field("备注名", "alias", account.alias),
-      field("备注", "note", account.note),
+      field(t("accountsProfileLabel"), "profile", account.profile, true),
+      field(t("alias"), "alias", account.alias),
+      field(t("notes"), "note", account.note),
     );
     const status = document.createElement("span");
     status.className = "hint";
     status.textContent = account.is_automation
-      ? "KOLConnect 独立自动化 Profile"
-      : (account.available ? "可用" : "不可用");
+      ? t("accountsAutomationProfile")
+      : (account.available ? t("accountsAvailable") : t("accountsUnavailable"));
     const selected = document.createElement("span");
     selected.className = "hint";
-    selected.textContent = account.is_default ? "当前默认 Profile" : "";
+    selected.textContent = account.is_default ? t("accountsCurrentDefaultProfile") : "";
     const open = document.createElement("button");
     open.type = "button";
     open.className = "mini-btn";
-    open.textContent = "打开浏览器";
+    open.textContent = t("accountsOpenBrowser");
     open.disabled = !account.available;
     open.addEventListener("click", async () => {
       try {
         await apiPost("/api/account/open", { profile: account.profile });
-        showSaved(`已打开：${account.profile}${account.alias ? ` · ${account.alias}` : ""}`);
+        showSaved(t("accountsOpened", {
+          profile: account.profile,
+          alias: account.alias ? ` · ${account.alias}` : "",
+        }));
       } catch (error) {
         showError(error);
       }
@@ -1960,9 +2069,9 @@ function renderAccounts(accounts) {
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "mini-btn";
-    remove.textContent = "移除配置";
+    remove.textContent = t("accountsRemoveConfiguration");
     remove.addEventListener("click", () => {
-      if (window.confirm(`删除 ${account.profile} 的 KOLConnect 配置？不会删除 Chrome 浏览器资料。`)) row.remove();
+      if (window.confirm(t("accountsRemoveConfirm", { profile: account.profile }))) row.remove();
     });
     const statusGroup = document.createElement("div");
     statusGroup.className = "chrome-profile-status";
@@ -2206,8 +2315,8 @@ function renderMailMessages() {
 
   const pagination = $("mail-pagination");
   if (pagination) pagination.hidden = filtered.length === 0;
-  setText("mail-page-total", `共 ${filtered.length} 封`);
-  setText("mail-page-summary", `第 ${state.mailInbox.page} / ${totalPages} 页`);
+  setText("mail-page-total", t("mailPageCount", { count: filtered.length }));
+  setText("mail-page-summary", t("mailPageSummary", { page: state.mailInbox.page, total: totalPages }));
   const previous = $("mail-page-previous");
   const next = $("mail-page-next");
   if (previous) previous.disabled = state.mailInbox.page <= 1;
@@ -2306,8 +2415,8 @@ function setDiscoverMode(mode) {
   if (input) input.value = state.discover.inputs[nextMode] || "";
   const accountMode = nextMode === "account";
   const copy = accountMode
-    ? { title: "原始链接", label: "一行一个链接", placeholder: "https://www.tiktok.com/@example", action: "清洗链接", subtitle: "整理账号主页链接，方便后续抓取与归档。" }
-    : { title: "邮箱列表", label: "一行一个邮箱", placeholder: "name@example.com", action: "检查邮箱", subtitle: "检查邮箱是否已收录在本地达人账号中，不会修改数据。" };
+    ? { title: t("linkRawLinks"), label: t("linkOnePerLine"), placeholder: "https://www.tiktok.com/@example", action: t("linkClean"), subtitle: t("linkAccountSubtitle") }
+    : { title: t("linkEmailList"), label: t("linkOneEmailPerLine"), placeholder: "name@example.com", action: t("linkCheckEmail"), subtitle: t("linkEmailSubtitle") };
   setText("discover-input-title", copy.title);
   setText("discover-input-label", copy.label);
   setText("discover-clean", copy.action);
@@ -2334,17 +2443,15 @@ function formatInvalidLinks(items) {
     if (typeof item === "string") return item;
     const originalUrl = String(item?.original_url || "").trim();
     const reason = String(item?.reason || "").trim();
-    return reason ? `${originalUrl}\n原因：${reason}` : originalUrl;
+    return reason ? `${originalUrl}\n${t("linkReason", { reason })}` : originalUrl;
   }).filter(Boolean).join("\n\n");
 }
 
 function discoverStatusLabel(status) {
   return {
-    valid: "有效",
-    normalized: "已标准化",
-    duplicate: "重复",
-    invalid: "无效",
-  }[status] || "未知";
+    valid: t("linkStatusValid"), normalized: t("linkStatusNormalized"),
+    duplicate: t("linkStatusDuplicate"), invalid: t("linkStatusInvalid"),
+  }[status] || t("linkStatusUnknown");
 }
 
 function discoverPlatformLabel(platform) {
@@ -2352,7 +2459,7 @@ function discoverPlatformLabel(platform) {
     tiktok: "TikTok",
     instagram: "Instagram",
     youtube: "YouTube",
-  }[String(platform || "").toLowerCase()] || "未知";
+  }[String(platform || "").toLowerCase()] || t("linkStatusUnknown");
 }
 
 function renderDiscoverDetails() {
@@ -2365,7 +2472,7 @@ function renderDiscoverDetails() {
   visible.forEach(item => {
     const row = document.createElement("tr");
     const duplicateNote = item.status === "duplicate" && item.duplicate_of_line
-      ? `，与第 ${item.duplicate_of_line} 行重复`
+      ? t("linkDuplicateLine", { line: item.duplicate_of_line })
       : "";
     [
       item.line_number,
@@ -2414,11 +2521,11 @@ function renderEmailDeduplicationResults(data) {
   setText("discover-email-count-duplicate", String(summary.input_duplicate_count || 0));
   setText("discover-email-count-unrecorded", `${summary.unrecorded_count || 0} / ${summary.invalid_count || 0}`);
   setValue("discover-email-duplicates-output", duplicates.map(item => {
-    const existingNote = Array.isArray(item.database_matches) && item.database_matches.length ? "；已收录" : "";
-    return `${item.email}（与第 ${item.input_duplicate_of_line} 行重复${existingNote}）`;
+    const existingNote = Array.isArray(item.database_matches) && item.database_matches.length ? t("linkDatabaseRecorded") : "";
+    return t("linkEmailDuplicate", { email: item.email, line: item.input_duplicate_of_line, existing: existingNote });
   }).join("\n"));
   setValue("discover-email-unrecorded-output", unrecorded.join("\n"));
-  setValue("discover-email-invalid-output", invalid.map(item => `第 ${item.line_number} 行：${item.original}（${item.reason || "邮箱格式无效"}）`).join("\n"));
+  setValue("discover-email-invalid-output", invalid.map(item => t("linkInvalidEmailLine", { line: item.line_number, value: item.original, reason: item.reason || t("linkInvalidEmail") })).join("\n"));
   const body = $("discover-email-existing-body");
   if (!body) return;
   body.textContent = "";
@@ -2439,7 +2546,7 @@ function updateTaskLinkCounts() {
   const lines = text ? text.split(/\r?\n/) : [];
   const nonEmpty = lines.map(line => line.trim()).filter(Boolean);
   const duplicateCount = nonEmpty.length - new Set(nonEmpty).size;
-  setText("task-link-counts", `共 ${lines.length} 行 · 非空 ${nonEmpty.length} 行 · 原样重复 ${duplicateCount} 行`);
+  setText("task-link-counts", t("linkCountSummary", { total: lines.length, nonEmpty: nonEmpty.length, duplicates: duplicateCount }));
 }
 
 function updateTaskResultActions() {
@@ -2471,7 +2578,7 @@ function bindTaskPlatformSelector() {
   const updateSummary = () => {
     const selected = options.filter(item => item.checked);
     const labels = selected.map(item => item.parentElement?.textContent?.trim()).filter(Boolean);
-    setText("task-platform-summary", selected.length === options.length ? "全部平台" : labels.join("、") || "请选择平台");
+    setText("task-platform-summary", selected.length === options.length ? t("scrapeAllPlatforms") : labels.join("、") || t("scrapeSelectPlatform"));
   };
   all.addEventListener("change", () => {
     options.forEach(option => { option.checked = all.checked; });
@@ -2550,9 +2657,9 @@ function bindEvents() {
   });
   $("task-detail-add").addEventListener("click", async () => {
     try {
-      if (!state.taskDetails.taskId) throw new Error("请选择任务。");
+      if (!state.taskDetails.taskId) throw new Error(t("taskDetailSelectTask"));
       const url = valueOf("task-detail-add-url").trim();
-      if (!url) throw new Error("请输入达人主页链接。");
+      if (!url) throw new Error(t("taskDetailUrlRequired"));
       await apiPost(`/api/tasks/${encodeURIComponent(state.taskDetails.taskId)}/links`, { action: "add", url });
       setValue("task-detail-add-url", "");
       await loadTaskDetails();
@@ -2568,8 +2675,8 @@ function bindEvents() {
   $("review-retry-failed").addEventListener("click", async () => {
     try {
       const failedCount = state.review.records.filter(record => isRetryableReviewStatus(reviewField(record, "scrape_status"))).length;
-      if (!failedCount) throw new Error("当前任务没有需要重新抓取的异常记录。 ");
-      if (!window.confirm(`将在当前任务中重新抓取 ${failedCount} 条异常记录，是否继续？`)) return;
+      if (!failedCount) throw new Error(t("reviewNoRetryable"));
+      if (!window.confirm(t("reviewRetryConfirm", { count: failedCount }))) return;
       await retryAllFailedReviewRecords();
     } catch (error) {
       showError(error);
@@ -2604,9 +2711,9 @@ function bindEvents() {
   $("task-create").addEventListener("click", async () => {
     try {
       const text = valueOf("task-links");
-      if (!text.trim()) throw new Error(state.language === "en" ? "Paste at least one link." : "请粘贴至少一个链接。");
+      if (!text.trim()) throw new Error(t("reviewPasteLinkRequired"));
       if (!selectedTaskPlatforms().length) {
-        throw new Error(state.language === "en" ? "Select at least one platform." : "请至少选择一个平台。");
+        throw new Error(t("discoverySelectPlatformRequired"));
       }
       const data = await apiPost("/api/tasks", {
         text,
@@ -2622,9 +2729,7 @@ function bindEvents() {
       renderCurrentTask();
       await loadTaskList();
       const invalidCount = Array.isArray(data.invalid_links) ? data.invalid_links.length : 0;
-      showSaved(state.language === "en"
-        ? `Task created: ${data.task.valid_count} valid, ${invalidCount} invalid.`
-        : `任务已创建：有效链接 ${data.task.valid_count} 条，异常链接 ${invalidCount} 条。`);
+      showSaved(t("reviewTaskCreated", { valid: data.task.valid_count, invalid: invalidCount }));
     } catch (error) {
       showError(error);
     }
@@ -2633,7 +2738,7 @@ function bindEvents() {
   $("scrape-start").addEventListener("click", async () => {
     try {
       if (!state.currentTaskId) {
-        throw new Error(state.language === "en" ? "Create a task first." : "请先创建任务。");
+        throw new Error(t("reviewCreateTaskFirst"));
       }
       if (state.currentTask?.status === "interrupted") {
         await apiPost(`/api/tasks/${encodeURIComponent(state.currentTaskId)}/resume`, {});
@@ -2804,9 +2909,24 @@ function bindEvents() {
     }
   });
 
+  $("mail-followup-google-sheets").addEventListener("click", async event => {
+    const button = event.currentTarget;
+    if (button.disabled) return;
+    button.disabled = true;
+    try {
+      const result = await apiPost("/api/mail/follow-up/sync-google-sheets", {});
+      showSaved(t("mailGoogleFollowupSynced", { count: result.row_count || 0 }));
+    } catch (error) {
+      showError(error?.error === "NOT_CONFIGURED" || error?.error === "AUTH_REQUIRED" ? t("mailGoogleConfigurationRequired") : error);
+    } finally {
+      button.disabled = false;
+    }
+  });
+
 }
 
 async function init() {
+  window.KOLConnectI18n?.start();
   registerLegacyPages();
   bindEvents();
   renderStaticText();
@@ -2830,10 +2950,26 @@ window.KOLConnectApp = Object.freeze({
   renderCurrentTask,
   showSaved,
   showError,
-  navigate: setPage,
-  setLanguage(language) {
-    state.language = language;
+  t,
+  text(value) {
+    return window.KOLConnectI18n?.text(value) || value;
   },
+  navigate: setPage,
+  setLanguage(language, options) {
+    state.language = window.KOLConnectI18n?.setLocale(language, options) || state.language;
+  },
+});
+
+window.addEventListener("kolconnect:localechange", event => {
+  state.language = window.KOLConnectI18n?.getLocale?.() || state.language;
+  setValue("ui-language", state.language);
+  renderStaticText();
+  refreshDiscoveryLocale();
+  if (event.detail?.refreshCurrent !== false) {
+    window.KOLConnectPages?.refreshCurrent?.().catch(error => {
+      console.warn("[KOLConnect] locale refresh unavailable", error);
+    });
+  }
 });
 
 window.addEventListener("DOMContentLoaded", init);

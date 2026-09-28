@@ -43,7 +43,23 @@ async function run() {
       if (url.startsWith("/api/campaigns?")) return { campaigns: [] };
       throw new Error("Unexpected URL " + url);
     } },
-    async navigate(...args) { navigations.push(args); }, ui: { showError(error) { throw error; } },
+    async navigate(...args) { navigations.push(args); }, ui: {
+      showError(error) { throw error; },
+      t(key, params = {}) {
+        const labels = {
+          creatorSimilarityMethod: "仅基于本地达人库的结构化证据评分；缺失维度不计零分。", creatorSimilaritySearching: "正在查找本地达人库候选...",
+          creatorSimilarityScore: "相似度 {score}% · 可用证据权重 {weight}/100", creatorSimilarityUnavailable: "相似度 -- · 可比证据不足",
+          creatorDimensionPrice: "报价", creatorDimensionEngagement: "互动率", creatorDimensionTag: "标签", creatorDimensionContent: "内容",
+          creatorDimensionFollowers: "粉丝", creatorDimensionCountryLanguage: "国家/语言", creatorDimensionPlatform: "平台",
+          creatorSimilarityExcluded: "未纳入评分：{dimensions}", creatorSimilarityAllComparable: "所有维度均有可比证据",
+          creatorCountryLanguageMissing: "国家/语言缺项：{dimensions}", creatorFieldCountry: "国家/地区", creatorFieldLanguage: "语言",
+          dashboardViewCreator: "查看达人", creatorNoSimilarCandidates: "暂无具备可用匹配证据的本地达人。", dashboardUnnamedCreator: "未命名达人",
+          creatorSimilaritySummary: "本地候选 {total} 个，展示 {shown} 个；按确定性评分排序，缺失证据不计零分。", creatorSimilarityFailed: "相似达人搜索失败。",
+          creatorDataLoading: "正在加载达人资料...", creatorAccountCount: "{count} 个", creatorSummaryGenerate: "生成摘要", creatorSummaryPrompt: "点击“生成摘要”查看本地确定性分析。",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
+    },
   };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "../webapp/pages/creator-library-detail.js"), "utf8"),
     { window, document, AbortController, URL, console });

@@ -185,7 +185,31 @@ class TaskService:
         return self._get_task_port().finalize_task_documents(task_id, documents).to_response()
 
     def get_task_results(self, task_id: str) -> dict[str, object]:
-        return self._get_task_port().get_task_results(task_id).to_response()
+        response = self._get_task_port().get_task_results(task_id).to_response()
+        creator_port = self._get_creator_port()
+        read_accounts = getattr(creator_port, "get_creator_accounts", None)
+        accounts = read_accounts() if callable(read_accounts) else []
+        accounts_by_uid = {
+            str(account.get("account_uid") or "").strip(): account
+            for account in accounts
+            if isinstance(account, dict)
+            if str(account.get("account_uid") or "").strip()
+        }
+        records = []
+        for record in response.get("records", []):
+            item = dict(record) if isinstance(record, dict) else record
+            if not isinstance(item, dict):
+                records.append(item)
+                continue
+            account = accounts_by_uid.get(str(item.get("account_uid") or "").strip())
+            if account:
+                # Exact account_uid is the only accepted link. Never infer a
+                # Creator relation from a display name, URL, or email address.
+                item["creator_id"] = str(account.get("creator_id") or "")
+                item["creator_name"] = str(account.get("creator_name") or "")
+                item["account_username"] = str(account.get("username") or "")
+            records.append(item)
+        return {**response, "records": records}
 
     def get_task_creator_analysis(self, task_id: str) -> dict[str, object]:
         task = self._get_task_port().get_task(task_id)

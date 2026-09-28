@@ -65,6 +65,21 @@ const window = {
     valueOf() { return ""; },
     checkedOf() { return false; },
     showError(error) { throw error; },
+    t(key, values = {}) {
+      return {
+        settingsDisabled: "未启用",
+        settingsConnecting: "正在连接",
+        settingsConnected: "已连接",
+        settingsConnectionFailed: "连接失败",
+        settingsFeishuLongConnection: "飞书长连接",
+        settingsEnabled: "已启用",
+        settingsFeishuSdkUnavailable: "请安装官方 SDK 后重试。",
+        settingsFeishuChatFailed: `操作未完成：${values.code || "--"}。${values.guidance || ""}`,
+        settingsFeishuConnectTimeout: "飞书长连接建立超时，请检查网络、应用凭据与事件订阅后重试。",
+        settingsFeishuReviewLogs: "请查看运行日志。",
+        settingsUnknown: "未知",
+      }[key] || key;
+    },
   },
   KOLConnectPageResources: {
     create() {

@@ -99,6 +99,13 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         shutdown.assert_called_once_with()
         self.assertEqual(2, thread.join_calls)
 
+    def test_desktop_window_enables_native_text_selection(self) -> None:
+        source = (APP / "launcher.py").read_text(encoding="utf-8")
+
+        # pywebview defaults text_select to False and injects user-select:none
+        # onto the page body. Desktop business data must remain copyable.
+        self.assertIn("text_select=True", source)
+
     def test_sqlite_authority_skips_legacy_excel_startup_backup(self) -> None:
         fake_server = SimpleNamespace(
             STATE={"creator_library": {"workbook_path": "C:/Data/Creator_Library.xlsx"}},

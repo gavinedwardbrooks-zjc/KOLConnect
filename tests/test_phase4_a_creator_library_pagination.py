@@ -210,6 +210,33 @@ class CreatorLibraryPaginationTests(unittest.TestCase):
         self.assertIn("Brazil", result["filter_options"]["country"])
         self.assertIn("USA", result["filter_options"]["country"])
 
+    def test_account_email_is_projected_and_search_is_trimmed_case_insensitive(self) -> None:
+        workbook = load_workbook(self.workbook_path)
+        sheet = workbook["CreatorAccounts"]
+        headers = [str(cell.value or "") for cell in sheet[1]]
+        values = {
+            "account_id": "account_00",
+            "creator_id": "creator_00",
+            "account_uid": "tiktok:zoe",
+            "platform": "TikTok",
+            "username": "zoe",
+            "profile_url": "https://www.tiktok.com/@zoe",
+            "account_email": "Zoe.Contact@Example.Test",
+            "created_at": "2026-07-01T00:00:00Z",
+            "updated_at": "2026-07-01T00:00:00Z",
+        }
+        sheet.append([values.get(header, "") for header in headers])
+        workbook.save(self.workbook_path)
+        workbook.close()
+
+        result = self.repository.getCreatorsPage(
+            page=1, page_size=12, filters={"search": "  zoe.contact@example.test  "},
+        )
+        self.assertEqual(1, result["total"])
+        self.assertEqual("creator_00", result["creators"][0]["creator_id"])
+        self.assertEqual("Zoe.Contact@Example.Test", result["creators"][0]["account_email"])
+        self.assertEqual("zoe", result["creators"][0]["account_username"])
+
 
 if __name__ == "__main__":
     unittest.main()

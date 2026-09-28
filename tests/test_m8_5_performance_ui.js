@@ -25,12 +25,12 @@ const creator = fs.readFileSync(path.join(root, "webapp", "pages", "creator-libr
 
 assert.match(campaign, /\/api\/campaigns\/\$\{encodeURIComponent\(campaignId\)\}\/performance/);
 assert.match(campaign, /coverageText/);
-assert.match(campaign, /最快增长（播放\/天）/);
+assert.match(campaign, /campaignDetailFastestGrowth/);
 assert.match(campaign, /start_observed_at/);
 assert.match(campaign, /end_observed_at/);
 assert.match(campaign, /total_cost_by_currency/);
 assert.match(campaign, /total_quote_by_currency/);
-assert.match(campaign, /ROI：—（缺少权威回报数据）/);
+assert.match(campaign, /campaignDetailMoneySummary/);
 assert.match(campaign, /value === null \|\| value === undefined \|\| value === "" \? "—"/);
 assert.match(campaign, /textContent = value/);
 assert.doesNotMatch(campaign, /performance.*innerHTML/i);
@@ -39,8 +39,8 @@ assert.match(creator, /\/historical-performance/);
 assert.match(creator, /total_cost_by_currency/);
 assert.match(creator, /total_quote_by_currency/);
 assert.match(creator, /efficiency_by_currency/);
-assert.match(creator, /ROI：--（缺少权威回报数据）/);
-assert.match(creator, /textContent = `\$\{currency\} · CPV/);
+assert.match(creator, /creatorHistoryRoiUnavailable/);
+assert.match(creator, /creatorHistoryEfficiency/);
 assert.doesNotMatch(creator, /历史.*innerHTML/i);
 
 // Existing M8.4 refresh and M5.2 risk/navigation surfaces remain present.
@@ -65,7 +65,38 @@ function harness(source, hook) {
     },
     createElement() { return new Element(); },
   };
-  const window = { KOLConnectPages: { registerPage() {} } };
+  const window = {
+    KOLConnectPages: { registerPage() {} },
+    KOLConnectI18n: {
+      t(key, values = {}) {
+        return {
+          campaignDetailCoverage: `${values.valid} / ${values.total} 条有数据`,
+          campaignDetailMoneySummary: `确认成本：${values.cost} · 历史报价：${values.quote} · ROI：—（缺少权威回报数据）`,
+          campaignDetailTopCreator: "最佳达人",
+          campaignDetailTopVideo: "最佳视频",
+          campaignDetailHighestEngagement: "最高互动率",
+          campaignDetailFastestGrowth: "最快增长（播放/天）",
+          campaignDetailNoViews: "暂无可用播放数据",
+          campaignDetailNoEngagement: "暂无可用互动率",
+          campaignDetailNeedTwoObservations: "至少需要两个不同时间的播放观察",
+          unnamedCreator: "未命名达人",
+          creatorUnknownPlatform: "未知平台",
+          creatorHistoryCooperations: "合作次数",
+          creatorHistoryCooperationsHint: "按 CampaignCreator 去重",
+          creatorHistoryCampaigns: "历史 Campaign",
+          creatorHistoryCampaignsHint: "按 campaign_id 去重",
+          creatorHistoryAverageViews: "平均播放",
+          creatorHistoryAverageEngagement: "平均互动率",
+          creatorHistoryCoverage: `${values.valid} / ${values.total} 条有数据`,
+          creatorHistoryMoneyEfficiency: "金额与效率",
+          creatorHistoryMoneySummary: `确认成本：${values.cost} · 历史报价：${values.quote}`,
+          creatorHistoryEfficiency: `${values.currency} · CPV ${values.cpv} · CPE ${values.cpe}`,
+          creatorHistoryRoiUnavailable: "ROI：--（缺少权威回报数据）",
+          campaignDetailAccountUnrecorded: "账号未记录",
+        }[key] || key;
+      },
+    },
+  };
   const context = { window, document, Intl, URL, console };
   vm.runInNewContext(source.replace(/\}\)\(window\);\s*$/, `${hook}\n})(window);`), context);
   return { window, elements, get: document.getElementById };

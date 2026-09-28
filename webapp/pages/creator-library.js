@@ -1,14 +1,23 @@
 (function registerCreatorLibraryPage(global) {
   "use strict";
 
-  const STATUS_LABELS = Object.freeze({
-    discovered: "已发现",
-    contacted: "已联系",
-    negotiating: "洽谈中",
-    cooperating: "合作中",
-    completed: "已完成",
-    rejected: "已拒绝",
-  });
+  function t(key, params) {
+    return global.KOLConnectApp?.t?.(key, params)
+      || global.KOLConnectI18n?.t?.(key, params)
+      || key;
+  }
+
+  function statusLabel(status) {
+    const keys = {
+      discovered: "creatorStatusDiscovered",
+      contacted: "creatorStatusContacted",
+      negotiating: "creatorStatusNegotiating",
+      cooperating: "creatorStatusCooperating",
+      completed: "creatorStatusCompleted",
+      rejected: "creatorStatusRejected",
+    };
+    return t(keys[status] || "creatorStatusDiscovered");
+  }
 
   function createCreatorCampaignModal(context) {
     let creator = null;
@@ -33,7 +42,7 @@
       target.dataset.tone = tone;
     }
 
-    function setSubmitState(disabled, label = "确认加入") {
+    function setSubmitState(disabled, label = t("creatorLibraryConfirmAdd")) {
       const button = modalElement("creator-campaign-submit");
       if (!button) return;
       button.disabled = disabled;
@@ -52,10 +61,10 @@
     }
 
     function accountLabel(account, preferredPlatform) {
-      const platform = String(account.platform || "未标注平台");
+      const platform = String(account.platform || t("creatorLibraryUnspecifiedPlatform"));
       const identity = account.username || account.profile_url || account.account_uid || account.account_id;
       const preferred = preferredPlatform && platform.toLowerCase() === preferredPlatform.toLowerCase();
-      return `${platform} · ${identity || "未命名账号"}${preferred ? "（匹配 Campaign 平台）" : ""}`;
+      return `${platform} · ${identity || t("creatorLibraryUnnamedAccount")}${preferred ? t("creatorLibraryCampaignPlatformMatch") : ""}`;
     }
 
     function renderAccounts() {
@@ -71,17 +80,17 @@
         accountLabel(account, platform),
         String(account.account_id || ""),
       ));
-      setSelectOptions(select, options, accounts.length ? "请选择执行账号" : "暂无可用账号");
+      setSelectOptions(select, options, accounts.length ? t("creatorLibraryChooseAccount") : t("creatorLibraryNoAccounts"));
       if (accounts.length === 1) select.value = String(accounts[0].account_id || "");
       select.disabled = accounts.length === 0;
       if (hint) {
         hint.textContent = accounts.length === 0
-          ? "该达人暂无可用社交账号，请先完善达人账号信息。"
+          ? t("creatorLibraryNoAccountsHint")
           : accounts.length === 1
-            ? "已自动选择该达人的唯一社交账号。"
+            ? t("creatorLibraryOneAccountHint")
             : platform
-              ? `已优先排列与 ${platform} 匹配的账号，请人工确认执行账号。`
-              : "该达人有多个账号，请人工选择本次合作的执行账号。";
+              ? t("creatorLibraryMatchingAccountHint", { platform })
+              : t("creatorLibraryMultipleAccountsHint");
       }
       setSubmitState(accounts.length === 0 || campaigns.length === 0);
     }
@@ -92,10 +101,10 @@
         [campaign.name, campaign.product_name, campaign.platform].filter(Boolean).join(" · "),
         String(campaign.campaign_id || ""),
       ));
-      setSelectOptions(select, options, campaigns.length ? "请选择 Campaign" : "暂无可用 Campaign");
+      setSelectOptions(select, options, campaigns.length ? t("creatorLibraryChooseCampaign") : t("creatorLibraryNoCampaigns"));
       select.disabled = campaigns.length === 0;
       renderAccounts();
-      if (!campaigns.length) setMessage("当前没有可加入的 Campaign。", "warning");
+      if (!campaigns.length) setMessage(t("creatorLibraryNoCampaignsMessage"), "warning");
     }
 
     function close() {
@@ -113,25 +122,25 @@
       const modal = modalElement("creator-campaign-modal");
       if (modal) modal.hidden = true;
       setMessage("");
-      setSelectOptions(modalElement("creator-campaign-select"), [], "请选择 Campaign");
-      setSelectOptions(modalElement("creator-campaign-account-select"), [], "请选择执行账号");
+      setSelectOptions(modalElement("creator-campaign-select"), [], t("creatorLibraryChooseCampaign"));
+      setSelectOptions(modalElement("creator-campaign-account-select"), [], t("creatorLibraryChooseAccount"));
       setSubmitState(true);
     }
 
     async function open(record, options = {}) {
       const creatorId = String(record?.creator_id || record?.analysis_id || "").trim();
-      if (!creatorId) throw new Error("缺少 Creator ID，无法加入 Campaign。");
+      if (!creatorId) throw new Error(t("creatorLibraryMissingCreator"));
       close();
       const currentRequest = ++requestId;
       creator = { ...record, creator_id: creatorId };
       onCreated = typeof options.onCreated === "function" ? options.onCreated : null;
       const modal = modalElement("creator-campaign-modal");
-      if (!modal) throw new Error("加入 Campaign 窗口未加载。");
+      if (!modal) throw new Error(t("creatorLibraryCampaignModalMissing"));
       modal.hidden = false;
-      modalElement("creator-campaign-creator-name").textContent = record.creator_name || "未命名达人";
-      modalElement("creator-campaign-agency-name").textContent = record.agency_name || "暂无 Agency";
-      setMessage("正在加载 Campaign 和达人账号...", "loading");
-      setSubmitState(true, "正在加载...");
+      modalElement("creator-campaign-creator-name").textContent = record.creator_name || t("unnamedCreator");
+      modalElement("creator-campaign-agency-name").textContent = record.agency_name || "--";
+      setMessage(t("creatorLibraryLoadCampaignFailed"), "loading");
+      setSubmitState(true, t("creatorLibraryLoading"));
       campaignsController = context.resources.createAbortController();
       detailController = context.resources.createAbortController();
       try {
@@ -149,16 +158,16 @@
         const detailRecord = detailData.record || {};
         modalElement("creator-campaign-creator-name").textContent = detailRecord.creator_name
           || creator.creator_name
-          || "未命名达人";
+          || t("unnamedCreator");
         modalElement("creator-campaign-agency-name").textContent = detailRecord.agency_name
           || creator.agency_name
-          || "暂无 Agency";
+          || "--";
         setMessage("");
         setSubmitState(false);
         renderCampaigns();
       } catch (error) {
         if (error?.name === "AbortError" || currentRequest !== requestId) return;
-        setMessage(error.message || "无法加载 Campaign 或达人账号。", "error");
+        setMessage(error.message || t("creatorLibraryLoadCampaignFailed"), "error");
         setSubmitState(true);
       }
     }
@@ -169,21 +178,21 @@
       const campaignId = String(modalElement("creator-campaign-select")?.value || "").trim();
       const accountId = String(modalElement("creator-campaign-account-select")?.value || "").trim();
       if (!campaignId) {
-        setMessage("请选择 Campaign。", "warning");
+        setMessage(t("creatorLibraryCampaignSelectedRequired"), "warning");
         return;
       }
       if (!accounts.length) {
-        setMessage("该达人暂无可用社交账号，请先完善达人账号信息。", "warning");
+        setMessage(t("creatorLibraryNoAccountsHint"), "warning");
         return;
       }
       if (!accountId) {
-        setMessage("请选择本次合作的执行账号。", "warning");
+        setMessage(t("creatorLibraryAccountSelectedRequired"), "warning");
         return;
       }
       submitController?.abort();
       submitController = context.resources.createAbortController();
       setMessage("");
-      setSubmitState(true, "正在加入...");
+      setSubmitState(true, t("creatorLibraryJoining"));
       try {
         const result = await context.api.post(
           `/api/campaigns/${encodeURIComponent(campaignId)}/creators`,
@@ -191,14 +200,14 @@
           { signal: submitController.signal },
         );
         const callback = onCreated;
-        const creatorName = creator.creator_name || "该达人";
+        const creatorName = creator.creator_name || t("unnamedCreator");
         close();
         if (callback) await callback(result.campaign_creator);
-        context.ui.showSaved(`${creatorName} 已加入 Campaign。`);
+        context.ui.showSaved(t("creatorLibraryCampaignAdded", { creator: creatorName }));
       } catch (error) {
         if (error?.name === "AbortError") return;
         setMessage(
-          error?.status === 409 ? "该达人已经加入此 Campaign。" : (error.message || "加入 Campaign 失败。"),
+          error?.status === 409 ? t("creatorLibraryCampaignAlreadyAdded") : (error.message || t("creatorLibraryCampaignAddFailed")),
           "error",
         );
         setSubmitState(false);
@@ -236,22 +245,22 @@
   });
 
   function createCreatorDeleteModal(context) {
-    const IMPACT_LABELS = Object.freeze({
-      creators: "达人主记录",
-      creator_accounts: "账号",
-      videos: "视频",
+    const IMPACT_LABEL_KEYS = Object.freeze({
+      creators: "creatorDeleteCreators",
+      creator_accounts: "creatorDeleteAccounts",
+      videos: "creatorDeleteVideos",
       insights: "Insight",
       analysis_data: "Analysis",
       creator_snapshots: "Creator Snapshots",
       video_snapshots: "Video Snapshots",
-      campaign_creators: "Campaign 关系",
-      follow_up_logs: "跟进记录",
-      task_artifacts: "任务文件",
-      data_protection: "数据保护记录",
-      legacy_sources: "Legacy 记录",
-      cooperations: "历史合作",
-      embedded_analysis_references: "嵌入式 Analysis 引用",
-      unmapped_task_artifacts: "未解析任务文件",
+      campaign_creators: "creatorDeleteCampaignRelations",
+      follow_up_logs: "creatorDeleteFollowUpLogs",
+      task_artifacts: "creatorDeleteTaskArtifacts",
+      data_protection: "creatorDeleteProtectionRecords",
+      legacy_sources: "creatorDeleteLegacySources",
+      cooperations: "creatorDeleteCooperations",
+      embedded_analysis_references: "creatorDeleteEmbeddedReferences",
+      unmapped_task_artifacts: "creatorDeleteUnmappedArtifacts",
     });
     let creator = null;
     let impact = null;
@@ -279,7 +288,7 @@
       const refresh = modalElement("creator-delete-refresh");
       if (confirm) {
         confirm.disabled = submitting || !impact?.can_delete || !impact?.preview_fingerprint;
-        confirm.textContent = submitting ? "正在永久删除..." : "确认永久删除";
+        confirm.textContent = submitting ? t("creatorDeleteSubmitting") : t("creatorDeleteConfirm");
       }
       if (refresh) refresh.disabled = submitting || !creator;
     }
@@ -295,12 +304,12 @@
       if (list) {
         list.replaceChildren();
         const values = impact?.impact && typeof impact.impact === "object" ? impact.impact : {};
-        Object.entries(IMPACT_LABELS).forEach(([key, label]) => {
+        Object.entries(IMPACT_LABEL_KEYS).forEach(([key, labelKey]) => {
           if (!Object.prototype.hasOwnProperty.call(values, key)) return;
           const item = document.createElement("li");
           const name = document.createElement("span");
           const count = document.createElement("strong");
-          name.textContent = label;
+          name.textContent = t(labelKey);
           count.textContent = String(impactCount(values[key]));
           item.append(name, count);
           list.appendChild(item);
@@ -310,7 +319,7 @@
         blockers.replaceChildren();
         (impact?.blockers || []).forEach(blocker => {
           const item = document.createElement("li");
-          item.textContent = blocker.message || blocker.code || "存在无法安全处理的关联数据。";
+          item.textContent = blocker.message || blocker.code || t("creatorDeleteUnknownBlocker");
           blockers.appendChild(item);
         });
         blockers.hidden = !impact?.blockers?.length;
@@ -318,8 +327,8 @@
       const state = modalElement("creator-delete-state");
       if (state) {
         state.textContent = impact?.can_delete
-          ? "影响检查已通过，可以继续确认。"
-          : "当前无法永久删除。请先处理下列阻止项。";
+          ? t("creatorDeleteReady")
+          : t("creatorDeleteBlocked");
         state.dataset.tone = impact?.can_delete ? "ready" : "blocked";
       }
       setButtons();
@@ -349,7 +358,7 @@
       loadingController = context.resources.createAbortController();
       const currentRequest = ++requestId;
       impact = null;
-      setMessage(message || "正在检查永久删除影响...", message ? "warning" : "loading");
+      setMessage(message || t("creatorDeleteChecking"), message ? "warning" : "loading");
       setButtons();
       try {
         const result = await context.api.getCreatorDeleteImpact(
@@ -362,21 +371,21 @@
         if (!message) setMessage("");
       } catch (error) {
         if (error?.name === "AbortError" || currentRequest !== requestId) return;
-        setMessage(error.message || "无法读取永久删除影响。", "error");
+        setMessage(error.message || t("creatorDeleteLoadFailed"), "error");
         setButtons();
       }
     }
 
     async function open(record, options = {}) {
       const creatorId = String(record?.creator_id || record?.analysis_id || "").trim();
-      if (!creatorId) throw new Error("缺少 Creator ID，无法检查永久删除影响。");
+      if (!creatorId) throw new Error(t("creatorDeleteMissingCreator"));
       close();
       creator = { ...record, creator_id: creatorId };
       onDeleted = typeof options.onDeleted === "function" ? options.onDeleted : null;
       const modal = modalElement("creator-delete-modal");
-      if (!modal) throw new Error("永久删除确认窗口未加载。");
+      if (!modal) throw new Error(t("creatorDeleteModalMissing"));
       modal.hidden = false;
-      modalElement("creator-delete-creator-name").textContent = record.creator_name || "未命名达人";
+      modalElement("creator-delete-creator-name").textContent = record.creator_name || t("unnamedCreator");
       await loadImpact();
     }
 
@@ -396,27 +405,27 @@
         const callback = onDeleted;
         close();
         if (callback) await callback();
-        context.ui.showSaved("达人已永久删除。");
+        context.ui.showSaved(t("creatorDeleteSuccess"));
       } catch (error) {
         if (error?.name === "AbortError") return;
         submitting = false;
         const code = error?.responseData?.error || error?.message;
         if (code === "DELETE_PREVIEW_STALE") {
-          await loadImpact("相关数据已发生变化，请重新确认删除影响。");
+          await loadImpact(t("creatorDeleteStale"));
         } else if (code === "DELETE_BLOCKED") {
-          await loadImpact("当前出现新的安全阻止项，已刷新删除影响。");
+          await loadImpact(t("creatorDeleteNewBlocker"));
         } else if (code === "SHARED_STORAGE_LOCK_TIMEOUT") {
           impact = null;
-          setMessage("当前数据正在被其他操作修改，请稍后重新检查影响。", "warning");
+          setMessage(t("creatorDeleteStorageLocked"), "warning");
           setButtons();
         } else if (code === "CREATOR_NOT_FOUND") {
           const callback = onDeleted;
           close();
           if (callback) await callback();
-          context.ui.showSaved("达人已不存在，列表已刷新。");
+          context.ui.showSaved(t("creatorDeleteNotFound"));
         } else {
           impact = null;
-          setMessage("永久删除失败，数据已保持或恢复到安全状态。请稍后重试。", "error");
+          setMessage(t("creatorDeleteFailed"), "error");
           setButtons();
         }
       }
@@ -458,12 +467,12 @@
   const PAGE_SIZES = Object.freeze({ card: [12, 24, 48], table: [25, 50, 100] });
   const DEFAULT_PAGE_SIZE = Object.freeze({ card: 24, table: 50 });
   const XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-  const IMPORT_ERROR_LABELS = Object.freeze({
-    MISSING_REQUIRED_FIELD: "必填字段缺失",
-    INVALID_PLATFORM: "平台无效",
-    INVALID_PROFILE_URL: "主页链接无效",
-    DUPLICATE_IN_FILE: "文件内存在重复达人",
-    UNKNOWN_AGENCY: "Agency 不存在",
+  const IMPORT_ERROR_KEYS = Object.freeze({
+    MISSING_REQUIRED_FIELD: "creatorImportMissingRequired",
+    INVALID_PLATFORM: "creatorImportInvalidPlatform",
+    INVALID_PROFILE_URL: "creatorImportInvalidProfileUrl",
+    DUPLICATE_IN_FILE: "creatorImportDuplicateInFile",
+    UNKNOWN_AGENCY: "creatorImportUnknownAgency",
   });
 
   function element(id) {
@@ -491,12 +500,12 @@
   }
 
   function formatTrend(change) {
-    if (!change || change.status === "no_history") return "暂无历史数据";
+    if (!change || change.status === "no_history") return t("creatorImportNoHistory");
     if (change.status !== "available" || change.delta === null || change.delta === undefined) return "--";
     const amount = formatMetric(Math.abs(Number(change.delta)));
-    if (change.direction === "growth") return `↑ 增长 ${amount}`;
-    if (change.direction === "decline") return `↓ 下降 ${amount}`;
-    return "— 无变化";
+    if (change.direction === "growth") return t("creatorTrendGrowth", { amount });
+    if (change.direction === "decline") return t("creatorTrendDecline", { amount });
+    return t("creatorTrendNoChange");
   }
 
   function renderOptions(id, values, label) {
@@ -570,8 +579,8 @@
 
     const start = (state.page - 1) * state.pageSize + 1;
     const end = Math.min(start + state.records.length - 1, state.total);
-    summary.textContent = `第 ${start}-${end} 条，共 ${state.total} 位达人`;
-    buttons.appendChild(createPageButton("上一页", state.page - 1, state.page <= 1));
+    summary.textContent = t("creatorLibraryPageSummary", { start, end, total: state.total });
+    buttons.appendChild(createPageButton(t("creatorLibraryPrevious"), state.page - 1, state.page <= 1));
     const pageNumbers = visiblePageNumbers(state.page, state.pages);
     pageNumbers.forEach((page, index) => {
       if (index > 0 && page - pageNumbers[index - 1] > 1) {
@@ -581,7 +590,7 @@
       }
       buttons.appendChild(createPageButton(String(page), page, false, page === state.page));
     });
-    buttons.appendChild(createPageButton("下一页", state.page + 1, state.page >= state.pages));
+    buttons.appendChild(createPageButton(t("creatorLibraryNext"), state.page + 1, state.page >= state.pages));
   }
 
   function createAction(label, action, creatorId, className) {
@@ -596,6 +605,13 @@
 
   function recordId(record) {
     return String(record?.creator_id || record?.analysis_id || "");
+  }
+
+  function displayCreatorName(record) {
+    const name = String(record?.creator_name || "").trim();
+    if (name) return name;
+    const username = String(record?.account_username || "").trim();
+    return username ? (username.startsWith("@") ? username : `@${username}`) : t("unnamedCreator");
   }
 
   function selectedCreatorIds() {
@@ -617,16 +633,16 @@
       selectAll.indeterminate = currentIds.some(id => selected.has(id)) && !selectAll.checked;
       selectAll.disabled = currentIds.length === 0;
     }
-    if (selectedCount) selectedCount.textContent = `已选 ${selected.size} 人`;
+    if (selectedCount) selectedCount.textContent = t("creatorLibrarySelectedCount", { count: selected.size });
     if (exportButton) {
       exportButton.disabled = selected.size === 0;
-      exportButton.textContent = selected.size ? `导出选中达人（${selected.size}）` : "导出选中达人";
+      exportButton.textContent = selected.size ? t("creatorLibraryExportSelectedCount", { count: selected.size }) : t("creatorLibraryExportSelected");
     }
     if (batchCampaignButton) {
       batchCampaignButton.disabled = selected.size === 0 || Boolean(state.batchCampaignSubmitting);
       batchCampaignButton.textContent = selected.size
-        ? `加入 Campaign（${selected.size}）`
-        : "加入 Campaign";
+        ? t("creatorLibraryCampaignSelectedCount", { count: selected.size })
+        : t("creatorLibraryChooseCampaign");
     }
   }
 
@@ -635,7 +651,7 @@
     label.className = "creator-card-select";
     const input = document.createElement("input");
     input.type = "checkbox";
-    input.ariaLabel = "选择达人";
+    input.ariaLabel = t("creatorLibrarySelectCreator");
     input.dataset.creatorSelectId = creatorId;
     input.checked = selectedCreatorIds().has(creatorId);
     label.append(input);
@@ -653,7 +669,7 @@
 
   function insightLabel(value) {
     const insight = String(value || "insufficient").trim();
-    return insight === "insufficient" ? "⚠ 数据不足" : insight;
+    return insight === "insufficient" ? t("creatorLibraryInsufficientData") : insight;
   }
 
   function renderCards(records) {
@@ -669,28 +685,29 @@
       identity.className = "creator-card-identity";
       const avatar = document.createElement("div");
       avatar.className = `creator-card-avatar platform-${String(record.platform || "other").toLowerCase()}`;
-      avatar.textContent = String(record.creator_name || record.platform || "K").trim().slice(0, 1).toUpperCase();
+      avatar.textContent = String(displayCreatorName(record) || record.platform || "K").trim().slice(0, 1).toUpperCase();
       const identityText = document.createElement("div");
       const title = document.createElement("h2");
-      title.textContent = record.creator_name || "未命名达人";
+      title.textContent = displayCreatorName(record);
       const subtitle = document.createElement("p");
-      subtitle.textContent = record.platform || "未标注平台";
+      subtitle.textContent = record.platform || t("creatorLibraryUnspecifiedPlatform");
       identityText.append(title, subtitle);
       identity.append(avatar, identityText);
 
       const metadata = document.createElement("div");
       metadata.className = "creator-card-metadata-list";
       [
-        createCardMetadata("国家", record.country, "country"),
-        createCardMetadata("语言", record.language, "language"),
-        createCardMetadata("分类", record.content_category, "content-category"),
+        createCardMetadata(t("creatorLibraryCountry"), record.country, "country"),
+        createCardMetadata(t("creatorLibraryLanguage"), record.language, "language"),
+        createCardMetadata(t("creatorLibraryCategory"), record.content_category, "content-category"),
+        createCardMetadata(t("creatorLibraryEmail"), record.account_email, "email"),
       ].filter(Boolean).forEach(item => metadata.appendChild(item));
 
       const tags = document.createElement("div");
       tags.className = "creator-card-tags";
       [
         insightLabel(record.insight_level),
-        STATUS_LABELS[record.status] || "已发现",
+        statusLabel(record.status),
       ].filter(Boolean).forEach((label, index) => {
         const tag = document.createElement("span");
         tag.className = index === 0 ? "creator-card-level" : "creator-card-tag";
@@ -701,8 +718,8 @@
       const metrics = document.createElement("div");
       metrics.className = "creator-card-metrics";
       [
-        ["粉丝", record.followers || "--"],
-        ["平均播放", formatMetric(record.average_views)],
+        [t("creatorLibraryFollowers"), record.followers || "--"],
+        [t("creatorLibraryAverageViews"), formatMetric(record.average_views)],
       ].forEach(([label, value]) => {
         const metric = document.createElement("div");
         const metricLabel = document.createElement("span");
@@ -717,25 +734,25 @@
       actions.className = "creator-card-actions";
       const primaryActions = document.createElement("div");
       primaryActions.className = "creator-card-primary-actions";
-      primaryActions.appendChild(createAction("查看达人", "detail", creatorId, "soft-btn creator-card-action"));
+      primaryActions.appendChild(createAction(t("creatorLibraryViewCreator"), "detail", creatorId, "soft-btn creator-card-action"));
       if (archived) {
-        primaryActions.appendChild(createAction("恢复达人", "restore", creatorId, "primary-btn creator-card-action"));
+        primaryActions.appendChild(createAction(t("creatorLibraryRestoreCreator"), "restore", creatorId, "primary-btn creator-card-action"));
       } else {
         primaryActions.append(
-          createAction("加入 Campaign", "campaign", creatorId, "primary-btn creator-card-action"),
+          createAction(t("creatorLibraryChooseCampaign"), "campaign", creatorId, "primary-btn creator-card-action"),
         );
       }
       const moreActions = document.createElement("details");
       moreActions.className = "creator-card-more";
       const moreToggle = document.createElement("summary");
-      moreToggle.textContent = "更多 ▼";
+      moreToggle.textContent = t("creatorLibraryMore");
       const moreMenu = document.createElement("div");
       moreMenu.className = "creator-card-more-menu";
       if (!archived) {
-        moreMenu.appendChild(createAction("归档达人", "archive", creatorId, "soft-btn creator-card-action"));
+        moreMenu.appendChild(createAction(t("creatorLibraryArchiveCreator"), "archive", creatorId, "soft-btn creator-card-action"));
       }
-      moreMenu.appendChild(createAction("合并达人", "merge", creatorId, "soft-btn creator-card-action"));
-      moreMenu.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger creator-card-action"));
+      moreMenu.appendChild(createAction(t("creatorLibraryMergeCreator"), "merge", creatorId, "soft-btn creator-card-action"));
+      moreMenu.appendChild(createAction(t("creatorLibraryDeleteCreator"), "delete", creatorId, "soft-btn danger creator-card-action"));
       moreActions.append(moreToggle, moreMenu);
       actions.append(primaryActions, moreActions);
       card.append(createSelectionControl(creatorId), identity, metadata, tags, metrics, actions);
@@ -754,9 +771,10 @@
       selectionCell.appendChild(createSelectionControl(creatorId));
       row.appendChild(selectionCell);
       const values = [
-        record.creator_name || "未命名达人",
+        displayCreatorName(record),
         record.platform || "--",
         "link",
+        record.account_email || "--",
         record.followers || "--",
         record.content_category || "--",
         record.agency_name || "--",
@@ -789,31 +807,31 @@
         const archivedLabel = document.createElement("span");
         archivedLabel.className = "status-pill";
         archivedLabel.dataset.status = "archived";
-        archivedLabel.textContent = "已归档";
+        archivedLabel.textContent = t("creatorLibraryArchived");
         statusCell.appendChild(archivedLabel);
       } else {
         const statusSelect = document.createElement("select");
         statusSelect.dataset.creatorStatusId = creatorId;
-        Object.entries(STATUS_LABELS).forEach(([value, label]) => {
-          statusSelect.add(new Option(label, value, false, value === record.status));
+        ["discovered", "contacted", "negotiating", "cooperating", "completed", "rejected"].forEach(value => {
+          statusSelect.add(new Option(statusLabel(value), value, false, value === record.status));
         });
         statusCell.appendChild(statusSelect);
       }
       row.appendChild(statusCell);
 
       const actions = document.createElement("td");
-      actions.appendChild(createAction("查看分析", "detail", creatorId, "soft-btn compact-btn"));
+      actions.appendChild(createAction(t("creatorLibraryViewAnalysis"), "detail", creatorId, "soft-btn compact-btn"));
       if (archived) {
-        actions.appendChild(createAction("恢复", "restore", creatorId, "soft-btn compact-btn"));
+        actions.appendChild(createAction(t("creatorLibraryRestore"), "restore", creatorId, "soft-btn compact-btn"));
       } else {
         actions.append(
-          createAction("加入 Campaign", "campaign", creatorId, "soft-btn compact-btn"),
-          createAction("创建合作任务", "task", creatorId, "primary-btn compact-btn"),
-          createAction("归档", "archive", creatorId, "soft-btn compact-btn"),
+          createAction(t("creatorLibraryChooseCampaign"), "campaign", creatorId, "soft-btn compact-btn"),
+          createAction(t("creatorLibraryCreateTask"), "task", creatorId, "primary-btn compact-btn"),
+          createAction(t("creatorLibraryArchive"), "archive", creatorId, "soft-btn compact-btn"),
         );
       }
-      actions.appendChild(createAction("合并达人", "merge", creatorId, "soft-btn compact-btn"));
-      actions.appendChild(createAction("永久删除", "delete", creatorId, "soft-btn danger compact-btn"));
+      actions.appendChild(createAction(t("creatorLibraryMergeCreator"), "merge", creatorId, "soft-btn compact-btn"));
+      actions.appendChild(createAction(t("creatorLibraryDeleteCreator"), "delete", creatorId, "soft-btn danger compact-btn"));
       row.appendChild(actions);
       body.appendChild(row);
     });
@@ -828,11 +846,11 @@
     if (!body || !empty || !cards || !tableWrap) return;
 
     const options = state.filterOptions || {};
-    renderOptions("creator-library-category", options.content_category || [], "全部内容类型");
-    renderOptions("creator-library-country", options.country || [], "全部国家/地区");
-    renderOptions("creator-library-language", options.language || [], "全部语言");
-    renderOptions("creator-library-tag", options.tag || [], "全部标签");
-    renderOptions("creator-library-ai-tag", options.ai_tag || [], "全部 AI Tags");
+    renderOptions("creator-library-category", options.content_category || [], t("creatorLibraryAllContentCategories"));
+    renderOptions("creator-library-country", options.country || [], t("creatorLibraryAllCountries"));
+    renderOptions("creator-library-language", options.language || [], t("creatorLibraryAllLanguages"));
+    renderOptions("creator-library-tag", options.tag || [], t("creatorLibraryAllTags"));
+    renderOptions("creator-library-ai-tag", options.ai_tag || [], t("creatorLibraryAllAiTags"));
     const records = state.records;
     empty.hidden = records.length > 0;
     cards.hidden = state.viewMode !== "card" || records.length === 0;
@@ -894,7 +912,7 @@
       .filter(agency => agency?.agency_id)
       .sort((left, right) => String(left.name || "").localeCompare(String(right.name || "")))
       .map(agency => new Option(agency.name || agency.agency_id, agency.agency_id));
-    select.replaceChildren(new Option("全部 Agency", ""), ...options);
+    select.replaceChildren(new Option(t("creatorLibraryAllAgencies"), ""), ...options);
     select.value = options.some(option => option.value === selected) ? selected : "";
   }
 
@@ -917,7 +935,7 @@
       const result = await saveXlsx(filename, arrayBufferToBase64(await response.arrayBuffer()));
       if (result?.saved === true) return { saved: true, desktop: true, path: result.path };
       if (result?.canceled === true) return { saved: false, canceled: true };
-      throw new Error(result?.error || "文件保存失败，请稍后重试。");
+      throw new Error(result?.error || t("creatorLibraryFileSaveFailed"));
     }
     const objectUrl = global.URL.createObjectURL(await response.blob());
     const anchor = document.createElement("a");
@@ -932,14 +950,14 @@
 
   async function downloadBinary(url, filename) {
     const response = await global.fetch(url, { cache: "no-store", signal: pageContext.resources.signal });
-    if (!response.ok) throw new Error("下载失败，请稍后重试。");
+    if (!response.ok) throw new Error(t("creatorLibraryDownloadFailed"));
     return saveXlsxResponse(response, filename);
   }
 
   async function downloadImportTemplate() {
     try {
       const result = await downloadBinary("/api/creator-library/import-template", "KOLConnect_Creator_Import_Template.xlsx");
-      if (result.desktop && result.saved) pageContext.ui.showSaved(`模板已保存到：${result.path}`);
+      if (result.desktop && result.saved) pageContext.ui.showSaved(t("creatorLibraryTemplateSaved", { path: result.path }));
     } catch (error) {
       showError(error);
     }
@@ -956,11 +974,11 @@
         signal: pageContext.resources.signal,
         body: JSON.stringify({ creator_ids: creatorIds }),
       });
-      if (!response.ok) throw new Error("导出失败，请刷新达人库后重试。");
+      if (!response.ok) throw new Error(t("creatorLibraryExportFailed"));
       const result = await saveXlsxResponse(response, "KOLConnect_Creator_Export.xlsx");
       if (result.canceled) return;
       pageContext.ui.showSaved(
-        result.desktop ? `已保存到：${result.path}` : `已导出 ${creatorIds.length} 位达人。`,
+        result.desktop ? t("creatorLibraryExportSaved", { path: result.path }) : t("creatorLibraryExported", { count: creatorIds.length }),
       );
     } catch (error) {
       showError(error);
@@ -979,7 +997,7 @@
     target.dataset.tone = tone;
   }
 
-  function setBatchCampaignSubmit(disabled, label = "确认加入") {
+  function setBatchCampaignSubmit(disabled, label = t("creatorLibraryConfirmAdd")) {
     const button = batchCampaignElement("submit");
     if (!button) return;
     button.disabled = disabled;
@@ -1000,11 +1018,11 @@
     const select = batchCampaignElement("select");
     if (!modal || !select) return;
     modal.hidden = false;
-    batchCampaignElement("count").textContent = `已选择 ${creatorIds.length} 位达人`;
-    select.replaceChildren(new Option("正在加载 Campaign...", ""));
+    batchCampaignElement("count").textContent = t("creatorLibraryBatchSelected", { count: creatorIds.length });
+    select.replaceChildren(new Option(t("creatorLibraryLoading"), ""));
     select.disabled = true;
     setBatchCampaignMessage("");
-    setBatchCampaignSubmit(true, "正在加载...");
+    setBatchCampaignSubmit(true, t("creatorLibraryLoading"));
     try {
       const data = await pageContext.api.get("/api/campaigns", {
         signal: pageContext.resources.signal,
@@ -1015,25 +1033,25 @@
         String(campaign.campaign_id || ""),
       ));
       select.replaceChildren(new Option(
-        options.length ? "请选择 Campaign" : "暂无可用 Campaign", ""
+        options.length ? t("creatorLibraryChooseCampaign") : t("creatorLibraryNoCampaigns"), ""
       ), ...options);
       select.disabled = options.length === 0;
       setBatchCampaignSubmit(options.length === 0);
-      if (!options.length) setBatchCampaignMessage("当前没有可加入的 Campaign。", "warning");
+      if (!options.length) setBatchCampaignMessage(t("creatorLibraryNoCampaignsMessage"), "warning");
     } catch (error) {
       if (error?.name === "AbortError") return;
-      setBatchCampaignMessage(error.message || "无法加载 Campaign。", "error");
+      setBatchCampaignMessage(error.message || t("creatorLibraryLoadCampaignFailed"), "error");
       setBatchCampaignSubmit(true);
     }
   }
 
   function batchSummary(result) {
     return [
-      `成功加入 ${Number(result.added) || 0}`,
-      `恢复 ${Number(result.restored) || 0}`,
-      `已存在 ${Number(result.already_present) || 0}`,
-      `失败 ${Number(result.failed) || 0}`,
-    ].join("，");
+      t("creatorLibraryBatchAdded", { count: Number(result.added) || 0 }),
+      t("creatorLibraryBatchRestored", { count: Number(result.restored) || 0 }),
+      t("creatorLibraryBatchPresent", { count: Number(result.already_present) || 0 }),
+      t("creatorLibraryBatchFailed", { count: Number(result.failed) || 0 }),
+    ].join(", ");
   }
 
   async function submitBatchCampaign(event) {
@@ -1043,7 +1061,7 @@
     const campaignId = String(batchCampaignElement("select")?.value || "").trim();
     const creatorIds = [...selectedCreatorIds()];
     if (!campaignId) {
-      setBatchCampaignMessage("请选择 Campaign。", "warning");
+      setBatchCampaignMessage(t("creatorLibraryCampaignSelectedRequired"), "warning");
       return;
     }
     if (!creatorIds.length) {
@@ -1052,7 +1070,7 @@
       return;
     }
     state.batchCampaignSubmitting = true;
-    setBatchCampaignSubmit(true, "正在加入...");
+    setBatchCampaignSubmit(true, t("creatorLibraryJoining"));
     updateSelectionControls();
     try {
       const result = await pageContext.api.post(
@@ -1070,7 +1088,7 @@
       const summary = batchSummary(result);
       const failures = (Array.isArray(result.results) ? result.results : [])
         .filter(item => item.status === "failed")
-        .map(item => `${item.creator_id || "未知达人"}：${item.error || "加入失败"}`);
+        .map(item => `${item.creator_id || t("creatorLibraryUnknownCreator")}：${item.error || t("creatorLibraryAddFailed")}`);
       if (failures.length) {
         setBatchCampaignMessage(`${summary}。${failures.join("；")}`, "warning");
       } else {
@@ -1080,7 +1098,7 @@
       render();
     } catch (error) {
       if (error?.name !== "AbortError") {
-        setBatchCampaignMessage(error.message || "批量加入 Campaign 失败。", "error");
+        setBatchCampaignMessage(error.message || t("creatorLibraryBatchAddFailed"), "error");
       }
     } finally {
       state.batchCampaignSubmitting = false;
@@ -1119,16 +1137,16 @@
     panel.dataset.tone = failed ? "error" : "success";
     errors.replaceChildren();
     if (!failed) {
-      summary.textContent = `导入完成：新增 ${Number(data.created) || 0}，跳过已有 ${Number(data.skipped_existing) || 0}。`;
+      summary.textContent = t("creatorLibraryImportComplete", { created: Number(data.created) || 0, skipped: Number(data.skipped_existing) || 0 });
       return;
     }
     const report = data.summary || {};
-    summary.textContent = `导入未执行：共 ${Number(report.total_rows) || 0} 行，无效 ${Number(report.invalid_rows) || 0} 行。`;
+    summary.textContent = t("creatorLibraryImportNotRun", { total: Number(report.total_rows) || 0, invalid: Number(report.invalid_rows) || 0 });
     (Array.isArray(data.rows) ? data.rows : []).forEach(row => {
       const item = document.createElement("li");
-      const label = IMPORT_ERROR_LABELS[row.code] || row.code || "数据无效";
+      const label = IMPORT_ERROR_KEYS[row.code] ? t(IMPORT_ERROR_KEYS[row.code]) : (row.code || t("creatorLibraryInvalidData"));
       const field = row.field ? `（${row.field}）` : "";
-      item.textContent = `第 ${row.row} 行：${label}${field}`;
+      item.textContent = t("creatorLibraryImportRow", { row: row.row, label, field });
       errors.appendChild(item);
     });
   }
@@ -1149,7 +1167,7 @@
         { headers: { "Content-Type": XLSX_CONTENT_TYPE }, signal: pageContext.resources.signal },
       );
       renderImportResult(response.data || {});
-      pageContext.ui.showSaved("Creator Excel 导入完成。");
+      pageContext.ui.showSaved(t("creatorLibraryExcelImported"));
       await loadRecords();
     } catch (error) {
       if (error?.responseData) renderImportResult(error.responseData, true);
@@ -1223,26 +1241,26 @@
       { signal: context.resources.signal },
     );
     const task = data.task;
-    if (!task?.id) throw new Error("未找到关联的审核任务。");
+    if (!task?.id) throw new Error(t("creatorLibraryTaskMissing"));
     context.state.currentTaskId = task.id;
     context.state.currentTask = task;
     context.state.review.taskId = task.id;
     global.localStorage.setItem("kolconnect.currentTaskId", task.id);
     await context.navigate("review");
-    context.ui.showSaved(data.message || "已打开关联的审核任务。");
+    context.ui.showSaved(data.message || t("creatorLibraryTaskOpened"));
   }
 
   async function changeArchiveState(creatorId, archived) {
     const message = archived
-      ? "归档后，达人将从默认列表隐藏，历史分析和 Campaign 关联会保留。"
-      : "恢复该达人到默认达人库？";
+      ? t("creatorLibraryArchiveConfirm")
+      : t("creatorLibraryRestoreConfirm");
     if (!global.confirm(message)) return;
     await pageContext.api.patch(
       `/api/creator-library/${encodeURIComponent(creatorId)}`,
       { archived_at: archived ? new Date().toISOString() : null },
       { signal: pageContext.resources.signal },
     );
-    pageContext.ui.showSaved(archived ? "达人已归档。" : "达人已恢复。");
+    pageContext.ui.showSaved(archived ? t("creatorLibraryArchivedSaved") : t("creatorLibraryRestoredSaved"));
     await loadRecords();
   }
 
@@ -1280,7 +1298,7 @@
           item => String(item.creator_id || item.analysis_id || "") === creatorId,
         );
         if (!mergeModal) {
-          showError(new Error("达人合并功能未加载，请刷新页面后重试。"));
+          showError(new Error(t("creatorLibraryMergeUnavailable")));
           return;
         }
         await mergeModal.open(record, {
@@ -1309,7 +1327,7 @@
         { signal: pageContext.resources.signal },
       );
       record.status = select.value;
-      pageContext.ui.showSaved("达人状态已保存。");
+      pageContext.ui.showSaved(t("creatorLibraryStatusSaved"));
     } catch (error) {
       select.value = previousStatus;
       showError(error);
@@ -1370,7 +1388,7 @@
         if (!toolbar) return;
         const expanded = toolbar.classList.toggle("more-filters-open");
         event.currentTarget.setAttribute("aria-expanded", String(expanded));
-        event.currentTarget.textContent = expanded ? "收起更多筛选" : "更多筛选";
+        event.currentTarget.textContent = expanded ? t("creatorLibraryMoreFiltersClose") : t("creatorLibraryMoreFiltersOpen");
       });
       listen("creator-library-card-view", "click", () => setViewMode("card").catch(showError));
       listen("creator-library-table-view", "click", () => setViewMode("table").catch(showError));

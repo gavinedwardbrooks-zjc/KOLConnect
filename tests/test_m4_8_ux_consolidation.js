@@ -23,7 +23,7 @@ function testInformationArchitectureAndSingleMailAccountForm() {
   assert.deepEqual(secondaryByPrimary("mail"), ["产品", "Agency", "Campaign", "邮件", "邮件跟进"]);
   assert.deepEqual(secondaryByPrimary("settings"), ["Chrome 账号", "邮箱账户", "日志"]);
   assert.match(html, /data-page="scrape" data-primary="scrape"[^>]*>邮箱抓取</);
-  assert.match(html, /data-page="mail-accounts" data-primary="settings">邮箱账户</);
+  assert.match(html, /data-page="mail-accounts" data-primary="settings" data-i18n="navMailAccounts">邮箱账户</);
   assert.equal(count(html, 'id="mail-accounts-list"'), 1, "mail account form must have one owner");
   assert.equal(count(html, 'id="mail-add-account"'), 1);
   assert.match(html, /data-page="mail"[\s\S]*id="mail-inbox-sync"/);
@@ -42,7 +42,7 @@ function testWorkflowMarkup() {
   assert.match(html, /id="discover-status-filter"/);
   assert.match(source, /renderDiscoverResults\(data\)/);
   assert.match(source, /标准化后重复|duplicate_of_line/);
-  const reviewToolbar = html.match(/<div class="review-toolbar">([\s\S]*?)<p class="hint" id="review-summary">/)[1];
+  const reviewToolbar = html.match(/<div class="review-toolbar">([\s\S]*?)<p class="hint" id="review-summary"[^>]*>/)[1];
   assert.match(reviewToolbar, /id="review-task-select"/);
   assert.match(reviewToolbar, /id="review-search"/);
   assert.match(reviewToolbar, /id="review-page-size"/);

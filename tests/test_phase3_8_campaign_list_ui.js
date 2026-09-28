@@ -256,6 +256,12 @@ async function run() {
     KOLConnectApp: {
       showSaved(message) { notices.push(message); },
       showError(error) { throw error; },
+      t(key, params = {}) {
+        const labels = {
+          campaignListCount: "{count} 个 Campaign", campaignStatusDraft: "草稿", campaignStatusSourcing: "招募中", campaignStatusRunning: "进行中", campaignStatusCompleted: "已完成", campaignStatusArchived: "已归档", campaignArchived: "已归档", campaignActive: "进行中", campaignAnyPlatform: "不限平台", campaignView: "查看", campaignRestore: "恢复", campaignEdit: "编辑", campaignArchive: "归档", campaignAllProducts: "全部产品", campaignSelectProduct: "请选择产品", campaignUnnamedProduct: "未命名产品", campaignCreate: "创建 Campaign", campaignSaving: "正在保存...", campaignSave: "保存 Campaign", campaignNameRequired: "请输入 Campaign 名称。", campaignUpdated: "Campaign 已更新。", campaignCreated: "Campaign 已创建。", campaignSaveFailed: "Campaign 保存失败。", campaignArchiveConfirm: "归档后，该 Campaign 将从默认列表隐藏，已有达人合作数据不会删除。", campaignRestoreConfirm: "恢复后，该 Campaign 将重新显示，原有业务状态和达人合作数据保持不变。", campaignArchivedSaved: "Campaign 已归档。", campaignRestoredSaved: "Campaign 已恢复，业务状态未改变。",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
     },
     confirm: () => true,
     setInterval,

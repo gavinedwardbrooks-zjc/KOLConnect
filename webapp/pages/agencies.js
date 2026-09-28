@@ -22,6 +22,10 @@
     return global.KOLConnectApp;
   }
 
+  function t(key, values) {
+    return app().t?.(key, values) || global.KOLConnectI18n?.t(key, values) || key;
+  }
+
   function text(value, fallback = "--") {
     const normalized = String(value ?? "").trim();
     return normalized || fallback;
@@ -36,7 +40,7 @@
     if (!value) return "--";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return String(value);
-    return new Intl.DateTimeFormat("zh-CN", {
+    return new Intl.DateTimeFormat(global.KOLConnectI18n?.getLocale?.() === "en" ? "en-US" : "zh-CN", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -76,7 +80,10 @@
     element("agency-overview-total").textContent = String(agencies.length);
     element("agency-overview-creators").textContent = String(creatorTotal);
     element("agency-overview-contacts").textContent = String(contactTotal);
-    element("agency-list-count").textContent = `${agencies.length} 个 Agency`;
+    element("agency-list-count").textContent = t("agencyCount", {
+      count: agencies.length,
+      pluralY: agencies.length === 1 ? "y" : "ies",
+    });
 
     if (!agencies.length) {
       setListState("empty");
@@ -89,19 +96,21 @@
       row.dataset.agencyId = agencyId;
       row.appendChild(createCell(text(agency.name), "agency-name-cell"));
       row.appendChild(createCell(text(agency.country)));
-      row.appendChild(createCell(`${count(agency.contact_count)} 位联系人`));
-      row.appendChild(createCell(`${count(agency.creator_count)} 位达人`));
+      const contactCount = count(agency.contact_count);
+      const creatorCount = count(agency.creator_count);
+      row.appendChild(createCell(t("agencyContacts", { count: contactCount, plural: contactCount === 1 ? "" : "s" })));
+      row.appendChild(createCell(t("agencyCreators", { count: creatorCount, plural: creatorCount === 1 ? "" : "s" })));
       row.appendChild(createCell(formatDate(agency.updated_at || agency.created_at)));
       const action = document.createElement("td");
-      action.appendChild(createLink("查看", { agencyDetailId: agencyId }));
-      action.appendChild(createLink("编辑", { agencyEditId: agencyId }));
+      action.appendChild(createLink(global.KOLConnectI18n?.text("查看") || "查看", { agencyDetailId: agencyId }));
+      action.appendChild(createLink(global.KOLConnectI18n?.text("编辑") || "编辑", { agencyEditId: agencyId }));
       const more = document.createElement("details");
       more.className = "task-card-more";
       const summary = document.createElement("summary");
-      summary.textContent = "更多";
+      summary.textContent = t("agencyMore");
       const moreActions = document.createElement("div");
       moreActions.className = "task-card-more-actions";
-      moreActions.appendChild(createLink("删除 Agency", { agencyDeleteId: agencyId }));
+      moreActions.appendChild(createLink(t("agencyDelete"), { agencyDeleteId: agencyId }));
       more.appendChild(summary);
       more.appendChild(moreActions);
       action.appendChild(more);
@@ -131,8 +140,8 @@
       element("agency-overview-total").textContent = "--";
       element("agency-overview-creators").textContent = "--";
       element("agency-overview-contacts").textContent = "--";
-      element("agency-list-count").textContent = "0 个 Agency";
-      setListState("error", error.message || "Agency 列表加载失败，请稍后重试。");
+      element("agency-list-count").textContent = t("agencyCount", { count: 0, pluralY: "ies" });
+      setListState("error", error.message || t("agencyListLoadFailed"));
     }
   }
 
@@ -299,7 +308,7 @@
       await global.KOLConnectAPI.post("/api/local/agencies", payload, { signal: detailResources?.signal });
       setEditFormVisible(false);
       await loadAgencyDetail();
-      app().showSaved("Agency 资料已保存。");
+      app().showSaved(t("agencyProfileSaved"));
     } catch (error) {
       app().showError(agencyDeleteBlockerError(error));
     }
@@ -319,10 +328,10 @@
 
   async function deleteAgency() {
     if (!activeAgencyId) return;
-    if (!global.confirm("删除 Agency？\n删除后无法恢复。")) return;
+    if (!global.confirm(t("agencyDeleteConfirm"))) return;
     try {
       await global.KOLConnectAPI.delete(`/api/local/agencies/${encodeURIComponent(activeAgencyId)}`, { signal: detailResources?.signal });
-      app().showSaved("Agency 已删除。");
+      app().showSaved(t("agencyDeleted"));
       app().navigate("agencies");
     } catch (error) {
       app().showError(agencyDeleteBlockerError(error));
@@ -346,7 +355,7 @@
       await global.KOLConnectAPI.post("/api/local/agency-contacts", payload, { signal: detailResources?.signal });
       setContactEditFormVisible(false);
       await loadAgencyDetail();
-      app().showSaved("联系人资料已保存。");
+      app().showSaved(t("agencyContactSaved"));
     } catch (error) {
       app().showError(error);
     }
@@ -360,7 +369,7 @@
       await global.KOLConnectAPI.delete(`/api/local/agency-contacts/${encodeURIComponent(contact.contact_id)}`, { signal: detailResources?.signal });
       setContactEditFormVisible(false);
       await loadAgencyDetail();
-      app().showSaved("联系人已删除。");
+      app().showSaved(t("agencyContactDeleted"));
     } catch (error) {
       app().showError(error);
     }
@@ -378,17 +387,17 @@
     try {
       await global.KOLConnectAPI.post(`/api/creator-library/${encodeURIComponent(creatorId)}/relations`, payload, { signal: detailResources?.signal });
       await loadAgencyDetail();
-      app().showSaved("已解除达人与 Agency 的关联。");
+      app().showSaved(t("agencyUnlinked"));
     } catch (error) {
       app().showError(error);
     }
   }
 
   async function deleteAgencyFromList(agencyId) {
-    if (!agencyId || !global.confirm("删除 Agency？\n删除后无法恢复。")) return;
+    if (!agencyId || !global.confirm(t("agencyDeleteConfirm"))) return;
     try {
       await global.KOLConnectAPI.delete(`/api/local/agencies/${encodeURIComponent(agencyId)}`, { signal: listResources?.signal });
-      app().showSaved("Agency 已删除。");
+      app().showSaved(t("agencyDeleted"));
       await loadAgencies();
     } catch (error) {
       app().showError(agencyDeleteBlockerError(error));

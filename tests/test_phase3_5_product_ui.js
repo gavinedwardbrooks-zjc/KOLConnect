@@ -216,6 +216,16 @@ async function run() {
     KOLConnectApp: {
       showSaved(message) { notices.push(message); },
       showError(error) { throw error; },
+      t(key, values = {}) {
+        const templates = {
+          productCount: "{count} 个产品", productCreate: "创建产品", productEdit: "编辑产品", productSave: "保存产品",
+          productSaving: "正在保存...", productRestore: "恢复", productArchive: "归档", productListLoadFailed: "产品列表加载失败，请稍后重试。",
+          productNameRequired: "请输入产品名称。", productCompanyRequired: "请输入公司名称。", productCreated: "产品已创建。",
+          productUpdated: "产品已更新。", productSaveFailed: "产品保存失败。", productArchiveConfirm: "归档后，该产品将从默认列表隐藏。已有 Campaign 和合作数据不会删除。",
+          productRestoreConfirm: "恢复该产品？历史 Campaign 和合作数据将保持不变。", productArchived: "产品已归档。", productRestored: "产品已恢复。",
+        };
+        return String(templates[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
+      },
     },
     confirm: () => true,
     setInterval,

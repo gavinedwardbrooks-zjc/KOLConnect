@@ -1,13 +1,13 @@
 (function registerCampaignsPage(global) {
   "use strict";
 
-  const STATUS_LABELS = Object.freeze({
-    draft: "Draft",
-    sourcing: "Sourcing",
-    running: "Running",
-    completed: "Completed",
-    archived: "状态待确认",
-  });
+  const STATUS_KEYS = Object.freeze({ draft: "campaignStatusDraft", sourcing: "campaignStatusSourcing", running: "campaignStatusRunning", completed: "campaignStatusCompleted", archived: "campaignStatusArchived" });
+
+  function t(key, params) {
+    return global.KOLConnectApp?.t?.(key, params)
+      || global.KOLConnectI18n?.t?.(key, params)
+      || key;
+  }
 
   let resources = null;
   let listController = null;
@@ -78,7 +78,7 @@
     const count = element("campaign-list-count");
     if (!body || !count) return;
     body.replaceChildren();
-    count.textContent = `${campaigns.length} 个 Campaign`;
+    count.textContent = t("campaignListCount", { count: campaigns.length, plural: campaigns.length === 1 ? "" : "s" });
 
     if (!campaigns.length) {
       setListState("empty");
@@ -98,7 +98,7 @@
       const statusValue = String(campaign.status || "draft");
       status.className = "status-pill";
       status.dataset.status = statusValue;
-      status.textContent = STATUS_LABELS[statusValue] || statusValue;
+      status.textContent = STATUS_KEYS[statusValue] ? t(STATUS_KEYS[statusValue]) : statusValue;
       statusCell.appendChild(status);
       row.appendChild(statusCell);
 
@@ -106,13 +106,13 @@
       const archiveStatus = document.createElement("span");
       archiveStatus.className = "status-pill";
       archiveStatus.dataset.status = archived ? "archived" : "active";
-      archiveStatus.textContent = archived ? "Archived" : "Active";
+      archiveStatus.textContent = archived ? t("campaignArchived") : t("campaignActive");
       archiveCell.appendChild(archiveStatus);
       row.appendChild(archiveCell);
 
       const platformLabel = Array.isArray(campaign.platforms) && campaign.platforms.length
         ? campaign.platforms.join("、")
-        : String(campaign.platform || "不限平台");
+        : String(campaign.platform || t("campaignAnyPlatform"));
       row.appendChild(createCell(platformLabel));
       row.appendChild(createCell(formatBudget(campaign.budget)));
       row.appendChild(createCell(String(campaign.start_date || "--")));
@@ -122,12 +122,12 @@
       const actionsCell = document.createElement("td");
       const actions = document.createElement("div");
       actions.className = "campaign-row-actions";
-      actions.appendChild(createAction("detail", campaign.campaign_id, "查看"));
+      actions.appendChild(createAction("detail", campaign.campaign_id, t("campaignView")));
       if (archived) {
-        actions.appendChild(createAction("restore", campaign.campaign_id, "恢复"));
+        actions.appendChild(createAction("restore", campaign.campaign_id, t("campaignRestore")));
       } else {
-        actions.appendChild(createAction("edit", campaign.campaign_id, "编辑"));
-        actions.appendChild(createAction("archive", campaign.campaign_id, "归档", "mini-btn danger"));
+        actions.appendChild(createAction("edit", campaign.campaign_id, t("campaignEdit")));
+        actions.appendChild(createAction("archive", campaign.campaign_id, t("campaignArchive"), "mini-btn danger"));
       }
       actionsCell.appendChild(actions);
       row.appendChild(actionsCell);
@@ -190,12 +190,12 @@
     const formValue = formSelect.value;
     filter.replaceChildren();
     formSelect.replaceChildren();
-    appendOption(filter, "", "全部产品");
-    appendOption(formSelect, "", "请选择产品");
+    appendOption(filter, "", t("campaignAllProducts"));
+    appendOption(formSelect, "", t("campaignSelectProduct"));
     products.forEach(product => {
       const label = product.company_name
-        ? `${product.name || "未命名产品"} · ${product.company_name}`
-        : String(product.name || "未命名产品");
+        ? `${product.name || t("campaignUnnamedProduct")} · ${product.company_name}`
+        : String(product.name || t("campaignUnnamedProduct"));
       appendOption(filter, String(product.product_id || ""), label);
       appendOption(formSelect, String(product.product_id || ""), label);
     });
@@ -226,7 +226,7 @@
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
       products = [];
       renderProductOptions();
-      showProductsError(error.message || "产品选项加载失败，暂时无法创建或筛选 Campaign。");
+      showProductsError(error.message || t("campaignProductsLoadFailed"));
     }
   }
 
@@ -257,21 +257,21 @@
       const data = await global.KOLConnectAPI.get(campaignListUrl(), { signal: listController.signal });
       if (!resources || currentLifecycle !== lifecycleId) return;
       if (!Array.isArray(data.campaigns)) {
-        throw new Error("Campaign 列表响应格式异常，请稍后重试。");
+        throw new Error(t("campaignListResponseInvalid"));
       }
       campaigns = data.campaigns;
       renderCampaigns();
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
       campaigns = [];
-      element("campaign-list-count").textContent = "0 个 Campaign";
-      setListState("error", error.message || "Campaign 列表加载失败，请稍后重试。");
+      element("campaign-list-count").textContent = t("campaignListCount", { count: 0, plural: "s" });
+      setListState("error", error.message || t("campaignListLoadFailed"));
     }
   }
 
   function resetForm() {
     editingCampaignId = null;
-    element("campaign-form-title").textContent = "创建 Campaign";
+    element("campaign-form-title").textContent = t("campaignCreate");
     element("campaign-name").value = "";
     element("campaign-product-id").value = "";
     element("campaign-status").value = "draft";
@@ -303,7 +303,7 @@
     const campaign = campaigns.find(item => String(item.campaign_id) === String(campaignId));
     if (!campaign || isArchived(campaign)) return;
     editingCampaignId = String(campaign.campaign_id);
-    element("campaign-form-title").textContent = "编辑 Campaign";
+    element("campaign-form-title").textContent = t("campaignEdit");
     element("campaign-name").value = String(campaign.name || "");
     element("campaign-product-id").value = String(campaign.product_id || "");
     element("campaign-status").value = String(campaign.status || "draft");
@@ -333,7 +333,7 @@
     saving = value;
     const button = element("campaign-form-save");
     button.disabled = value;
-    button.textContent = value ? "正在保存..." : "保存 Campaign";
+    button.textContent = value ? t("campaignSaving") : t("campaignSave");
   }
 
   function campaignPayload() {
@@ -356,8 +356,8 @@
     event.preventDefault();
     if (saving || !resources) return;
     const payload = campaignPayload();
-    if (!payload.name) return showFormError("请输入 Campaign 名称。");
-    if (!payload.product_id) return showFormError("请选择产品。");
+    if (!payload.name) return showFormError(t("campaignNameRequired"));
+    if (!payload.product_id) return showFormError(t("campaignSelectProduct"));
 
     setSaving(true);
     try {
@@ -374,11 +374,11 @@
           { signal: resources.signal },
         );
       }
-      getApp().showSaved(editingCampaignId ? "Campaign 已更新。" : "Campaign 已创建。");
+      getApp().showSaved(editingCampaignId ? t("campaignUpdated") : t("campaignCreated"));
       closeForm();
       await loadCampaigns();
     } catch (error) {
-      if (error?.name !== "AbortError") showFormError(error.message || "Campaign 保存失败。");
+      if (error?.name !== "AbortError") showFormError(error.message || t("campaignSaveFailed"));
     } finally {
       setSaving(false);
     }
@@ -387,8 +387,8 @@
   async function changeArchiveState(campaignId, archived) {
     if (mutationInProgress || !resources) return;
     const message = archived
-      ? "归档后，该 Campaign 将从默认列表隐藏，已有达人合作数据不会删除。"
-      : "恢复后，该 Campaign 将重新显示，原有业务状态和达人合作数据保持不变。";
+      ? t("campaignArchiveConfirm")
+      : t("campaignRestoreConfirm");
     if (!global.confirm(message)) return;
 
     mutationInProgress = true;
@@ -398,7 +398,7 @@
         { archived_at: archived ? new Date().toISOString() : null },
         { signal: resources.signal },
       );
-      getApp().showSaved(archived ? "Campaign 已归档。" : "Campaign 已恢复，业务状态未改变。");
+      getApp().showSaved(archived ? t("campaignArchivedSaved") : t("campaignRestoredSaved"));
       if (editingCampaignId === String(campaignId)) closeForm();
       await loadCampaigns();
     } catch (error) {

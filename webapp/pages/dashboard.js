@@ -7,19 +7,21 @@
   let analyticsController = null;
   let geographyController = null;
   let roiTrendController = null;
+  let mailFollowUpController = null;
   let dashboardData = null;
   let lifecycleId = 0;
   const charts = new Map();
   const CHART_COLORS = ["#e56b46", "#2f7d6d", "#e9a23b", "#5574b9", "#b65d7a", "#717171"];
   const DASHBOARD_LAYOUT_KEY = "kolconnect-dashboard-layout-v2";
   const MODULES = [
-    { id: "today", label: "今日待处理", description: "可直接进入待联系或数据过期对象", essential: true },
-    { id: "missing_info", label: "待补充信息", description: "账号邮箱与达人基础资料缺口" },
-    { id: "campaigns", label: "Campaign 概览", description: "项目成员与发布进度" },
-    { id: "creator_overview", label: "达人数据概览", description: "Creator 与平台账号构成" },
-    { id: "data_freshness", label: "数据更新状态", description: "快照新鲜度与现有趋势" },
-    { id: "geography", label: "地区与语言", description: "已录入 Creator 基础资料分布" },
-    { id: "roi", label: "ROI / Performance", description: "仅展示已录入的表现数据" },
+    { id: "today", labelKey: "dashboardModuleToday", descriptionKey: "dashboardModuleTodayDescription", essential: true },
+    { id: "mail_follow_up", labelKey: "dashboardModuleMailFollowUp", descriptionKey: "dashboardModuleMailFollowUpDescription" },
+    { id: "missing_info", labelKey: "dashboardModuleMissingInfo", descriptionKey: "dashboardModuleMissingInfoDescription" },
+    { id: "campaigns", labelKey: "dashboardModuleCampaigns", descriptionKey: "dashboardModuleCampaignsDescription" },
+    { id: "creator_overview", labelKey: "dashboardModuleCreatorOverview", descriptionKey: "dashboardModuleCreatorOverviewDescription" },
+    { id: "data_freshness", labelKey: "dashboardModuleDataFreshness", descriptionKey: "dashboardModuleDataFreshnessDescription" },
+    { id: "geography", labelKey: "dashboardModuleGeography", descriptionKey: "dashboardModuleGeographyDescription" },
+    { id: "roi", labelKey: "dashboardModuleRoi", descriptionKey: "dashboardModuleRoiDescription" },
   ];
 
   function defaultLayout() {
@@ -86,14 +88,14 @@
       const copy = document.createElement("span");
       copy.className = "dashboard-customization-copy";
       const title = document.createElement("strong");
-      title.textContent = module.label;
+      title.textContent = t(module.labelKey);
       const description = document.createElement("small");
-      description.textContent = module.essential ? "固定显示，固定在首位" : (module.description || "");
+      description.textContent = module.essential ? t("dashboardFixedFirst") : t(module.descriptionKey);
       copy.append(title, description);
       label.append(input, copy);
       const actions = document.createElement("div");
       actions.className = "dashboard-customization-actions";
-      for (const [direction, labelText] of [[-1, "上移"], [1, "下移"]]) {
+      for (const [direction, labelText] of [[-1, t("dashboardMoveUp")], [1, t("dashboardMoveDown")]]) {
         const button = document.createElement("button");
         button.type = "button";
         button.className = "soft-btn compact-btn";
@@ -129,22 +131,28 @@
     return global.KOLConnectApp;
   }
 
+  function t(key, values) {
+    return getApp().t?.(key, values) || global.KOLConnectI18n?.t(key, values) || key;
+  }
+
   function formatNumber(value) {
     const number = Number(value);
     if (!Number.isFinite(number)) return "--";
-    return new Intl.NumberFormat("zh-CN", { maximumFractionDigits: 2 }).format(number);
+    const locale = global.KOLConnectI18n?.getLocale?.() === "en" ? "en-US" : "zh-CN";
+    return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(number);
   }
 
   function formatTime(value) {
     if (!value) return "--";
     const date = new Date(value);
-    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+    const locale = global.KOLConnectI18n?.getLocale?.() === "en" ? "en-US" : "zh-CN";
+    return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString(locale);
   }
 
   function formatChange(change) {
-    if (!change || !change.metric) return "暂无趋势数据";
-    const metric = change.metric === "median_views" ? "中位播放" : "粉丝";
-    const direction = change.direction === "growth" ? "增长" : "下降";
+    if (!change || !change.metric) return t("dashboardNoTrend");
+    const metric = change.metric === "median_views" ? t("dashboardMedianViews") : t("dashboardFollowers");
+    const direction = change.direction === "growth" ? t("dashboardGrowth") : t("dashboardDecline");
     return `${metric}${direction} ${formatNumber(Math.abs(Number(change.delta) || 0))}`;
   }
 
@@ -157,7 +165,7 @@
     const groups = Object.entries(totalsByCurrency || {})
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([currency, amount]) => `${currency} ${formatNumber(amount)}`);
-    if (unknownTotal != null) groups.push(`未标币种 ${formatNumber(unknownTotal)}`);
+    if (unknownTotal != null) groups.push(`${t("dashboardUnspecifiedCurrency")} ${formatNumber(unknownTotal)}`);
     return groups.length ? groups.join(" · ") : formatNumber(total);
   }
 
@@ -184,7 +192,7 @@
 
   function chartRows(rows, labelField) {
     return (Array.isArray(rows) ? rows : [])
-      .map(row => ({ label: String(row?.[labelField] || "Other/Unknown"), count: Number(row?.count) || 0 }))
+      .map(row => ({ label: String(row?.[labelField] || t("dashboardOtherUnknown")), count: Number(row?.count) || 0 }))
       .filter(row => row.count > 0);
   }
 
@@ -213,7 +221,7 @@
       type: "bar",
       data: {
         labels: statuses.map(row => row.label),
-        datasets: [{ label: "达人数量", data: statuses.map(row => row.count), backgroundColor: "#2f7d6d", borderRadius: 6 }],
+        datasets: [{ label: t("dashboardCreatorCount"), data: statuses.map(row => row.count), backgroundColor: "#2f7d6d", borderRadius: 6 }],
       },
       options: {
         responsive: true,
@@ -230,7 +238,7 @@
       type: "line",
       data: {
         labels: trend.map(row => row.date.slice(5)),
-        datasets: [{ label: "新增达人", data: trend.map(row => row.count), borderColor: "#e56b46", backgroundColor: "rgba(229, 107, 70, 0.16)", fill: true, tension: 0.32, pointRadius: 2 }],
+        datasets: [{ label: t("dashboardNewCreators"), data: trend.map(row => row.count), borderColor: "#e56b46", backgroundColor: "rgba(229, 107, 70, 0.16)", fill: true, tension: 0.32, pointRadius: 2 }],
       },
       options: {
         responsive: true,
@@ -264,7 +272,7 @@
       if (campaignId) item.dataset.dashboardCampaignId = String(campaignId);
 
       const title = document.createElement("strong");
-      title.textContent = record.creator_name || "未命名达人";
+      title.textContent = record.creator_name || t("dashboardUnnamedCreator");
       const detail = document.createElement("span");
       detail.textContent = `${record.platform || "--"} · ${reasonForRecord(record)}`;
       item.append(title, detail);
@@ -300,22 +308,22 @@
     renderV2Health(data?.health_summary);
     renderV2Dashboard(data);
 
-    renderCreatorList("dashboard-rising-creators", health.rising_creators, "暂无上升达人。", record => formatChange(record.change));
-    renderCreatorList("dashboard-falling-creators", health.falling_creators, "暂无下滑达人。", record => formatChange(record.change));
-    renderCreatorList("dashboard-expired-creators", health.expired_creators, "暂无过期数据。", record => `最近分析：${formatTime(record.last_analysis_time)}`);
-    renderCreatorList("dashboard-action-expired", actionItems.expired_creators, "暂无需要更新的数据。", record => `已过期 ${record.freshness?.days ?? "--"} 天`);
-    renderCreatorList("dashboard-pending-contact", actionItems.pending_contact, "暂无待联系达人。", () => "状态：待联系");
-    renderCreatorList("dashboard-incomplete-cooperations", actionItems.incomplete_cooperations, "暂无待复盘事项。", record => `Campaign：${record.campaign || "未命名 Campaign"}`);
-    renderCreatorList("dashboard-top-creators", cooperation.top_creators, "暂无合作数据。", record => {
-      const roi = record.average_roi == null ? "ROI 暂无" : `ROI ${formatNumber(record.average_roi)}`;
-      return `${record.campaign_count || 0} 个 Campaign · ${roi}`;
+    renderCreatorList("dashboard-rising-creators", health.rising_creators, t("dashboardNoRisingCreators"), record => formatChange(record.change));
+    renderCreatorList("dashboard-falling-creators", health.falling_creators, t("dashboardNoFallingCreators"), record => formatChange(record.change));
+    renderCreatorList("dashboard-expired-creators", health.expired_creators, t("dashboardNoExpiredData"), record => t("dashboardRecentAnalysis", { time: formatTime(record.last_analysis_time) }));
+    renderCreatorList("dashboard-action-expired", actionItems.expired_creators, t("dashboardNoDataToUpdate"), record => t("dashboardExpiredDays", { days: record.freshness?.days ?? "--" }));
+    renderCreatorList("dashboard-pending-contact", actionItems.pending_contact, t("dashboardNoPendingContact"), () => t("dashboardPendingContactStatus"));
+    renderCreatorList("dashboard-incomplete-cooperations", actionItems.incomplete_cooperations, t("dashboardNoReviewItems"), record => t("dashboardCampaignLabel", { campaign: record.campaign || t("dashboardUnnamedCampaign") }));
+    renderCreatorList("dashboard-top-creators", cooperation.top_creators, t("dashboardNoCooperationData"), record => {
+      const roi = record.average_roi == null ? t("dashboardRoiUnavailable") : t("dashboardRoiValue", { value: formatNumber(record.average_roi) });
+      return t("dashboardCampaignSummary", { count: record.campaign_count || 0, roi });
     });
     renderVisualizations(data);
   }
 
   function readableHomepage(record) {
     const rawUrl = String(record?.profile_url || "").trim();
-    if (!rawUrl) return "主页链接未录入";
+    if (!rawUrl) return t("dashboardHomepageUnavailable");
     try {
       const url = new URL(rawUrl);
       const host = url.hostname.replace(/^www\./i, "");
@@ -338,12 +346,12 @@
     if (!target) return;
     target.replaceChildren();
     const groups = [
-      { label: "数据过期", records: actionItems?.expired_creators, reason: record => `已过期 ${record?.freshness?.days ?? "--"} 天` },
-      { label: "待联系", records: actionItems?.pending_contact, reason: () => "等待建立联系" },
+      { label: t("dashboardDataExpired"), records: actionItems?.expired_creators, reason: record => t("dashboardExpiredDays", { days: record?.freshness?.days ?? "--" }) },
+      { label: t("dashboardPendingContact"), records: actionItems?.pending_contact, reason: () => t("dashboardWaitingToConnect") },
     ];
     const hasRecords = groups.some(group => Array.isArray(group.records) && group.records.length);
     if (!hasRecords) {
-      appendEmpty(target, "暂无需要优先处理的事项。");
+      appendEmpty(target, t("dashboardNoPriorityItems"));
       return;
     }
     groups.forEach(group => (Array.isArray(group.records) ? group.records : []).forEach(record => {
@@ -355,7 +363,7 @@
       const label = document.createElement("span");
       label.textContent = group.label;
       const title = document.createElement("strong");
-      title.textContent = record.creator_name || record.campaign || "未命名对象";
+      title.textContent = record.creator_name || record.campaign || t("dashboardUnnamedObject");
       const detail = document.createElement("small");
       detail.textContent = `${record.platform || "--"} · ${group.reason(record)}`;
       item.append(label, title, detail);
@@ -369,7 +377,7 @@
     target.replaceChildren();
     const rows = Array.isArray(campaigns) ? campaigns.slice(0, 6) : [];
     if (!rows.length) {
-      appendEmpty(target, "暂无 Campaign。");
+      appendEmpty(target, t("dashboardNoCampaigns"));
       return;
     }
     rows.forEach(campaign => {
@@ -378,9 +386,9 @@
       item.className = "dashboard-v2-campaign-item";
       item.dataset.dashboardCampaignId = String(campaign.campaign_id || "");
       const title = document.createElement("strong");
-      title.textContent = campaign.name || "未命名 Campaign";
+      title.textContent = campaign.name || t("dashboardUnnamedCampaign");
       const detail = document.createElement("span");
-      detail.textContent = `${campaign.status || "--"} · ${formatNumber(campaign.creator_count)} 位达人 · 已发布 ${formatNumber(campaign.published_count)}`;
+      detail.textContent = t("dashboardCampaignProgress", { status: campaign.status || "--", creators: formatNumber(campaign.creator_count), published: formatNumber(campaign.published_count) });
       item.append(title, detail);
       target.appendChild(item);
     });
@@ -392,19 +400,52 @@
     target.replaceChildren();
     const values = Array.isArray(rows) ? rows : [];
     if (!values.length) {
-      appendEmpty(target, "暂无平台账号数据。");
+      appendEmpty(target, t("dashboardNoPlatformAccounts"));
       return;
     }
     values.forEach(row => {
       const item = document.createElement("div");
       item.className = "dashboard-v2-platform-row";
       const platform = document.createElement("span");
-      platform.textContent = row.platform || "其他";
+      platform.textContent = row.platform || t("dashboardOtherPlatform");
       const count = document.createElement("strong");
-      count.textContent = `${formatNumber(row.count)} 个账号`;
+      count.textContent = t("dashboardAccountCount", { count: formatNumber(row.count) });
       item.append(platform, count);
       target.appendChild(item);
     });
+  }
+
+  function renderMailFollowUp(data, failed = false) {
+    const groups = Array.isArray(data?.groups) ? data.groups : [];
+    const actionable = failed ? [] : groups.filter(group => group?.actionability === "normal");
+    const counts = { me: 0, creator: 0, unknown: 0 };
+    actionable.forEach(group => {
+      if (Object.hasOwn(counts, group.waiting_for)) counts[group.waiting_for] += 1;
+    });
+    setText("dashboard-v2-mail-waiting-me", failed ? "--" : formatNumber(counts.me));
+    setText("dashboard-v2-mail-waiting-creator", failed ? "--" : formatNumber(counts.creator));
+    setText("dashboard-v2-mail-waiting-unknown", failed ? "--" : formatNumber(counts.unknown));
+    setText("dashboard-v2-mail-actionable-total", failed ? "--" : formatNumber(actionable.length));
+
+    const target = element("dashboard-v2-mail-followup-list");
+    if (target) {
+      target.replaceChildren(...actionable.slice(0, 3).map(group => {
+        const row = document.createElement("div");
+        row.className = "dashboard-v2-mail-item";
+        const name = document.createElement("strong");
+        name.textContent = String(group.creator_name || "").trim() || t("dashboardUnnamedCreator");
+        const email = document.createElement("span");
+        email.textContent = String(group.correspondent_email || "").trim() || "—";
+        const state = document.createElement("small");
+        state.textContent = ({ me: t("mailFollowupWaitingMe"), creator: t("mailFollowupWaitingCreator"), unknown: t("mailFollowupWaitingUnknown") })[group.waiting_for] || t("mailFollowupWaitingUnknown");
+        row.append(name, email, state);
+        return row;
+      }));
+    }
+    const empty = element("dashboard-v2-mail-followup-empty");
+    if (empty) empty.hidden = failed || actionable.length !== 0;
+    const error = element("dashboard-v2-mail-followup-error");
+    if (error) error.hidden = !failed;
   }
 
   function renderV2Dashboard(data) {
@@ -428,7 +469,7 @@
   function renderV2Health(summary) {
     const total = Number(summary?.total);
     const score = Number(summary?.score);
-    setText("dashboard-v2-health-score", Number.isFinite(total) && total > 0 && Number.isFinite(score) ? `${formatNumber(score)} 分` : "暂无数据");
+    setText("dashboard-v2-health-score", Number.isFinite(total) && total > 0 && Number.isFinite(score) ? t("dashboardHealthScore", { score: formatNumber(score) }) : t("dashboardNoData"));
     setText("dashboard-v2-health-healthy", formatNumber(summary?.healthy || 0));
     setText("dashboard-v2-health-warning", formatNumber(summary?.warning || 0));
     setText("dashboard-v2-health-critical", formatNumber(summary?.critical || 0));
@@ -442,20 +483,20 @@
     target.replaceChildren();
     const rows = state.rows.filter(row => [row.creator_name, row.platform, row.username, row.profile_url, row.country, row.language]
       .some(value => String(value || "").toLocaleLowerCase().includes(query)));
-    setText("dashboard-v2-drawer-count", `共 ${formatNumber(rows.length)} ${state.unit}`);
+    setText("dashboard-v2-drawer-count", t("dashboardDrawerCount", { count: formatNumber(rows.length), unit: state.unit }));
     if (!rows.length) {
-      appendEmpty(target, "没有符合当前搜索条件的对象。");
+      appendEmpty(target, t("dashboardNoSearchMatches"));
       return;
     }
     rows.forEach(row => {
       const item = document.createElement("article");
       item.className = "dashboard-v2-drawer-item";
       const title = document.createElement("strong");
-      title.textContent = row.creator_name || "未命名达人";
+      title.textContent = row.creator_name || t("dashboardUnnamedCreator");
       const account = document.createElement("span");
-      account.textContent = [row.platform, row.username ? `@${row.username.replace(/^@/, "")}` : ""].filter(Boolean).join(" · ") || "账号信息未录入";
+      account.textContent = [row.platform, row.username ? `@${row.username.replace(/^@/, "")}` : ""].filter(Boolean).join(" · ") || t("dashboardAccountUnavailable");
       const context = document.createElement("small");
-      context.textContent = [row.country, row.language].filter(Boolean).join(" · ") || "国家/语言待补充";
+      context.textContent = [row.country, row.language].filter(Boolean).join(" · ") || t("dashboardCountryLanguageMissing");
       const actions = document.createElement("div");
       actions.className = "dashboard-v2-drawer-item-actions";
       if (row.profile_url) {
@@ -469,7 +510,7 @@
       const view = document.createElement("button");
       view.type = "button";
       view.className = "text-btn";
-      view.textContent = "查看达人";
+      view.textContent = t("dashboardViewCreator");
       view.dataset.dashboardCreatorId = String(row.creator_id || "");
       actions.appendChild(view);
       item.append(title, account, context, actions);
@@ -481,10 +522,10 @@
     const snapshot = dashboardData?.dashboard_v2 || {};
     const missing = snapshot.missing || {};
     const configurations = {
-      "missing-email": { title: "缺少邮箱的账号", rows: missing.email_accounts || [], unit: "个账号", primary: "批量补全邮箱" },
-      "missing-country": { title: "缺少国家/地区的达人", rows: missing.country_creators || [], unit: "位达人" },
-      "missing-language": { title: "缺少语言的达人", rows: missing.language_creators || [], unit: "位达人" },
-      "missing-content-type": { title: "缺少内容类型的达人", rows: missing.content_type_creators || [], unit: "位达人" },
+      "missing-email": { title: t("dashboardMissingEmailAccounts"), rows: missing.email_accounts || [], unit: t("dashboardAccountUnit"), primary: t("dashboardBulkFillEmail") },
+      "missing-country": { title: t("dashboardMissingCountryCreators"), rows: missing.country_creators || [], unit: t("dashboardCreatorUnit") },
+      "missing-language": { title: t("dashboardMissingLanguageCreators"), rows: missing.language_creators || [], unit: t("dashboardCreatorUnit") },
+      "missing-content-type": { title: t("dashboardMissingContentTypeCreators"), rows: missing.content_type_creators || [], unit: t("dashboardCreatorUnit") },
     };
     const config = configurations[kind];
     if (!config) return;
@@ -576,9 +617,9 @@
       data: {
         labels: chartRows.map(item => item.label),
         datasets: [
-          { label: "达人", data: chartRows.map(item => Number(item.row.creator_count) || 0), backgroundColor: "#2f7d6d", borderRadius: 5 },
-          { label: "合作", data: chartRows.map(item => Number(item.row.campaign_creator_count) || 0), backgroundColor: "#5574b9", borderRadius: 5 },
-          { label: "已发布", data: chartRows.map(item => Number(item.row.published_count) || 0), backgroundColor: "#e56b46", borderRadius: 5 },
+          { label: t("dashboardCreatorChart"), data: chartRows.map(item => Number(item.row.creator_count) || 0), backgroundColor: "#2f7d6d", borderRadius: 5 },
+          { label: t("dashboardCooperationChart"), data: chartRows.map(item => Number(item.row.campaign_creator_count) || 0), backgroundColor: "#5574b9", borderRadius: 5 },
+          { label: t("dashboardPublishedChart"), data: chartRows.map(item => Number(item.row.published_count) || 0), backgroundColor: "#e56b46", borderRadius: 5 },
         ],
       },
       options: {
@@ -600,7 +641,7 @@
     if (!values.length) {
       const empty = document.createElement("p");
       empty.className = "dashboard-empty";
-      empty.textContent = "暂无数据";
+      empty.textContent = t("dashboardNoData");
       target.appendChild(empty);
       return;
     }
@@ -608,14 +649,14 @@
       const item = document.createElement("div");
       item.className = "dashboard-ranking-row";
       const label = document.createElement("span");
-      label.textContent = String(row?.name || "Unknown");
+      label.textContent = String(row?.name || t("dashboardUnknown"));
       const value = document.createElement("strong");
       value.textContent = formatNumber(row?.creator_count || 0);
       item.appendChild(label);
       item.appendChild(value);
       if (includeActive) {
         const active = document.createElement("small");
-        active.textContent = `活跃 ${formatNumber(row?.active_creator_count || 0)}`;
+        active.textContent = t("dashboardActiveCreators", { count: formatNumber(row?.active_creator_count || 0) });
         item.appendChild(active);
       }
       target.appendChild(item);
@@ -637,13 +678,13 @@
       .map(row => ({ ...row, average_recorded_roi: row.average_recorded_roi == null ? null : Number(row.average_recorded_roi) }));
     const latest = trend.length ? trend[trend.length - 1].average_recorded_roi : null;
     setText("dashboard-roi-latest", Number.isFinite(latest) ? formatNumber(latest) : "--");
-    setText("dashboard-v2-roi-latest", Number.isFinite(latest) ? `${formatNumber(latest)}%` : "暂无已录入 ROI");
+    setText("dashboard-v2-roi-latest", Number.isFinite(latest) ? `${formatNumber(latest)}%` : t("dashboardNoRecordedRoi"));
     renderChart("dashboard-roi-trend-chart", "dashboard-roi-trend-empty", {
       type: "line",
       data: {
         labels: trend.map(row => row.month),
         datasets: [{
-          label: "Average recorded ROI",
+          label: t("dashboardAverageRecordedRoi"),
           data: trend.map(row => Number.isFinite(row.average_recorded_roi) ? row.average_recorded_roi : null),
           borderColor: "#b65d7a",
           backgroundColor: "rgba(182, 93, 122, 0.14)",
@@ -769,6 +810,23 @@
     }
   }
 
+  async function loadMailFollowUp() {
+    if (!resources) return;
+    const expectedLifecycle = lifecycleId;
+    mailFollowUpController?.abort();
+    const controller = resources.createAbortController();
+    mailFollowUpController = controller;
+    try {
+      const data = await global.KOLConnectAPI.get("/api/mail/follow-up", { signal: controller.signal });
+      if (!isCurrentLifecycle(expectedLifecycle, controller)) return;
+      renderMailFollowUp(data);
+    } catch (error) {
+      if (error?.name !== "AbortError" && isCurrentLifecycle(expectedLifecycle, controller)) renderMailFollowUp(null, true);
+    } finally {
+      if (mailFollowUpController === controller) mailFollowUpController = null;
+    }
+  }
+
   function handleDashboardClick(event) {
     const drawerClose = event.target.closest?.("[data-dashboard-v2-drawer-close]");
     if (drawerClose) {
@@ -791,6 +849,10 @@
     }
     if (open === "accounts") {
       getApp().navigate("creator-library").catch(getApp().showError);
+      return;
+    }
+    if (open === "mail-follow-up") {
+      getApp().navigate("mail-follow-up").catch(getApp().showError);
       return;
     }
     const primary = event.target.closest?.("[data-dashboard-v2-drawer-primary]");
@@ -827,14 +889,14 @@
       applyDashboardLayout();
       await Promise.all([
         loadDashboard(), loadRisks(), loadPlatformAnalytics(),
-        loadGeographyAnalytics(), loadRecordedRoiTrend(),
+        loadGeographyAnalytics(), loadRecordedRoiTrend(), loadMailFollowUp(),
       ]);
     },
 
     bind() {
       if (!resources || resources.disposed) return;
       resources.listen(element("dashboard-refresh"), "click", () => Promise.all([
-        loadDashboard(), loadPlatformAnalytics(), loadGeographyAnalytics(), loadRecordedRoiTrend(),
+        loadDashboard(), loadPlatformAnalytics(), loadGeographyAnalytics(), loadRecordedRoiTrend(), loadMailFollowUp(),
       ]));
       resources.listen(document.querySelector('.page[data-page="dashboard"]'), "click", handleDashboardClick);
       resources.listen(element("dashboard-v2-drawer"), "click", handleDashboardClick);
@@ -883,6 +945,8 @@
       geographyController = null;
       roiTrendController?.abort();
       roiTrendController = null;
+      mailFollowUpController?.abort();
+      mailFollowUpController = null;
       resources?.cleanup();
       resources = null;
       dashboardData = null;
@@ -894,7 +958,11 @@
 
   global.KOLConnectPages.registerPage("dashboard", page);
   global.KOLConnectDashboardPreferences = {
-    modules: () => MODULES.map(module => ({ ...module })),
+    modules: () => MODULES.map(module => ({
+      ...module,
+      label: t(module.labelKey),
+      description: t(module.descriptionKey),
+    })),
     get: readLayout,
     setVisible(id, visible) { updateLayout(layout => { if (layout.visible[id] !== undefined && !MODULES.find(module => module.id === id)?.essential) layout.visible[id] = Boolean(visible); }); },
     move(id, direction) { updateLayout(layout => {

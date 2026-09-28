@@ -6,6 +6,11 @@ from services.workbook_backup_service import (
 )
 
 
+def _normalize_ui_language(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("_", "-")
+    return "en" if normalized in {"en", "en-us", "english"} else "zh"
+
+
 def _merge_mail_configuration_update(payload: dict, existing_mail: dict | None, services: dict) -> dict:
     """Apply only explicitly supplied mail fields, then normalize the complete state."""
     current = services["normalize_mail_state"](existing_mail)
@@ -122,8 +127,7 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     # POST /api/settings/ui → 保存界面设置；{"ok": true}
     if path == "/api/settings/ui":
-        language = (payload.get("language") or "").strip()
-        state["ui"]["language"] = "en" if language == "en" else "zh"
+        state["ui"]["language"] = _normalize_ui_language(payload.get("language"))
         state["ui"]["debug_mode"] = bool(payload.get("debug_mode"))
         state_access["save"]()
         handler._ok()

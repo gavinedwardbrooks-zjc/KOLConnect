@@ -7,6 +7,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from services import mail_follow_up_preferences as preferences
+from services.mail_follow_up_google_sheets_replica_service import MailFollowUpGoogleSheetsReplicaService
+from google_sheets_client import GoogleSheetsError
 
 
 CSV_CONTENT_TYPE = "text/csv; charset=utf-8"
@@ -92,6 +94,13 @@ def handle(handler, request: dict, context: dict) -> bool:
             export_format = str((request.get("query", {}).get("format") or [""])[0]).lower()
             _export(handler, factory, export_format)
             return True
+        if method == "POST" and path == "/api/mail/follow-up/sync-google-sheets":
+            result = MailFollowUpGoogleSheetsReplicaService(factory).sync(
+                context["services"]["google_sheets_client"](),
+                context["services"]["get_google_sheets_config"]().get("spreadsheet_id", ""),
+            )
+            handler._json({"ok": True, **result})
+            return True
         if method != "POST" or path != "/api/mail/follow-up/actions":
             return False
 
@@ -116,6 +125,8 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._json({"ok": False, "error": "FOLLOW_UP_ACTION_INVALID"}, status=400)
             return True
         handler._json({"ok": True, "groups": preferences.follow_up_state(factory)})
+    except GoogleSheetsError as exc:
+        handler._json({"ok": False, "error": exc.code}, status=400)
     except (OSError, RuntimeError, ValueError) as exc:
         handler._json({"ok": False, "error": str(exc)}, status=400)
     return True

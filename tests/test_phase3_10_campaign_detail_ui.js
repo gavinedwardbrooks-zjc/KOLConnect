@@ -273,9 +273,29 @@ async function run() {
 
   const notices = [];
   const navigations = [];
+  const translations = {
+    campaignDetailCreatorCount: "{count} 位达人", campaignDetailMissingPublishUnavailable: "缺失发布信息暂不可用，请稍后重试。",
+    campaignDetailNoMissingPublish: "暂无缺失发布信息。", campaignDetailStageExecuting: "执行中", campaignDetailStageQuoted: "已报价",
+    campaignDetailSelectCreator: "请选择达人", campaignDetailLoadingCreators: "正在加载达人...", campaignDetailAddCreator: "添加达人",
+    campaignDetailSaveRelation: "保存合作记录", campaignSaving: "正在保存...", campaignDetailCreatorRequired: "请选择要加入 Campaign 的达人。",
+    campaignDetailExecutionAccountRequired: "请选择本次合作使用的执行账号。", campaignDetailRelationUpdated: "达人合作记录已更新。",
+    campaignDetailCreatorAdded: "达人已加入 Campaign。", campaignDetailRelationSaveFailed: "合作记录保存失败。",
+    campaignDetailNotFound: "Campaign 不存在或已删除。", campaignDetailLoadFailed: "Campaign 详情加载失败，请稍后重试。",
+    campaignDetailFirstPassFindings: "规则一审发现 {count} 项，人工审核状态未改变。", campaignDetailPendingHumanReview: "待人工审核",
+    campaignDetailAiReviewUnavailable: "AI 一审：未配置（不影响人工审核）", campaignDetailRulesFirstPass: "规则一审",
+    campaignDetailReviewApproved: "通过", campaignDetailReviewChangesRequested: "要求修改", campaignDetailReviewRejected: "拒绝",
+    campaignDetailRemove: "移除", campaignEdit: "编辑", campaignDetailViewAccount: "查看账号", campaignDetailViewPublication: "查看发布内容",
+    campaignDetailTitle: "Campaign 详情", campaignDetailSubtitle: "Campaign 执行与合作记录", campaignDetailCampaignMissing: "Campaign 数据不存在。",
+    campaignDetailCreator: "达人", unnamedCreator: "未命名达人", creatorUnknownPlatform: "未知平台", campaignActive: "进行中", campaignArchived: "已归档",
+    campaignStatusDraft: "草稿", campaignStatusSourcing: "招募中", campaignStatusRunning: "进行中", campaignStatusCompleted: "已完成",
+  };
+  function translate(key, params = {}) {
+    return String(translations[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+  }
   const window = {
     KOLConnectAPI: api,
     KOLConnectApp: {
+      t: translate,
       showSaved(message) { notices.push(message); },
       showError(error) { throw error; },
     },

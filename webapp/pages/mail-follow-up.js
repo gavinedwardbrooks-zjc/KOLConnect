@@ -9,6 +9,11 @@
 
   const element = id => document.getElementById(id);
   const app = () => global.KOLConnectApp;
+  const t = (key, values) => {
+    const translated = app()?.t?.(key, values);
+    const template = translated && translated !== key ? translated : key;
+    return String(template).replace(/\{(\w+)\}/g, (_, name) => String(values?.[name] ?? ""));
+  };
 
   function text(value, fallback = "—") {
     const normalized = String(value ?? "").trim();
@@ -16,29 +21,31 @@
   }
 
   function waitingLabel(value) {
-    return ({ me: "待我回复", creator: "待对方回复", unknown: "状态未知" })[value] || "状态未知";
+    return ({ me: "mailFollowupWaitingMe", creator: "mailFollowupWaitingCreator", unknown: "mailFollowupWaitingUnknown" })[value]
+      ? t(({ me: "mailFollowupWaitingMe", creator: "mailFollowupWaitingCreator", unknown: "mailFollowupWaitingUnknown" })[value])
+      : t("mailFollowupWaitingUnknown");
   }
 
   function waitingHelp(value) {
     return value === "unknown"
-      ? "当前邮件时间或联系人归属证据不足，暂时无法可靠判断由谁继续回复。"
+      ? t("mailFollowupUnknownHelp")
       : "";
   }
 
   function historyLabel(value) {
-    if (value === true) return "部分历史";
-    if (value === null || value === undefined) return "历史范围未知";
-    return "已同步范围内";
+    if (value === true) return t("mailFollowupHistoryPartial");
+    if (value === null || value === undefined) return t("mailFollowupHistoryUnknown");
+    return t("mailFollowupHistorySynced");
   }
 
   function historyHelp(value) {
     return value === null || value === undefined
-      ? "当前同步的数据无法确认是否包含该联系人全部历史邮件，但不影响系统基于已同步邮件判断当前跟进状态。"
+      ? t("mailFollowupHistoryHelp")
       : "";
   }
 
   function daysLabel(value) {
-    return Number.isInteger(value) && value >= 0 ? `${value} 天` : "—";
+    return Number.isInteger(value) && value >= 0 ? t("mailFollowupDays", { days: value }) : "—";
   }
 
   function rowKey(group) {
@@ -69,17 +76,29 @@
     const actions = document.createElement("div");
     actions.className = "mail-followup-actions";
     if (group.actionability === "stopped") {
-      actions.appendChild(actionButton("恢复跟进", "resume", group, "secondary-btn"));
+      actions.appendChild(actionButton(t("mailFollowupResume"), "resume", group, "secondary-btn"));
     } else {
-      actions.appendChild(actionButton("明天提醒", "snooze:1", group));
-      actions.appendChild(actionButton("3 天后", "snooze:3", group));
-      actions.appendChild(actionButton("自定义提醒", "snooze:custom", group));
-      if (group.actionability === "snoozed") actions.appendChild(actionButton("取消提醒", "clear_snooze", group));
-      actions.appendChild(actionButton("停止跟进", "stop", group));
+      const defer = document.createElement("details");
+      defer.className = "mail-followup-defer-menu";
+      const toggle = document.createElement("summary");
+      toggle.className = "secondary-btn compact-btn";
+      toggle.textContent = t("mailFollowupSnooze");
+      const menu = document.createElement("div");
+      menu.className = "mail-followup-defer-options";
+      [
+        [t("mailFollowupTomorrow"), "snooze:1"],
+        [t("mailFollowupThreeDays"), "snooze:3"],
+        [t("mailFollowupChooseDate"), "snooze:custom"],
+        [t("mailFollowupClearSnooze"), "clear_snooze"],
+      ].forEach(([label, action]) => menu.appendChild(actionButton(label, action, group, "secondary-btn")));
+      defer.append(toggle, menu);
+      actions.appendChild(defer);
+      actions.appendChild(actionButton(t("mailFollowupStop"), "stop", group));
     }
     actions.appendChild(actionButton(
-      group.export_queue_added_at ? "移出导出队列" : "加入导出队列",
+      group.export_queue_added_at ? t("mailFollowupExportRemove") : t("mailFollowupExportAdd"),
       group.export_queue_added_at ? "export_remove" : "export_add", group,
+      "secondary-btn",
     ));
     cell.appendChild(actions);
   }
@@ -87,7 +106,7 @@
   function appendGroupRow(body, group, queueOnly = false) {
     const row = document.createElement("tr");
     const cells = [
-      [text(group.creator_name, "未命名达人")],
+      [text(group.creator_name, t("unnamedCreator"))],
       [text(group.correspondent_email)],
       [waitingLabel(group.waiting_for), waitingHelp(group.waiting_for)],
       [daysLabel(group.days_waiting)],
@@ -117,7 +136,7 @@
     body.replaceChildren();
     rows.forEach(group => appendGroupRow(body, group));
     empty.hidden = rows.length !== 0;
-    element("mail-followup-summary").textContent = `当前显示 ${rows.length} 个邮件跟进项，共 ${groups.length} 个已同步联系人组。`;
+    element("mail-followup-summary").textContent = t("mailFollowupSummary", { visible: rows.length, total: groups.length });
     document.querySelectorAll("[data-followup-filter]").forEach(button => {
       button.classList.toggle("active", button.dataset.followupFilter === filter);
     });
@@ -150,10 +169,10 @@
   }
 
   function customSnooze() {
-    const raw = global.prompt("输入提醒时间（例如 2026-09-20T09:00:00Z）：", "");
-    if (!raw || !raw.trim()) throw new Error("请选择有效的提醒时间。");
+    const raw = global.prompt(t("mailFollowupPromptDate"), "");
+    if (!raw || !raw.trim()) throw new Error(t("mailFollowupInvalidDate"));
     const value = new Date(raw);
-    if (!Number.isFinite(value.getTime())) throw new Error("提醒时间格式无效。");
+    if (!Number.isFinite(value.getTime())) throw new Error(t("mailFollowupInvalidDateFormat"));
     return value.toISOString();
   }
 
@@ -171,13 +190,13 @@
         payload.action = "snooze";
         payload.until = choice === "custom" ? customSnooze() : futureUtc(Number(choice));
       }
-      if (payload.action === "stop" && !global.confirm("停止后，该邮箱对应的跟进项将不再出现在正常待跟进列表中。邮件同步仍会继续。")) return;
+      if (payload.action === "stop" && !global.confirm(t("mailFollowupStopConfirm"))) return;
       actionPending = true;
       render();
       await global.KOLConnectAPI.post("/api/mail/follow-up/actions", payload, { signal: resources?.signal });
       await load();
       if (!element("mail-followup-export-panel").hidden) await loadExportQueue();
-      app().showSaved("邮件跟进状态已更新。");
+      app().showSaved(t("mailFollowupUpdated"));
     } catch (error) {
       app().showError(error);
     } finally {
@@ -189,7 +208,7 @@
   async function downloadExport(format) {
     try {
       const response = await global.fetch(`/api/mail/follow-up/export?format=${format}`, { cache: "no-store", signal: resources?.signal });
-      if (!response.ok) throw new Error("导出失败，请稍后重试。");
+      if (!response.ok) throw new Error(t("mailFollowupExportFailed"));
       const filename = format === "xlsx" ? "KOLConnect_Mail_Follow_Up_Queue.xlsx" : "KOLConnect_Mail_Follow_Up_Queue.csv";
       if (format === "xlsx" && global.pywebview?.api?.save_xlsx) {
         const bytes = new Uint8Array(await response.arrayBuffer());
@@ -197,8 +216,8 @@
         for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
         const result = await global.pywebview.api.save_xlsx(filename, global.btoa(binary));
         if (result?.canceled) return;
-        if (!result?.saved) throw new Error(result?.error || "文件保存失败，请稍后重试。");
-        app().showSaved(`导出完成：${result.path}`);
+        if (!result?.saved) throw new Error(result?.error || t("mailFollowupFileSaveFailed"));
+        app().showSaved(t("mailFollowupExportSaved", { path: result.path }));
         return;
       }
       const objectUrl = global.URL.createObjectURL(await response.blob());
@@ -209,18 +228,7 @@
       anchor.click();
       anchor.remove();
       global.URL.revokeObjectURL(objectUrl);
-      app().showSaved("导出完成。");
-    } catch (error) {
-      app().showError(error);
-    }
-  }
-
-  async function syncMail() {
-    try {
-      await global.KOLConnectAPI.post("/api/mail/inbox/sync", { limit_per_account: 20 }, { signal: resources?.signal });
-      await global.KOLConnectAPI.post("/api/mail/sent/sync", {}, { signal: resources?.signal });
-      await load();
-      app().showSaved("邮件同步完成。");
+      app().showSaved(t("mailFollowupExported"));
     } catch (error) {
       app().showError(error);
     }
@@ -234,7 +242,6 @@
     },
     bind() {
       resources.listen(element("mail-followup-refresh"), "click", () => load().catch(app().showError));
-      resources.listen(element("mail-followup-sync"), "click", syncMail);
       resources.listen(element("mail-followup-list"), "click", event => {
         const button = event.target.closest("[data-followup-action]");
         if (button) performAction(button);

@@ -87,6 +87,23 @@ async function run() {
       valueOf: () => "",
       checkedOf: () => false,
       showError: error => { throw error; },
+      t: (key, values = {}) => ({
+        settingsDisabled: "未启用",
+        settingsConnecting: "正在连接",
+        settingsConnected: "已连接",
+        settingsConnectionFailed: "连接失败",
+        settingsFeishuLongConnection: "飞书长连接",
+        settingsEnabled: "已启用",
+        settingsUnknown: "未知",
+        settingsMigrationReady: `迁移准备完成：Creators ${values.creators}，Creator Accounts ${values.accounts}，Campaigns ${values.campaigns}。`,
+        settingsSqliteActive: "SQLite 已启用并成为唯一运行数据源。",
+        settingsMigrationCancelled: "迁移已取消。",
+        settingsMigrationDetected: "检测到可迁移的旧 Excel 数据。",
+        settingsMigrationNotRequired: "当前不需要迁移。",
+        settingsMigrationConfirmText: "原 Excel 会保留。SQLite 将成为唯一运行数据源。",
+        settingsCreated: "已创建",
+        settingsOperationNotRun: `操作未执行：${values.reason || "--"}`,
+      }[key] || key),
     },
   };
   const document = { getElementById: id => elements.get(id) || null };

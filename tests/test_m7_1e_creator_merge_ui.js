@@ -42,7 +42,7 @@ async function run() {
   const html = read("webapp/index.html");
   const library = read("webapp/pages/creator-library.js");
   const source = read("webapp/pages/creator-merge.js");
-  assert.match(library, /createAction\("合并达人", "merge"/);
+  assert.match(library, /createAction\(t\("creatorLibraryMergeCreator"\), "merge"/);
   for (const id of [
     "creator-merge-modal", "creator-merge-primary-name", "creator-merge-secondary-name",
     "creator-merge-search", "creator-merge-search-results", "creator-merge-preview",

@@ -327,6 +327,8 @@ def run_desktop() -> None:
         height=height,
         min_size=(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT),
         resizable=True,
+        # Mail, Creator Library, and other business data must support normal copy/select.
+        text_select=True,
         js_api=desktop_file_bridge,
     )
     desktop_file_bridge.bind_window(window)

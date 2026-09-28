@@ -71,7 +71,17 @@ async function run() {
         throw new Error(`Unexpected URL ${url}`);
       },
     },
-    KOLConnectApp: { showError(error) { throw error; } },
+    KOLConnectApp: {
+      showError(error) { throw error; },
+      t(key, params = {}) {
+        const labels = {
+          dashboardActiveCreators: "活跃 {count}", dashboardNoData: "暂无数据", dashboardNoRecordedRoi: "暂无已录入 ROI",
+          dashboardCreatorChart: "达人", dashboardCooperationChart: "合作", dashboardPublishedChart: "已发布",
+          dashboardHealthScore: "{score} 分", dashboardOtherPlatform: "其他", dashboardNoPlatformAccounts: "暂无平台账号数据。", dashboardAverageRecordedRoi: "Average recorded ROI",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
+    },
     KOLConnectPageResources: {
       create() {
         return {

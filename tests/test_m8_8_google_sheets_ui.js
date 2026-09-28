@@ -18,13 +18,13 @@ assert(settings.includes('/api/settings/google-sheets'));
 assert(settings.includes('/api/google-sheets/connect'));
 assert(settings.includes('/api/google-sheets/disconnect'));
 assert(settings.includes('/api/google-sheets/sync'));
-assert(settings.includes('AUTH_REQUIRED: "需要授权"'));
-assert(settings.includes("Google 授权已失效或尚未完成，请重新连接 Google 后再同步。"));
+assert(settings.includes('AUTH_REQUIRED: "settingsAuthRequired"'));
+assert(settings.includes('app.t("googleSheetsAuthRequired")'));
 assert(campaign.includes('/google-sheets-sync'));
 assert(campaign.includes('googleSheetsSyncPending'));
 assert(campaign.includes('result.status !== "SUCCESS"'));
 assert(campaign.includes('requestedLifecycle !== lifecycleId'));
-assert(campaign.includes('Google Sheets 报告仅部分写入'));
+assert(campaign.includes('campaignDetailGoogleSheetsPartial'));
 assert(!html.includes("Google Sheets 定时"));
 assert(!settings.includes("Import from Google Sheets"));
 

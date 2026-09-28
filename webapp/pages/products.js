@@ -19,6 +19,10 @@
     return global.KOLConnectApp;
   }
 
+  function t(key, values) {
+    return getApp().t?.(key, values) || global.KOLConnectI18n?.t(key, values) || key;
+  }
+
   function isArchived(product) {
     return Boolean(String(product?.archived_at || "").trim());
   }
@@ -27,7 +31,7 @@
     if (!value) return "--";
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return String(value);
-    return new Intl.DateTimeFormat("zh-CN", {
+    return new Intl.DateTimeFormat(global.KOLConnectI18n?.getLocale?.() === "en" ? "en-US" : "zh-CN", {
       year: "numeric",
       month: "2-digit",
       day: "2-digit",
@@ -75,7 +79,7 @@
     const count = element("product-list-count");
     if (!body || !count) return;
     body.replaceChildren();
-    count.textContent = `${products.length} 个产品`;
+    count.textContent = t("productCount", { count: products.length, plural: products.length === 1 ? "" : "s" });
 
     if (!products.length) {
       setListState("empty");
@@ -104,10 +108,10 @@
       const actions = document.createElement("div");
       actions.className = "product-row-actions";
       if (archived) {
-        actions.appendChild(createAction("restore", product.product_id, "恢复"));
+        actions.appendChild(createAction("restore", product.product_id, t("productRestore")));
       } else {
-        actions.appendChild(createAction("edit", product.product_id, "编辑"));
-        actions.appendChild(createAction("archive", product.product_id, "归档", "mini-btn danger"));
+        actions.appendChild(createAction("edit", product.product_id, t("productEdit")));
+        actions.appendChild(createAction("archive", product.product_id, t("productArchive"), "mini-btn danger"));
       }
       actionsCell.appendChild(actions);
       row.appendChild(actionsCell);
@@ -118,7 +122,7 @@
 
   function resetForm() {
     editingProductId = null;
-    element("product-form-title").textContent = "创建产品";
+    element("product-form-title").textContent = t("productCreate");
     element("product-name").value = "";
     element("product-company-name").value = "";
     element("product-note").value = "";
@@ -141,7 +145,7 @@
     const product = products.find(item => String(item.product_id) === String(productId));
     if (!product || isArchived(product)) return;
     editingProductId = String(product.product_id);
-    element("product-form-title").textContent = "编辑产品";
+    element("product-form-title").textContent = t("productEdit");
     element("product-name").value = String(product.name || "");
     element("product-company-name").value = String(product.company_name || "");
     element("product-note").value = String(product.note || "");
@@ -161,7 +165,7 @@
     const saveButton = element("product-form-save");
     if (saveButton) {
       saveButton.disabled = value;
-      saveButton.textContent = value ? "正在保存..." : "保存产品";
+      saveButton.textContent = value ? t("productSaving") : t("productSave");
     }
   }
 
@@ -181,8 +185,8 @@
     } catch (error) {
       if (error?.name === "AbortError" || currentLifecycle !== lifecycleId) return;
       products = [];
-      element("product-list-count").textContent = "0 个产品";
-      setListState("error", error.message || "产品列表加载失败，请稍后重试。");
+      element("product-list-count").textContent = t("productCount", { count: 0, plural: "s" });
+      setListState("error", error.message || t("productListLoadFailed"));
     }
   }
 
@@ -192,8 +196,8 @@
     const name = element("product-name").value.trim();
     const companyName = element("product-company-name").value.trim();
     const note = element("product-note").value.trim();
-    if (!name) return showFormError("请输入产品名称。");
-    if (!companyName) return showFormError("请输入公司名称。");
+    if (!name) return showFormError(t("productNameRequired"));
+    if (!companyName) return showFormError(t("productCompanyRequired"));
 
     setSaving(true);
     try {
@@ -207,11 +211,11 @@
       } else {
         await global.KOLConnectAPI.post("/api/products", payload, { signal: resources.signal });
       }
-      getApp().showSaved(editingProductId ? "产品已更新。" : "产品已创建。");
+      getApp().showSaved(editingProductId ? t("productUpdated") : t("productCreated"));
       closeForm();
       await loadProducts();
     } catch (error) {
-      if (error?.name !== "AbortError") showFormError(error.message || "产品保存失败。");
+      if (error?.name !== "AbortError") showFormError(error.message || t("productSaveFailed"));
     } finally {
       setSaving(false);
     }
@@ -220,8 +224,8 @@
   async function changeArchiveState(productId, archived) {
     if (mutationInProgress || !resources) return;
     const message = archived
-      ? "归档后，该产品将从默认列表隐藏。已有 Campaign 和合作数据不会删除。"
-      : "恢复该产品？历史 Campaign 和合作数据将保持不变。";
+      ? t("productArchiveConfirm")
+      : t("productRestoreConfirm");
     if (!global.confirm(message)) return;
 
     mutationInProgress = true;
@@ -231,7 +235,7 @@
         { archived_at: archived ? new Date().toISOString() : null },
         { signal: resources.signal },
       );
-      getApp().showSaved(archived ? "产品已归档。" : "产品已恢复。");
+      getApp().showSaved(archived ? t("productArchived") : t("productRestored"));
       if (editingProductId === String(productId)) closeForm();
       await loadProducts();
     } catch (error) {

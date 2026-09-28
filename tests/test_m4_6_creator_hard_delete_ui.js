@@ -79,6 +79,17 @@ function createEnvironment(api) {
     clearTimeout,
   };
   sandbox.window = sandbox;
+  sandbox.KOLConnectApp = {
+    t(key) {
+      return {
+        creatorDeleteSuccess: "达人已永久删除。",
+        creatorDeleteBlocked: "当前无法永久删除。请先处理下列阻止项。",
+        creatorDeleteStale: "相关数据已发生变化，请重新确认删除影响。",
+        creatorDeleteNewBlocker: "当前出现新的安全阻止项，已刷新删除影响。",
+        creatorDeleteStorageLocked: "当前数据正在被其他操作修改，请稍后重新检查影响。",
+      }[key] || key;
+    },
+  };
   sandbox.KOLConnectPages = { registerPage(name, page) { registered[name] = page; } };
   vm.createContext(sandbox);
   vm.runInContext(
@@ -264,9 +275,9 @@ async function testApiClientUsesExactRoutesAndJsonDelete() {
 
 async function testArchiveActionsRemainAndNoForceDeleteExists() {
   const source = fs.readFileSync(path.join(ROOT, "webapp/pages/creator-library.js"), "utf8");
-  assert.match(source, /归档达人/);
-  assert.match(source, /恢复达人/);
-  assert.match(source, /actions\.appendChild\(createAction\("永久删除"/);
+  assert.match(source, /creatorLibraryArchiveCreator/);
+  assert.match(source, /creatorLibraryRestoreCreator/);
+  assert.match(source, /actions\.appendChild\(createAction\(t\("creatorLibraryDeleteCreator"/);
   assert.doesNotMatch(source, /force[ _-]?delete/i);
 }
 

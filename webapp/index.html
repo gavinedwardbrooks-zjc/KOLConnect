@@ -17,23 +17,23 @@
         <div class="brand-subtitle" data-i18n="appSubtitle">海外达人管理与合作工具</div>
       </div>
       <nav class="top-nav">
-        <button class="nav-btn nav-primary active" data-page="dashboard" data-primary="dashboard">工作台</button>
-        <button class="nav-btn nav-primary" data-page="scrape" data-primary="scrape">发现达人</button>
-        <button class="nav-btn nav-primary" data-page="creator-library" data-primary="creator-library">达人库</button>
-        <button class="nav-btn nav-primary" data-page="mail" data-primary="mail">合作管理</button>
-        <button class="nav-btn nav-primary" data-page="settings" data-primary="settings">设置</button>
+        <button class="nav-btn nav-primary active" data-page="dashboard" data-primary="dashboard" data-i18n="navDashboard">工作台</button>
+        <button class="nav-btn nav-primary" data-page="scrape" data-primary="scrape" data-i18n="navDiscoverCreators">发现达人</button>
+        <button class="nav-btn nav-primary" data-page="creator-library" data-primary="creator-library" data-i18n="navCreatorLibrary">达人库</button>
+        <button class="nav-btn nav-primary" data-page="mail" data-primary="mail" data-i18n="navPartnerships">合作管理</button>
+        <button class="nav-btn nav-primary" data-page="settings" data-primary="settings" data-i18n="navSettings">设置</button>
       </nav>
       <nav class="sub-nav" aria-label="功能入口" hidden>
         <button class="nav-btn nav-sub" data-page="scrape" data-primary="scrape" data-i18n="navScrape">邮箱抓取</button>
         <button class="nav-btn nav-sub" data-page="review" data-primary="scrape" data-i18n="navReview">审核结果</button>
         <button class="nav-btn nav-sub" data-page="discover" data-primary="scrape" data-i18n="navDiscover">链接清洗</button>
-        <button class="nav-btn nav-sub" data-page="products" data-primary="mail">产品</button>
-        <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail">Agency</button>
-        <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail">Campaign</button>
+        <button class="nav-btn nav-sub" data-page="products" data-primary="mail" data-i18n="navProducts">产品</button>
+        <button class="nav-btn nav-sub" data-page="agencies" data-primary="mail" data-i18n="navAgencies">Agency</button>
+        <button class="nav-btn nav-sub" data-page="campaigns" data-primary="mail" data-i18n="navCampaigns">Campaign</button>
         <button class="nav-btn nav-sub" data-page="mail" data-primary="mail" data-i18n="navMail">邮件</button>
-        <button class="nav-btn nav-sub" data-page="mail-follow-up" data-primary="mail">邮件跟进</button>
+        <button class="nav-btn nav-sub" data-page="mail-follow-up" data-primary="mail" data-i18n="navMailFollowUp">邮件跟进</button>
         <button class="nav-btn nav-sub" data-page="accounts" data-primary="settings" data-i18n="navAccounts">Chrome 账号</button>
-        <button class="nav-btn nav-sub" data-page="mail-accounts" data-primary="settings">邮箱账户</button>
+        <button class="nav-btn nav-sub" data-page="mail-accounts" data-primary="settings" data-i18n="navMailAccounts">邮箱账户</button>
         <button class="nav-btn nav-sub" data-page="logs" data-primary="settings" data-i18n="navLogs">日志</button>
       </nav>
     </header>
@@ -43,73 +43,81 @@
         <div class="page-header">
           <div class="dashboard-page-heading">
             <div>
-              <p class="eyebrow">KOL OPERATIONS</p>
-              <h1>工作台</h1>
-              <p>从当前数据进入具体达人、账号与合作事项。</p>
+              <p class="eyebrow" data-i18n="dashboardEyebrow">KOL OPERATIONS</p>
+              <h1 data-i18n="dashboardTitle">工作台</h1>
+              <p data-i18n="dashboardSubtitle">从当前数据进入具体达人、账号与合作事项。</p>
             </div>
             <div class="dashboard-v2-heading-actions">
-              <button class="soft-btn" id="dashboard-v2-customize">自定义工作台</button>
-              <button class="soft-btn" id="dashboard-refresh">刷新数据</button>
+              <button class="soft-btn" id="dashboard-v2-customize" data-i18n="dashboardCustomize">自定义工作台</button>
+              <button class="soft-btn" id="dashboard-refresh" data-i18n="dashboardRefreshData">刷新数据</button>
             </div>
           </div>
         </div>
 
-        <section id="dashboard-v2" class="dashboard-v2" aria-label="KOL 运营工作台">
-          <div class="dashboard-v2-summary" aria-label="核心业务摘要">
+        <section id="dashboard-v2" class="dashboard-v2" aria-label="KOL 运营工作台" data-i18n-aria-label="dashboardAriaLabel">
+          <div class="dashboard-v2-summary" aria-label="核心业务摘要" data-i18n-aria-label="dashboardCoreSummary">
             <div class="dashboard-v2-summary-item">
-              <span>达人</span><strong id="dashboard-v2-creator-count">--</strong><small>位 Creator</small>
+              <span data-i18n="dashboardCreators">达人</span><strong id="dashboard-v2-creator-count">--</strong><small data-i18n="dashboardCreatorUnitLabel">位 Creator</small>
             </div>
             <div class="dashboard-v2-summary-item">
-              <span>平台账号</span><strong id="dashboard-v2-account-count">--</strong><small>个 CreatorAccount</small>
+              <span data-i18n="dashboardPlatformAccounts">平台账号</span><strong id="dashboard-v2-account-count">--</strong><small data-i18n="dashboardCreatorAccountUnitLabel">个 CreatorAccount</small>
             </div>
-            <div class="dashboard-v2-summary-item"><span>Campaign</span><strong id="dashboard-v2-campaign-count">--</strong><small>个已保存项目</small></div>
+            <div class="dashboard-v2-summary-item"><span data-i18n="dashboardCampaignLabelShort">Campaign</span><strong id="dashboard-v2-campaign-count">--</strong><small data-i18n="dashboardSavedCampaigns">个已保存项目</small></div>
             <div class="dashboard-v2-summary-item is-static">
-              <span>合作花费</span><strong id="dashboard-v2-spend">--</strong><small>按币种分组</small>
+              <span data-i18n="dashboardCooperationSpend">合作花费</span><strong id="dashboard-v2-spend">--</strong><small data-i18n="dashboardGroupedByCurrency">按币种分组</small>
             </div>
             <div class="dashboard-v2-summary-item is-static">
-              <span>已录入 ROI</span><strong id="dashboard-v2-roi">--</strong><small>不自动换算</small>
+              <span data-i18n="dashboardRecordedRoi">已录入 ROI</span><strong id="dashboard-v2-roi">--</strong><small data-i18n="dashboardNoAutomaticConversion">不自动换算</small>
             </div>
           </div>
 
           <div id="dashboard-v2-modules" class="dashboard-v2-grid">
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="today" aria-label="今日待处理">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">TODAY</p><h2>今日待处理</h2></div><span class="dashboard-v2-note">可直接进入对象</span></div>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="today" aria-label="今日待处理" data-i18n-aria-label="dashboardModuleToday">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardTodayEyebrow">TODAY</p><h2 data-i18n="dashboardModuleToday">今日待处理</h2></div><span class="dashboard-v2-note" data-i18n="dashboardOpenItems">可直接进入对象</span></div>
               <div class="dashboard-v2-action-list" id="dashboard-v2-today-list"></div>
             </section>
 
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="missing_info" aria-label="待补充信息">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">DATA COMPLETENESS</p><h2>待补充信息</h2></div><span class="dashboard-v2-note">按实际字段统计</span></div>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="mail_follow_up" aria-label="邮件跟进" data-i18n-aria-label="mailFollowupTitle">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardMailEyebrow">MAIL FOLLOW-UP</p><h2 data-i18n="mailFollowupTitle">邮件跟进</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="mail-follow-up" data-i18n="dashboardViewAll">查看全部</button></div>
+              <div class="dashboard-v2-mail-metrics" aria-label="邮件跟进摘要" data-i18n-aria-label="dashboardMailSummary"><div><span data-i18n="mailFollowupWaitingMe">待我回复</span><strong id="dashboard-v2-mail-waiting-me">--</strong></div><div><span data-i18n="mailFollowupWaitingCreator">待对方回复</span><strong id="dashboard-v2-mail-waiting-creator">--</strong></div><div><span data-i18n="mailFollowupWaitingUnknown">状态未知</span><strong id="dashboard-v2-mail-waiting-unknown">--</strong></div><div><span data-i18n="dashboardActionableTotal">待处理总数</span><strong id="dashboard-v2-mail-actionable-total">--</strong></div></div>
+              <div id="dashboard-v2-mail-followup-list" class="dashboard-v2-mail-list"></div>
+              <p id="dashboard-v2-mail-followup-empty" class="hint" hidden data-i18n="dashboardNoActionableMail">暂无待处理邮件跟进。</p>
+              <p id="dashboard-v2-mail-followup-error" class="hint" hidden data-i18n="dashboardMailUnavailable">邮件跟进数据暂不可用。</p>
+            </section>
+
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="missing_info" aria-label="待补充信息" data-i18n-aria-label="dashboardModuleMissingInfo">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardDataCompletenessEyebrow">DATA COMPLETENESS</p><h2 data-i18n="dashboardModuleMissingInfo">待补充信息</h2></div><span class="dashboard-v2-note" data-i18n="dashboardActualFieldCounts">按实际字段统计</span></div>
               <div class="dashboard-v2-missing-grid">
-                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-email"><span>缺邮箱</span><strong id="dashboard-v2-missing-email">--</strong><small>个账号</small></button>
-                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-country"><span>缺国家/地区</span><strong id="dashboard-v2-missing-country">--</strong><small>位达人</small></button>
-                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-language"><span>缺语言</span><strong id="dashboard-v2-missing-language">--</strong><small>位达人</small></button>
-                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-content-type"><span>缺内容类型</span><strong id="dashboard-v2-missing-content-type">--</strong><small>位达人</small></button>
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-email"><span data-i18n="dashboardMissingEmail">缺邮箱</span><strong id="dashboard-v2-missing-email">--</strong><small data-i18n="dashboardAccountUnit">个账号</small></button>
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-country"><span data-i18n="dashboardMissingCountry">缺国家/地区</span><strong id="dashboard-v2-missing-country">--</strong><small data-i18n="dashboardCreatorUnit">位达人</small></button>
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-language"><span data-i18n="dashboardMissingLanguage">缺语言</span><strong id="dashboard-v2-missing-language">--</strong><small data-i18n="dashboardCreatorUnit">位达人</small></button>
+                <button type="button" class="dashboard-v2-missing" data-dashboard-v2-open="missing-content-type"><span data-i18n="dashboardMissingContentType">缺内容类型</span><strong id="dashboard-v2-missing-content-type">--</strong><small data-i18n="dashboardCreatorUnit">位达人</small></button>
               </div>
             </section>
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="campaigns" aria-label="Campaign 概览">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">CAMPAIGNS</p><h2>Campaign 概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="campaigns">查看全部</button></div>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="campaigns" aria-label="Campaign 概览" data-i18n-aria-label="dashboardModuleCampaigns">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardCampaignsEyebrow">CAMPAIGNS</p><h2 data-i18n="dashboardModuleCampaigns">Campaign 概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="campaigns" data-i18n="dashboardViewAll">查看全部</button></div>
               <div id="dashboard-v2-campaign-list" class="dashboard-v2-campaign-list"></div>
             </section>
 
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="creator_overview" aria-label="达人数据概览">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">CREATOR LIBRARY</p><h2>达人数据概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="accounts">查看账号</button></div>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="creator_overview" aria-label="达人数据概览" data-i18n-aria-label="dashboardModuleCreatorOverview">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardCreatorLibraryEyebrow">CREATOR LIBRARY</p><h2 data-i18n="dashboardModuleCreatorOverview">达人数据概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="accounts" data-i18n="dashboardViewAccounts">查看账号</button></div>
               <div id="dashboard-v2-platform-list" class="dashboard-v2-platform-list"></div>
             </section>
 
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="data_freshness" aria-label="数据更新状态">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">DATA HEALTH</p><h2>数据更新状态</h2></div><span id="dashboard-v2-health-score" class="dashboard-v2-health-score">--</span></div>
-              <div class="dashboard-v2-health-grid"><div><span>正常</span><strong id="dashboard-v2-health-healthy">--</strong></div><div><span>趋势下滑</span><strong id="dashboard-v2-health-warning">--</strong></div><div><span>数据过期</span><strong id="dashboard-v2-health-critical">--</strong></div></div>
-              <p class="hint">基于达人快照新鲜度与现有趋势数据，不代表合作履约评价。</p>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="data_freshness" aria-label="数据更新状态" data-i18n-aria-label="dashboardModuleDataFreshness">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardDataHealthEyebrow">DATA HEALTH</p><h2 data-i18n="dashboardModuleDataFreshness">数据更新状态</h2></div><span id="dashboard-v2-health-score" class="dashboard-v2-health-score">--</span></div>
+              <div class="dashboard-v2-health-grid"><div><span data-i18n="dashboardHealthy">正常</span><strong id="dashboard-v2-health-healthy">--</strong></div><div><span data-i18n="dashboardTrendDeclining">趋势下滑</span><strong id="dashboard-v2-health-warning">--</strong></div><div><span data-i18n="dashboardDataExpired">数据过期</span><strong id="dashboard-v2-health-critical">--</strong></div></div>
+              <p class="hint" data-i18n="dashboardHealthHint">基于达人快照新鲜度与现有趋势数据，不代表合作履约评价。</p>
             </section>
 
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="geography" aria-label="地区与语言">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">GEOGRAPHY</p><h2>地区与语言</h2></div></div>
-              <div class="dashboard-v2-insight-columns"><div><h3>国家/地区</h3><div id="dashboard-v2-country-list" class="dashboard-ranking-list"></div></div><div><h3>语言</h3><div id="dashboard-v2-language-list" class="dashboard-ranking-list"></div></div></div>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="geography" aria-label="地区与语言" data-i18n-aria-label="dashboardModuleGeography">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardGeographyEyebrow">GEOGRAPHY</p><h2 data-i18n="dashboardModuleGeography">地区与语言</h2></div></div>
+              <div class="dashboard-v2-insight-columns"><div><h3 data-i18n="dashboardCountryRegion">国家/地区</h3><div id="dashboard-v2-country-list" class="dashboard-ranking-list"></div></div><div><h3 data-i18n="dashboardLanguage">语言</h3><div id="dashboard-v2-language-list" class="dashboard-ranking-list"></div></div></div>
             </section>
 
-            <section class="section-card dashboard-v2-module dashboard-v2-wide" data-dashboard-v2-module="roi" aria-label="ROI 与表现">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow">RECORDED PERFORMANCE</p><h2>ROI / Performance</h2></div><strong id="dashboard-v2-roi-latest">--</strong></div>
-              <p class="hint">仅展示已录入的 ROI；多币种金额不做静默换算。</p>
+            <section class="section-card dashboard-v2-module dashboard-v2-wide" data-dashboard-v2-module="roi" aria-label="ROI 与表现" data-i18n-aria-label="dashboardModuleRoi">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardPerformanceEyebrow">RECORDED PERFORMANCE</p><h2 data-i18n="dashboardModuleRoi">ROI / Performance</h2></div><strong id="dashboard-v2-roi-latest">--</strong></div>
+              <p class="hint" data-i18n="dashboardRoiHint">仅展示已录入的 ROI；多币种金额不做静默换算。</p>
             </section>
           </div>
         </section>
@@ -348,26 +356,26 @@
       <dialog id="dashboard-customization-dialog" class="dashboard-customization-dialog" aria-labelledby="dashboard-customization-title">
         <div class="dashboard-customization-header">
           <div>
-            <h2 id="dashboard-customization-title">自定义工作台</h2>
-            <p class="hint">选择显示内容并调整排列顺序，仅保存在当前设备浏览器中。</p>
+            <h2 id="dashboard-customization-title" data-i18n="dashboardCustomize">自定义工作台</h2>
+            <p class="hint" data-i18n="dashboardCustomizationHint">选择显示内容并调整排列顺序，仅保存在当前设备浏览器中。</p>
           </div>
-          <button class="soft-btn compact-btn" id="dashboard-customization-close" type="button" aria-label="关闭">关闭</button>
+          <button class="soft-btn compact-btn" id="dashboard-customization-close" type="button" aria-label="关闭" data-i18n="dashboardClose" data-i18n-aria-label="dashboardClose">关闭</button>
         </div>
         <div id="dashboard-customization-modules" class="dashboard-customization-modules"></div>
         <div class="action-row dashboard-customization-footer">
-          <button class="secondary-btn" id="dashboard-customization-reset" type="button">恢复默认布局</button>
-          <button class="primary-btn" id="dashboard-customization-done" type="button">完成</button>
+          <button class="secondary-btn" id="dashboard-customization-reset" type="button" data-i18n="dashboardRestoreDefaultLayout">恢复默认布局</button>
+          <button class="primary-btn" id="dashboard-customization-done" type="button" data-i18n="dashboardDone">完成</button>
         </div>
       </dialog>
 
-      <aside id="dashboard-v2-drawer" class="dashboard-v2-drawer" hidden aria-label="工作台明细">
+      <aside id="dashboard-v2-drawer" class="dashboard-v2-drawer" hidden aria-label="工作台明细" data-i18n-aria-label="dashboardDetails">
         <div class="dashboard-v2-drawer-backdrop" data-dashboard-v2-drawer-close></div>
         <section class="dashboard-v2-drawer-panel" role="dialog" aria-modal="true" aria-labelledby="dashboard-v2-drawer-title">
           <header class="dashboard-v2-drawer-heading">
-            <div><p class="eyebrow">DETAILS</p><h2 id="dashboard-v2-drawer-title">明细</h2><p id="dashboard-v2-drawer-count" class="hint"></p></div>
-            <button type="button" class="icon-btn" aria-label="关闭" data-dashboard-v2-drawer-close>×</button>
+            <div><p class="eyebrow">DETAILS</p><h2 id="dashboard-v2-drawer-title" data-i18n="dashboardDetails">明细</h2><p id="dashboard-v2-drawer-count" class="hint"></p></div>
+            <button type="button" class="icon-btn" aria-label="关闭" data-i18n-aria-label="dashboardClose" data-dashboard-v2-drawer-close>×</button>
           </header>
-          <label class="dashboard-v2-search"><span>搜索达人或账号</span><input id="dashboard-v2-drawer-search" type="search" autocomplete="off" placeholder="输入名称、平台或账号名"></label>
+          <label class="dashboard-v2-search"><span data-i18n="dashboardSearchCreatorOrAccount">搜索达人或账号</span><input id="dashboard-v2-drawer-search" type="search" autocomplete="off" placeholder="输入名称、平台或账号名" data-i18n-placeholder="dashboardSearchPlaceholder"></label>
           <div id="dashboard-v2-drawer-list" class="dashboard-v2-drawer-list"></div>
           <footer class="dashboard-v2-drawer-footer">
             <button id="dashboard-v2-drawer-primary" type="button" class="primary-btn" hidden></button>
@@ -382,52 +390,52 @@
         </div>
 
         <div class="section-card email-enrichment-card" id="email-enrichment-card">
-          <div class="section-title">联系邮箱补全</div>
-          <p class="hint">优先使用 KOLConnect 中已有账号；新结果通过现有服务安全写回 SQLite。</p>
+          <div class="section-title" data-i18n="emailEnrichmentTitle">联系邮箱补全</div>
+          <p class="hint" data-i18n="emailEnrichmentHint">优先使用 KOLConnect 中已有账号；新结果通过现有服务安全写回 SQLite。</p>
           <fieldset class="email-source-selector">
-            <legend>你想给哪些达人补邮箱？</legend>
-            <label class="email-source-option"><input type="radio" name="email-source" value="task" checked><span><strong>最近抓取的达人</strong><small>从历史抓取任务中选择一批账号</small></span></label>
-            <label class="email-source-option"><input type="radio" name="email-source" value="review_results"><span><strong>待处理的达人</strong><small>从审核结果中选择需要补邮箱的账号</small></span></label>
-            <label class="email-source-option"><input type="radio" name="email-source" value="creator_library"><span><strong>达人库</strong><small>给已经入库的达人补邮箱</small></span></label>
-            <label class="email-source-option"><input type="radio" name="email-source" value="manual"><span><strong>临时补邮箱</strong><small>粘贴一批达人链接，仅查找并补充邮箱，不创建新的达人抓取任务</small></span></label>
+            <legend data-i18n="emailSourceQuestion">你想给哪些达人补邮箱？</legend>
+            <label class="email-source-option"><input type="radio" name="email-source" value="task" checked><span><strong data-i18n="emailSourceTask">最近抓取的达人</strong><small data-i18n="emailSourceTaskHint">从历史抓取任务中选择一批账号</small></span></label>
+            <label class="email-source-option"><input type="radio" name="email-source" value="review_results"><span><strong data-i18n="emailSourceReview">待处理的达人</strong><small data-i18n="emailSourceReviewHint">从审核结果中选择需要补邮箱的账号</small></span></label>
+            <label class="email-source-option"><input type="radio" name="email-source" value="creator_library"><span><strong data-i18n="emailSourceLibrary">达人库</strong><small data-i18n="emailSourceLibraryHint">给已经入库的达人补邮箱</small></span></label>
+            <label class="email-source-option"><input type="radio" name="email-source" value="manual"><span><strong data-i18n="emailSourceManual">临时补邮箱</strong><small data-i18n="emailSourceManualHint">粘贴一批达人链接，仅查找并补充邮箱，不创建新的达人抓取任务</small></span></label>
           </fieldset>
           <div class="form-grid two" id="email-existing-source-fields">
             <label class="field" id="email-source-task-field">
-              <span>任务</span>
+              <span data-i18n="reviewTask">任务</span>
               <select id="email-source-task"></select>
             </label>
             <fieldset class="field email-platform-filter">
-              <legend>平台</legend>
+              <legend data-i18n="reviewPlatform">平台</legend>
               <label><input class="email-platform-option" type="checkbox" value="tiktok" checked> TikTok</label>
               <label><input class="email-platform-option" type="checkbox" value="instagram" checked> Instagram</label>
               <label><input class="email-platform-option" type="checkbox" value="youtube" checked> YouTube</label>
             </fieldset>
           </div>
           <fieldset class="email-scope-selector" id="email-scope-selector">
-            <legend>范围</legend>
-            <label><input type="radio" name="email-scope" value="missing" checked> 仅没有邮箱的账号</label>
-            <label><input type="radio" name="email-scope" value="all"> 所有账号</label>
+            <legend data-i18n="emailScope">范围</legend>
+            <label><input type="radio" name="email-scope" value="missing" checked> <span data-i18n="emailScopeMissing">仅没有邮箱的账号</span></label>
+            <label><input type="radio" name="email-scope" value="all"> <span data-i18n="emailScopeAll">所有账号</span></label>
           </fieldset>
           <label class="field" id="email-manual-source-field" hidden>
-            <span>主页或视频链接</span>
-            <textarea id="email-manual-links" rows="5" placeholder="一行一个 TikTok、Instagram 或 YouTube 链接"></textarea>
+            <span data-i18n="emailUrlLabel">主页或视频链接</span>
+            <textarea id="email-manual-links" rows="5" data-i18n-placeholder="emailUrlPlaceholder" placeholder="一行一个 TikTok、Instagram 或 YouTube 链接"></textarea>
           </label>
-          <p class="email-enrichment-summary" id="email-enrichment-summary">请选择来源并预览待处理账号。</p>
+          <p class="email-enrichment-summary" id="email-enrichment-summary" data-i18n="emailSelectSource">请选择来源并预览待处理账号。</p>
           <div class="action-row">
-            <button class="soft-btn" id="email-enrichment-preview" type="button">查看待补充范围</button>
-            <button class="primary-btn" id="email-enrichment-start" type="button" disabled>开始抓取邮箱</button>
+            <button class="soft-btn" id="email-enrichment-preview" type="button" data-i18n="emailPreview">查看待补充范围</button>
+            <button class="primary-btn" id="email-enrichment-start" type="button" disabled data-i18n="emailStart">开始抓取邮箱</button>
           </div>
           <div class="table-wrap email-enrichment-results-wrap" id="email-enrichment-results-wrap" hidden>
             <table class="email-enrichment-results">
-              <thead><tr><th>平台</th><th>账号主页</th><th>邮箱</th><th>来源</th><th>状态</th></tr></thead>
+              <thead><tr><th data-i18n="reviewPlatform">平台</th><th data-i18n="reviewLink">账号主页</th><th data-i18n="reviewEmail">邮箱</th><th data-i18n="emailSource">来源</th><th data-i18n="emailResultStatus">状态</th></tr></thead>
               <tbody id="email-enrichment-results"></tbody>
             </table>
           </div>
         </div>
 
         <div class="section-card" id="capture-automatic-panel">
-          <div class="section-title">批量抓取达人</div>
-          <p class="hint">粘贴 TikTok、Instagram 或 YouTube 达人主页链接，自动抓取账号资料并进入审核。</p>
+          <div class="section-title" data-i18n="scrapeBatchTitle">批量抓取达人</div>
+          <p class="hint" data-i18n="scrapeBatchHint">粘贴 TikTok、Instagram 或 YouTube 达人主页链接，自动抓取账号资料并进入审核。</p>
           <label class="field">
             <span data-i18n="taskName">任务名称</span>
             <input id="task-name" type="text" data-i18n-placeholder="taskNamePlaceholder" placeholder="留空则自动命名">
@@ -445,9 +453,9 @@
             <div class="field task-platform-selector compact-platform-selector">
               <span data-i18n="targetPlatform">目标平台</span>
               <details class="platform-multiselect" id="task-platform-menu">
-                <summary id="task-platform-summary">全部平台</summary>
+                <summary id="task-platform-summary" data-i18n="scrapeAllPlatforms">全部平台</summary>
                 <div class="platform-multiselect-menu">
-                  <label class="checkbox-line"><input id="task-platform-all" type="checkbox" checked><span>全部</span></label>
+                  <label class="checkbox-line"><input id="task-platform-all" type="checkbox" checked><span data-i18n="scrapeAll">全部</span></label>
                   <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="tiktok" checked><span>TikTok</span></label>
                   <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="instagram" checked><span>Instagram</span></label>
                   <label class="checkbox-line"><input class="task-platform-option" type="checkbox" value="youtube" checked><span>YouTube</span></label>
@@ -456,10 +464,10 @@
             </div>
           </div>
           <input id="links-file" type="hidden" value="links.txt">
-          <div class="task-current" id="task-current">尚未创建任务</div>
-          <div class="hint" id="scrape-control-status">当前状态：空闲</div>
+          <div class="task-current" id="task-current" data-i18n="scrapeNoTask">尚未创建任务</div>
+          <div class="hint" id="scrape-control-status" data-i18n="scrapeIdleStatus">当前状态：空闲</div>
 
-          <p class="hint">抓取完成后，请在“审核结果”页核对数据，再同步当前任务到四表。</p>
+          <p class="hint" data-i18n="scrapeCompleteHint">抓取完成后，请在“审核结果”页核对数据。</p>
 
           <div class="action-row">
             <button class="soft-btn" id="task-create" data-i18n="createTask">创建任务</button>
@@ -467,7 +475,7 @@
             <button class="soft-btn" id="scrape-pause" data-i18n="pauseTask" hidden>暂停任务</button>
             <button class="danger-btn" id="scrape-stop" data-i18n="stopScrape" hidden>停止任务</button>
             <button class="soft-btn" id="scrape-open-results" data-i18n="openResults">打开结果文件</button>
-            <button class="soft-btn" id="scrape-open-result-folder" disabled>打开结果文件夹</button>
+            <button class="soft-btn" id="scrape-open-result-folder" disabled data-i18n="scrapeOpenFolder">打开结果文件夹</button>
           </div>
         </div>
 
@@ -484,58 +492,58 @@
 
         <div class="section-card">
           <div class="section-title" data-i18n="runtimeLog">运行日志</div>
-          <pre class="log-panel" id="scrape-log">等待运行...</pre>
+          <pre class="log-panel" id="scrape-log" data-i18n="taskLogWaiting">等待运行...</pre>
         </div>
       </section>
 
       <section class="page" data-page="creator-library">
         <div class="page-header">
-          <h1>达人库</h1>
-          <p>集中查看已从 KOL Connect 插件导入的达人分析，并在本地记录合作进度。</p>
+          <h1 data-i18n="creatorLibraryTitle">达人库</h1>
+          <p data-i18n="creatorLibrarySubtitle">集中查看已从 KOL Connect 插件导入的达人分析，并在本地记录合作进度。</p>
         </div>
 
         <div class="section-card">
           <div class="creator-library-toolbar">
             <label class="field creator-library-search-field creator-library-primary-filter">
-              <span>搜索达人</span>
-              <input id="creator-library-search" type="search" placeholder="达人名称、主页链接或标签">
+              <span data-i18n="creatorLibrarySearch">搜索达人</span>
+              <input id="creator-library-search" type="search" placeholder="达人名称、邮箱、主页链接或标签" data-i18n-placeholder="creatorLibrarySearchPlaceholder">
             </label>
             <label class="field creator-library-primary-filter">
-              <span>国家/地区</span>
-              <select id="creator-library-country"><option value="">全部国家/地区</option></select>
+              <span data-i18n="creatorLibraryCountryRegion">国家/地区</span>
+              <select id="creator-library-country"><option value="" data-i18n="creatorLibraryAllCountries">全部国家/地区</option></select>
             </label>
             <label class="field creator-library-secondary-filter">
-              <span>语言</span>
-              <select id="creator-library-language"><option value="">全部语言</option></select>
+              <span data-i18n="creatorLibraryLanguage">语言</span>
+              <select id="creator-library-language"><option value="" data-i18n="creatorLibraryAllLanguages">全部语言</option></select>
             </label>
             <label class="field creator-library-primary-filter">
-              <span>内容类型</span>
-              <select id="creator-library-category"><option value="">全部内容类型</option></select>
+              <span data-i18n="creatorLibraryContentCategory">内容类型</span>
+              <select id="creator-library-category"><option value="" data-i18n="creatorLibraryAllContentCategories">全部内容类型</option></select>
             </label>
             <label class="field creator-library-secondary-filter">
               <span>Agency</span>
               <select id="creator-library-agency"><option value="">全部 Agency</option></select>
             </label>
             <label class="field creator-library-secondary-filter">
-              <span>标签</span>
-              <select id="creator-library-tag"><option value="">全部标签</option></select>
+              <span data-i18n="creatorLibraryTag">标签</span>
+              <select id="creator-library-tag"><option value="" data-i18n="creatorLibraryAllTags">全部标签</option></select>
             </label>
             <label class="field creator-library-secondary-filter">
               <span>AI Tag</span>
               <select id="creator-library-ai-tag"><option value="">全部 AI Tags</option></select>
             </label>
             <label class="field creator-library-secondary-filter">
-              <span>最少粉丝</span>
-              <input id="creator-library-followers-min" inputmode="numeric" placeholder="例如 100K">
+              <span data-i18n="creatorLibraryFollowersMinimum">最少粉丝</span>
+              <input id="creator-library-followers-min" inputmode="numeric" placeholder="例如 100K" data-i18n-placeholder="creatorLibraryFollowersMinimumPlaceholder">
             </label>
             <label class="field creator-library-secondary-filter">
-              <span>最多粉丝</span>
-              <input id="creator-library-followers-max" inputmode="numeric" placeholder="例如 1M">
+              <span data-i18n="creatorLibraryFollowersMaximum">最多粉丝</span>
+              <input id="creator-library-followers-max" inputmode="numeric" placeholder="例如 1M" data-i18n-placeholder="creatorLibraryFollowersMaximumPlaceholder">
             </label>
             <label class="field creator-library-secondary-filter">
-              <span>Insight 等级</span>
+              <span data-i18n="creatorLibraryInsightLevel">Insight 等级</span>
               <select id="creator-library-level">
-                <option value="">全部等级</option>
+                <option value="" data-i18n="creatorLibraryAllLevels">全部等级</option>
                 <option value="excellent">excellent</option>
                 <option value="good">good</option>
                 <option value="average">average</option>
@@ -543,22 +551,22 @@
               </select>
             </label>
             <label class="field creator-library-primary-filter">
-              <span>排序</span>
+              <span data-i18n="creatorLibrarySort">排序</span>
               <select id="creator-library-sort">
-                <option value="created_at_desc">创建时间（最新添加）</option>
-                <option value="created_at_asc">创建时间（最早添加）</option>
-                <option value="updated_at_desc">更新时间（最近更新）</option>
-                <option value="updated_at_asc">更新时间（最早更新）</option>
-                <option value="creator_name_asc">达人名称（A-Z / 拼音）</option>
-                <option value="creator_name_desc">达人名称（Z-A / 拼音倒序）</option>
-                <option value="followers_desc">粉丝数（高到低）</option>
-                <option value="followers_asc">粉丝数（低到高）</option>
-                <option value="platform_asc">平台（Instagram → TikTok → YouTube）</option>
-                <option value="platform_desc">平台（YouTube → TikTok → Instagram）</option>
+                <option value="created_at_desc" data-i18n="creatorLibrarySortCreatedDesc">创建时间（最新添加）</option>
+                <option value="created_at_asc" data-i18n="creatorLibrarySortCreatedAsc">创建时间（最早添加）</option>
+                <option value="updated_at_desc" data-i18n="creatorLibrarySortUpdatedDesc">更新时间（最近更新）</option>
+                <option value="updated_at_asc" data-i18n="creatorLibrarySortUpdatedAsc">更新时间（最早更新）</option>
+                <option value="creator_name_asc" data-i18n="creatorLibrarySortNameAsc">达人名称（A-Z / 拼音）</option>
+                <option value="creator_name_desc" data-i18n="creatorLibrarySortNameDesc">达人名称（Z-A / 拼音倒序）</option>
+                <option value="followers_desc" data-i18n="creatorLibrarySortFollowersDesc">粉丝数（高到低）</option>
+                <option value="followers_asc" data-i18n="creatorLibrarySortFollowersAsc">粉丝数（低到高）</option>
+                <option value="platform_asc" data-i18n="creatorLibrarySortPlatformAsc">平台（Instagram → TikTok → YouTube）</option>
+                <option value="platform_desc" data-i18n="creatorLibrarySortPlatformDesc">平台（YouTube → TikTok → Instagram）</option>
               </select>
             </label>
             <label class="field creator-library-secondary-filter">
-              <span>每页显示</span>
+              <span data-i18n="creatorLibraryPerPage">每页显示</span>
               <select id="creator-library-page-size">
                 <option value="12">12</option>
                 <option value="24" selected>24</option>
@@ -566,36 +574,36 @@
               </select>
             </label>
             <label class="field creator-library-primary-filter">
-              <span>当前状态</span>
+              <span data-i18n="creatorLibraryCurrentStatus">当前状态</span>
               <select id="creator-library-status">
-                <option value="">全部状态</option>
-                <option value="discovered">已发现</option>
-                <option value="contacted">已联系</option>
-                <option value="negotiating">洽谈中</option>
-                <option value="cooperating">合作中</option>
-                <option value="completed">已完成</option>
-                <option value="rejected">已拒绝</option>
-                <option value="archived">已归档</option>
+                <option value="" data-i18n="creatorLibraryAllStatuses">全部状态</option>
+                <option value="discovered" data-i18n="creatorStatusDiscovered">已发现</option>
+                <option value="contacted" data-i18n="creatorStatusContacted">已联系</option>
+                <option value="negotiating" data-i18n="creatorStatusNegotiating">洽谈中</option>
+                <option value="cooperating" data-i18n="creatorStatusCooperating">合作中</option>
+                <option value="completed" data-i18n="creatorStatusCompleted">已完成</option>
+                <option value="rejected" data-i18n="creatorStatusRejected">已拒绝</option>
+                <option value="archived" data-i18n="creatorLibraryArchived">已归档</option>
               </select>
             </label>
-            <button class="soft-btn creator-library-more-filters" id="creator-library-more-filters" type="button" aria-expanded="false">更多筛选</button>
+            <button class="soft-btn creator-library-more-filters" id="creator-library-more-filters" type="button" aria-expanded="false" data-i18n="creatorLibraryMoreFiltersOpen">更多筛选</button>
             <div class="creator-library-actions">
               <div class="creator-library-actions-left">
-                <div class="view-toggle" role="group" aria-label="达人库视图">
-                  <button class="soft-btn compact-btn active" id="creator-library-card-view" type="button">卡片</button>
-                  <button class="soft-btn compact-btn" id="creator-library-table-view" type="button">表格</button>
+                <div class="view-toggle" role="group" aria-label="达人库视图" data-i18n-aria-label="creatorLibraryViewMode">
+                  <button class="soft-btn compact-btn active" id="creator-library-card-view" type="button" data-i18n="creatorLibraryCardView">卡片</button>
+                  <button class="soft-btn compact-btn" id="creator-library-table-view" type="button" data-i18n="creatorLibraryTableView">表格</button>
                 </div>
-                <label class="creator-library-select-all"><input id="creator-library-select-all" type="checkbox"> 本页全选</label>
-                <span class="selection-count" id="creator-library-selected-count">已选 0 人</span>
+                <label class="creator-library-select-all"><input id="creator-library-select-all" type="checkbox"> <span data-i18n="creatorLibrarySelectPage">本页全选</span></label>
+                <span class="selection-count" id="creator-library-selected-count" data-i18n="creatorLibrarySelectedCount">已选 {count} 人</span>
               </div>
               <div class="creator-library-actions-right">
-                <button class="soft-btn" id="creator-library-export" type="button" disabled>导出选中达人</button>
-                <button class="primary-btn" id="creator-library-batch-campaign" type="button" disabled>加入 Campaign</button>
+                <button class="soft-btn" id="creator-library-export" type="button" disabled data-i18n="creatorLibraryExportSelected">导出选中达人</button>
+                <button class="primary-btn" id="creator-library-batch-campaign" type="button" disabled data-i18n="creatorLibraryChooseCampaign">加入 Campaign</button>
                 <span class="toolbar-divider" aria-hidden="true"></span>
-                <button class="soft-btn" id="creator-library-template-download" type="button">下载模板</button>
-                <button class="soft-btn" id="creator-library-import-button" type="button">导入 Excel</button>
+                <button class="soft-btn" id="creator-library-template-download" type="button" data-i18n="creatorLibraryDownloadTemplate">下载模板</button>
+                <button class="soft-btn" id="creator-library-import-button" type="button" data-i18n="creatorLibraryImportExcel">导入 Excel</button>
                 <input id="creator-library-import-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
-                <button class="soft-btn" id="creator-library-refresh">刷新达人库</button>
+                <button class="soft-btn" id="creator-library-refresh" data-i18n="creatorLibraryRefresh">刷新达人库</button>
               </div>
             </div>
           </div>
@@ -603,7 +611,7 @@
 
         <div class="section-card creator-library-import-result" id="creator-library-import-result" hidden>
           <div>
-            <div class="section-title">Excel 导入结果</div>
+            <div class="section-title" data-i18n="creatorLibraryImportResult">Excel 导入结果</div>
             <p id="creator-library-import-summary"></p>
           </div>
           <ul id="creator-library-import-errors"></ul>
@@ -614,14 +622,14 @@
           <div class="review-table-wrap">
             <table class="review-table creator-library-table">
               <thead><tr>
-                <th>选择</th><th>达人名称</th><th>平台</th><th>主页链接</th><th>粉丝数</th><th>内容类型</th><th>Agency</th>
-                <th>Insight 等级</th><th>平均播放</th><th>中位播放</th><th>粉丝变化</th><th>中位播放变化</th><th>评分变化</th><th>最新分析时间</th><th>数据更新时间</th><th>当前状态</th><th>操作</th>
+                <th data-i18n="creatorLibrarySelect">选择</th><th data-i18n="creatorLibraryCreatorName">达人名称</th><th data-i18n="commonPlatform">平台</th><th data-i18n="creatorLibraryProfileUrl">主页链接</th><th data-i18n="creatorLibraryEmail">邮箱</th><th data-i18n="creatorLibraryFollowerCount">粉丝数</th><th data-i18n="creatorLibraryContentCategory">内容类型</th><th>Agency</th>
+                <th data-i18n="creatorLibraryInsightLevel">Insight 等级</th><th data-i18n="creatorLibraryAverageViews">平均播放</th><th data-i18n="creatorLibraryMedianViews">中位播放</th><th data-i18n="creatorLibraryFollowerChange">粉丝变化</th><th data-i18n="creatorLibraryMedianViewChange">中位播放变化</th><th data-i18n="creatorLibraryScoreChange">评分变化</th><th data-i18n="creatorLibraryLatestAnalysis">最新分析时间</th><th data-i18n="creatorLibraryDataUpdated">数据更新时间</th><th data-i18n="creatorLibraryCurrentStatus">当前状态</th><th data-i18n="commonActions">操作</th>
               </tr></thead>
               <tbody id="creator-library-body"></tbody>
             </table>
           </div>
         </div>
-        <div class="section-card review-empty" id="creator-library-empty" hidden>暂无达人分析数据。请先在插件中导入达人。</div>
+        <div class="section-card review-empty" id="creator-library-empty" hidden data-i18n="creatorLibraryEmpty">暂无达人分析数据。请先在插件中导入达人。</div>
         <div class="creator-library-pagination" id="creator-library-pagination" hidden>
           <span id="creator-library-page-summary">--</span>
           <div class="creator-library-page-buttons" id="creator-library-page-buttons"></div>
@@ -631,48 +639,54 @@
       <section class="page" data-page="creator-library-detail">
         <div class="page-header creator-library-detail-header">
           <div>
-            <h1>达人分析</h1>
+            <h1 data-i18n="creatorDetailTitle">达人分析</h1>
             <p id="creator-library-detail-summary">--</p>
           </div>
           <div class="action-row">
-            <button class="soft-btn" id="creator-library-detail-back">返回达人库</button>
-            <button class="soft-btn" id="creator-library-detail-edit">编辑资料</button>
-            <button class="soft-btn danger" id="creator-library-detail-archive">归档达人</button>
-            <button class="soft-btn" id="creator-library-detail-add-campaign">加入 Campaign</button>
-            <button class="soft-btn" id="creator-library-detail-similar">查找相似达人</button>
-            <button class="primary-btn" id="creator-library-detail-task">创建合作任务</button>
+            <button class="soft-btn" id="creator-library-detail-back" data-i18n="creatorBackToLibrary">返回达人库</button>
+            <button class="soft-btn" id="creator-library-detail-edit" data-i18n="creatorEditProfile">编辑资料</button>
+            <button class="soft-btn danger" id="creator-library-detail-archive" data-i18n="creatorArchive">归档达人</button>
+            <button class="soft-btn" id="creator-library-detail-add-campaign" data-i18n="creatorAddCampaign">加入 Campaign</button>
+            <button class="soft-btn" id="creator-library-detail-similar" data-i18n="creatorFindSimilar">查找相似达人</button>
+            <button class="primary-btn" id="creator-library-detail-task" data-i18n="creatorCreateTask">创建合作任务</button>
           </div>
         </div>
 
         <section class="section-card creator-account-switcher detail-panel" data-detail-panel="overview">
           <div class="creator-account-switcher-heading">
             <div>
-              <h2>社媒账号</h2>
-              <p class="hint">切换账号查看对应平台资料和表现数据。</p>
+              <h2 data-i18n="creatorSocialAccounts">社媒账号</h2>
+              <p class="hint" data-i18n="creatorSocialAccountsHint">切换账号查看对应平台资料和表现数据。</p>
             </div>
             <span class="campaign-list-count" id="creator-account-count">0 个</span>
           </div>
-          <div class="creator-account-options" id="creator-account-options" role="tablist" aria-label="达人社媒账号"></div>
-          <p class="hint" id="creator-account-empty" hidden>暂无可用社媒账号。</p>
+          <div class="creator-account-options" id="creator-account-options" role="tablist" aria-label="达人社媒账号" data-i18n-aria-label="creatorSocialAccountsAria"></div>
+          <p class="hint" id="creator-account-empty" hidden data-i18n="creatorNoSocialAccounts">暂无可用社媒账号。</p>
         </section>
+
+        <div class="detail-tabs" role="tablist" aria-label="达人详情" data-i18n-aria-label="creatorDetailTabs">
+          <button class="detail-tab active" type="button" data-detail-tab="overview" data-i18n="creatorOverview">概览</button>
+          <button class="detail-tab" type="button" data-detail-tab="content" data-i18n="creatorContentPerformance">内容表现</button>
+          <button class="detail-tab" type="button" data-detail-tab="history" data-i18n="creatorHistoryTrend">历史趋势</button>
+        </div>
 
         <div class="creator-library-detail-grid">
           <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
-            <h2>基础信息</h2>
+            <h2 data-i18n="creatorBasicInformation">基础信息</h2>
             <dl id="creator-library-basic"></dl>
             <p class="hint" id="creator-library-data-meta">--</p>
           </div>
           <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="content">
-            <h2>视频分析</h2>
+            <h2 data-i18n="creatorVideoAnalysis">视频分析</h2>
             <dl id="creator-library-video-metrics"></dl>
           </div>
           <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="content">
-            <h2>Creator Insight</h2>
+            <h2 data-i18n="creatorInsight">Creator Insight</h2>
             <p class="creator-library-level" id="creator-library-detail-level">--</p>
             <p id="creator-library-recommendation">--</p>
           </div>
           <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
-            <h2>数据新鲜度</h2>
+            <h2 data-i18n="creatorDataFreshness">数据新鲜度</h2>
             <p id="creator-library-freshness">--</p>
           </div>
         </div>
@@ -680,118 +694,94 @@
         <section class="section-card creator-library-detail-card" id="creator-library-similar-card" hidden>
           <div class="creator-ai-summary-heading">
             <div>
-              <h2>相似达人候选</h2>
-              <p class="hint" id="creator-library-similar-status">仅基于本地达人库的结构化证据评分；缺失维度不计零分。</p>
+              <h2 data-i18n="creatorSimilarCandidates">相似达人候选</h2>
+              <p class="hint" id="creator-library-similar-status" data-i18n="creatorSimilarityMethod">仅基于本地达人库的结构化证据评分；缺失维度不计零分。</p>
             </div>
           </div>
           <div class="creator-library-similar-results" id="creator-library-similar-results"></div>
         </section>
 
-        <div class="section-card creator-ai-summary-card detail-panel" data-detail-panel="overview" id="creator-ai-summary-card">
-          <div class="creator-ai-summary-heading">
-            <div>
-              <div class="creator-ai-summary-title-row">
-                <h2>AI 达人摘要</h2>
-                <span class="creator-ai-mock-badge" id="creator-ai-mock-badge">AI Mock</span>
-              </div>
-              <p class="hint" id="creator-ai-summary-disclosure">当前为本地规则生成，未连接真实 AI</p>
-            </div>
-            <button class="soft-btn" type="button" id="creator-ai-summary-generate">生成摘要</button>
-          </div>
-          <p class="creator-ai-summary-status" id="creator-ai-summary-status">点击“生成摘要”查看本地确定性分析。</p>
-          <div class="creator-ai-summary-content" id="creator-ai-summary-content" hidden>
-            <div class="creator-ai-summary-grid">
-              <section><h3>基础资料</h3><dl id="creator-ai-summary-profile"></dl></section>
-              <section><h3>表现数据</h3><dl id="creator-ai-summary-performance"></dl></section>
-              <section><h3>数据状态</h3><p id="creator-ai-summary-data-status">--</p></section>
-              <section><h3>数据更新时间</h3><p id="creator-ai-summary-freshness">--</p></section>
-            </div>
-            <div class="creator-ai-summary-notes">
-              <section><h3>事实摘要</h3><ul id="creator-ai-summary-observations"></ul></section>
-              <section><h3>数据限制</h3><ul id="creator-ai-summary-limitations"></ul></section>
-            </div>
-            <div class="creator-ai-summary-grid creator-intelligence-grid">
-              <section><h3>AI Tags</h3><p id="creator-intelligence-ai-tags">--</p></section>
-              <section><h3>Content Categories</h3><p id="creator-intelligence-categories">--</p></section>
-              <section><h3>Audience Signals</h3><dl id="creator-intelligence-audience"></dl></section>
-              <section><h3>Content Signals</h3><p id="creator-intelligence-content-signals">--</p></section>
-              <section><h3>Follower Band</h3><p id="creator-intelligence-follower-band">--</p></section>
-              <section><h3>Engagement Band</h3><p id="creator-intelligence-engagement-band">--</p></section>
-              <section><h3>Price Band</h3><p id="creator-intelligence-price-band">--</p></section>
-              <section><h3>Confidence</h3><p id="creator-intelligence-confidence">--</p></section>
-            </div>
-          </div>
-        </div>
-
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
           <div class="creator-campaign-section-heading">
             <div>
-              <h2>参与 Campaign</h2>
-              <p class="hint">当前达人已加入的 Campaign，不包含旧版合作记录。</p>
+              <h2 data-i18n="creatorCampaignParticipation">参与 Campaign</h2>
+              <p class="hint" data-i18n="creatorCampaignParticipationHint">当前达人已加入的 Campaign，不包含旧版合作记录。</p>
             </div>
           </div>
           <div class="review-table-wrap">
             <table class="review-table creator-campaign-table">
-              <thead><tr><th>Campaign</th><th>产品</th><th>状态</th><th>平台</th><th>日期</th><th>操作</th></tr></thead>
+              <thead><tr><th data-i18n="creatorCampaignColumn">Campaign</th><th data-i18n="creatorProductColumn">产品</th><th data-i18n="creatorStatusColumn">状态</th><th data-i18n="commonPlatform">平台</th><th data-i18n="creatorDateColumn">日期</th><th data-i18n="commonActions">操作</th></tr></thead>
               <tbody id="creator-campaigns-body"></tbody>
             </table>
           </div>
-          <p class="hint" id="creator-campaigns-empty">暂未加入 Campaign。</p>
+          <p class="hint" id="creator-campaigns-empty" data-i18n="creatorNoCampaignParticipation">暂未加入 Campaign。</p>
           <p class="form-message" id="creator-campaigns-error" hidden></p>
         </div>
 
-        <div class="detail-tabs" role="tablist" aria-label="达人详情">
-          <button class="detail-tab active" type="button" data-detail-tab="overview">概览</button>
-          <button class="detail-tab" type="button" data-detail-tab="content">内容表现</button>
-          <button class="detail-tab" type="button" data-detail-tab="history">历史趋势</button>
-          <button class="detail-tab" type="button" data-detail-tab="cooperations">Legacy Cooperation</button>
+        <div class="section-card creator-ai-summary-card detail-panel" data-detail-panel="overview" id="creator-ai-summary-card">
+          <div class="creator-ai-summary-heading">
+            <div>
+              <div class="creator-ai-summary-title-row">
+                <h2 data-i18n="creatorAiSummary">AI 达人摘要</h2>
+                <span class="creator-ai-mock-badge" id="creator-ai-mock-badge">AI Mock</span>
+              </div>
+              <p class="hint" id="creator-ai-summary-disclosure" data-i18n="creatorAiDisclosure">当前为本地规则生成，未连接真实 AI</p>
+            </div>
+            <button class="soft-btn" type="button" id="creator-ai-summary-generate" data-i18n="creatorSummaryGenerate">生成摘要</button>
+          </div>
+          <p class="creator-ai-summary-status" id="creator-ai-summary-status" data-i18n="creatorSummaryPrompt">点击“生成摘要”查看本地确定性分析。</p>
+          <div class="creator-ai-summary-content" id="creator-ai-summary-content" hidden>
+            <div class="creator-ai-summary-grid">
+              <section><h3 data-i18n="creatorBasicProfile">基础资料</h3><dl id="creator-ai-summary-profile"></dl></section>
+              <section><h3 data-i18n="creatorPerformanceData">表现数据</h3><dl id="creator-ai-summary-performance"></dl></section>
+              <section><h3 data-i18n="creatorDataStatus">数据状态</h3><p id="creator-ai-summary-data-status">--</p></section>
+              <section><h3 data-i18n="creatorDataUpdated">数据更新时间</h3><p id="creator-ai-summary-freshness">--</p></section>
+            </div>
+            <div class="creator-ai-summary-notes">
+              <section><h3 data-i18n="creatorFactSummary">事实摘要</h3><ul id="creator-ai-summary-observations"></ul></section>
+              <section><h3 data-i18n="creatorDataLimitations">数据限制</h3><ul id="creator-ai-summary-limitations"></ul></section>
+            </div>
+            <div class="creator-ai-summary-grid creator-intelligence-grid">
+              <section><h3 data-i18n="creatorAiTags">AI Tags</h3><p id="creator-intelligence-ai-tags">--</p></section>
+              <section><h3 data-i18n="creatorContentCategories">Content Categories</h3><p id="creator-intelligence-categories">--</p></section>
+              <section><h3 data-i18n="creatorAudienceSignals">Audience Signals</h3><dl id="creator-intelligence-audience"></dl></section>
+              <section><h3 data-i18n="creatorContentSignals">Content Signals</h3><p id="creator-intelligence-content-signals">--</p></section>
+              <section><h3 data-i18n="creatorFollowerBand">Follower Band</h3><p id="creator-intelligence-follower-band">--</p></section>
+              <section><h3 data-i18n="creatorEngagementBand">Engagement Band</h3><p id="creator-intelligence-engagement-band">--</p></section>
+              <section><h3 data-i18n="creatorPriceBand">Price Band</h3><p id="creator-intelligence-price-band">--</p></section>
+              <section><h3 data-i18n="creatorConfidence">Confidence</h3><p id="creator-intelligence-confidence">--</p></section>
+            </div>
+          </div>
         </div>
+
         <div class="creator-analysis-columns detail-panel" data-detail-panel="content">
-          <div class="section-card creator-library-detail-card"><h2>优势</h2><ul class="creator-library-list" id="creator-library-strengths"></ul></div>
-          <div class="section-card creator-library-detail-card"><h2>风险</h2><ul class="creator-library-list" id="creator-library-risks"></ul></div>
+          <div class="section-card creator-library-detail-card"><h2 data-i18n="creatorStrengths">优势</h2><ul class="creator-library-list" id="creator-library-strengths"></ul></div>
+          <div class="section-card creator-library-detail-card"><h2 data-i18n="creatorRisks">风险</h2><ul class="creator-library-list" id="creator-library-risks"></ul></div>
         </div>
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="content">
-          <h2>最近视频</h2>
+          <h2 data-i18n="creatorRecentVideos">最近视频</h2>
           <div class="creator-analysis-videos" id="creator-library-videos"></div>
         </div>
 
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="history">
           <div class="creator-history-performance-heading">
-            <div><h2>合作表现历史</h2><p class="hint">基于实际发布内容的最近有效观察；金额按币种分组，不进行汇率换算。</p></div>
+            <div><h2 data-i18n="creatorPerformanceHistory">合作表现历史</h2><p class="hint" data-i18n="creatorPerformanceHistoryHint">基于实际发布内容的最近有效观察；金额按币种分组，不进行汇率换算。</p></div>
           </div>
           <div class="creator-history-performance-grid" id="creator-history-performance-summary"></div>
           <div class="creator-history-performance-money" id="creator-history-performance-money"></div>
           <div class="creator-history-campaigns" id="creator-history-campaigns"></div>
-          <p class="hint" id="creator-history-performance-empty">暂无可用合作表现历史。</p>
+          <p class="hint" id="creator-history-performance-empty" data-i18n="creatorNoPerformanceHistory">暂无可用合作表现历史。</p>
         </div>
 
         <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="history">
-          <h2>历史分析</h2>
+          <h2 data-i18n="creatorHistoricalAnalysis">历史分析</h2>
           <div class="review-table-wrap">
             <table class="review-table">
-              <thead><tr><th>时间</th><th>粉丝</th><th>平均播放</th><th>中位播放</th><th>评分</th><th>Insight</th></tr></thead>
+              <thead><tr><th data-i18n="creatorSnapshotTime">时间</th><th data-i18n="creatorSnapshotFollowers">粉丝</th><th data-i18n="creatorFieldAverageViews">平均播放</th><th data-i18n="creatorFieldMedianViews">中位播放</th><th data-i18n="creatorSnapshotScore">评分</th><th data-i18n="creatorSnapshotInsight">Insight</th></tr></thead>
               <tbody id="creator-library-snapshots"></tbody>
             </table>
           </div>
-          <p class="hint" id="creator-library-snapshots-empty">暂无历史 Snapshot 数据。</p>
-        </div>
-
-        <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="cooperations">
-          <h2>历史合作（只读）</h2>
-          <p class="hint">以下为旧版本历史数据，不参与 Campaign 和 Dashboard 统计。新的合作请通过 Campaign。</p>
-          <div class="stats-grid creator-cooperation-stats">
-            <div class="stat-card"><span class="stat-label">合作次数</span><strong id="cooperation-stat-count">0</strong></div>
-            <div class="stat-card"><span class="stat-label">总花费</span><strong id="cooperation-stat-spend">0</strong></div>
-            <div class="stat-card"><span class="stat-label">平均播放</span><strong id="cooperation-stat-views">0</strong></div>
-            <div class="stat-card"><span class="stat-label">平均 ROI</span><strong id="cooperation-stat-roi">0</strong></div>
-          </div>
-          <div class="review-table-wrap creator-cooperations-wrap">
-            <table class="review-table creator-cooperations-table">
-              <thead><tr><th>项目</th><th>平台</th><th>联系日期</th><th>价格</th><th>发布数量</th><th>总播放</th><th>平均播放</th><th>ROI</th><th>结果</th><th>备注</th></tr></thead>
-              <tbody id="creator-cooperations-body"></tbody>
-            </table>
-          </div>
-          <p class="hint" id="creator-cooperations-empty">暂无合作记录。</p>
+          <p class="hint" id="creator-library-snapshots-empty" data-i18n="creatorNoSnapshots">暂无历史 Snapshot 数据。</p>
         </div>
 
       </section>
@@ -801,36 +791,36 @@
           <div class="creator-campaign-modal-heading">
             <div>
               <p class="eyebrow">Creator CRM</p>
-              <h2 id="creator-edit-modal-title">编辑达人资料</h2>
+              <h2 id="creator-edit-modal-title" data-i18n="creatorEditTitle">编辑达人资料</h2>
             </div>
-            <button class="icon-btn" id="creator-edit-modal-close" type="button" aria-label="关闭">×</button>
+            <button class="icon-btn" id="creator-edit-modal-close" type="button" aria-label="关闭" data-i18n-aria-label="dashboardClose">×</button>
           </div>
           <form id="creator-edit-form">
             <section class="creator-edit-profile" aria-labelledby="creator-edit-profile-title">
-              <h3 id="creator-edit-profile-title">基本资料</h3>
+              <h3 id="creator-edit-profile-title" data-i18n="creatorBasicProfileTitle">基本资料</h3>
               <div class="form-grid two-columns">
-              <label class="field"><span>达人名称</span><input id="creator-edit-name" required></label>
-              <label class="field"><span>国家/地区</span><input id="creator-edit-country"></label>
-              <label class="field"><span>语言</span><input id="creator-edit-language"></label>
-              <label class="field"><span>WhatsApp</span><input id="creator-edit-whatsapp" placeholder="可留空"></label>
-              <label class="field"><span>内容类型</span><input id="creator-edit-content-category"></label>
+              <label class="field"><span data-i18n="creatorFieldName">达人名称</span><input id="creator-edit-name" required></label>
+              <label class="field"><span data-i18n="creatorFieldCountry">国家/地区</span><input id="creator-edit-country"></label>
+              <label class="field"><span data-i18n="creatorFieldLanguage">语言</span><input id="creator-edit-language"></label>
+              <label class="field"><span>WhatsApp</span><input id="creator-edit-whatsapp" placeholder="可留空" data-i18n-placeholder="creatorWhatsAppOptional"></label>
+              <label class="field"><span data-i18n="creatorFieldContentType">内容类型</span><input id="creator-edit-content-category"></label>
               <label class="field"><span>Agency</span><select id="creator-edit-agency"><option value="">No Agency</option></select></label>
             </div>
             </section>
-            <p class="hint">完善国家和语言信息，可提升达人分析准确度。</p>
+            <p class="hint" data-i18n="creatorImproveAnalysisHint">完善国家和语言信息，可提升达人分析准确度。</p>
             <section class="creator-edit-accounts" aria-labelledby="creator-edit-accounts-title">
-              <div><h3 id="creator-edit-accounts-title">平台账号</h3><p class="hint">主页链接用于识别平台和账号身份，无需填写内部 ID。</p></div>
+              <div><h3 id="creator-edit-accounts-title" data-i18n="dashboardPlatformAccounts">平台账号</h3><p class="hint" data-i18n="creatorAccountIdentityHint">主页链接用于识别平台和账号身份，无需填写内部 ID。</p></div>
               <div id="creator-edit-accounts-list" class="creator-edit-accounts-list"></div>
               <div class="action-row">
-                <input id="creator-edit-account-url" type="url" placeholder="粘贴 TikTok、Instagram 或 YouTube 主页链接">
-                <button class="soft-btn" id="creator-edit-account-add" type="button">+ 添加主页链接</button>
+                <input id="creator-edit-account-url" type="url" placeholder="粘贴 TikTok、Instagram 或 YouTube 主页链接" data-i18n-placeholder="creatorAccountUrlPlaceholder">
+                <button class="soft-btn" id="creator-edit-account-add" type="button" data-i18n="creatorAddProfileUrl">+ 添加主页链接</button>
               </div>
             </section>
-            <label class="field"><span>简介</span><textarea id="creator-edit-bio" rows="5"></textarea></label>
+            <label class="field"><span data-i18n="creatorFieldBio">简介</span><textarea id="creator-edit-bio" rows="5"></textarea></label>
             <p class="form-message" id="creator-edit-message" hidden></p>
             <div class="action-row creator-campaign-modal-actions">
-              <button class="soft-btn" id="creator-edit-cancel" type="button">取消</button>
-              <button class="primary-btn" id="creator-edit-save" type="submit">保存资料</button>
+              <button class="soft-btn" id="creator-edit-cancel" type="button" data-i18n="commonCancel">取消</button>
+              <button class="primary-btn" id="creator-edit-save" type="submit" data-i18n="creatorSaveProfile">保存资料</button>
             </div>
           </form>
         </div>
@@ -841,20 +831,20 @@
           <div class="creator-campaign-modal-heading">
             <div>
               <p class="eyebrow">Creator Campaign</p>
-              <h2 id="creator-library-batch-campaign-title">加入 Campaign</h2>
+              <h2 id="creator-library-batch-campaign-title" data-i18n="creatorCampaignModalTitle">加入 Campaign</h2>
             </div>
             <button class="icon-btn" id="creator-library-batch-campaign-close" type="button" aria-label="关闭">×</button>
           </div>
           <form id="creator-library-batch-campaign-form">
-            <p class="hint" id="creator-library-batch-campaign-count">已选择 0 位达人</p>
+            <p class="hint" id="creator-library-batch-campaign-count" data-i18n="creatorBatchCampaignCount">已选择 0 位达人</p>
             <label class="field">
               <span>Campaign</span>
-              <select id="creator-library-batch-campaign-select" required><option value="">请选择 Campaign</option></select>
+              <select id="creator-library-batch-campaign-select" required><option value="" data-i18n="creatorCampaignSelectPlaceholder">请选择 Campaign</option></select>
             </label>
             <p class="form-message" id="creator-library-batch-campaign-message" hidden></p>
             <div class="action-row creator-campaign-modal-actions">
               <button class="soft-btn" id="creator-library-batch-campaign-cancel" type="button">取消</button>
-              <button class="primary-btn" id="creator-library-batch-campaign-submit" type="submit">确认加入</button>
+              <button class="primary-btn" id="creator-library-batch-campaign-submit" type="submit" data-i18n="creatorConfirmAdd">确认加入</button>
             </div>
           </form>
         </div>
@@ -865,7 +855,7 @@
           <div class="creator-campaign-modal-heading">
             <div>
               <p class="eyebrow">Creator Campaign</p>
-              <h2 id="creator-campaign-modal-title">加入 Campaign</h2>
+              <h2 id="creator-campaign-modal-title" data-i18n="creatorCampaignModalTitle">加入 Campaign</h2>
             </div>
             <button class="icon-btn" id="creator-campaign-modal-close" type="button" aria-label="关闭">×</button>
           </div>
@@ -876,17 +866,17 @@
           <form id="creator-campaign-form">
             <label class="field">
               <span>Campaign</span>
-              <select id="creator-campaign-select" required><option value="">请选择 Campaign</option></select>
+              <select id="creator-campaign-select" required><option value="" data-i18n="creatorCampaignSelectPlaceholder">请选择 Campaign</option></select>
             </label>
             <label class="field">
-              <span>执行账号</span>
-              <select id="creator-campaign-account-select" required><option value="">请选择执行账号</option></select>
+              <span data-i18n="creatorExecutionAccount">执行账号</span>
+              <select id="creator-campaign-account-select" required><option value="" data-i18n="creatorExecutionAccountPlaceholder">请选择执行账号</option></select>
             </label>
-            <p class="hint" id="creator-campaign-account-hint">选择本次合作使用的社交账号。</p>
+            <p class="hint" id="creator-campaign-account-hint" data-i18n="creatorExecutionAccountHint">选择本次合作使用的社交账号。</p>
             <p class="form-message" id="creator-campaign-modal-message" hidden></p>
             <div class="action-row creator-campaign-modal-actions">
               <button class="soft-btn" id="creator-campaign-modal-cancel" type="button">取消</button>
-              <button class="primary-btn" id="creator-campaign-submit" type="submit">确认加入</button>
+              <button class="primary-btn" id="creator-campaign-submit" type="submit" data-i18n="creatorConfirmAdd">确认加入</button>
             </div>
           </form>
         </div>
@@ -897,19 +887,19 @@
           <div class="creator-campaign-modal-heading">
             <div>
               <p class="eyebrow">Permanent Delete</p>
-              <h2 id="creator-delete-title">永久删除达人</h2>
+              <h2 id="creator-delete-title" data-i18n="creatorPermanentDelete">永久删除达人</h2>
             </div>
             <button class="icon-btn" id="creator-delete-close" type="button" aria-label="关闭">×</button>
           </div>
           <p class="creator-delete-warning">此操作会永久删除 <strong id="creator-delete-creator-name">--</strong> 及允许删除的关联数据，且不可撤销。</p>
-          <p class="creator-delete-state" id="creator-delete-state">正在检查永久删除影响...</p>
+          <p class="creator-delete-state" id="creator-delete-state" data-i18n="creatorDeleteChecking">正在检查永久删除影响...</p>
           <ul class="creator-delete-impact-list" id="creator-delete-impact-list"></ul>
           <ul class="creator-delete-blockers" id="creator-delete-blockers" hidden></ul>
           <p class="form-message" id="creator-delete-message" hidden></p>
           <div class="action-row creator-campaign-modal-actions">
             <button class="soft-btn" id="creator-delete-cancel" type="button">取消</button>
-            <button class="soft-btn" id="creator-delete-refresh" type="button">重新检查影响</button>
-            <button class="primary-btn danger" id="creator-delete-confirm" type="button" disabled>确认永久删除</button>
+            <button class="soft-btn" id="creator-delete-refresh" type="button" data-i18n="creatorRecheckImpact">重新检查影响</button>
+            <button class="primary-btn danger" id="creator-delete-confirm" type="button" disabled data-i18n="creatorConfirmPermanentDelete">确认永久删除</button>
           </div>
         </div>
       </div>
@@ -971,8 +961,8 @@
               <input id="review-search" type="search" data-i18n-placeholder="reviewSearch" placeholder="搜索平台、账号名或邮箱">
             </label>
             <label class="field review-page-size-field">
-              <span>结果筛选</span>
-              <select id="review-status-filter"><option value="attention" selected>待补充</option><option value="">全部</option><option value="failed">抓取异常</option></select>
+              <span data-i18n="reviewFilter">结果筛选</span>
+              <select id="review-status-filter"><option value="attention" selected data-i18n="reviewAttention">待补充</option><option value="" data-i18n="reviewAll">全部</option><option value="failed" data-i18n="reviewFailed">抓取异常</option></select>
             </label>
             <label class="field review-page-size-field">
               <span data-i18n="reviewPageSize">每页条数</span>
@@ -984,11 +974,11 @@
             <div class="review-toolbar-actions">
               <button class="soft-btn" id="review-refresh" data-i18n="reviewRefresh">刷新任务</button>
               <button class="soft-btn" id="review-scan-missing-email" data-i18n="reviewScanMissingEmail">扫描达人库缺失邮箱</button>
-              <button class="soft-btn" id="review-fill-missing-email">补全当前任务邮箱</button>
-              <button class="soft-btn" id="review-retry-failed">重新抓取异常记录</button>
+              <button class="soft-btn" id="review-fill-missing-email" data-i18n="reviewFillEmail">补全当前任务邮箱</button>
+              <button class="soft-btn" id="review-retry-failed" data-i18n="reviewRetryFailed">重新抓取异常记录</button>
             </div>
           </div>
-          <p class="hint" id="review-summary">请选择一个已有任务。</p>
+          <p class="hint" id="review-summary" data-i18n="reviewSelectTask">请选择一个已有任务。</p>
         </div>
 
         <div class="section-card review-table-card">
@@ -997,8 +987,9 @@
               <thead>
                 <tr>
                   <th data-i18n="reviewPlatform">平台</th>
+                  <th data-i18n="reviewCreator">达人</th>
                   <th data-i18n="reviewLink">账号主页</th>
-                  <th>待补充</th>
+                  <th data-i18n="reviewCompletion">待补充</th>
                   <th data-i18n="reviewLatestDate">最近发布日期</th>
                   <th data-i18n="reviewEmail">邮箱</th>
                   <th data-i18n="reviewFollowerCount">粉丝数</th>
@@ -1011,70 +1002,70 @@
               <tbody id="review-results-body"></tbody>
             </table>
           </div>
-          <div class="review-empty" id="review-empty">请选择任务后查看结果。</div>
+          <div class="review-empty" id="review-empty" data-i18n="reviewEmpty">请选择任务后查看结果。</div>
           <div class="review-pagination" id="review-pagination"></div>
         </div>
       </section>
 
       <section class="page" data-page="task-details">
         <div class="page-header">
-          <h1>任务详情</h1>
-          <p>查看任务链接、进度和待处理队列；仅可修改尚未完成的链接。</p>
+          <h1 data-i18n="taskDetailTitle">任务详情</h1>
+          <p data-i18n="taskDetailSubtitle">查看任务链接、进度和待处理队列；仅可修改尚未完成的链接。</p>
         </div>
         <div class="section-card">
           <div class="action-row">
-            <button class="soft-btn" id="task-detail-back">返回任务管理</button>
-            <button class="soft-btn" id="task-detail-refresh">刷新详情</button>
+            <button class="soft-btn" id="task-detail-back" data-i18n="taskDetailBack">返回任务管理</button>
+            <button class="soft-btn" id="task-detail-refresh" data-i18n="taskDetailRefresh">刷新详情</button>
           </div>
-          <div class="task-current" id="task-detail-summary">请选择任务。</div>
+          <div class="task-current" id="task-detail-summary" data-i18n="taskDetailSelectTask">请选择任务。</div>
           <div class="form-grid three">
-            <label class="field"><span>搜索链接</span><input id="task-detail-search" type="search" placeholder="链接、平台或状态"></label>
-            <label class="field"><span>平台</span><select id="task-detail-platform"><option value="">全部</option><option>TikTok</option><option>Instagram</option><option>YouTube</option></select></label>
-            <label class="field"><span>状态</span><select id="task-detail-status"><option value="">全部</option><option>已完成</option><option>处理中</option><option>等待</option></select></label>
+            <label class="field"><span data-i18n="taskDetailSearch">搜索链接</span><input id="task-detail-search" type="search" data-i18n-placeholder="taskDetailSearchPlaceholder" placeholder="链接、平台或状态"></label>
+            <label class="field"><span data-i18n="taskDetailPlatform">平台</span><select id="task-detail-platform"><option value="" data-i18n="taskDetailAll">全部</option><option>TikTok</option><option>Instagram</option><option>YouTube</option></select></label>
+            <label class="field"><span data-i18n="taskDetailStatus">状态</span><select id="task-detail-status"><option value="" data-i18n="taskDetailAll">全部</option><option value="已完成" data-i18n="taskDetailCompleted">已完成</option><option value="处理中" data-i18n="taskDetailRunning">处理中</option><option value="等待" data-i18n="taskDetailWaiting">等待</option></select></label>
           </div>
           <div class="action-row">
-            <input id="task-detail-add-url" type="url" placeholder="新增达人主页链接" aria-label="新增达人主页链接">
-            <button class="primary-btn" id="task-detail-add">新增链接</button>
+            <input id="task-detail-add-url" type="url" data-i18n-placeholder="taskDetailAddPlaceholder" data-i18n-aria-label="taskDetailAddPlaceholder" placeholder="新增达人主页链接" aria-label="新增达人主页链接">
+            <button class="primary-btn" id="task-detail-add" data-i18n="taskDetailAdd">新增链接</button>
           </div>
           <div class="table-wrap">
             <table class="results-table">
-              <thead><tr><th>编号</th><th>链接</th><th>平台</th><th>状态</th><th>操作</th></tr></thead>
+              <thead><tr><th data-i18n="taskDetailNumber">编号</th><th data-i18n="taskDetailLink">链接</th><th data-i18n="taskDetailPlatform">平台</th><th data-i18n="taskDetailStatus">状态</th><th data-i18n="taskDetailAction">操作</th></tr></thead>
               <tbody id="task-detail-body"></tbody>
             </table>
           </div>
-          <div class="review-empty" id="task-detail-empty">没有可显示的链接。</div>
+          <div class="review-empty" id="task-detail-empty" data-i18n="taskDetailEmpty">没有可显示的链接。</div>
         </div>
       </section>
 
       <section class="page workspace-narrow" data-page="discover">
         <div class="page-header">
-          <h1>账号清洗查重</h1>
-          <p id="discover-subtitle">整理账号主页链接，或检查邮箱是否已收录在达人账号中。</p>
+          <h1 data-i18n="linkTitle">账号清洗查重</h1>
+          <p id="discover-subtitle" data-i18n="linkAccountSubtitle">整理账号主页链接，或检查邮箱是否已收录在达人账号中。</p>
         </div>
 
         <div class="section-card">
-          <div class="discover-mode-switch" role="tablist" aria-label="清洗类型">
-            <button class="detail-tab active" id="discover-mode-account" type="button" role="tab" aria-selected="true">账号</button>
-            <button class="detail-tab" id="discover-mode-email" type="button" role="tab" aria-selected="false">邮箱</button>
+          <div class="discover-mode-switch" role="tablist" data-i18n-aria-label="linkMode" aria-label="清洗类型">
+            <button class="detail-tab active" id="discover-mode-account" type="button" role="tab" aria-selected="true" data-i18n="linkAccount">账号</button>
+            <button class="detail-tab" id="discover-mode-email" type="button" role="tab" aria-selected="false" data-i18n="linkEmail">邮箱</button>
           </div>
-          <div class="section-title" id="discover-input-title">原始链接</div>
+          <div class="section-title" id="discover-input-title" data-i18n="linkRawLinks">原始链接</div>
           <label class="field">
-            <span id="discover-input-label">一行一个链接</span>
+            <span id="discover-input-label" data-i18n="linkOnePerLine">一行一个链接</span>
             <textarea id="discover-input" rows="10" placeholder="https://www.tiktok.com/@example"></textarea>
           </label>
           <div class="action-row">
-            <button class="primary-btn" id="discover-clean">清洗链接</button>
+            <button class="primary-btn" id="discover-clean" data-i18n="linkClean">清洗链接</button>
             <button class="soft-btn" id="discover-clear" data-i18n="discoverClear">清空</button>
           </div>
         </div>
 
         <div id="discover-account-results">
         <div class="section-card">
-          <div class="discover-summary-grid" aria-label="清洗结果汇总">
-            <div class="discover-summary-card"><span>非空输入</span><strong id="discover-count-input">0</strong></div>
-            <div class="discover-summary-card discover-summary-success"><span>有效且唯一</span><strong id="discover-count-accepted">0</strong></div>
-            <div class="discover-summary-card discover-summary-duplicate"><span>重复</span><strong id="discover-count-duplicate">0</strong></div>
-            <div class="discover-summary-card discover-summary-invalid"><span>无效</span><strong id="discover-count-rejected">0</strong></div>
+          <div class="discover-summary-grid" data-i18n-aria-label="linkSummary" aria-label="清洗结果汇总">
+            <div class="discover-summary-card"><span data-i18n="linkInputCount">非空输入</span><strong id="discover-count-input">0</strong></div>
+            <div class="discover-summary-card discover-summary-success"><span data-i18n="linkAcceptedCount">有效且唯一</span><strong id="discover-count-accepted">0</strong></div>
+            <div class="discover-summary-card discover-summary-duplicate"><span data-i18n="linkDuplicateCount">重复</span><strong id="discover-count-duplicate">0</strong></div>
+            <div class="discover-summary-card discover-summary-invalid"><span data-i18n="linkInvalidCount">无效</span><strong id="discover-count-rejected">0</strong></div>
           </div>
           <p class="hint" id="discover-count-equation">0 = 0 + 0 + 0</p>
         </div>
@@ -1098,51 +1089,51 @@
 
         <div class="section-card">
           <div class="discover-detail-heading">
-            <div class="section-title">逐行处理明细</div>
-            <label class="field discover-status-filter"><span>状态筛选</span><select id="discover-status-filter"><option value="">全部状态</option><option value="valid">有效</option><option value="normalized">已标准化</option><option value="duplicate">重复</option><option value="invalid">无效</option></select></label>
+            <div class="section-title" data-i18n="linkDetails">逐行处理明细</div>
+            <label class="field discover-status-filter"><span data-i18n="linkStatusFilter">状态筛选</span><select id="discover-status-filter"><option value="" data-i18n="linkAllStatus">全部状态</option><option value="valid" data-i18n="linkStatusValid">有效</option><option value="normalized" data-i18n="linkStatusNormalized">已标准化</option><option value="duplicate" data-i18n="linkStatusDuplicate">重复</option><option value="invalid" data-i18n="linkStatusInvalid">无效</option></select></label>
           </div>
           <div class="review-table-wrap">
             <table class="review-table discover-detail-table">
-              <thead><tr><th>行</th><th>原始链接</th><th>标准链接</th><th>平台</th><th>状态</th><th>说明</th></tr></thead>
+              <thead><tr><th data-i18n="linkRow">行</th><th data-i18n="linkRawLinks">原始链接</th><th data-i18n="linkCanonicalLink">标准链接</th><th data-i18n="reviewPlatform">平台</th><th data-i18n="taskDetailStatus">状态</th><th data-i18n="linkReasonLabel">说明</th></tr></thead>
               <tbody id="discover-detail-body"></tbody>
             </table>
           </div>
-          <p class="review-empty" id="discover-detail-empty">清洗后将在这里显示每一条非空输入的处理结果。</p>
+          <p class="review-empty" id="discover-detail-empty" data-i18n="linkDetailEmpty">清洗后将在这里显示每一条非空输入的处理结果。</p>
         </div>
         </div>
 
         <div id="discover-email-results" hidden>
           <div class="section-card">
-            <div class="discover-summary-grid" aria-label="邮箱检查结果汇总">
-              <div class="discover-summary-card"><span>非空输入</span><strong id="discover-email-count-input">0</strong></div>
-              <div class="discover-summary-card discover-summary-success"><span>已存在</span><strong id="discover-email-count-existing">0</strong></div>
-              <div class="discover-summary-card discover-summary-duplicate"><span>本批重复</span><strong id="discover-email-count-duplicate">0</strong></div>
-              <div class="discover-summary-card discover-summary-invalid"><span>未收录 / 无效</span><strong id="discover-email-count-unrecorded">0 / 0</strong></div>
+            <div class="discover-summary-grid" data-i18n-aria-label="linkEmailSummary" aria-label="邮箱检查结果汇总">
+              <div class="discover-summary-card"><span data-i18n="linkInputCount">非空输入</span><strong id="discover-email-count-input">0</strong></div>
+              <div class="discover-summary-card discover-summary-success"><span data-i18n="linkExisting">已存在</span><strong id="discover-email-count-existing">0</strong></div>
+              <div class="discover-summary-card discover-summary-duplicate"><span data-i18n="linkBatchDuplicate">本批重复</span><strong id="discover-email-count-duplicate">0</strong></div>
+              <div class="discover-summary-card discover-summary-invalid"><span data-i18n="linkUnrecordedInvalid">未收录 / 无效</span><strong id="discover-email-count-unrecorded">0 / 0</strong></div>
             </div>
           </div>
           <div class="section-card">
-            <div class="section-title">已存在</div>
+            <div class="section-title" data-i18n="linkExisting">已存在</div>
             <div class="review-table-wrap">
               <table class="review-table discover-email-table">
-                <thead><tr><th>邮箱</th><th>Creator</th><th>账号</th><th>平台</th><th>邮箱来源</th></tr></thead>
+                <thead><tr><th data-i18n="reviewEmail">邮箱</th><th>Creator</th><th data-i18n="linkAccount">账号</th><th data-i18n="reviewPlatform">平台</th><th data-i18n="linkEmailSource">邮箱来源</th></tr></thead>
                 <tbody id="discover-email-existing-body"></tbody>
               </table>
             </div>
-            <p class="review-empty" id="discover-email-existing-empty">没有匹配到已收录邮箱。</p>
+            <p class="review-empty" id="discover-email-existing-empty" data-i18n="linkNoRecordedEmail">没有匹配到已收录邮箱。</p>
           </div>
           <div class="discover-output-panels">
             <div class="section-card discover-result-card">
-              <div class="section-title">本批重复</div>
+              <div class="section-title" data-i18n="linkBatchDuplicate">本批重复</div>
               <textarea id="discover-email-duplicates-output" rows="7" readonly></textarea>
             </div>
             <div class="section-card discover-result-card">
-              <div class="section-title">未收录</div>
+              <div class="section-title" data-i18n="linkUnrecorded">未收录</div>
               <textarea id="discover-email-unrecorded-output" rows="7" readonly></textarea>
-              <div class="action-row"><button class="soft-btn" id="discover-copy-unrecorded-emails" type="button">复制未收录邮箱</button></div>
+              <div class="action-row"><button class="soft-btn" id="discover-copy-unrecorded-emails" type="button" data-i18n="linkCopyUnrecorded">复制未收录邮箱</button></div>
             </div>
           </div>
           <div class="section-card discover-result-card">
-            <div class="section-title">无效输入</div>
+            <div class="section-title" data-i18n="linkInvalidInput">无效输入</div>
             <textarea id="discover-email-invalid-output" rows="4" readonly></textarea>
           </div>
         </div>
@@ -1151,15 +1142,15 @@
       <section class="page workspace-narrow" data-page="accounts">
         <div class="page-header">
           <h1 data-i18n="accountsTitle">Chrome 账号</h1>
-          <p>管理用于达人抓取的 Chrome Profile 配置；删除配置不会删除浏览器数据。</p>
+          <p data-i18n="accountsSubtitle">管理用于达人抓取的 Chrome Profile 配置；删除配置不会删除浏览器数据。</p>
         </div>
 
         <div class="section-card">
-          <div class="section-title">Chrome Profile 配置</div>
+          <div class="section-title" data-i18n="accountsConfigurationTitle">Chrome Profile 配置</div>
           <div class="action-row">
-            <button class="soft-btn" id="accounts-refresh">刷新 Chrome 账号</button>
-            <button class="primary-btn" id="accounts-add">+ 添加账号配置</button>
-            <button class="primary-btn" id="accounts-save">保存账号配置</button>
+            <button class="soft-btn" id="accounts-refresh" data-i18n="refreshProfiles">刷新 Chrome 账号</button>
+            <button class="primary-btn" id="accounts-add" data-i18n="addAccountConfiguration">+ 添加账号配置</button>
+            <button class="primary-btn" id="accounts-save" data-i18n="saveAccounts">保存账号配置</button>
           </div>
           <div id="accounts-list" class="stack-list"></div>
         </div>
@@ -1168,68 +1159,68 @@
       <section class="page" data-page="products">
         <div class="page-header product-page-heading">
           <div>
-            <p class="eyebrow">PRODUCT MANAGEMENT</p>
-            <h1>产品</h1>
-            <p>管理产品资料，并查看每个产品当前关联的 Campaign 数量。</p>
+            <p class="eyebrow" data-i18n="productEyebrow">产品管理</p>
+            <h1 data-i18n="productTitle">产品</h1>
+            <p data-i18n="productSubtitle">管理产品资料，并查看每个产品当前关联的 Campaign 数量。</p>
           </div>
           <div class="product-page-actions">
             <label class="checkbox-field product-archive-toggle">
               <input id="product-include-archived" type="checkbox">
-              <span>显示已归档</span>
+              <span data-i18n="productShowArchived">显示已归档</span>
             </label>
-            <button class="primary-btn" id="product-create-open" type="button">创建产品</button>
+            <button class="primary-btn" id="product-create-open" type="button" data-i18n="productCreate">创建产品</button>
           </div>
         </div>
 
         <div class="section-card product-form-card" id="product-form-card" hidden>
-          <div class="section-title" id="product-form-title">创建产品</div>
+          <div class="section-title" id="product-form-title" data-i18n="productCreate">创建产品</div>
           <form id="product-form" novalidate>
             <div class="form-grid two">
               <label class="field">
-                <span>产品名称 *</span>
+                <span data-i18n="productNameLabel">产品名称</span><span> *</span>
                 <input id="product-name" type="text" autocomplete="off" required>
               </label>
               <label class="field">
-                <span>公司名称 *</span>
+                <span data-i18n="productCompanyNameLabel">公司名称</span><span> *</span>
                 <input id="product-company-name" type="text" autocomplete="organization" required>
               </label>
             </div>
             <label class="field">
-              <span>备注</span>
-              <textarea id="product-note" rows="4" placeholder="记录产品定位、市场或合作注意事项"></textarea>
+              <span data-i18n="productNoteLabel">备注</span>
+              <textarea id="product-note" rows="4" data-i18n-placeholder="productNotePlaceholder" placeholder="记录产品定位、市场或合作注意事项"></textarea>
             </label>
             <p class="product-form-error" id="product-form-error" role="alert" hidden></p>
             <div class="action-row">
-              <button class="primary-btn" id="product-form-save" type="submit">保存产品</button>
-              <button class="soft-btn" id="product-form-cancel" type="button">取消</button>
+              <button class="primary-btn" id="product-form-save" type="submit" data-i18n="productSave">保存产品</button>
+              <button class="soft-btn" id="product-form-cancel" type="button" data-i18n="commonCancel">取消</button>
             </div>
           </form>
         </div>
 
         <div class="section-card product-list-card">
           <div class="product-list-heading">
-            <div class="section-title">产品列表</div>
+            <div class="section-title" data-i18n="productListTitle">产品列表</div>
             <span class="product-list-count" id="product-list-count">--</span>
           </div>
-          <div class="product-list-message" id="product-list-loading">正在加载产品...</div>
+          <div class="product-list-message" id="product-list-loading" data-i18n="productLoading">正在加载产品...</div>
           <div class="product-list-message product-list-error" id="product-list-error" hidden>
-            <span id="product-list-error-message">产品列表加载失败。</span>
-            <button class="soft-btn" id="product-list-retry" type="button">重新加载</button>
+            <span id="product-list-error-message" data-i18n="productListLoadFailed">产品列表加载失败。</span>
+            <button class="soft-btn" id="product-list-retry" type="button" data-i18n="productRetry">重新加载</button>
           </div>
           <div class="empty-note product-list-empty" id="product-list-empty" hidden>
-            暂无产品。点击“创建产品”建立第一条产品记录。
+            <span data-i18n="productEmpty">暂无产品。点击“创建产品”建立第一条产品记录。</span>
           </div>
           <div class="review-table-wrap" id="product-list-table-wrap" hidden>
             <table class="review-table product-table">
               <thead>
                 <tr>
-                  <th>产品名称</th>
-                  <th>公司名称</th>
-                  <th>Campaign 数量</th>
-                  <th>创建时间</th>
-                  <th>更新时间</th>
-                  <th>状态</th>
-                  <th>操作</th>
+                  <th data-i18n="productNameLabel">产品名称</th>
+                  <th data-i18n="productCompanyNameLabel">公司名称</th>
+                  <th data-i18n="productCampaignCountLabel">Campaign 数量</th>
+                  <th data-i18n="productCreatedAtLabel">创建时间</th>
+                  <th data-i18n="productUpdatedAtLabel">更新时间</th>
+                  <th data-i18n="productStatusLabel">状态</th>
+                  <th data-i18n="commonActions">操作</th>
                 </tr>
               </thead>
               <tbody id="product-list-body"></tbody>
@@ -1241,35 +1232,35 @@
       <section class="page" data-page="agencies">
         <div class="page-header agency-page-heading">
           <div>
-            <p class="eyebrow">PARTNER NETWORK</p>
-            <h1>Agency</h1>
-            <p>查看合作机构、联系人覆盖和已关联的达人资源。</p>
+            <p class="eyebrow" data-i18n="agencyEyebrow">合作机构</p>
+            <h1 data-i18n="agencyTitle">Agency</h1>
+            <p data-i18n="agencySubtitle">查看合作机构、联系人覆盖和已关联的达人资源。</p>
           </div>
-          <button class="soft-btn" id="agency-list-refresh" type="button">刷新列表</button>
+          <button class="soft-btn" id="agency-list-refresh" type="button" data-i18n="agencyRefreshList">刷新列表</button>
         </div>
 
-        <div class="agency-overview" aria-label="Agency 概览">
-          <div class="agency-overview-card"><span>Agency</span><strong id="agency-overview-total">--</strong></div>
-          <div class="agency-overview-card"><span>已关联达人</span><strong id="agency-overview-creators">--</strong></div>
-          <div class="agency-overview-card"><span>联系人</span><strong id="agency-overview-contacts">--</strong></div>
+        <div class="agency-overview" aria-label="Agency 概览" data-i18n-aria-label="agencyOverviewAria">
+          <div class="agency-overview-card"><span data-i18n="agencyTitle">Agency</span><strong id="agency-overview-total">--</strong></div>
+          <div class="agency-overview-card"><span data-i18n="agencyAssociatedCreators">已关联达人</span><strong id="agency-overview-creators">--</strong></div>
+          <div class="agency-overview-card"><span data-i18n="agencyContactsLabel">联系人</span><strong id="agency-overview-contacts">--</strong></div>
         </div>
 
         <div class="section-card agency-list-card">
           <div class="agency-list-heading">
-            <div class="section-title">Agency 列表</div>
+            <div class="section-title" data-i18n="agencyListTitle">Agency 列表</div>
             <span class="agency-list-count" id="agency-list-count">--</span>
           </div>
-          <div class="agency-list-message" id="agency-list-loading">正在加载 Agency...</div>
+          <div class="agency-list-message" id="agency-list-loading" data-i18n="agencyLoading">正在加载 Agency...</div>
           <div class="agency-list-message agency-list-error" id="agency-list-error" hidden>
-            <span id="agency-list-error-message">Agency 列表加载失败。</span>
-            <button class="soft-btn" id="agency-list-retry" type="button">重新加载</button>
+            <span id="agency-list-error-message" data-i18n="agencyListLoadFailed">Agency 列表加载失败。</span>
+            <button class="soft-btn" id="agency-list-retry" type="button" data-i18n="agencyRetry">重新加载</button>
           </div>
           <div class="empty-note agency-list-empty" id="agency-list-empty" hidden>
-            暂无 Agency。可以在现有 Agency 数据入口建立第一条记录。
+            <span data-i18n="agencyEmpty">暂无 Agency。可以在现有 Agency 数据入口建立第一条记录。</span>
           </div>
           <div class="review-table-wrap" id="agency-list-table-wrap" hidden>
             <table class="review-table agency-table">
-              <thead><tr><th>Agency</th><th>国家/地区</th><th>联系人</th><th>关联达人</th><th>更新时间</th><th></th></tr></thead>
+              <thead><tr><th data-i18n="agencyTitle">Agency</th><th data-i18n="agencyCountryRegion">国家/地区</th><th data-i18n="agencyContactsLabel">联系人</th><th data-i18n="agencyAssociatedCreators">关联达人</th><th data-i18n="agencyUpdatedAt">更新时间</th><th></th></tr></thead>
               <tbody id="agency-list-body"></tbody>
             </table>
           </div>
@@ -1360,143 +1351,143 @@
       <section class="page" data-page="campaigns">
         <div class="page-header campaign-page-heading">
           <div>
-            <p class="eyebrow">CAMPAIGN MANAGEMENT</p>
-            <h1>Campaign</h1>
-            <p>按产品和状态管理达人合作项目，集中查看预算、周期与执行负责人。</p>
+            <p class="eyebrow" data-i18n="campaignEyebrow">合作项目管理</p>
+            <h1 data-i18n="campaignTitle">Campaign</h1>
+            <p data-i18n="campaignSubtitle">按产品和状态管理达人合作项目，集中查看预算、周期与执行负责人。</p>
           </div>
-          <button class="primary-btn" id="campaign-create-open" type="button">创建 Campaign</button>
+          <button class="primary-btn" id="campaign-create-open" type="button" data-i18n="campaignCreate">创建 Campaign</button>
         </div>
 
         <div class="section-card campaign-filter-card">
           <div class="campaign-filter-grid">
             <label class="field">
-              <span>产品</span>
+              <span data-i18n="campaignProductLabel">产品</span>
               <select id="campaign-product-filter">
-                <option value="">全部产品</option>
+                <option value="" data-i18n="campaignAllProducts">全部产品</option>
               </select>
             </label>
             <label class="field">
-              <span>状态</span>
+              <span data-i18n="campaignStatusLabel">状态</span>
               <select id="campaign-status-filter">
-                <option value="">全部进行中状态</option>
-                <option value="draft">Draft</option>
-                <option value="sourcing">Sourcing</option>
-                <option value="running">Running</option>
-                <option value="completed">Completed</option>
+                <option value="" data-i18n="campaignAllActiveStatuses">全部进行中状态</option>
+                <option value="draft" data-i18n="campaignStatusDraft">Draft</option>
+                <option value="sourcing" data-i18n="campaignStatusSourcing">Sourcing</option>
+                <option value="running" data-i18n="campaignStatusRunning">Running</option>
+                <option value="completed" data-i18n="campaignStatusCompleted">Completed</option>
               </select>
             </label>
             <label class="field">
-              <span>开始日期</span>
+              <span data-i18n="campaignStartDateLabel">开始日期</span>
               <input id="campaign-start-date-from" type="date">
             </label>
             <label class="field">
-              <span>结束日期</span>
+              <span data-i18n="campaignEndDateLabel">结束日期</span>
               <input id="campaign-start-date-to" type="date">
             </label>
             <label class="checkbox-field campaign-archive-filter">
               <input id="campaign-include-archived" type="checkbox">
-              <span>显示已归档</span>
+              <span data-i18n="campaignShowArchived">显示已归档</span>
             </label>
-            <button class="secondary-btn campaign-filter-apply" id="campaign-date-filter-apply" type="button">应用筛选</button>
+            <button class="secondary-btn campaign-filter-apply" id="campaign-date-filter-apply" type="button" data-i18n="campaignApplyFilters">应用筛选</button>
           </div>
           <p class="campaign-products-error" id="campaign-products-error" role="alert" hidden></p>
         </div>
 
         <div class="section-card campaign-form-card" id="campaign-form-card" hidden>
-          <div class="section-title" id="campaign-form-title">创建 Campaign</div>
+          <div class="section-title" id="campaign-form-title" data-i18n="campaignCreate">创建 Campaign</div>
           <form id="campaign-form" novalidate>
             <div class="form-grid three">
               <label class="field">
-                <span>Campaign 名称 *</span>
+                <span data-i18n="campaignNameLabel">Campaign 名称</span><span> *</span>
                 <input id="campaign-name" type="text" autocomplete="off" required>
               </label>
               <label class="field">
-                <span>产品 *</span>
+                <span data-i18n="campaignProductLabel">产品</span><span> *</span>
                 <select id="campaign-product-id" required>
-                  <option value="">请选择产品</option>
+                  <option value="" data-i18n="campaignSelectProduct">请选择产品</option>
                 </select>
               </label>
               <label class="field">
-                <span>状态</span>
+                <span data-i18n="campaignStatusLabel">状态</span>
                 <select id="campaign-status">
-                  <option value="draft">Draft</option>
-                  <option value="sourcing">Sourcing</option>
-                  <option value="running">Running</option>
-                  <option value="completed">Completed</option>
+                  <option value="draft" data-i18n="campaignStatusDraft">Draft</option>
+                  <option value="sourcing" data-i18n="campaignStatusSourcing">Sourcing</option>
+                  <option value="running" data-i18n="campaignStatusRunning">Running</option>
+                  <option value="completed" data-i18n="campaignStatusCompleted">Completed</option>
                 </select>
               </label>
               <fieldset class="field campaign-platform-field">
-                <legend>平台</legend>
+                <legend data-i18n="campaignPlatformLabel">平台</legend>
                 <input id="campaign-platform" type="hidden" value="">
                 <div class="campaign-choice-list" id="campaign-platform-options">
-                  <label><input id="campaign-platform-any" type="checkbox" value="" checked>不限平台</label>
+                  <label><input id="campaign-platform-any" type="checkbox" value="" checked><span data-i18n="campaignAnyPlatform">不限平台</span></label>
                   <label><input type="checkbox" data-campaign-platform value="TikTok">TikTok</label>
                   <label><input type="checkbox" data-campaign-platform value="Instagram">Instagram</label>
                   <label><input type="checkbox" data-campaign-platform value="YouTube">YouTube</label>
                 </div>
               </fieldset>
               <label class="field">
-                <span>国家/地区</span>
+                <span data-i18n="creatorLibraryCountryRegion">国家/地区</span>
                 <input id="campaign-country" type="text" autocomplete="country-name">
               </label>
               <label class="field">
-                <span>预算</span>
+                <span data-i18n="campaignBudgetLabel">预算</span>
                 <input id="campaign-budget" type="number" min="0" step="0.01">
               </label>
               <label class="field">
-                <span>开始日期</span>
+                <span data-i18n="campaignStartDateLabel">开始日期</span>
                 <input id="campaign-start-date" type="date">
               </label>
               <label class="field">
-                <span>结束日期</span>
+                <span data-i18n="campaignEndDateLabel">结束日期</span>
                 <input id="campaign-end-date" type="date">
               </label>
               <label class="field">
-                <span>负责人</span>
+                <span data-i18n="campaignOwnerLabel">负责人</span>
                 <input id="campaign-owner" type="text" autocomplete="off">
               </label>
             </div>
             <label class="field">
-              <span>目标</span>
-              <textarea id="campaign-goal" rows="3" placeholder="记录本次 Campaign 的目标"></textarea>
+              <span data-i18n="campaignGoalLabel">目标</span>
+              <textarea id="campaign-goal" rows="3" data-i18n-placeholder="campaignGoalPlaceholder" placeholder="记录本次 Campaign 的目标"></textarea>
             </label>
-            <p class="campaign-form-note" id="campaign-country-edit-note" hidden>国家/地区仅在创建时录入，本阶段编辑不修改该字段。</p>
+            <p class="campaign-form-note" id="campaign-country-edit-note" hidden data-i18n="campaignCountryEditNote">国家/地区仅在创建时录入，本阶段编辑不修改该字段。</p>
             <p class="campaign-form-error" id="campaign-form-error" role="alert" hidden></p>
             <div class="action-row">
-              <button class="primary-btn" id="campaign-form-save" type="submit">保存 Campaign</button>
-              <button class="soft-btn" id="campaign-form-cancel" type="button">取消</button>
+              <button class="primary-btn" id="campaign-form-save" type="submit" data-i18n="campaignSave">保存 Campaign</button>
+              <button class="soft-btn" id="campaign-form-cancel" type="button" data-i18n="commonCancel">取消</button>
             </div>
           </form>
         </div>
 
         <div class="section-card campaign-list-card">
           <div class="campaign-list-heading">
-            <div class="section-title">Campaign 列表</div>
+            <div class="section-title" data-i18n="campaignListTitle">Campaign 列表</div>
             <span class="campaign-list-count" id="campaign-list-count">--</span>
           </div>
-          <div class="campaign-list-message" id="campaign-list-loading">正在加载 Campaign...</div>
+          <div class="campaign-list-message" id="campaign-list-loading" data-i18n="campaignLoading">正在加载 Campaign...</div>
           <div class="campaign-list-message campaign-list-error" id="campaign-list-error" hidden>
-            <span id="campaign-list-error-message">Campaign 列表加载失败。</span>
-            <button class="soft-btn" id="campaign-list-retry" type="button">重新加载</button>
+            <span id="campaign-list-error-message" data-i18n="campaignListLoadFailed">Campaign 列表加载失败。</span>
+            <button class="soft-btn" id="campaign-list-retry" type="button" data-i18n="campaignRetry">重新加载</button>
           </div>
           <div class="empty-note campaign-list-empty" id="campaign-list-empty" hidden>
-            当前筛选条件下暂无 Campaign。
+            <span data-i18n="campaignEmpty">当前筛选条件下暂无 Campaign。</span>
           </div>
           <div class="review-table-wrap" id="campaign-list-table-wrap" hidden>
             <table class="review-table campaign-table">
               <thead>
                 <tr>
-                  <th>Campaign 名称</th>
-                  <th>产品名称</th>
-                  <th>达人数</th>
-                  <th>业务状态</th>
-                  <th>归档状态</th>
-                  <th>平台</th>
-                  <th>预算</th>
-                  <th>开始日期</th>
-                  <th>结束日期</th>
-                  <th>负责人</th>
-                  <th>操作</th>
+                  <th data-i18n="campaignNameLabel">Campaign 名称</th>
+                  <th data-i18n="productNameLabel">产品名称</th>
+                  <th data-i18n="campaignCreatorCountLabel">达人数</th>
+                  <th data-i18n="campaignBusinessStatusLabel">业务状态</th>
+                  <th data-i18n="campaignArchiveStatusLabel">归档状态</th>
+                  <th data-i18n="campaignPlatformLabel">平台</th>
+                  <th data-i18n="campaignBudgetLabel">预算</th>
+                  <th data-i18n="campaignStartDateLabel">开始日期</th>
+                  <th data-i18n="campaignEndDateLabel">结束日期</th>
+                  <th data-i18n="campaignOwnerLabel">负责人</th>
+                  <th data-i18n="commonActions">操作</th>
                 </tr>
               </thead>
               <tbody id="campaign-list-body"></tbody>
@@ -1547,53 +1538,53 @@
       <section class="page" data-page="campaign-detail">
         <div class="page-header campaign-detail-heading">
           <div>
-            <p class="eyebrow">CAMPAIGN DETAIL</p>
-            <h1 id="campaign-detail-title">Campaign 详情</h1>
-            <p id="campaign-detail-subtitle">查看项目信息、参与达人和执行结果。</p>
+            <p class="eyebrow" data-i18n="campaignDetailEyebrow">CAMPAIGN DETAIL</p>
+            <h1 id="campaign-detail-title" data-i18n="campaignDetailTitle">Campaign 详情</h1>
+            <p id="campaign-detail-subtitle" data-i18n="campaignDetailIntro">查看项目信息、参与达人和执行结果。</p>
           </div>
           <div class="action-row">
-            <button class="primary-btn" id="campaign-google-sheets-sync" type="button">同步报告到 Google Sheets</button>
-            <button class="soft-btn" id="campaign-detail-back" type="button">返回 Campaign 列表</button>
-            <button class="danger-btn" id="campaign-detail-delete" type="button">删除 Campaign</button>
+            <button class="primary-btn" id="campaign-google-sheets-sync" type="button" data-i18n="campaignDetailGoogleSheetsSync">同步报告到 Google Sheets</button>
+            <button class="soft-btn" id="campaign-detail-back" type="button" data-i18n="campaignDetailBack">返回 Campaign 列表</button>
+            <button class="danger-btn" id="campaign-detail-delete" type="button" data-i18n="campaignDetailDelete">删除 Campaign</button>
           </div>
         </div>
 
         <div class="section-card campaign-detail-message" id="campaign-detail-loading">
-          正在加载 Campaign 详情...
+          <span data-i18n="campaignDetailLoading">正在加载 Campaign 详情...</span>
         </div>
         <div class="section-card campaign-detail-message campaign-detail-error" id="campaign-detail-error" hidden>
-          <span id="campaign-detail-error-message">Campaign 详情加载失败。</span>
-          <button class="soft-btn" id="campaign-detail-retry" type="button">重新加载</button>
+          <span id="campaign-detail-error-message" data-i18n="campaignDetailLoadFailed">Campaign 详情加载失败。</span>
+          <button class="soft-btn" id="campaign-detail-retry" type="button" data-i18n="campaignDetailRetry">重新加载</button>
         </div>
 
         <div class="campaign-detail-content" id="campaign-detail-content" hidden>
           <section class="section-card campaign-detail-section" data-campaign-section="overview">
             <div class="campaign-detail-section-heading">
               <div>
-                <p class="eyebrow">CAMPAIGN OVERVIEW</p>
-                <h2>项目概览</h2>
+                <p class="eyebrow" data-i18n="campaignDetailOverviewEyebrow">CAMPAIGN OVERVIEW</p>
+                <h2 data-i18n="campaignDetailOverview">项目概览</h2>
               </div>
               <div class="campaign-detail-badges" id="campaign-detail-badges"></div>
             </div>
             <div class="campaign-detail-overview-grid" id="campaign-detail-overview"></div>
             <div class="campaign-detail-goal">
-              <span>Campaign 目标</span>
+              <span data-i18n="campaignDetailGoal">Campaign 目标</span>
               <p id="campaign-detail-goal">--</p>
             </div>
             <div class="campaign-readonly-note" id="campaign-detail-readonly" hidden>
-              此 Campaign 已归档，当前不可新增或编辑合作记录；仍可移除达人关系或删除 Campaign。
+              <span data-i18n="campaignDetailReadOnly">此 Campaign 已归档，当前不可新增或编辑合作记录；仍可移除达人关系或删除 Campaign。</span>
             </div>
           </section>
 
           <section class="section-card campaign-detail-section" data-campaign-section="publish-risks">
             <div class="campaign-detail-section-heading">
-              <div><p class="eyebrow">PUBLISHING RISKS</p><h2>缺失发布信息</h2></div>
-              <span class="campaign-list-count" id="campaign-missing-publish-count">0 条</span>
+              <div><p class="eyebrow" data-i18n="campaignDetailPublishingRisksEyebrow">PUBLISHING RISKS</p><h2 data-i18n="campaignDetailMissingPublish">缺失发布信息</h2></div>
+              <span class="campaign-list-count" id="campaign-missing-publish-count" data-i18n="campaignDetailInitialRecordCount">0 条</span>
             </div>
-            <div class="campaign-detail-message" id="campaign-missing-publish-empty">暂无缺失发布信息。</div>
+            <div class="campaign-detail-message" id="campaign-missing-publish-empty" data-i18n="campaignDetailNoMissingPublish">暂无缺失发布信息。</div>
             <div class="review-table-wrap" id="campaign-missing-publish-table-wrap" hidden>
               <table class="review-table campaign-missing-publish-table">
-                <thead><tr><th>Campaign</th><th>Creator</th><th>Stage</th><th>Publish Date</th><th>Publish Link</th><th>Risk</th></tr></thead>
+                <thead><tr><th data-i18n="campaignDetailTableCampaign">Campaign</th><th data-i18n="campaignDetailTableCreator">Creator</th><th data-i18n="campaignDetailTableStage">Stage</th><th data-i18n="campaignDetailTablePublishDate">Publish Date</th><th data-i18n="campaignDetailTablePublishLink">Publish Link</th><th data-i18n="campaignDetailTableRisk">Risk</th></tr></thead>
                 <tbody id="campaign-missing-publish-body"></tbody>
               </table>
             </div>
@@ -1601,23 +1592,23 @@
 
           <section class="section-card campaign-detail-section" data-campaign-section="published-performance">
             <div class="campaign-detail-section-heading">
-              <div><p class="eyebrow">PUBLISHED CONTENT</p><h2>发布内容表现</h2></div>
+              <div><p class="eyebrow" data-i18n="campaignDetailPublishedContentEyebrow">PUBLISHED CONTENT</p><h2 data-i18n="campaignDetailPublishedPerformance">发布内容表现</h2></div>
               <div class="action-row">
-                <span class="campaign-list-count" id="campaign-publication-performance-count">0 条</span>
-                <button class="soft-btn" id="campaign-publications-refresh-all" type="button">刷新全部</button>
+                <span class="campaign-list-count" id="campaign-publication-performance-count" data-i18n="campaignDetailInitialRecordCount">0 条</span>
+                <button class="soft-btn" id="campaign-publications-refresh-all" type="button" data-i18n="campaignDetailRefreshAll">刷新全部</button>
               </div>
             </div>
-            <p class="hint">显示每条实际发布内容最近一次可靠观察；缺失指标不会显示为 0。</p>
+            <p class="hint" data-i18n="campaignDetailPerformanceHint">显示每条实际发布内容最近一次可靠观察；缺失指标不会显示为 0。</p>
             <div class="campaign-performance-summary" id="campaign-performance-summary">
-              <article><small>总播放</small><strong id="campaign-performance-total-views">—</strong><span id="campaign-performance-views-coverage">0 / 0 条有数据</span></article>
-              <article><small>总点赞</small><strong id="campaign-performance-total-likes">—</strong><span id="campaign-performance-likes-coverage">0 / 0 条有数据</span></article>
-              <article><small>总评论</small><strong id="campaign-performance-total-comments">—</strong><span id="campaign-performance-comments-coverage">0 / 0 条有数据</span></article>
-              <article><small>平均互动率</small><strong id="campaign-performance-average-er">—</strong><span id="campaign-performance-er-coverage">0 / 0 条有数据</span></article>
+              <article><small data-i18n="campaignDetailTotalViewsLabel">总播放</small><strong id="campaign-performance-total-views">—</strong><span id="campaign-performance-views-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
+              <article><small data-i18n="campaignDetailTotalLikesLabel">总点赞</small><strong id="campaign-performance-total-likes">—</strong><span id="campaign-performance-likes-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
+              <article><small data-i18n="campaignDetailTotalCommentsLabel">总评论</small><strong id="campaign-performance-total-comments">—</strong><span id="campaign-performance-comments-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
+              <article><small data-i18n="campaignDetailAverageEngagement">平均互动率</small><strong id="campaign-performance-average-er">—</strong><span id="campaign-performance-er-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
             </div>
             <div class="campaign-performance-highlights" id="campaign-performance-highlights"></div>
-            <p class="campaign-performance-money" id="campaign-performance-money">确认成本：— · 历史报价：— · ROI：—（缺少权威回报数据）</p>
+            <p class="campaign-performance-money" id="campaign-performance-money" data-i18n="campaignDetailInitialMoneySummary">确认成本：— · 历史报价：— · ROI：—（缺少权威回报数据）</p>
             <div class="campaign-performance-trends" id="campaign-performance-trends"></div>
-            <div class="campaign-detail-message" id="campaign-publication-performance-empty">暂无实际发布内容。</div>
+            <div class="campaign-detail-message" id="campaign-publication-performance-empty" data-i18n="campaignDetailNoPublications">暂无实际发布内容。</div>
             <div class="campaign-publication-performance-list" id="campaign-publication-performance-list"></div>
             <p class="campaign-form-error" id="campaign-publication-performance-status" role="status" hidden></p>
           </section>
@@ -1625,152 +1616,152 @@
           <section class="section-card campaign-detail-section campaign-creator-section" data-campaign-section="creator-management">
             <div class="campaign-detail-section-heading">
               <div>
-                <p class="eyebrow">CREATOR MANAGEMENT</p>
-                <h2>达人合作管理</h2>
+                <p class="eyebrow" data-i18n="campaignDetailCreatorManagementEyebrow">CREATOR MANAGEMENT</p>
+                <h2 data-i18n="campaignDetailCreatorManagement">达人合作管理</h2>
               </div>
               <div class="campaign-creator-heading-actions">
-                <span class="campaign-list-count" id="campaign-creator-count">0 位达人</span>
-                <button class="primary-btn" id="campaign-creator-add-open" type="button">添加达人</button>
+                <span class="campaign-list-count" id="campaign-creator-count" data-i18n="campaignDetailInitialCreatorCount">0 位达人</span>
+                <button class="primary-btn" id="campaign-creator-add-open" type="button" data-i18n="campaignDetailAddCreator">添加达人</button>
               </div>
             </div>
 
             <div class="campaign-creator-form-card" id="campaign-creator-form-card" hidden>
-              <div class="section-title" id="campaign-creator-form-title">添加达人</div>
+              <div class="section-title" id="campaign-creator-form-title" data-i18n="campaignDetailAddCreator">添加达人</div>
               <form id="campaign-creator-form" novalidate>
                 <div class="form-grid three">
                   <label class="field">
-                    <span>达人 *</span>
+                    <span data-i18n="campaignDetailCreatorRequiredLabel">达人 *</span>
                     <select id="campaign-creator-id" required>
-                      <option value="">请选择达人</option>
+                      <option value="" data-i18n="campaignDetailSelectCreator">请选择达人</option>
                     </select>
                   </label>
                   <div class="field">
-                    <span>计划发布账号 *</span>
+                    <span data-i18n="campaignDetailPlannedAccountRequiredLabel">计划发布账号 *</span>
                     <details class="campaign-account-picker" id="campaign-account-picker">
-                      <summary id="campaign-account-summary">请先选择达人</summary>
+                      <summary id="campaign-account-summary" data-i18n="campaignDetailSelectCreatorFirst">请先选择达人</summary>
                       <div class="campaign-account-options" id="campaign-account-options"></div>
                     </details>
                     <select id="campaign-creator-account-id" multiple hidden aria-hidden="true" tabindex="-1"></select>
-                    <small class="hint">勾选后立即生效，可选择多个符合 Campaign 平台的账号。</small>
+                    <small class="hint" data-i18n="campaignDetailAccountPickerHint">勾选后立即生效，可选择多个符合 Campaign 平台的账号。</small>
                   </div>
                   <label class="field">
-                    <span>合作阶段</span>
+                    <span data-i18n="campaignDetailStage">合作阶段</span>
                     <select id="campaign-creator-stage">
-                      <option value="pending_contact">待联系</option>
-                      <option value="contacted">已联系</option>
-                      <option value="quoted">已报价</option>
-                      <option value="negotiating">谈判中</option>
-                      <option value="agreed">已确认</option>
-                      <option value="executing">执行中</option>
-                      <option value="completed">已完成</option>
-                      <option value="rejected">已拒绝</option>
+                      <option value="pending_contact" data-i18n="campaignDetailStagePendingContact">待联系</option>
+                      <option value="contacted" data-i18n="campaignDetailStageContacted">已联系</option>
+                      <option value="quoted" data-i18n="campaignDetailStageQuoted">已报价</option>
+                      <option value="negotiating" data-i18n="campaignDetailStageNegotiating">谈判中</option>
+                      <option value="agreed" data-i18n="campaignDetailStageAgreed">已确认</option>
+                      <option value="executing" data-i18n="campaignDetailStageExecuting">执行中</option>
+                      <option value="completed" data-i18n="campaignDetailStageCompleted">已完成</option>
+                      <option value="rejected" data-i18n="campaignDetailStageRejected">已拒绝</option>
                     </select>
                   </label>
                   <label class="field">
-                    <span>报价币种</span>
+                    <span data-i18n="campaignDetailQuoteCurrency">报价币种</span>
                     <select id="campaign-creator-quote-currency"></select>
                   </label>
                   <label class="field">
-                    <span>报价单价</span>
+                    <span data-i18n="campaignDetailQuoteUnitAmount">报价单价</span>
                     <input id="campaign-creator-quote-unit-amount" type="number" min="0" step="0.01">
                     <small class="hint" id="campaign-creator-quote-unit-usd">--</small>
                   </label>
                   <label class="field">
-                    <span>数量</span>
+                    <span data-i18n="campaignDetailQuantity">数量</span>
                     <input id="campaign-creator-quote-quantity" type="number" min="1" step="1">
                   </label>
                   <label class="field">
-                    <span>计价单位</span>
+                    <span data-i18n="campaignDetailPricingUnit">计价单位</span>
                     <select id="campaign-creator-quote-unit">
-                      <option value="">请选择</option>
-                      <option value="video">Video</option>
-                      <option value="post">Post</option>
-                      <option value="reel">Reel</option>
-                      <option value="short">Short</option>
-                      <option value="story">Story</option>
-                      <option value="package">Package</option>
-                      <option value="other">Other</option>
+                      <option value="" data-i18n="campaignDetailSelect">请选择</option>
+                      <option value="video" data-i18n="campaignDetailUnitVideo">Video</option>
+                      <option value="post" data-i18n="campaignDetailUnitPost">Post</option>
+                      <option value="reel" data-i18n="campaignDetailUnitReel">Reel</option>
+                      <option value="short" data-i18n="campaignDetailUnitShort">Short</option>
+                      <option value="story" data-i18n="campaignDetailUnitStory">Story</option>
+                      <option value="package" data-i18n="campaignDetailUnitPackage">Package</option>
+                      <option value="other" data-i18n="campaignDetailUnitOther">Other</option>
                     </select>
                   </label>
                   <label class="field">
-                    <span>达人报价总额</span>
+                    <span data-i18n="campaignDetailCreatorQuoteTotal">达人报价总额</span>
                     <input id="campaign-creator-quote" type="number" min="0" step="0.01" readonly>
-                    <small class="hint">由单价 × 数量自动计算；旧记录可保留 total-only。</small>
+                    <small class="hint" data-i18n="campaignDetailQuoteTotalHint">由单价 × 数量自动计算；旧记录可保留 total-only。</small>
                     <small class="hint" id="campaign-creator-quote-usd">--</small>
                   </label>
                   <label class="field">
-                    <span>实际成本</span>
+                    <span data-i18n="campaignDetailActualCost">实际成本</span>
                     <input id="campaign-creator-cost" type="number" min="0" step="0.01">
                     <small class="hint" id="campaign-creator-cost-usd">--</small>
                   </label>
                   <label class="field">
-                    <span>成本币种</span>
+                    <span data-i18n="campaignDetailCostCurrency">成本币种</span>
                     <select id="campaign-creator-cost-currency"></select>
                   </label>
                   <div class="field campaign-planned-dates-field">
-                    <span>计划发布日期</span>
+                    <span data-i18n="campaignDetailPlannedPublishDate">计划发布日期</span>
                     <div id="campaign-planned-date-list">
                       <div class="campaign-planned-date-row">
                         <input id="campaign-creator-publish-date" data-planned-publish-date type="date">
                       </div>
                     </div>
-                    <button class="soft-btn compact-btn" id="campaign-planned-date-add" type="button">+ 添加日期</button>
+                    <button class="soft-btn compact-btn" id="campaign-planned-date-add" type="button" data-i18n="campaignDetailAddDate">+ 添加日期</button>
                   </div>
                   <div class="field campaign-inline-fx" id="campaign-inline-fx" hidden>
-                    <span id="campaign-inline-fx-label">设置汇率</span>
+                    <span id="campaign-inline-fx-label" data-i18n="campaignDetailSetRate">设置汇率</span>
                     <label class="campaign-inline-fx-input">1 USD = <input id="campaign-inline-fx-rate" type="number" min="0" step="any"> <span id="campaign-inline-fx-currency">--</span></label>
-                    <button class="soft-btn compact-btn" id="campaign-inline-fx-save" type="button">保存汇率</button>
+                    <button class="soft-btn compact-btn" id="campaign-inline-fx-save" type="button" data-i18n="campaignDetailSaveRate">保存汇率</button>
                   </div>
                 </div>
 
                 <div class="campaign-form-subsection" data-campaign-section="publication-data">
-                  <h3>实际发布内容</h3>
-                  <p class="hint">实际发布账号和时间独立于计划；未知信息可留空。</p>
+                  <h3 data-i18n="campaignDetailActualPublications">实际发布内容</h3>
+                  <p class="hint" data-i18n="campaignDetailActualPublicationHint">实际发布账号和时间独立于计划；未知信息可留空。</p>
                   <div id="campaign-publication-list" class="campaign-publication-list"></div>
-                  <button class="soft-btn compact-btn" id="campaign-publication-add" type="button">+ 添加实际发布内容</button>
+                  <button class="soft-btn compact-btn" id="campaign-publication-add" type="button" data-i18n="campaignDetailAddActualPublication">+ 添加实际发布内容</button>
                   <textarea id="campaign-creator-publish-links" hidden aria-hidden="true"></textarea>
                 </div>
 
                 <div class="campaign-form-subsection" data-campaign-section="performance-result">
-                  <h3>效果复盘</h3>
+                  <h3 data-i18n="campaignDetailPerformanceReview">效果复盘</h3>
                   <div class="form-grid four">
-                    <label class="field"><span>播放量</span><input id="campaign-creator-views" type="number" min="0" step="1"></label>
-                    <label class="field"><span>点赞数</span><input id="campaign-creator-likes" type="number" min="0" step="1"></label>
-                    <label class="field"><span>评论数</span><input id="campaign-creator-comments" type="number" min="0" step="1"></label>
+                    <label class="field"><span data-i18n="campaignDetailViewCount">播放量</span><input id="campaign-creator-views" type="number" min="0" step="1"></label>
+                    <label class="field"><span data-i18n="campaignDetailLikeCount">点赞数</span><input id="campaign-creator-likes" type="number" min="0" step="1"></label>
+                    <label class="field"><span data-i18n="campaignDetailCommentCount">评论数</span><input id="campaign-creator-comments" type="number" min="0" step="1"></label>
                     <label class="field"><span>ROI</span><input id="campaign-creator-roi" type="number" step="0.01"></label>
                   </div>
                   <label class="field">
-                    <span>复盘备注</span>
+                    <span data-i18n="campaignDetailPerformanceNote">复盘备注</span>
                     <textarea id="campaign-creator-performance-note" rows="3"></textarea>
                   </label>
                 </div>
 
                 <p class="campaign-form-error" id="campaign-creator-form-error" role="alert" hidden></p>
                 <div class="action-row">
-                  <button class="primary-btn" id="campaign-creator-form-save" type="submit">保存合作记录</button>
-                  <button class="soft-btn" id="campaign-creator-form-cancel" type="button">取消</button>
+                  <button class="primary-btn" id="campaign-creator-form-save" type="submit" data-i18n="campaignDetailSaveRelation">保存合作记录</button>
+                  <button class="soft-btn" id="campaign-creator-form-cancel" type="button" data-i18n="commonCancel">取消</button>
                 </div>
               </form>
             </div>
 
             <div class="campaign-detail-message" id="campaign-creator-empty" hidden>
-              暂无参与达人。点击“添加达人”建立第一条合作记录。
+              <span data-i18n="campaignDetailNoCreators">暂无参与达人。点击“添加达人”建立第一条合作记录。</span>
             </div>
             <div class="review-table-wrap" id="campaign-creator-table-wrap" hidden>
               <table class="review-table campaign-creator-table">
                 <thead>
                   <tr>
-                    <th>达人名称</th>
-                    <th>Agency</th>
-                    <th>执行账号</th>
-                    <th>平台</th>
-                    <th>合作阶段</th>
-                    <th>报价</th>
-                    <th>成本</th>
-                    <th>发布链接</th>
-                    <th>播放</th>
+                    <th data-i18n="campaignDetailCreatorName">达人名称</th>
+                    <th data-i18n="campaignDetailAgency">Agency</th>
+                    <th data-i18n="campaignDetailExecutionAccount">执行账号</th>
+                    <th data-i18n="campaignDetailPlatform">平台</th>
+                    <th data-i18n="campaignDetailStage">合作阶段</th>
+                    <th data-i18n="campaignDetailQuote">报价</th>
+                    <th data-i18n="campaignDetailCost">成本</th>
+                    <th data-i18n="campaignDetailPublishLinks">发布链接</th>
+                    <th data-i18n="campaignDetailViews">播放</th>
                     <th>ROI</th>
-                    <th>操作</th>
+                    <th data-i18n="commonActions">操作</th>
                   </tr>
                 </thead>
                 <tbody id="campaign-creator-list-body"></tbody>
@@ -1780,30 +1771,30 @@
 
 
           <section class="section-card campaign-detail-section" data-campaign-section="brief">
-            <div class="campaign-detail-section-heading"><div><p class="eyebrow">CAMPAIGN BRIEF</p><h2>Campaign Brief</h2></div></div>
+            <div class="campaign-detail-section-heading"><div><p class="eyebrow" data-i18n="campaignDetailBriefEyebrow">CAMPAIGN BRIEF</p><h2 data-i18n="campaignDetailBrief">Campaign Brief</h2></div></div>
             <div class="form-grid two">
-              <label class="field"><span>Brief 标题</span><input id="campaign-brief-title" type="text"></label>
-              <label class="field"><span>平台指引</span><input id="campaign-brief-platform-guidance" type="text"></label>
-              <label class="field"><span>核心卖点</span><textarea id="campaign-brief-core-selling-points" rows="3"></textarea></label>
-              <label class="field"><span>必须包含</span><textarea id="campaign-brief-must-include" rows="3"></textarea></label>
-              <label class="field"><span>禁止表达</span><textarea id="campaign-brief-must-avoid" rows="3"></textarea></label>
-              <label class="field"><span>品牌要求</span><textarea id="campaign-brief-brand-requirements" rows="3"></textarea></label>
-              <label class="field"><span>内容要求</span><textarea id="campaign-brief-content-requirements" rows="3"></textarea></label>
-              <label class="field"><span>发布要求</span><textarea id="campaign-brief-publishing-requirements" rows="3"></textarea></label>
-              <label class="field"><span>参考 / 备注</span><textarea id="campaign-brief-reference-notes" rows="3"></textarea></label>
+              <label class="field"><span data-i18n="campaignDetailBriefTitle">Brief 标题</span><input id="campaign-brief-title" type="text"></label>
+              <label class="field"><span data-i18n="campaignDetailPlatformGuidance">平台指引</span><input id="campaign-brief-platform-guidance" type="text"></label>
+              <label class="field"><span data-i18n="campaignDetailCoreSellingPoints">核心卖点</span><textarea id="campaign-brief-core-selling-points" rows="3"></textarea></label>
+              <label class="field"><span data-i18n="campaignDetailMustInclude">必须包含</span><textarea id="campaign-brief-must-include" rows="3"></textarea></label>
+              <label class="field"><span data-i18n="campaignDetailMustAvoid">禁止表达</span><textarea id="campaign-brief-must-avoid" rows="3"></textarea></label>
+              <label class="field"><span data-i18n="campaignDetailBrandRequirements">品牌要求</span><textarea id="campaign-brief-brand-requirements" rows="3"></textarea></label>
+              <label class="field"><span data-i18n="campaignDetailContentRequirements">内容要求</span><textarea id="campaign-brief-content-requirements" rows="3"></textarea></label>
+              <label class="field"><span data-i18n="campaignDetailPublishingRequirements">发布要求</span><textarea id="campaign-brief-publishing-requirements" rows="3"></textarea></label>
+              <label class="field"><span data-i18n="campaignDetailReferenceNotes">参考 / 备注</span><textarea id="campaign-brief-reference-notes" rows="3"></textarea></label>
             </div>
-            <div class="action-row"><button class="primary-btn" id="campaign-brief-save" type="button">保存 Brief</button></div>
+            <div class="action-row"><button class="primary-btn" id="campaign-brief-save" type="button" data-i18n="campaignDetailSaveBrief">保存 Brief</button></div>
           </section>
 
           <section class="section-card campaign-detail-section" data-campaign-section="content-review">
-            <div class="campaign-detail-section-heading"><div><p class="eyebrow">CONTENT REVIEW</p><h2>内容提交与人工审核</h2></div></div>
-            <p class="hint">AI 一审为未来可选辅助，人工审核始终是最终状态。</p>
+            <div class="campaign-detail-section-heading"><div><p class="eyebrow" data-i18n="campaignDetailContentReviewEyebrow">CONTENT REVIEW</p><h2 data-i18n="campaignDetailContentReview">内容提交与人工审核</h2></div></div>
+            <p class="hint" data-i18n="campaignDetailHumanReviewHint">AI 一审为未来可选辅助，人工审核始终是最终状态。</p>
             <div class="form-grid three">
-              <label class="field"><span>合作达人</span><select id="content-submission-relation"></select></label>
-              <label class="field"><span>内容类型</span><select id="content-submission-type"><option value="script">脚本</option><option value="copy">文案</option><option value="video_draft">视频审核稿</option><option value="other">其他</option></select></label>
-              <label class="field"><span>内容 / 文件引用</span><input id="content-submission-reference" type="text"></label>
+              <label class="field"><span data-i18n="campaignDetailPartnerCreator">合作达人</span><select id="content-submission-relation"></select></label>
+              <label class="field"><span data-i18n="campaignDetailContentType">内容类型</span><select id="content-submission-type"><option value="script" data-i18n="campaignDetailContentScript">脚本</option><option value="copy" data-i18n="campaignDetailContentCopy">文案</option><option value="video_draft" data-i18n="campaignDetailContentVideoDraft">视频审核稿</option><option value="other" data-i18n="campaignDetailContentOther">其他</option></select></label>
+              <label class="field"><span data-i18n="campaignDetailContentReference">内容 / 文件引用</span><input id="content-submission-reference" type="text"></label>
             </div>
-            <div class="action-row"><button class="secondary-btn" id="content-submission-create" type="button">提交审核内容</button></div>
+            <div class="action-row"><button class="secondary-btn" id="content-submission-create" type="button" data-i18n="campaignDetailSubmitForReview">提交审核内容</button></div>
             <div id="content-submission-list" class="campaign-publication-performance-list"></div>
           </section>
         </div>
@@ -1821,6 +1812,7 @@
           <div class="action-row">
             <button class="primary-btn" id="mail-inbox-sync" data-i18n="mailInboxSyncButton">同步收件箱</button>
             <button class="soft-btn" id="mail-sync-crm-replies" data-i18n="mailSyncCrmReplies">同步回复状态到飞书表</button>
+            <button class="soft-btn" id="mail-followup-google-sheets" type="button" data-i18n="mailSyncFollowupGoogle">同步邮件跟进到 Google Sheets</button>
           </div>
           <div class="mail-inbox-summary" id="mail-inbox-summary">
             <div class="stat-card">
@@ -1852,13 +1844,13 @@
             <div class="section-title" data-i18n="mailInboxMessagesTitle">最近邮件</div>
             <div class="mail-list-controls">
               <label class="checkbox-line"><input id="mail-matched-only" type="checkbox"><span data-i18n="mailMatchedOnly">仅看达人回复</span></label>
-              <label class="field-inline"><span>每页</span><select id="mail-page-size"><option value="10">10 封</option><option value="20" selected>20 封</option><option value="50">50 封</option></select></label>
+              <label class="field-inline"><span data-i18n="mailPageSize">每页</span><select id="mail-page-size"><option value="10">10</option><option value="20" selected>20</option><option value="50">50</option></select></label>
             </div>
           </div>
           <div id="mail-inbox-messages" class="mail-message-list"></div>
           <div class="mail-pagination" id="mail-pagination" hidden>
-            <span id="mail-page-total">共 0 封</span>
-            <div class="mail-page-actions"><button class="soft-btn compact-btn" id="mail-page-previous">上一页</button><span id="mail-page-summary">第 1 / 1 页</span><button class="soft-btn compact-btn" id="mail-page-next">下一页</button></div>
+            <span id="mail-page-total" data-i18n="mailPageCount">共 0 封</span>
+            <div class="mail-page-actions"><button class="soft-btn compact-btn" id="mail-page-previous" data-i18n="mailPrevious">上一页</button><span id="mail-page-summary" data-i18n="mailPageSummary">第 1 / 1 页</span><button class="soft-btn compact-btn" id="mail-page-next" data-i18n="mailNext">下一页</button></div>
           </div>
         </div>
 
@@ -1879,7 +1871,7 @@
           </div>
           <div id="mail-accounts-list" class="mail-accounts"></div>
           <div class="action-row">
-            <button class="primary-btn" id="mail-accounts-save">保存邮箱账户</button>
+            <button class="primary-btn" id="mail-accounts-save" data-i18n="mailAccountsSave">保存邮箱账户</button>
           </div>
         </div>
       </section>
@@ -1887,49 +1879,48 @@
       <section class="page workspace-wide" data-page="mail-follow-up">
         <div class="page-header mail-followup-heading">
           <div>
-            <h1>邮件跟进</h1>
-            <p>根据已同步的收发邮件记录查看当前跟进状态；不会发送邮件或改变达人、Campaign 状态。</p>
+            <h1 data-i18n="mailFollowupTitle">邮件跟进</h1>
+            <p data-i18n="mailFollowupSubtitle">根据已同步的收发邮件记录查看当前跟进状态；不会发送邮件或改变达人、Campaign 状态。</p>
           </div>
           <div class="action-row">
-            <button class="soft-btn" id="mail-followup-sync" type="button">同步邮件</button>
-            <button class="soft-btn" id="mail-followup-refresh" type="button">刷新</button>
+            <button class="soft-btn" id="mail-followup-refresh" type="button" data-i18n="mailFollowupRefresh">刷新</button>
           </div>
         </div>
 
         <section class="section-card">
           <div class="mail-followup-toolbar">
-            <div class="mail-followup-filters" role="group" aria-label="跟进状态筛选">
-              <button class="soft-btn compact-btn active" data-followup-filter="actionable" type="button">待处理</button>
-              <button class="soft-btn compact-btn" data-followup-filter="all" type="button">全部</button>
-              <button class="soft-btn compact-btn" data-followup-filter="me" type="button">待我回复</button>
-              <button class="soft-btn compact-btn" data-followup-filter="creator" type="button">待对方回复</button>
-              <button class="soft-btn compact-btn" data-followup-filter="unknown" type="button">状态未知</button>
+            <div class="mail-followup-filters" role="group" data-i18n-aria-label="mailFollowupFilterLabel" aria-label="跟进状态筛选">
+              <button class="soft-btn compact-btn active" data-followup-filter="actionable" type="button" data-i18n="mailFollowupFilterActionable">待处理</button>
+              <button class="soft-btn compact-btn" data-followup-filter="all" type="button" data-i18n="mailFollowupFilterAll">全部</button>
+              <button class="soft-btn compact-btn" data-followup-filter="me" type="button" data-i18n="mailFollowupWaitingMe">待我回复</button>
+              <button class="soft-btn compact-btn" data-followup-filter="creator" type="button" data-i18n="mailFollowupWaitingCreator">待对方回复</button>
+              <button class="soft-btn compact-btn" data-followup-filter="unknown" type="button" data-i18n="mailFollowupWaitingUnknown">状态未知</button>
             </div>
             <div class="action-row">
-              <button class="secondary-btn compact-btn" id="mail-followup-show-export" type="button">导出队列</button>
-              <button class="soft-btn compact-btn" id="mail-followup-export-csv" type="button">导出 CSV</button>
-              <button class="soft-btn compact-btn" id="mail-followup-export-xlsx" type="button">导出 Excel</button>
+              <button class="secondary-btn compact-btn" id="mail-followup-show-export" type="button" data-i18n="mailFollowupExportQueue">导出队列</button>
+              <button class="soft-btn compact-btn" id="mail-followup-export-csv" type="button" data-i18n="mailFollowupExportCsv">导出 CSV</button>
+              <button class="soft-btn compact-btn" id="mail-followup-export-xlsx" type="button" data-i18n="mailFollowupExportXlsx">导出 Excel</button>
             </div>
           </div>
-          <p class="hint" id="mail-followup-summary">正在读取邮件跟进状态…</p>
+          <p class="hint" id="mail-followup-summary" data-i18n="mailFollowupLoading">正在读取邮件跟进状态…</p>
           <div class="review-table-wrap">
             <table class="review-table mail-followup-table">
-              <thead><tr><th>Creator</th><th>联系邮箱</th><th>状态</th><th>等待</th><th>最近邮件</th><th>收件</th><th>发件</th><th>历史</th><th>操作</th></tr></thead>
+              <thead><tr><th data-i18n="mailFollowupCreator">Creator</th><th data-i18n="mailFollowupContactEmail">联系邮箱</th><th data-i18n="mailFollowupStatus">状态</th><th data-i18n="mailFollowupWaiting">等待</th><th data-i18n="mailFollowupLatestMail">最近邮件</th><th data-i18n="mailFollowupInbound">收件</th><th data-i18n="mailFollowupOutbound">发件</th><th data-i18n="mailFollowupHistory">历史</th><th data-i18n="mailFollowupActions">操作</th></tr></thead>
               <tbody id="mail-followup-list"></tbody>
             </table>
           </div>
-          <div class="empty-note" id="mail-followup-empty" hidden>暂无待跟进邮件。同步邮件后，这里会根据收发记录显示待跟进状态。</div>
+          <div class="empty-note" id="mail-followup-empty" hidden data-i18n="mailFollowupEmpty">暂无待跟进邮件。同步邮件后，这里会根据收发记录显示待跟进状态。</div>
         </section>
 
         <section class="section-card" id="mail-followup-export-panel" hidden>
           <div class="mail-followup-toolbar">
-            <div><div class="section-title">导出队列</div><p class="hint">导出仅生成文件，不代表已发送邮件，也不会移除队列成员。</p></div>
-            <button class="soft-btn compact-btn" id="mail-followup-hide-export" type="button">关闭</button>
+            <div><div class="section-title" data-i18n="mailFollowupExportQueue">导出队列</div><p class="hint" data-i18n="mailFollowupExportHint">导出仅生成文件，不代表已发送邮件，也不会移除队列成员。</p></div>
+            <button class="soft-btn compact-btn" id="mail-followup-hide-export" type="button" data-i18n="mailFollowupClose">关闭</button>
           </div>
           <div class="review-table-wrap">
-            <table class="review-table mail-followup-table"><thead><tr><th>Creator</th><th>联系邮箱</th><th>状态</th><th>等待</th><th>最近邮件</th><th>操作</th></tr></thead><tbody id="mail-followup-export-list"></tbody></table>
+            <table class="review-table mail-followup-table"><thead><tr><th data-i18n="mailFollowupCreator">Creator</th><th data-i18n="mailFollowupContactEmail">联系邮箱</th><th data-i18n="mailFollowupStatus">状态</th><th data-i18n="mailFollowupWaiting">等待</th><th data-i18n="mailFollowupLatestMail">最近邮件</th><th data-i18n="mailFollowupActions">操作</th></tr></thead><tbody id="mail-followup-export-list"></tbody></table>
           </div>
-          <div class="empty-note" id="mail-followup-export-empty" hidden>导出队列为空。</div>
+          <div class="empty-note" id="mail-followup-export-empty" hidden data-i18n="mailFollowupExportEmpty">导出队列为空。</div>
         </section>
       </section>
 
@@ -1960,87 +1951,87 @@
         </div>
 
         <div class="section-card system-tools-card">
-          <div class="section-title">系统工具</div>
+          <div class="section-title" data-i18n="settingsSystemTools">系统工具</div>
           <section class="system-tools-section" aria-labelledby="system-debug-title">
-            <h3 id="system-debug-title" class="system-tools-subtitle">系统调试</h3>
+            <h3 id="system-debug-title" class="system-tools-subtitle" data-i18n="settingsDebug">系统调试</h3>
             <label class="checkbox-field system-debug-toggle">
               <input id="debug-mode" type="checkbox">
-              <span>开启 Debug 模式</span>
+              <span data-i18n="settingsEnableDebug">开启 Debug 模式</span>
             </label>
-            <p class="hint">开启后显示本机运行信息，不会显示密码、Token 或邮件授权码。</p>
+            <p class="hint" data-i18n="settingsDebugHint">开启后显示本机运行信息，不会显示密码、Token 或邮件授权码。</p>
             <div id="debug-system-info" class="system-info" hidden></div>
           </section>
 
           <section class="system-tools-section system-health-section" aria-labelledby="system-health-title">
-            <h3 id="system-health-title" class="system-tools-subtitle">系统健康检查</h3>
-            <p class="hint">检查本地数据目录、达人库 Excel、插件最近导入记录与飞书配置，不会写入 Excel 或发送飞书请求。</p>
+            <h3 id="system-health-title" class="system-tools-subtitle" data-i18n="settingsHealth">系统健康检查</h3>
+            <p class="hint" data-i18n="settingsHealthHint">检查本地数据目录、达人库 Excel、插件最近导入记录与飞书配置，不会写入 Excel 或发送飞书请求。</p>
             <div class="action-row">
-              <button class="secondary-btn" id="system-health-run">运行健康检查</button>
+              <button class="secondary-btn" id="system-health-run" data-i18n="settingsRunHealth">运行健康检查</button>
             </div>
             <div id="system-health-result" class="system-health-result" hidden></div>
           </section>
         </div>
 
         <div class="section-card">
-          <div class="section-title">达人库文件</div>
+          <div class="section-title" data-i18n="settingsCreatorLibraryFile">达人库文件</div>
           <label class="field">
-            <span>Excel 工作簿路径</span>
-            <input id="creator-library-workbook-path" type="text" placeholder="例如：WPS云盘\KOLConnect\Creator_Library.xlsx">
+            <span data-i18n="settingsWorkbookPath">Excel 工作簿路径</span>
+            <input id="creator-library-workbook-path" type="text" data-i18n-placeholder="settingsWorkbookPathPlaceholder" placeholder="例如：WPS云盘\KOLConnect\Creator_Library.xlsx">
           </label>
-          <p class="hint" id="creator-library-workbook-path-hint">这是运行 KOLConnect 的本机文件路径。</p>
+          <p class="hint" id="creator-library-workbook-path-hint" data-i18n="settingsWorkbookPathHint">这是运行 KOLConnect 的本机文件路径。</p>
           <div class="action-row">
-            <button class="primary-btn" id="creator-library-save-config">保存达人库文件设置</button>
+            <button class="primary-btn" id="creator-library-save-config" data-i18n="settingsSaveCreatorLibrary">保存达人库文件设置</button>
           </div>
         </div>
 
         <div class="section-card" id="fx-settings-card">
-          <div class="section-title">货币与汇率</div>
-          <p class="hint">Campaign 中使用非 USD 报价时，可在录入过程中直接设置汇率。这里用于统一管理已设置汇率。</p>
+          <div class="section-title" data-i18n="settingsFxTitle">货币与汇率</div>
+          <p class="hint" data-i18n="settingsFxHint">Campaign 中使用非 USD 报价时，可在录入过程中直接设置汇率。这里用于统一管理已设置汇率。</p>
           <div class="form-grid two" id="fx-rate-fields"></div>
-          <div class="action-row"><button class="secondary-btn" id="fx-show-all" type="button">添加或管理更多币种</button><button class="primary-btn" id="fx-save" type="button">保存并更新</button></div>
-          <div class="section-title">快速换算</div>
+          <div class="action-row"><button class="secondary-btn" id="fx-show-all" type="button" data-i18n="settingsFxManage">添加或管理更多币种</button><button class="primary-btn" id="fx-save" type="button" data-i18n="settingsFxSave">保存并更新</button><button class="soft-btn" id="fx-cancel" type="button" hidden data-i18n="commonCancel">取消</button></div>
+          <div class="section-title" data-i18n="settingsQuickConversion">快速换算</div>
           <div class="form-grid two">
-            <label class="field"><span>金额</span><input id="fx-calculator-amount" type="number" step="any"></label>
-            <label class="field"><span>币种</span><select id="fx-calculator-currency"></select></label>
+            <label class="field"><span data-i18n="settingsAmount">金额</span><input id="fx-calculator-amount" type="number" step="any"></label>
+            <label class="field"><span data-i18n="settingsCurrency">币种</span><select id="fx-calculator-currency"></select></label>
           </div>
-          <p class="hint" id="fx-calculator-result">输入金额和币种以换算 USD。</p>
+          <p class="hint" id="fx-calculator-result" data-i18n="settingsFxCalculatorHint">输入金额和币种以换算 USD。</p>
         </div>
 
         <div class="section-card creator-library-backup-card">
-          <div class="section-title">Creator Library Backup</div>
+          <div class="section-title" data-i18n="settingsBackupTitle">Creator Library Backup</div>
           <dl class="settings-backup-summary">
-            <div><dt>Current workbook</dt><dd id="creator-library-backup-workbook">--</dd></div>
-            <div><dt>Latest created backup</dt><dd id="creator-library-backup-latest">尚未在本次会话创建备份</dd></div>
+            <div><dt data-i18n="settingsCurrentWorkbook">Current workbook</dt><dd id="creator-library-backup-workbook">--</dd></div>
+            <div><dt data-i18n="settingsLatestBackup">Latest created backup</dt><dd id="creator-library-backup-latest" data-i18n="settingsNoBackupThisSession">尚未在本次会话创建备份</dd></div>
           </dl>
-          <p class="hint">备份将保存到当前工作簿目录下的 backups 文件夹。</p>
+          <p class="hint" data-i18n="settingsBackupHint">备份将保存到当前工作簿目录下的 backups 文件夹。</p>
           <div class="action-row">
-            <button class="secondary-btn" id="creator-library-backup-create">Create Backup</button>
+            <button class="secondary-btn" id="creator-library-backup-create" data-i18n="settingsCreateBackup">Create Backup</button>
           </div>
         </div>
 
         <div class="section-card storage-migration-card" id="storage-migration-card">
-          <div class="section-title">本地数据存储升级</div>
-          <p class="hint">将本地业务数据从 Excel 迁移到 SQLite。原 Excel 会保留且不会删除；确认后 SQLite 将成为唯一运行数据源。</p>
+          <div class="section-title" data-i18n="settingsStorageMigrationTitle">本地数据存储升级</div>
+          <p class="hint" data-i18n="settingsStorageMigrationHint">将本地业务数据从 Excel 迁移到 SQLite。原 Excel 会保留且不会删除；确认后 SQLite 将成为唯一运行数据源。</p>
           <dl class="settings-backup-summary">
-            <div><dt>当前数据源</dt><dd id="storage-migration-authority">--</dd></div>
-            <div><dt>迁移状态</dt><dd id="storage-migration-status">--</dd></div>
-            <div><dt>备份</dt><dd id="storage-migration-backup">--</dd></div>
-            <div><dt>Migration ID</dt><dd id="storage-migration-id">--</dd></div>
+            <div><dt data-i18n="settingsCurrentDataSource">当前数据源</dt><dd id="storage-migration-authority">--</dd></div>
+            <div><dt data-i18n="settingsMigrationStatus">迁移状态</dt><dd id="storage-migration-status">--</dd></div>
+            <div><dt data-i18n="settingsBackup">备份</dt><dd id="storage-migration-backup">--</dd></div>
+            <div><dt data-i18n="settingsMigrationId">Migration ID</dt><dd id="storage-migration-id">--</dd></div>
           </dl>
           <div class="action-row">
-            <button class="secondary-btn" id="storage-migration-check" type="button">检查迁移</button>
-            <button class="primary-btn" id="storage-migration-prepare" type="button">开始准备</button>
-            <button class="primary-btn" id="storage-migration-confirm" type="button" disabled>确认迁移到 SQLite</button>
-            <button class="soft-btn" id="storage-migration-cancel" type="button" disabled>取消</button>
-            <button class="secondary-btn" id="storage-migration-recover" type="button" hidden>恢复已确认迁移</button>
+            <button class="secondary-btn" id="storage-migration-check" type="button" data-i18n="settingsCheckMigration">检查迁移</button>
+            <button class="primary-btn" id="storage-migration-prepare" type="button" data-i18n="settingsPrepareMigration">开始准备</button>
+            <button class="primary-btn" id="storage-migration-confirm" type="button" disabled data-i18n="settingsConfirmMigration">确认迁移到 SQLite</button>
+            <button class="soft-btn" id="storage-migration-cancel" type="button" disabled data-i18n="commonCancel">取消</button>
+            <button class="secondary-btn" id="storage-migration-recover" type="button" hidden data-i18n="settingsRecoverMigration">恢复已确认迁移</button>
           </div>
           <p class="form-message" id="storage-migration-result" hidden></p>
         </div>
 
         <div class="section-card clean-reset-card" id="clean-reset-card">
-          <div class="section-title">高级 / 数据重置</div>
-          <p class="hint">此操作删除本地业务数据，但保留应用配置和数据结构。执行前会创建时间戳 Excel 备份，不会修改或同步飞书数据。</p>
-          <div class="danger-notice">该操作会清空 Creator、Account、分析快照、Campaign 等本机历史业务记录。请先预览并核对数量。</div>
+          <div class="section-title" data-i18n="settingsResetTitle">高级 / 数据重置</div>
+          <p class="hint" data-i18n="settingsResetHint">此操作删除本地业务数据，但保留应用配置和数据结构。执行前会创建时间戳 Excel 备份，不会修改或同步飞书数据。</p>
+          <div class="danger-notice" data-i18n="settingsResetWarning">该操作会清空 Creator、Account、分析快照、Campaign 等本机历史业务记录。请先预览并核对数量。</div>
           <dl class="settings-backup-summary clean-reset-summary">
             <div><dt>Creators</dt><dd id="clean-reset-creators">--</dd></div>
             <div><dt>Accounts</dt><dd id="clean-reset-accounts">--</dd></div>
@@ -2048,10 +2039,10 @@
             <div><dt>Snapshots</dt><dd id="clean-reset-snapshots">--</dd></div>
             <div><dt>Campaigns</dt><dd id="clean-reset-campaigns">--</dd></div>
           </dl>
-          <p class="hint">Chrome 配置：保留 · 邮箱配置：保留 · 飞书配置：保留 · Schema：保留</p>
+          <p class="hint" data-i18n="settingsResetRetained">Chrome 配置：保留 · 邮箱配置：保留 · 飞书配置：保留 · Schema：保留</p>
           <div class="action-row">
-            <button class="secondary-btn" id="clean-reset-preview" type="button">预览清空内容</button>
-            <button class="danger-btn" id="clean-reset-execute" type="button" disabled>清空本地业务数据</button>
+            <button class="secondary-btn" id="clean-reset-preview" type="button" data-i18n="settingsPreviewReset">预览清空内容</button>
+            <button class="danger-btn" id="clean-reset-execute" type="button" disabled data-i18n="settingsExecuteReset">清空本地业务数据</button>
           </div>
           <p class="form-message" id="clean-reset-result" hidden></p>
         </div>
@@ -2059,82 +2050,73 @@
           <div class="section-title" data-i18n="feishuSettingsTitle">飞书配置（同一个 App）</div>
           <div class="form-grid two">
             <label class="field"><span>App ID</span><input id="feishu-app-id" type="text"></label>
-            <label class="field"><span>App Secret</span><input id="feishu-app-secret" type="password" placeholder="留空表示不修改"></label>
+            <label class="field"><span>App Secret</span><input id="feishu-app-secret" type="password" data-i18n-placeholder="settingsSecretPlaceholder" placeholder="留空表示不修改"></label>
           </div>
           <div class="form-grid two">
             <label class="field"><span>App Token</span><input id="feishu-app-token" type="text"></label>
-            <label class="field"><span>达人 Table ID</span><input id="feishu-creator-table-id" type="text"></label>
-            <label class="field"><span>达人账号 Table ID</span><input id="feishu-account-table-id" type="text"></label>
-            <label class="field"><span>Agency联系人 Table ID</span><input id="feishu-contact-table-id" type="text"></label>
+            <label class="field"><span data-i18n="settingsFeishuCreatorTable">达人 Table ID</span><input id="feishu-creator-table-id" type="text"></label>
+            <label class="field"><span data-i18n="settingsFeishuAccountTable">达人账号 Table ID</span><input id="feishu-account-table-id" type="text"></label>
+            <label class="field"><span data-i18n="settingsFeishuContactTable">Agency联系人 Table ID</span><input id="feishu-contact-table-id" type="text"></label>
           </div>
-          <p class="hint">抓取结果仅同步到达人表和达人账号表；当前任务可在“审核结果”页手动同步。</p>
+          <p class="hint" data-i18n="settingsFeishuCaptureHint">抓取结果仅同步到达人表和达人账号表；当前任务可在“审核结果”页手动同步。</p>
           <div class="action-row">
             <button class="primary-btn" id="feishu-save" data-i18n="saveFeishu">保存飞书配置</button>
           </div>
         </div>
 
         <div class="section-card" id="google-sheets-card">
-          <div class="section-title">Google Sheets 数据同步</div>
-          <p class="hint">手动将当前 SQLite 达人与账号数据同步到指定 Spreadsheet；Campaign 页面仍可单独导出 Campaign 报告。SQLite 始终是权威数据源，不会从 Google 回写。</p>
+          <div class="section-title" data-i18n="settingsGoogleTitle">Google Sheets 数据同步</div>
+          <p class="hint" data-i18n="settingsGoogleHint">手动将当前 SQLite 达人与账号数据同步到指定 Spreadsheet；Campaign 页面仍可单独导出 Campaign 报告。SQLite 始终是权威数据源，不会从 Google 回写。</p>
           <div class="form-grid two">
             <label class="field"><span>OAuth Client ID</span><input id="google-sheets-client-id" type="text"></label>
-            <label class="field"><span>OAuth Client Secret</span><input id="google-sheets-client-secret" type="password" placeholder="留空表示不修改"></label>
+            <label class="field"><span>OAuth Client Secret</span><input id="google-sheets-client-secret" type="password" data-i18n-placeholder="settingsSecretPlaceholder" placeholder="留空表示不修改"></label>
           </div>
-          <label class="field"><span>Spreadsheet URL 或 ID</span><input id="google-sheets-spreadsheet-id" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
-          <div class="feishu-sync-state"><span>连接状态</span><strong id="google-sheets-status">未配置</strong></div>
+          <label class="field"><span data-i18n="settingsSpreadsheetId">Spreadsheet URL 或 ID</span><input id="google-sheets-spreadsheet-id" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."></label>
+          <div class="feishu-sync-state"><span data-i18n="settingsConnectionStatus">连接状态</span><strong id="google-sheets-status" data-i18n="settingsNotConfigured">未配置</strong></div>
           <div class="action-row">
-            <button class="secondary-btn" id="google-sheets-save" type="button">保存配置</button>
-            <button class="primary-btn" id="google-sheets-connect" type="button">连接 Google</button>
-            <button class="soft-btn" id="google-sheets-disconnect" type="button">断开连接</button>
-            <button class="primary-btn" id="google-sheets-sync" type="button">同步数据到 Google Sheets</button>
+            <button class="secondary-btn" id="google-sheets-save" type="button" data-i18n="settingsSaveConfiguration">保存配置</button>
+            <button class="primary-btn" id="google-sheets-connect" type="button" data-i18n="settingsConnectGoogle">连接 Google</button>
+            <button class="soft-btn" id="google-sheets-disconnect" type="button" data-i18n="settingsDisconnect">断开连接</button>
+            <button class="primary-btn" id="google-sheets-sync" type="button" data-i18n="settingsSyncGoogle">同步数据到 Google Sheets</button>
           </div>
           <p class="form-message" id="google-sheets-result" hidden></p>
         </div>
 
         <div class="section-card feishu-sync-card" id="feishu-sync-card">
-          <div class="section-title">飞书数据同步</div>
-          <p class="hint">KOLConnect / Excel 始终是权威数据源。M7.1 仅手动创建或更新匹配记录，不会删除飞书记录，也不会读取飞书修改写回本地。</p>
+          <div class="section-title" data-i18n="settingsFeishuSyncTitle">飞书数据同步</div>
+          <p class="hint" data-i18n="settingsFeishuSyncHint">KOLConnect / Excel 始终是权威数据源。M7.1 仅手动创建或更新匹配记录，不会删除飞书记录，也不会读取飞书修改写回本地。</p>
           <div class="feishu-sync-state">
-            <span>连接状态</span>
-            <strong id="feishu-sync-connection">未验证</strong>
+            <span data-i18n="settingsConnectionStatus">连接状态</span>
+            <strong id="feishu-sync-connection" data-i18n="settingsNotValidated">未验证</strong>
           </div>
           <div class="action-row">
-            <button class="secondary-btn" id="feishu-sync-validate" type="button">验证连接</button>
-            <button class="secondary-btn" id="feishu-sync-dry-run" type="button">预检查 / Dry Run</button>
-            <button class="primary-btn" id="feishu-sync-full" type="button">同步到飞书</button>
+            <button class="secondary-btn" id="feishu-sync-validate" type="button" data-i18n="settingsValidateConnection">验证连接</button>
+            <button class="secondary-btn" id="feishu-sync-dry-run" type="button" data-i18n="settingsDryRun">预检查 / Dry Run</button>
+            <button class="primary-btn" id="feishu-sync-full" type="button" data-i18n="settingsSyncFeishu">同步到飞书</button>
           </div>
           <dl class="settings-backup-summary feishu-sync-summary" id="feishu-sync-summary">
-            <div><dt>本地达人</dt><dd id="feishu-sync-local-creators">--</dd></div>
-            <div><dt>飞书达人</dt><dd id="feishu-sync-remote-creators">--</dd></div>
-            <div><dt>待新增</dt><dd id="feishu-sync-create">--</dd></div>
-            <div><dt>待更新</dt><dd id="feishu-sync-update">--</dd></div>
-            <div><dt>冲突</dt><dd id="feishu-sync-conflicts">--</dd></div>
-            <div><dt>未管理记录</dt><dd id="feishu-sync-unmanaged">--</dd></div>
-            <div><dt>关系待建立</dt><dd id="feishu-sync-relation-add">--</dd></div>
-            <div><dt>关系待更新</dt><dd id="feishu-sync-relation-update">--</dd></div>
-            <div><dt>关系待移除</dt><dd id="feishu-sync-relation-remove">--</dd></div>
-            <div><dt>关系冲突</dt><dd id="feishu-sync-relation-conflicts">--</dd></div>
+            <div><dt data-i18n="settingsLocalCreators">本地达人</dt><dd id="feishu-sync-local-creators">--</dd></div><div><dt data-i18n="settingsRemoteCreators">飞书达人</dt><dd id="feishu-sync-remote-creators">--</dd></div><div><dt data-i18n="settingsToCreate">待新增</dt><dd id="feishu-sync-create">--</dd></div><div><dt data-i18n="settingsToUpdate">待更新</dt><dd id="feishu-sync-update">--</dd></div><div><dt data-i18n="settingsConflicts">冲突</dt><dd id="feishu-sync-conflicts">--</dd></div><div><dt data-i18n="settingsUnmanaged">未管理记录</dt><dd id="feishu-sync-unmanaged">--</dd></div><div><dt data-i18n="settingsRelationAdd">关系待建立</dt><dd id="feishu-sync-relation-add">--</dd></div><div><dt data-i18n="settingsRelationUpdate">关系待更新</dt><dd id="feishu-sync-relation-update">--</dd></div><div><dt data-i18n="settingsRelationRemove">关系待移除</dt><dd id="feishu-sync-relation-remove">--</dd></div><div><dt data-i18n="settingsRelationConflicts">关系冲突</dt><dd id="feishu-sync-relation-conflicts">--</dd></div>
           </dl>
           <p class="form-message" id="feishu-sync-result" hidden></p>
         </div>
 
         <div class="section-card" id="feishu-chat-card">
-          <div class="section-title">飞书 AI 助手</div>
-          <p class="hint">通过飞书官方长连接接收文字消息，并复用现有 App ID / App Secret。助手只调用 KOLConnect 已授权能力；写操作仍需在同一会话中明确确认。</p>
+          <div class="section-title" data-i18n="settingsFeishuChatTitle">飞书 AI 助手</div>
+          <p class="hint" data-i18n="settingsFeishuChatHint">通过飞书官方长连接接收文字消息，并复用现有 App ID / App Secret。助手只调用 KOLConnect 已授权能力；写操作仍需在同一会话中明确确认。</p>
           <div class="feishu-sync-state">
-            <span>连接状态</span>
-            <strong id="feishu-chat-status">未启用</strong>
+            <span data-i18n="settingsConnectionStatus">连接状态</span>
+            <strong id="feishu-chat-status" data-i18n="settingsDisabled">未启用</strong>
           </div>
           <dl class="settings-backup-summary" id="feishu-chat-summary">
-            <div><dt>传输方式</dt><dd id="feishu-chat-transport">飞书官方长连接</dd></div>
-            <div><dt>机器人</dt><dd id="feishu-chat-bot">未启用</dd></div>
-            <div><dt>最近连接</dt><dd id="feishu-chat-last-connected">--</dd></div>
-            <div><dt>最近错误</dt><dd id="feishu-chat-last-error">--</dd></div>
+            <div><dt data-i18n="settingsTransport">传输方式</dt><dd id="feishu-chat-transport" data-i18n="settingsFeishuLongConnection">飞书官方长连接</dd></div>
+            <div><dt data-i18n="settingsBot">机器人</dt><dd id="feishu-chat-bot" data-i18n="settingsDisabled">未启用</dd></div>
+            <div><dt data-i18n="settingsLastConnected">最近连接</dt><dd id="feishu-chat-last-connected">--</dd></div>
+            <div><dt data-i18n="settingsLastError">最近错误</dt><dd id="feishu-chat-last-error">--</dd></div>
           </dl>
           <div class="action-row">
-            <button class="secondary-btn" id="feishu-chat-test" type="button">检查本机配置</button>
-            <button class="primary-btn" id="feishu-chat-enable" type="button">启用助手</button>
-            <button class="secondary-btn" id="feishu-chat-disable" type="button">停止助手</button>
+            <button class="secondary-btn" id="feishu-chat-test" type="button" data-i18n="settingsCheckLocalConfiguration">检查本机配置</button>
+            <button class="primary-btn" id="feishu-chat-enable" type="button" data-i18n="settingsEnableAssistant">启用助手</button>
+            <button class="secondary-btn" id="feishu-chat-disable" type="button" data-i18n="settingsDisableAssistant">停止助手</button>
           </div>
           <p class="form-message" id="feishu-chat-result" hidden></p>
         </div>
@@ -2157,6 +2139,7 @@
   <script src="services/api-client.js"></script>
   <script src="core/page-resources.js"></script>
   <script src="core/page-registry.js"></script>
+  <script src="i18n.js"></script>
   <script src="app.js"></script>
   <script src="vendor/chart.umd.min.js"></script>
   <script src="pages/dashboard.js"></script>

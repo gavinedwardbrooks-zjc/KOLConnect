@@ -103,7 +103,7 @@ function createEnvironment() {
           creators: [{
             creator_id: "creator_one", creator_name: "Creator One", platform: "TikTok",
             profile_url: "https://www.tiktok.com/@one", content_category: "Tech",
-            agency_id: "agency_one", agency_name: "North Studio", status: "discovered",
+            account_email: "creator@example.test", agency_id: "agency_one", agency_name: "North Studio", status: "discovered",
           }],
         };
       }
@@ -138,6 +138,26 @@ function createEnvironment() {
       calls.push({ method: "FETCH", url });
       return { ok: true, blob: async () => ({}) };
     },
+    KOLConnectApp: {
+      t(key, params = {}) {
+        const labels = {
+          creatorLibraryAllAgencies: "全部 Agency", creatorLibraryAllContentCategories: "全部内容类型",
+          creatorLibraryAllCountries: "全部国家/地区", creatorLibraryAllLanguages: "全部语言",
+          creatorLibraryAllTags: "全部标签", creatorLibraryAllAiTags: "全部 AI Tags",
+          creatorLibraryImportComplete: "导入完成：新增 {created}，跳过已有 {skipped}。",
+          creatorLibraryImportNotRun: "导入未执行：共 {total} 行，无效 {invalid} 行。",
+          creatorImportUnknownAgency: "Agency 不存在", creatorLibraryImportRow: "第 {row} 行：{label}{field}",
+          creatorLibraryInvalidData: "数据无效", creatorStatusDiscovered: "已发现",
+          creatorLibraryPageSummary: "第 {start}-{end} 条，共 {total} 位达人", creatorLibraryPrevious: "上一页", creatorLibraryNext: "下一页",
+          creatorLibrarySelectedCount: "已选 {count} 人", creatorLibraryExportSelected: "导出选中达人",
+          creatorLibraryChooseCampaign: "请选择 Campaign", creatorLibraryInsufficientData: "⚠ 数据不足",
+          creatorLibraryCountry: "国家", creatorLibraryLanguage: "语言", creatorLibraryCategory: "分类", creatorLibraryEmail: "邮箱",
+          creatorLibraryFollowers: "粉丝", creatorLibraryAverageViews: "平均播放", creatorLibraryViewAnalysis: "查看分析",
+          creatorLibraryMergeCreator: "合并达人", creatorLibraryDeleteCreator: "永久删除",
+        };
+        return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
+      },
+    },
   };
   const sandbox = {
     AbortController, console, Date, document, Intl, Option: option, Promise, URLSearchParams, window,
@@ -171,7 +191,8 @@ async function run() {
   assert.equal(agency.options[1].value, "agency_one");
   assert.equal(agency.options[1].textContent, "North Studio");
   const row = env.elements.get("creator-library-body").children[0];
-  assert.equal(row.children[6].textContent, "North Studio", "Agency column must render agency_name");
+  assert.equal(row.children[4].textContent, "creator@example.test", "table must render the authoritative account email");
+  assert.equal(row.children[7].textContent, "North Studio", "Agency column must render agency_name");
 
   agency.value = "agency_one";
   await agency.dispatch("change");
@@ -202,6 +223,8 @@ async function run() {
   assert.match(errorText, /Agency 不存在/);
 
   const source = fs.readFileSync(path.join(ROOT, "webapp/pages/creator-library.js"), "utf8");
+  assert.match(source, /createCardMetadata\(t\("creatorLibraryEmail"\), record\.account_email/);
+  assert.match(source, /record\.account_email \|\| "--"/);
   assert.doesNotMatch(source, /\/api\/agencies/);
   assert.doesNotMatch(source, /FileReader/);
   console.log("M4.4 Creator Library Agency and XLSX import UI: OK");

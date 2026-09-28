@@ -14,7 +14,7 @@ const detail = read("webapp/pages/creator-library-detail.js");
 // row editing and retry controls remain in the results table.
 assert.doesNotMatch(index, /id="review-queue"/);
 assert.match(index, /id="review-status-filter"/);
-assert.match(index, /<th>待补充<\/th>/);
+assert.match(index, /<th data-i18n="reviewCompletion">待补充<\/th>/);
 assert.doesNotMatch(index, /<th>账号名<\/th>/);
 assert.doesNotMatch(index, /id="creator-analysis-panel"|id="review-view-analysis"/);
 assert.match(app, /review-status-filter/);
