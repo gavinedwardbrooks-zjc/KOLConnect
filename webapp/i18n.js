@@ -5,6 +5,14 @@
   const dictionaries = { zh: Object.create(null), en: Object.create(null) };
 
   Object.assign(dictionaries.zh, {
+    apiServerUnreachable: "无法连接 KOLConnect 服务，请确认程序正在运行。",
+    apiServerError: "服务处理请求时发生错误，请稍后重试。",
+    apiInvalidResponse: "服务返回了无法识别的响应，请稍后重试。",
+    apiErrorReference: "错误参考：{trace_id}",
+    mailGmailPasswordHint: "Gmail 通常需要应用专用密码；普通账号密码可能无法用于 IMAP/SMTP 登录。",
+    mailGmailAuthRejected: "Gmail 拒绝当前登录凭据。KOLConnect 当前使用 IMAP/SMTP 密码登录；普通 Google 账号密码可能无法使用。如账号支持，请使用 Google 应用专用密码；OAuth2 暂不支持。",
+    mailGmailAppPasswordMayBeRequired: "Gmail 可能要求应用专用密码。KOLConnect 当前使用 IMAP/SMTP 密码登录；如账号支持，请在密码/授权码字段填写 Google 应用专用密码。",
+    mailGmailWebLoginRequired: "Gmail 要求先在网页中完成登录或安全验证。完成后请重试；普通账号密码可能仍无法用于 IMAP/SMTP 登录。",
     mailFollowupSummary: "当前显示 {visible} 个邮件跟进项，共 {total} 个已同步联系人组。",
     mailFollowupNoItems: "暂无符合条件的邮件跟进项。",
     mailFollowupWaitingMe: "待我回复",
@@ -67,6 +75,14 @@
   });
 
   Object.assign(dictionaries.en, {
+    apiServerUnreachable: "Cannot connect to KOLConnect. Confirm the application is running.",
+    apiServerError: "The service could not process this request. Please try again later.",
+    apiInvalidResponse: "The service returned an unrecognized response. Please try again later.",
+    apiErrorReference: "Error reference: {trace_id}",
+    mailGmailPasswordHint: "Gmail commonly requires an App Password; a normal account password may not work for IMAP/SMTP.",
+    mailGmailAuthRejected: "Gmail rejected the current credentials. KOLConnect currently uses IMAP/SMTP password login; a normal Google account password may not work. If the account supports it, use a Google App Password. OAuth2 is not supported yet.",
+    mailGmailAppPasswordMayBeRequired: "Gmail may require an App Password. KOLConnect currently uses IMAP/SMTP password login; if the account supports it, enter a Google App Password in the password/App Password field.",
+    mailGmailWebLoginRequired: "Gmail requires a web login or security check first. Complete it and try again; a normal account password may still not work for IMAP/SMTP.",
     campaignDetailTitle: "Campaign details", campaignDetailSubtitle: "Campaign execution and partnership records", campaignDetailProductSubtitle: "{product} · Campaign execution and partnership records", campaignDetailProduct: "Product", campaignDetailCountry: "Country/region", campaignDetailPlatform: "Platform", campaignDetailStartDate: "Start date", campaignDetailEndDate: "End date", campaignDetailBudget: "Budget", campaignDetailOwner: "Owner", campaignDetailCreatedAt: "Created", campaignDetailViewPublication: "View publication", campaignDetailPublicationNumber: "Publication {number}", campaignDetailCreatorCount: "{count} creators", campaignDetailViewAccount: "View account", campaignDetailRemove: "Remove", campaignDetailDueToday: "Due today", campaignDetailDueSoon: "Due soon", campaignDetailOverdue: "Overdue", campaignDetailWaitingCreator: "Waiting for creator", campaignDetailWaitingInternal: "Waiting internally", campaignDetailWaitingClient: "Waiting for client", campaignDetailWaitingSelf: "My decision", campaignDetailNone: "None", campaignDetailNeedsDecision: "Decision needed", campaignDetailStalled: "Stalled", campaignDetailNormal: "Normal",
     campaignDetailStagePendingContact: "Pending contact", campaignDetailStageContacted: "Contacted", campaignDetailStageQuoted: "Quoted", campaignDetailStageNegotiating: "Negotiating", campaignDetailStageAgreed: "Agreed", campaignDetailStageExecuting: "Executing", campaignDetailStageCompleted: "Completed", campaignDetailStageRejected: "Rejected",
     campaignDetailPendingHumanReview: "Pending human review", campaignDetailAiReviewUnavailable: "AI first pass is unavailable; human review is unaffected.", campaignDetailRulesFirstPass: "Rules first pass", campaignDetailReviewApproved: "Approve", campaignDetailReviewChangesRequested: "Request changes", campaignDetailReviewRejected: "Reject", campaignDetailFirstPassFindings: "Rules first pass found {count} items; the human-review status is unchanged.", campaignDetailFirstPassClear: "Rules first pass found no explicit Brief conflicts; human review is still required.", campaignDetailBriefSaved: "Campaign Brief saved.",

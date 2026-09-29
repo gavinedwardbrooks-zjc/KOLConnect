@@ -26,12 +26,16 @@ const window = {
 vm.runInNewContext(source, { window, document, Node: { ELEMENT_NODE: 1 }, NodeFilter: { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 } });
 
 const i18n = window.KOLConnectI18n;
+assert.equal(i18n.t("apiServerUnreachable"), "无法连接 KOLConnect 服务，请确认程序正在运行。");
+assert.equal(i18n.t("mailGmailPasswordHint"), "Gmail 通常需要应用专用密码；普通账号密码可能无法用于 IMAP/SMTP 登录。");
 i18n.register({
   zh: { testKey: "中文界面", parameterized: "共 {count} 条" },
   en: { testKey: "English UI", parameterized: "{count} items" },
 });
 
 assert.equal(i18n.setLocale("en"), "en");
+assert.equal(i18n.t("apiServerError"), "The service could not process this request. Please try again later.");
+assert.equal(i18n.t("mailGmailPasswordHint"), "Gmail commonly requires an App Password; a normal account password may not work for IMAP/SMTP.");
 assert.equal(i18n.t("testKey"), "English UI");
 assert.equal(i18n.t("parameterized", { count: 3 }), "3 items");
 assert.match(i18n.t("missing.key"), /^\[missing:missing\.key\]$/);

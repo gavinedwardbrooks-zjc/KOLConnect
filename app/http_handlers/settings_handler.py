@@ -4,6 +4,7 @@ from services.workbook_backup_service import (
     WorkbookBackupError,
     WorkbookBackupNotFoundError,
 )
+from services.mail_secret_storage import MailSecretProtectionError
 
 
 def _normalize_ui_language(value: object) -> str:
@@ -211,8 +212,16 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     # POST /api/settings/mail → 保存邮件配置；{"ok": true}
     if path == "/api/settings/mail":
-        state["mail"] = _merge_mail_configuration_update(payload, state.get("mail"), services)
-        state_access["save"]()
+        try:
+            state["mail"] = _merge_mail_configuration_update(payload, state.get("mail"), services)
+            state_access["save"]()
+        except MailSecretProtectionError:
+            handler._api_error(
+                "MAIL_SECRET_PROTECTION_UNAVAILABLE",
+                "当前平台无法安全保存邮箱密码/授权码。请在 Windows 桌面版中完成邮箱配置。",
+                status=400,
+            )
+            return True
         handler._ok()
         return True
 

@@ -19,14 +19,19 @@ from runtime_paths import (
     json_backup_path,
     load_json_with_backup,
 )
+from app_logging import log_sanitized_exception
 from feishu_relation import relation_record_ids
+from services.mail_auth_service import classify_imap_error
 from services.mail_inbox_facts import inbox_fact_projection, mail_account_identity, sync_inbox, sync_sent
+from services.mail_secret_storage import unprotect_mail_secret
 
 DATA_DIR = get_app_data_dir()
 MAIL_MESSAGES_FILE = DATA_DIR / "mail_messages.json"
 MAX_MESSAGES_PER_ACCOUNT = 20
 MAX_CACHED_MESSAGES = 5000
 MAIL_CACHE_RETENTION_DAYS = 180
+MAIL_SYNC_FAILED_CODE = "MAIL_SYNC_FAILED"
+MAIL_SYNC_FAILED_MESSAGE = "邮箱同步失败，请稍后重试或检查邮箱配置。"
 
 CRM_FIELD_STAGE = "合作阶段"
 CRM_FIELD_LAST_CONTACT_AT = "最近联系时间"
@@ -48,6 +53,29 @@ FOUR_TABLE_CREATOR_FIELD_STAGE = "合作阶段"
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _safe_mail_sync_error(exc: BaseException, account: dict) -> dict[str, str]:
+    """Convert provider failures to stable, non-sensitive sync result fields."""
+    if isinstance(exc, (imaplib.IMAP4.error, OSError, TimeoutError)):
+        classified = classify_imap_error(exc, account=account)
+        return {"code": classified.code, "message": str(classified)}
+    return {"code": MAIL_SYNC_FAILED_CODE, "message": MAIL_SYNC_FAILED_MESSAGE}
+
+
+def _record_mail_sync_failure(
+    exc: BaseException,
+    account: dict,
+    *,
+    operation: str,
+) -> dict[str, str]:
+    safe_error = _safe_mail_sync_error(exc, account)
+    log_sanitized_exception(
+        "MAIL_SYNC",
+        f"{operation} mailbox synchronization failed ({safe_error['code']})",
+        exc,
+    )
+    return safe_error
 
 
 def clone_default_store() -> dict:
@@ -516,7 +544,7 @@ def sync_one_mail_account(account: dict, options: dict, existing_data: dict) -> 
     account_key = build_account_key(account)
     host = str(account.get("imap_host") or "").strip()
     username = str(account.get("username") or "").strip()
-    password = str(account.get("password") or "")
+    password = unprotect_mail_secret(account.get("password"))
     port = int(str(account.get("imap_port") or "993").strip() or "993")
     if not host or not username or not password:
         raise RuntimeError("IMAP 配置不完整。")
@@ -628,10 +656,12 @@ def sync_enabled_mail_accounts(accounts: list[dict], options: dict | None = None
                 "history_coverage": result["history_coverage"],
             }
         except Exception as exc:
+            safe_error = _record_mail_sync_failure(exc, account, operation="inbox")
             error_item = {
                 "account_key": account_key,
                 "account_name": str(account.get("name") or "").strip(),
-                "error": str(exc),
+                "code": safe_error["code"],
+                "error": safe_error["message"],
             }
             summary["errors"].append(error_item)
             previous_account = store.get("accounts", {}).get(account_key, {})
@@ -646,7 +676,8 @@ def sync_enabled_mail_accounts(accounts: list[dict], options: dict | None = None
                     "fetched": 0,
                     "new": 0,
                     "matched": 0,
-                    "errors": [str(exc)],
+                    "errors": [safe_error["message"]],
+                    "error_codes": [safe_error["code"]],
                 },
             }
 
@@ -713,10 +744,12 @@ def sync_enabled_sent_mail_accounts(accounts: list[dict], options: dict | None =
             summary["messages_fetched"] += int(result.get("fetched") or 0)
             summary["messages_new"] += int(result.get("new") or 0)
         except Exception as exc:
+            safe_error = _record_mail_sync_failure(exc, account, operation="sent")
             summary["errors"].append({
                 "account_key": build_account_key(account),
                 "account_name": str(account.get("name") or account.get("email") or "邮箱账户"),
-                "error": str(exc),
+                "code": safe_error["code"],
+                "error": safe_error["message"],
             })
     with factory.read_connection() as connection:
         summary["messages_total"] = connection.execute(

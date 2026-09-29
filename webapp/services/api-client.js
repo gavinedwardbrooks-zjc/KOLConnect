@@ -1,8 +1,35 @@
 (function createApiClient(global) {
   "use strict";
 
-  const CONNECTION_ERROR = "\u670d\u52a1\u8fde\u63a5\u5931\u8d25\uff0c\u8bf7\u786e\u8ba4 KOLConnect \u6b63\u5728\u8fd0\u884c\u3002";
-  const RESPONSE_ERROR = "\u670d\u52a1\u8fd4\u56de\u5f02\u5e38\uff0c\u8bf7\u67e5\u770b\u7cfb\u7edf\u65e5\u5fd7\u4e2d\u7684\u8be6\u7ec6\u539f\u56e0\u3002";
+  function message(key, fallback, params) {
+    const localized = global.KOLConnectI18n?.t?.(key, params);
+    return localized && !localized.startsWith("[missing:") ? localized : fallback;
+  }
+
+  function connectionError() {
+    return message("apiServerUnreachable", "无法连接 KOLConnect 服务，请确认程序正在运行。");
+  }
+
+  function serverError() {
+    return message("apiServerError", "服务处理请求时发生错误，请稍后重试。");
+  }
+
+  function responseError() {
+    return message("apiInvalidResponse", "服务返回了无法识别的响应，请稍后重试。");
+  }
+
+  function traceReference(traceId) {
+    return message("apiErrorReference", "错误参考：{trace_id}", { trace_id: traceId });
+  }
+
+  function domainErrorMessage(code, fallback) {
+    const keys = {
+      GMAIL_AUTH_REJECTED: "mailGmailAuthRejected",
+      GMAIL_APP_PASSWORD_MAY_BE_REQUIRED: "mailGmailAppPasswordMayBeRequired",
+      GMAIL_WEB_LOGIN_REQUIRED: "mailGmailWebLoginRequired",
+    };
+    return keys[code] ? message(keys[code], fallback) : fallback;
+  }
 
   async function request(method, url, options = {}) {
     const headers = { ...(options.headers || {}) };
@@ -25,25 +52,36 @@
       response = await global.fetch(url, init);
     } catch (error) {
       if (error && error.name === "AbortError") throw error;
-      throw new Error(CONNECTION_ERROR);
+      const requestError = new Error(connectionError());
+      requestError.code = "SERVER_UNREACHABLE";
+      requestError.kind = "connection";
+      throw requestError;
     }
 
     let data;
     try {
       data = await response.json();
     } catch (_error) {
-      throw new Error(RESPONSE_ERROR);
+      const requestError = new Error(responseError());
+      requestError.code = "INVALID_SERVER_RESPONSE";
+      requestError.status = response.status;
+      throw requestError;
     }
 
     if (!response.ok) {
       const structuredMessage = typeof data?.error === "object" ? data.error?.message : "";
       const legacyMessage = typeof data?.error === "string" ? data.error : "";
-      const baseMessage = structuredMessage || legacyMessage || `${method} ${url} failed`;
-      const traceSuffix = data?.trace_id ? `\n\u9519\u8bef\u53c2\u8003\uff1a${data.trace_id}` : "";
+      const code = typeof data?.error === "object" ? data.error?.code : "";
+      const isServerError = response.status >= 500 || code === "INTERNAL_SERVER_ERROR";
+      const baseMessage = isServerError
+        ? serverError()
+        : domainErrorMessage(code, structuredMessage || legacyMessage || `${method} ${url} failed`);
+      const traceSuffix = data?.trace_id ? `\n${traceReference(data.trace_id)}` : "";
       const error = new Error(`${baseMessage}${traceSuffix}`);
       error.responseData = data;
       error.status = response.status;
-      error.code = typeof data?.error === "object" ? data.error?.code : "";
+      error.code = code;
+      error.kind = isServerError ? "server" : "domain";
       error.traceId = data?.trace_id || "";
       throw error;
     }

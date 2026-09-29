@@ -12,6 +12,8 @@ from email import message_from_bytes
 from email.policy import default
 from email.utils import getaddresses, parsedate_to_datetime
 
+from services.mail_secret_storage import unprotect_mail_secret
+
 
 LOOKBACK_DAYS = 30
 MAX_FIRST_SYNC_MESSAGES = 200
@@ -253,7 +255,9 @@ def _sync_mailbox(account: dict, factory, *, folder_name: str, role: str, direct
     account_id, identity_key = mail_account_identity(account)
     own_addresses = {normalize_address(account.get(key)) for key in ("email", "username")}
     own_addresses.discard("")
-    host, username, password = (str(account.get(key) or "") for key in ("imap_host", "username", "password"))
+    host = str(account.get("imap_host") or "")
+    username = str(account.get("username") or "")
+    password = unprotect_mail_secret(account.get("password"))
     if not host or not username or not password:
         raise ValueError("IMAP configuration is incomplete.")
     port = int(account.get("imap_port") or 993)
@@ -343,7 +347,9 @@ def sync_inbox(account: dict, factory, *, imap_factory=None, now: datetime | Non
 def sync_sent(account: dict, factory, *, imap_factory=None, now: datetime | None = None) -> dict:
     """Discover and persist authoritative Sent observations without provider-specific APIs."""
     account_id, _identity_key = mail_account_identity(account)
-    host, username, password = (str(account.get(key) or "") for key in ("imap_host", "username", "password"))
+    host = str(account.get("imap_host") or "")
+    username = str(account.get("username") or "")
+    password = unprotect_mail_secret(account.get("password"))
     if not host or not username or not password:
         raise ValueError("IMAP configuration is incomplete.")
     port = int(account.get("imap_port") or 993)

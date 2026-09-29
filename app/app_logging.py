@@ -48,3 +48,21 @@ def log_error(category: str, message: str, exc: BaseException | None = None) -> 
     trace_id = get_trace_id()
     suffix = f" | trace_id={trace_id}" if trace_id else ""
     get_logger().error("[%s] %s: %s%s", category, message, exc, suffix)
+
+
+def log_sanitized_exception(
+    category: str,
+    message: str,
+    exc: BaseException,
+) -> None:
+    """Log a traceback without serializing an untrusted exception message."""
+    trace_id = get_trace_id()
+    suffix = f" | trace_id={trace_id}" if trace_id else ""
+    safe_exception = RuntimeError(f"{type(exc).__name__}: unexpected request failure")
+    get_logger().error(
+        "[%s] %s%s",
+        category,
+        message,
+        suffix,
+        exc_info=(RuntimeError, safe_exception, exc.__traceback__),
+    )

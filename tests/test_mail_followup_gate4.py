@@ -16,6 +16,7 @@ sys.path.insert(0, str(ROOT / "app"))
 import mail_sync  # noqa: E402
 from services.mail_follow_up import derive_follow_up_queue  # noqa: E402
 from services.mail_inbox_facts import sync_sent  # noqa: E402
+from services.mail_secret_storage import protect_mail_secret  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
 from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
@@ -25,7 +26,7 @@ NOW = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
 MAIL_ACCOUNT = {
     "email": "owner@example.com",
     "username": "owner@example.com",
-    "password": "fake-secret",
+    "password": protect_mail_secret("fake-secret"),
     "imap_host": "imap.example.com",
     "imap_port": 993,
 }

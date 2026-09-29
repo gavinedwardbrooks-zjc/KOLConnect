@@ -1202,8 +1202,10 @@ function showToast(message) {
 function showError(error) {
   const raw = String(error?.message || error || "");
   const lowered = raw.toLowerCase();
-  const message = lowered.includes("failed to fetch") || lowered.includes("networkerror")
-    ? "服务连接失败，请确认 KOLConnect 正在运行。"
+  const message = error?.code === "SERVER_UNREACHABLE" || lowered.includes("failed to fetch") || lowered.includes("networkerror")
+    ? t("apiServerUnreachable")
+    : error?.status >= 500 || error?.code === "INTERNAL_SERVER_ERROR"
+      ? `${t("apiServerError")}${error?.traceId ? `\n${t("apiErrorReference", { trace_id: error.traceId })}` : ""}`
     : lowered.includes("traceback")
       ? "操作失败，请查看系统日志中的详细原因。"
       : raw || "操作失败，请查看系统日志中的详细原因。";
@@ -2140,6 +2142,8 @@ function applyProviderDefaultsToCard(card, force = false) {
       input.value = value;
     }
   });
+  const gmailHint = card.querySelector('[data-role="gmail-auth-hint"]');
+  if (gmailHint) gmailHint.hidden = provider !== "gmail";
 }
 
 function collectMailAccountFromCard(card) {
@@ -2189,6 +2193,7 @@ function renderMailAccountCard(account = {}) {
       <label class="field"><span>${t("mailSmtpPort")}</span><input type="text" data-key="smtp_port" value="${item.smtp_port}"></label>
       <label class="field"><span>${t("mailUsername")}</span><input type="text" data-key="username" value="${item.username}"></label>
       <label class="field"><span>${t("mailPassword")}</span><input type="password" data-key="password" value="${item.password}"></label>
+      <p class="hint mail-gmail-auth-hint" data-role="gmail-auth-hint" ${item.provider === "gmail" ? "" : "hidden"}>${t("mailGmailPasswordHint")}</p>
       <label class="checkbox-line mail-checkbox-line"><input type="checkbox" data-key="enabled" ${item.enabled ? "checked" : ""}><span>${t("mailEnabled")}</span></label>
     </div>
   `;

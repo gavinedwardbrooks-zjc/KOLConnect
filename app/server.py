@@ -92,9 +92,15 @@ from services.clean_reset_service import CleanResetService
 from services.assistant_service import AssistantService
 from services.assistant_provider import DeterministicAssistantProvider
 from services.task_service import TaskService
-from services.mail_auth_service import classify_imap_error
+from services.mail_auth_service import classify_imap_error, classify_smtp_error
+from services.mail_secret_storage import (
+    MailSecretProtectionError,
+    is_protected_mail_secret,
+    protect_mail_state_for_storage,
+    unprotect_mail_secret,
+)
 from services.risk_service import RiskService
-from app_logging import log_error, log_event
+from app_logging import log_error, log_event, log_sanitized_exception
 from api_contract import (
     error_payload,
     get_trace_id,
@@ -279,6 +285,11 @@ def normalize_mail_account(raw: dict | None) -> dict:
     raw = raw or {}
     provider = str(raw.get("provider") or "custom").strip().lower() or "custom"
     preset = get_mail_provider_preset(provider)
+    password = raw.get("password")
+    if is_protected_mail_secret(password):
+        password = dict(password)
+    else:
+        password = str(password or "")
     return {
         "name": str(raw.get("name") or "").strip(),
         "provider": provider if provider in {"aliyun", "netease", "gmail", "custom"} else "custom",
@@ -289,7 +300,7 @@ def normalize_mail_account(raw: dict | None) -> dict:
         "smtp_host": str(raw.get("smtp_host") or preset.get("smtp_host") or "").strip(),
         "smtp_port": str(raw.get("smtp_port") or preset.get("smtp_port") or "").strip(),
         "username": str(raw.get("username") or "").strip(),
-        "password": str(raw.get("password") or ""),
+        "password": password,
         "enabled": bool(raw.get("enabled")),
     }
 
@@ -340,7 +351,7 @@ def merge_masked_mail_passwords(raw_mail: dict | None, existing_mail: dict | Non
         account = dict(raw_account)
         if is_sensitive_mask(account.get("password")):
             saved_account = existing_by_identity.get(mail_account_identity(account))
-            account["password"] = str(saved_account.get("password") or "") if saved_account else ""
+            account["password"] = saved_account.get("password") if saved_account else ""
         merged_accounts.append(account)
     merged["accounts"] = merged_accounts
     return merged
@@ -380,7 +391,7 @@ def parse_port(value: str, default: int) -> int:
 def test_imap_login(account: dict) -> None:
     host = str(account.get("imap_host") or "").strip()
     username = str(account.get("username") or "").strip()
-    password = str(account.get("password") or "")
+    password = unprotect_mail_secret(account.get("password"), allow_transient_plaintext=True)
     port = parse_port(account.get("imap_port") or "", 993)
     if not host or not username or not password:
         raise RuntimeError("请完整填写 IMAP Host、IMAP Port、用户名和密码/授权码。")
@@ -394,7 +405,7 @@ def test_imap_login(account: dict) -> None:
                 client.starttls()
         client.login(username, password)
     except Exception as exc:
-        raise classify_imap_error(exc) from exc
+        raise classify_imap_error(exc, account=account) from exc
     finally:
         if client is not None:
             try:
@@ -406,7 +417,7 @@ def test_imap_login(account: dict) -> None:
 def test_smtp_login(account: dict) -> None:
     host = str(account.get("smtp_host") or "").strip()
     username = str(account.get("username") or "").strip()
-    password = str(account.get("password") or "")
+    password = unprotect_mail_secret(account.get("password"), allow_transient_plaintext=True)
     port = parse_port(account.get("smtp_port") or "", 587)
     if not host or not username or not password:
         raise RuntimeError("请完整填写 SMTP Host、SMTP Port、用户名和密码/授权码。")
@@ -423,7 +434,7 @@ def test_smtp_login(account: dict) -> None:
                 client.ehlo()
         client.login(username, password)
     except Exception as exc:
-        raise RuntimeError(f"SMTP 登录失败：{exc}") from exc
+        raise classify_smtp_error(exc, account=account) from exc
     finally:
         if client is not None:
             try:
@@ -549,11 +560,34 @@ def load_state() -> dict:
         RUN_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         with RUN_LOG_FILE.open("a", encoding="utf-8") as handle:
             handle.write("设置文件损坏，已从 settings.json.bak 恢复。\n")
-    return normalize_state(data if isinstance(data, dict) else None)
+    state = normalize_state(data if isinstance(data, dict) else None)
+    try:
+        protected_state, changed = protect_mail_state_for_storage(state)
+        if changed:
+            atomic_write_json(
+                STATE_FILE,
+                protected_state,
+                backup_transform=lambda previous: protect_mail_state_for_storage(
+                    normalize_state(previous if isinstance(previous, dict) else None)
+                )[0],
+            )
+        return protected_state
+    except MailSecretProtectionError:
+        log_error("MailSecretStorage", "邮件凭据保护迁移失败；原设置文件未修改。")
+        return state
 
 
 def save_state(state: dict) -> None:
-    atomic_write_json(STATE_FILE, state)
+    protected_state, _changed = protect_mail_state_for_storage(state)
+    state.clear()
+    state.update(protected_state)
+    atomic_write_json(
+        STATE_FILE,
+        protected_state,
+        backup_transform=lambda previous: protect_mail_state_for_storage(
+            normalize_state(previous if isinstance(previous, dict) else None)
+        )[0],
+    )
 
 
 STATE = load_state()
@@ -2514,6 +2548,19 @@ class Handler(BaseHTTPRequestHandler):
             status=status,
         )
 
+    def _unexpected_request_error(self, path: str, exc: BaseException) -> None:
+        """Return a safe API failure while retaining a correlated traceback locally."""
+        log_sanitized_exception(
+            "API",
+            f"未处理异常 | method={self.command} | path={path} | exception_type={type(exc).__name__}",
+            exc,
+        )
+        self._api_error(
+            "INTERNAL_SERVER_ERROR",
+            "服务处理请求时发生错误，请稍后重试。",
+            status=500,
+        )
+
     def _repository_error(self, exc: Exception) -> None:
         message = str(exc)
         if isinstance(exc, RuntimeError):
@@ -2732,15 +2779,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         parsed = urlparse(self.path)
         query = parse_qs(parsed.query)
+        try:
+            with self._repository_request_scope():
+                if self._dispatch(self._request_context(parsed, query)):
+                    return
 
-        with self._repository_request_scope():
-            if self._dispatch(self._request_context(parsed, query)):
-                return
+                if parsed.path in {"", "/"}:
+                    return self._serve_file(STATIC_DIR / "index.html")
 
-            if parsed.path in {"", "/"}:
-                return self._serve_file(STATIC_DIR / "index.html")
-
-            return self._serve_file(STATIC_DIR / parsed.path.lstrip("/"))
+                return self._serve_file(STATIC_DIR / parsed.path.lstrip("/"))
+        except Exception as exc:
+            if parsed.path.startswith("/api/"):
+                return self._unexpected_request_error(parsed.path, exc)
+            log_sanitized_exception(
+                "HTTP",
+                f"未处理静态请求异常 | method={self.command} | path={parsed.path} | exception_type={type(exc).__name__}",
+                exc,
+            )
+            return self.send_error(500)
 
     def do_POST(self) -> None:
         if not self._allow_local_request():
@@ -2756,8 +2812,7 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._error("请求数据不是有效 JSON。")
         except Exception as exc:
-            log_error("API", f"未处理异常: {self.command} {parsed.path}", exc)
-            return self._error(_friendly_error_message(exc), status=500)
+            return self._unexpected_request_error(parsed.path, exc)
 
     def do_PATCH(self) -> None:
         if not self._allow_local_request():
@@ -2774,26 +2829,35 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._error("请求数据不是有效 JSON。")
         except Exception as exc:
-            log_error("API", f"未处理异常: {self.command} {parsed.path}", exc)
-            return self._error(_friendly_error_message(exc), status=500)
+            return self._unexpected_request_error(parsed.path, exc)
 
     def do_PUT(self) -> None:
         if not self._allow_local_request():
             return
         parsed = urlparse(self.path)
-        with self._repository_request_scope():
-            if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
-                return
-            return self._error("接口不存在。", status=404)
+        try:
+            with self._repository_request_scope():
+                if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
+                    return
+                return self._error("接口不存在。", status=404)
+        except json.JSONDecodeError:
+            return self._error("请求数据不是有效 JSON。")
+        except Exception as exc:
+            return self._unexpected_request_error(parsed.path, exc)
 
     def do_DELETE(self) -> None:
         if not self._allow_local_request():
             return
         parsed = urlparse(self.path)
-        with self._repository_request_scope():
-            if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
-                return
-            return self._error("接口不存在。", status=404)
+        try:
+            with self._repository_request_scope():
+                if self._dispatch(self._request_context(parsed, parse_qs(parsed.query))):
+                    return
+                return self._error("接口不存在。", status=404)
+        except json.JSONDecodeError:
+            return self._error("请求数据不是有效 JSON。")
+        except Exception as exc:
+            return self._unexpected_request_error(parsed.path, exc)
 
 
 _RUNTIME_SERVER_LOCK = threading.RLock()

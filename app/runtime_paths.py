@@ -9,7 +9,7 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from local_storage_lock import shared_storage_lock
 
@@ -78,7 +78,12 @@ def load_json_with_backup(path: Path) -> tuple[Any | None, Path | None]:
     return None, None
 
 
-def atomic_write_json(path: Path, data: Any) -> None:
+def atomic_write_json(
+    path: Path,
+    data: Any,
+    *,
+    backup_transform: Callable[[Any], Any] | None = None,
+) -> None:
     """Validate a temporary JSON file, retain a valid backup, then replace it."""
     with shared_storage_lock():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,17 +96,47 @@ def atomic_write_json(path: Path, data: Any) -> None:
                 handle.flush()
                 os.fsync(handle.fileno())
             json.loads(temp_path.read_text(encoding="utf-8"))
-            if path.is_file():
-                try:
-                    json.loads(path.read_text(encoding="utf-8"))
-                except (OSError, json.JSONDecodeError):
-                    pass
-                else:
-                    shutil.copy2(path, backup_path)
+            if backup_transform is None:
+                if path.is_file():
+                    try:
+                        json.loads(path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        pass
+                    else:
+                        shutil.copy2(path, backup_path)
+            else:
+                # A recovered settings backup can itself contain a legacy secret.
+                # Transform whichever valid predecessor is available before it is
+                # retained as the next backup.
+                for previous_path in (path, backup_path):
+                    if not previous_path.is_file():
+                        continue
+                    try:
+                        previous = json.loads(previous_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    _write_validated_json(backup_path, backup_transform(previous))
+                    break
             _replace_json_file(temp_path, path)
         finally:
             if temp_path.exists():
                 temp_path.unlink()
+
+
+def _write_validated_json(path: Path, data: Any) -> None:
+    """Write a JSON backup atomically after its transformed content is valid."""
+    serialized = json.dumps(data, ensure_ascii=False, indent=2)
+    fd, temp_path = _open_sibling_temp(path)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(serialized)
+            handle.flush()
+            os.fsync(handle.fileno())
+        json.loads(temp_path.read_text(encoding="utf-8"))
+        _replace_json_file(temp_path, path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
 
 
 def atomic_write_bytes(path: Path, data: bytes) -> None:

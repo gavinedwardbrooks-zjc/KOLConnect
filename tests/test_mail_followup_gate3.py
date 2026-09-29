@@ -19,6 +19,7 @@ from services.mail_inbox_facts import (  # noqa: E402
     sync_inbox,
     sync_sent,
 )
+from services.mail_secret_storage import protect_mail_secret  # noqa: E402
 import mail_sync  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
@@ -29,7 +30,7 @@ NOW = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
 ACCOUNT = {
     "email": "owner@example.com",
     "username": "owner@example.com",
-    "password": "fake-secret",
+    "password": protect_mail_secret("fake-secret"),
     "imap_host": "imap.example.com",
     "imap_port": 993,
 }
