@@ -31,14 +31,13 @@ from services.mail_follow_up_preferences import (  # noqa: E402
     write_export_xlsx,
 )
 from services.mail_inbox_facts import sync_sent  # noqa: E402
-from services.mail_secret_storage import protect_mail_secret  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
 from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 
 NOW = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
-ACCOUNT = {"email": "owner@example.com", "username": "owner@example.com", "password": protect_mail_secret("fake-secret"),
+ACCOUNT = {"email": "owner@example.com", "username": "owner@example.com", "password": {"format": "test-fixture", "data": "opaque"},
            "imap_host": "imap.example.com", "imap_port": 993}
 
 
@@ -82,11 +81,19 @@ class MailFollowupGate5Tests(unittest.TestCase):
         self.factory = SQLiteConnectionFactory(self.root / "mail.db")
         with self.factory.read_connection() as connection:
             apply_schema_migrations(connection)
+        self._secret_unprotectors = [
+            patch("services.mail_inbox_facts.unprotect_mail_secret", return_value="fake-secret"),
+            patch("mail_sync.unprotect_mail_secret", return_value="fake-secret"),
+        ]
+        for patcher in self._secret_unprotectors:
+            patcher.start()
         with self.factory.write_transaction() as connection:
             connection.execute("INSERT INTO creators(creator_id,name,status) VALUES ('a','Creator A','active')")
             connection.execute("INSERT INTO creator_accounts(account_uid,creator_id,account_email) VALUES ('a1','a','a@example.com')")
 
     def tearDown(self):
+        for patcher in self._secret_unprotectors:
+            patcher.stop()
         shutil.rmtree(self.root, ignore_errors=True)
 
     def _add_fact(self, *, email="a@example.com", direction="outbound", message_at="2026-09-17T10:00:00Z",

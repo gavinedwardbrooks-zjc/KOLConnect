@@ -16,7 +16,6 @@ sys.path.insert(0, str(ROOT / "app"))
 import mail_sync  # noqa: E402
 from services.mail_follow_up import derive_follow_up_queue  # noqa: E402
 from services.mail_inbox_facts import sync_sent  # noqa: E402
-from services.mail_secret_storage import protect_mail_secret  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
 from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
@@ -26,7 +25,7 @@ NOW = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
 MAIL_ACCOUNT = {
     "email": "owner@example.com",
     "username": "owner@example.com",
-    "password": protect_mail_secret("fake-secret"),
+    "password": {"format": "test-fixture", "data": "opaque"},
     "imap_host": "imap.example.com",
     "imap_port": 993,
 }
@@ -83,9 +82,17 @@ class MailFollowupGate4Tests(unittest.TestCase):
         self.factory = SQLiteConnectionFactory(self.root / "mail.db")
         with self.factory.read_connection() as connection:
             apply_schema_migrations(connection)
+        self._secret_unprotectors = [
+            patch("services.mail_inbox_facts.unprotect_mail_secret", return_value="fake-secret"),
+            patch("mail_sync.unprotect_mail_secret", return_value="fake-secret"),
+        ]
+        for patcher in self._secret_unprotectors:
+            patcher.start()
         self._add_creator("a")
 
     def tearDown(self):
+        for patcher in self._secret_unprotectors:
+            patcher.stop()
         shutil.rmtree(self.root, ignore_errors=True)
 
     def _add_creator(self, creator_id, status="active"):

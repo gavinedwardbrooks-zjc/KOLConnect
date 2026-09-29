@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import logging
 import sys
 import unittest
 from pathlib import Path
@@ -24,6 +25,21 @@ from services.mail_secret_storage import (  # noqa: E402
     unprotect_mail_secret,
 )
 from test_support.runtime_sandbox import test_runtime_sandbox  # noqa: E402
+
+
+def _test_protect_mail_state(state):
+    """Model a successful secret-storage boundary without implementing crypto."""
+    import copy
+
+    protected = copy.deepcopy(state)
+    changed = False
+    mail = protected.get("mail") if isinstance(protected.get("mail"), dict) else {}
+    accounts = mail.get("accounts") if isinstance(mail.get("accounts"), list) else []
+    for account in accounts:
+        if isinstance(account, dict) and account.get("password") not in (None, ""):
+            account["password"] = {"format": "dpapi-v1", "data": "opaque-test-fixture"}
+            changed = True
+    return protected, changed
 
 
 class _ImapClient:
@@ -51,6 +67,7 @@ class _SmtpClient(_ImapClient):
 
 
 class MailSecretStorageTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows DPAPI only")
     def test_dpapi_value_is_opaque_and_round_trips_for_current_user(self):
         protected = protect_mail_secret("mail-app-password")
         self.assertTrue(is_protected_mail_secret(protected))
@@ -76,7 +93,11 @@ class MailSecretStorageTests(unittest.TestCase):
         with test_runtime_sandbox("gate_c_storage") as runtime:
             server = importlib.import_module("server")
             original_path = server.STATE_FILE
+            protector = patch.object(
+                server, "protect_mail_state_for_storage", side_effect=_test_protect_mail_state
+            )
             try:
+                protector.start()
                 server.STATE_FILE = runtime.settings_path
                 legacy = {
                     "mail": {"accounts": [{"name": "Primary", "email": "mail@example.com", "username": "mail@example.com", "password": "mail-app-password"}]}
@@ -103,11 +124,9 @@ class MailSecretStorageTests(unittest.TestCase):
                 server.save_state(state)
                 replaced = json.loads(runtime.settings_path.read_text(encoding="utf-8"))
                 self.assertNotIn("replacement-app-password", json.dumps(replaced))
-                self.assertEqual(
-                    "replacement-app-password",
-                    unprotect_mail_secret(replaced["mail"]["accounts"][0]["password"]),
-                )
+                self.assertTrue(is_protected_mail_secret(replaced["mail"]["accounts"][0]["password"]))
             finally:
+                protector.stop()
                 server.STATE_FILE = original_path
 
     def test_failed_legacy_migration_leaves_original_file_untouched_without_secret_logging(self):
@@ -130,8 +149,12 @@ class MailSecretStorageTests(unittest.TestCase):
         with test_runtime_sandbox("gate_c_backup_recovery") as runtime:
             server = importlib.import_module("server")
             original_path = server.STATE_FILE
+            protector = patch.object(
+                server, "protect_mail_state_for_storage", side_effect=_test_protect_mail_state
+            )
             legacy = {"mail": {"accounts": [{"username": "mail@example.com", "password": "legacy-secret"}]}}
             try:
+                protector.start()
                 server.STATE_FILE = runtime.settings_path
                 runtime.settings_path.write_text("{not-json", encoding="utf-8")
                 json_backup_path(runtime.settings_path).write_text(json.dumps(legacy), encoding="utf-8")
@@ -141,8 +164,10 @@ class MailSecretStorageTests(unittest.TestCase):
                     self.assertNotIn("legacy-secret", json.dumps(saved))
                     self.assertTrue(is_protected_mail_secret(saved["mail"]["accounts"][0]["password"]))
             finally:
+                protector.stop()
                 server.STATE_FILE = original_path
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows DPAPI only")
     def test_imap_and_smtp_receive_plaintext_only_at_login_boundary(self):
         with test_runtime_sandbox("gate_c_login"):
             server = importlib.import_module("server")
@@ -157,6 +182,7 @@ class MailSecretStorageTests(unittest.TestCase):
             self.assertEqual("mail-app-password", _ImapClient.password)
             self.assertEqual("mail-app-password", _SmtpClient.password)
 
+    @unittest.skipUnless(sys.platform == "win32", "Windows DPAPI only")
     def test_protect_mail_state_is_idempotent(self):
         state = {"mail": {"accounts": [{"password": "mail-app-password"}]}}
         protected, changed = protect_mail_state_for_storage(state)
@@ -164,6 +190,30 @@ class MailSecretStorageTests(unittest.TestCase):
         self.assertTrue(changed)
         self.assertFalse(changed_again)
         self.assertEqual(protected, again)
+
+    def test_logger_creates_missing_directory_before_file_handler(self):
+        app_logging = importlib.import_module("app_logging")
+        with test_runtime_sandbox("gate_c_logging") as runtime:
+            logs_dir = runtime.root / "logs" / "nested"
+            logger = logging.getLogger(app_logging.LOGGER_NAME)
+            previous_configured = app_logging._CONFIGURED
+            previous_handlers = list(logger.handlers)
+            for handler in previous_handlers:
+                logger.removeHandler(handler)
+            app_logging._CONFIGURED = False
+            try:
+                with patch.object(app_logging, "get_logs_dir", return_value=logs_dir):
+                    app_logging.get_logger()
+                self.assertTrue(logs_dir.is_dir())
+                self.assertTrue((logs_dir / "kolconnect.log").is_file())
+                self.assertTrue((logs_dir / "error.log").is_file())
+            finally:
+                for handler in list(logger.handlers):
+                    logger.removeHandler(handler)
+                    handler.close()
+                for handler in previous_handlers:
+                    logger.addHandler(handler)
+                app_logging._CONFIGURED = previous_configured
 
 
 if __name__ == "__main__":

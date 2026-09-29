@@ -19,7 +19,6 @@ if str(ROOT / "tests") not in sys.path:
 import app_logging  # noqa: E402
 import mail_sync  # noqa: E402
 from http_handlers import settings_handler  # noqa: E402
-from services.mail_secret_storage import protect_mail_secret  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
 from test_support.runtime_sandbox import test_runtime_sandbox  # noqa: E402
@@ -56,14 +55,22 @@ class MailSyncProviderErrorRedactionTests(unittest.TestCase):
             "name": "Mailbox",
             "email": "owner@example.com",
             "username": "owner@example.com",
-            "password": protect_mail_secret("fixture-password"),
+            "password": {"format": "test-fixture", "data": "opaque"},
             "imap_host": "imap.example.test",
             "imap_port": 993,
             "enabled": True,
         }
         self.cache_path = self.runtime.root / "mail_messages.json"
+        self._secret_unprotectors = [
+            patch("services.mail_inbox_facts.unprotect_mail_secret", return_value="fixture-password"),
+            patch("mail_sync.unprotect_mail_secret", return_value="fixture-password"),
+        ]
+        for patcher in self._secret_unprotectors:
+            patcher.start()
 
     def tearDown(self) -> None:
+        for patcher in self._secret_unprotectors:
+            patcher.stop()
         self.sandbox.__exit__(None, None, None)
 
     def _inbox_failure(self, exc: BaseException) -> tuple[dict, str]:

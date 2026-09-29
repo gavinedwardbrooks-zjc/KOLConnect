@@ -13,7 +13,6 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 from services.mail_inbox_facts import mail_account_identity, sync_inbox  # noqa: E402
-from services.mail_secret_storage import protect_mail_secret  # noqa: E402
 import mail_sync  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import CURRENT_SCHEMA_VERSION, apply_schema_migrations, schema_version  # noqa: E402
@@ -22,7 +21,7 @@ from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 NOW = datetime(2026, 9, 18, 10, 0, tzinfo=timezone.utc)
 ACCOUNT = {"email": "owner@example.com", "username": "owner@example.com",
-           "password": protect_mail_secret("fake-secret"), "imap_host": "imap.example.com", "imap_port": 993}
+           "password": {"format": "test-fixture", "data": "opaque"}, "imap_host": "imap.example.com", "imap_port": 993}
 
 
 def make_message(sender="creator@example.com", *, date="Fri, 18 Sep 2026 09:00:00 +0000",
@@ -93,8 +92,18 @@ class MailFollowupGate2Tests(unittest.TestCase):
         self.factory = SQLiteConnectionFactory(self.root / "mail.db")
         with self.factory.read_connection() as connection:
             apply_schema_migrations(connection)
+        # Mail fact tests exercise the authentication boundary with a narrow
+        # test double; native Windows DPAPI has dedicated platform-only tests.
+        self._secret_unprotectors = [
+            patch("services.mail_inbox_facts.unprotect_mail_secret", return_value="fake-secret"),
+            patch("mail_sync.unprotect_mail_secret", return_value="fake-secret"),
+        ]
+        for patcher in self._secret_unprotectors:
+            patcher.start()
 
     def tearDown(self):
+        for patcher in self._secret_unprotectors:
+            patcher.stop()
         shutil.rmtree(self.root, ignore_errors=True)
 
     def rows(self, table):

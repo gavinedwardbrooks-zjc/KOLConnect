@@ -24,6 +24,9 @@ def get_logger() -> logging.Logger:
     logger.setLevel(logging.INFO)
     logger.propagate = False
     logs_dir = get_logs_dir()
+    # A recovery or test path can supply a valid directory which does not yet
+    # exist. Logging must not hide the application error in that case.
+    logs_dir.mkdir(parents=True, exist_ok=True)
     for filename, level in (("kolconnect.log", logging.INFO), ("error.log", logging.ERROR)):
         handler = RotatingFileHandler(
             logs_dir / filename, encoding="utf-8", maxBytes=2 * 1024 * 1024, backupCount=3
