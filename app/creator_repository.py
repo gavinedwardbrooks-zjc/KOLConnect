@@ -309,6 +309,36 @@ class CreatorRepository:
             }
 
     @_synchronized
+    def getExtensionAccountLookup(self, account_uid: str) -> dict[str, Any] | None:
+        """Return the smallest account ownership view needed by the browser extension."""
+        account_uid = str(account_uid or "").strip()
+        if not account_uid:
+            return None
+        identities = self.getCreatorAccountIdentityRows()
+        accounts = [
+            row for row in identities["accounts"]
+            if str(row.get("account_uid") or "") == account_uid
+        ]
+        if len(accounts) != 1:
+            return {"ambiguous": bool(accounts)} if accounts else None
+        account = accounts[0]
+        creator_id = str(account.get("creator_id") or "")
+        creators = [
+            row for row in identities["creators"]
+            if str(row.get("creator_id") or "") == creator_id
+        ]
+        if len(creators) != 1:
+            return {"ambiguous": True}
+        return {
+            "creator": creators[0],
+            "account": account,
+            "linked_accounts": [
+                row for row in identities["accounts"]
+                if str(row.get("creator_id") or "") == creator_id
+            ],
+        }
+
+    @_synchronized
     def getExistingCreatorAccountUids(self, account_uids: set[str]) -> set[str]:
         """Return only requested identities that already belong to a Creator."""
         requested = {str(value or "").strip() for value in account_uids if str(value or "").strip()}

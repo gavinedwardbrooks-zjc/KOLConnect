@@ -9,7 +9,7 @@ import {
 } from "./core/content_analysis.js";
 import { MESSAGE } from "./core/messaging.js";
 import { failedProfile, finalizeProfile } from "./core/schema.js";
-import { importProfile, loadAgencies } from "./services/local_api.js";
+import { importProfile, loadAgencies, lookupAccount } from "./services/local_api.js";
 
 const PLATFORMS = [TikTok, Instagram, YouTube];
 const contentControllers = new Map();
@@ -190,6 +190,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })
       .then((result) => sendResponse({ ok: true, result }))
       .catch((error) => sendResponse({ ok: false, error: error?.message || "Import failed." }));
+    return true;
+  }
+  if (message?.type === MESSAGE.LOOKUP_ACCOUNT) {
+    const platform = typeof message.profile?.platform === "string" ? message.profile.platform : "";
+    const profileUrl = typeof message.profile?.profile_url === "string" ? message.profile.profile_url : "";
+    lookupAccount(platform, profileUrl)
+      .then((lookup) => sendResponse({ ok: true, lookup }))
+      .catch((error) => sendResponse({
+        ok: false,
+        code: error?.code || "LOOKUP_FAILED",
+        error: error?.message || "Account lookup failed."
+      }));
     return true;
   }
   if (message?.type === MESSAGE.LOAD_AGENCIES) {

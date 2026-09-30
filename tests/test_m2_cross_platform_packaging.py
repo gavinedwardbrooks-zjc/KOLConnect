@@ -114,7 +114,19 @@ class PackagingConfigurationTests(unittest.TestCase):
             "PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --verbosity 2",
             ci,
         )
-        self.assertIn("timeout-minutes: 15", ci)
+        macos_job = ci.split("  test-macos-arm64:", 1)[1]
+        self.assertIn("name: Validate native macOS Keychain", macos_job)
+        self.assertIn(
+            "-m unittest discover -s tests -p 'test_targeted_gate_d_macos_keychain.py' -k native_keychain_round_trip_update_and_delete -v",
+            macos_job,
+        )
+        self.assertIn("timeout-minutes: 3", macos_job)
+        self.assertIn("timeout-minutes: 60", macos_job)
+        self.assertNotIn("continue-on-error:", macos_job)
+        self.assertLess(
+            macos_job.index("name: Validate native macOS Keychain"),
+            macos_job.index("name: Run Python tests"),
+        )
         self.assertNotIn("python -m unittest discover", ci)
         self.assertIn("brew install python@3.12 sqlite", ci)
         self.assertIn("brew upgrade python@3.12 sqlite", ci)

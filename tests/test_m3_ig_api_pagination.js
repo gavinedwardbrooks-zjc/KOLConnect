@@ -239,7 +239,7 @@ function media(id, overrides = {}) {
         data: {
           user: {
             id: "10002",
-            username: "fallback_count",
+            username: "synthetic_creator",
             follower_count: 1_734_182
           }
         }

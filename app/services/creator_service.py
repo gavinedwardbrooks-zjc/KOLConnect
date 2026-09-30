@@ -35,6 +35,7 @@ from ports.creator_port import (
 )
 from ports.task_port import TaskPort
 from local_storage_lock import shared_storage_lock
+from domain.creator_url_resolver import CreatorURLResolver
 
 
 REVIEW_FIELD_WHATSAPP = "WhatsApp"
@@ -173,6 +174,8 @@ class CreatorRepositoryReader(Protocol):
     def getCreatorInventoryRows(self) -> dict[str, list[dict[str, Any]]]: ...
 
     def getExistingCreatorAccountUids(self, account_uids: set[str]) -> set[str]: ...
+
+    def getExtensionAccountLookup(self, account_uid: str) -> dict[str, Any] | None: ...
 
     def createCreatorsBatch(self, records: list[dict[str, Any]]) -> dict[str, int]: ...
 
@@ -829,6 +832,57 @@ class CreatorService:
             }
             for account in accounts
         ]
+
+    def lookup_extension_account(self, platform: object, profile_url: object) -> dict[str, Any]:
+        """Resolve extension account awareness through authoritative URL and SQLite identity."""
+        platform_key = str(platform or "").strip().casefold()
+        platform_labels = {
+            "tiktok": "TikTok",
+            "instagram": "Instagram",
+            "youtube": "YouTube",
+        }
+        expected_platform = platform_labels.get(platform_key)
+        resolved = CreatorURLResolver.resolve_syntax(profile_url)
+        if (
+            expected_platform is None
+            or resolved.get("resolution_status") != "resolved"
+            or resolved.get("input_type") != "profile"
+            or resolved.get("platform") != expected_platform
+        ):
+            return {"state": "INVALID_REQUEST"}
+
+        canonical_url = str(resolved.get("canonical_profile_url") or "")
+        account_uid = scraper_module.build_creator_uid({
+            "platform": expected_platform,
+            "url": canonical_url,
+        })
+        lookup = self._repository_provider().getExtensionAccountLookup(account_uid)
+        if lookup is None:
+            return {"state": "ACCOUNT_NOT_FOUND"}
+        if lookup.get("ambiguous"):
+            return {"state": "AMBIGUOUS"}
+
+        creator = lookup.get("creator") if isinstance(lookup.get("creator"), dict) else {}
+        account = lookup.get("account") if isinstance(lookup.get("account"), dict) else {}
+        linked_accounts = lookup.get("linked_accounts") if isinstance(lookup.get("linked_accounts"), list) else []
+
+        def account_summary(row: dict[str, Any], *, include_updated: bool = False) -> dict[str, Any]:
+            summary = {
+                "platform": str(row.get("platform") or ""),
+                "profile_url": str(row.get("profile_url") or ""),
+                "handle": str(row.get("username") or ""),
+            }
+            if include_updated:
+                # Account updated_at is the latest persisted account refresh; never synthesize it.
+                summary["updated_at"] = str(row.get("updated_at") or "") or None
+            return summary
+
+        return {
+            "state": "ACCOUNT_EXISTS",
+            "creator": {"display_name": str(creator.get("name") or creator.get("creator_name") or "")},
+            "account": account_summary(account, include_updated=True),
+            "linked_accounts": [account_summary(row) for row in linked_accounts],
+        }
 
     def check_email_deduplication(self, source_lines: list[object]) -> dict[str, Any]:
         """Classify pasted emails against the authoritative CreatorAccount emails.

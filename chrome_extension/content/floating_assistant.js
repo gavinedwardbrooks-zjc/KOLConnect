@@ -8,6 +8,7 @@
     ERROR: "KOLCONNECT_NEXT_ERROR",
     COLLECT: "KOLCONNECT_NEXT_COLLECT",
     IMPORT: "KOLCONNECT_NEXT_IMPORT",
+    LOOKUP_ACCOUNT: "KOLCONNECT_NEXT_LOOKUP_ACCOUNT",
     LOAD_AGENCIES: "KOLCONNECT_NEXT_LOAD_AGENCIES",
     PAGE_CHANGED: "KOLCONNECT_NEXT_PAGE_CHANGED",
     ANALYZE_CONTENT: "KOLCONNECT_NEXT_ANALYZE_CONTENT",
@@ -55,7 +56,8 @@
     analysisTimer: null,
     currentSessionId: "",
     currentContentSessionId: "",
-    preview: null
+    preview: null,
+    accountLookup: null
   };
 
   const create = (tag, className = "", text = "") => {
@@ -147,6 +149,11 @@
   agencyField.append(agencyStatus);
   previewSection.append(agencyField);
 
+  const accountAwareness = create("section", "kol-account-awareness");
+  accountAwareness.append(create("h3", "kol-section-title", "KOLConnect 收录状态"));
+  const accountAwarenessText = create("div", "kol-account-awareness-text", "等待资料读取完成。");
+  accountAwareness.append(accountAwarenessText);
+
   const contentSection = create("section", "kol-content-section");
   contentSection.append(create("h3", "kol-section-title", "最近内容分析"));
   const contentStatus = create("div", "kol-content-status", "尚未分析。");
@@ -222,7 +229,7 @@
   cancelContentButton.hidden = true;
   importButton.disabled = true;
   actions.append(refreshButton, analyzeContentButton, cancelContentButton, copyButton, importButton);
-  body.append(status, card, previewSection, contentSection, diagnostics, actions);
+  body.append(status, card, accountAwareness, previewSection, contentSection, diagnostics, actions);
   panel.append(head, body);
   root.append(panel);
   document.documentElement.append(root);
@@ -285,7 +292,9 @@
     for (const [name, input] of Object.entries(previewInputs)) {
       state.preview[name] = String(input.value || "").trim();
     }
-    importButton.disabled = !state.profile || !state.preview.content_category;
+    importButton.disabled = !state.profile
+      || !state.preview.content_category
+      || state.accountLookup?.state !== "ACCOUNT_NOT_FOUND";
   };
 
   const initializePreview = (profile) => {
@@ -300,7 +309,9 @@
     for (const [name, input] of Object.entries(previewInputs)) {
       input.value = state.preview?.[name] || "";
     }
-    importButton.disabled = !state.profile || !state.preview?.content_category;
+    importButton.disabled = !state.profile
+      || !state.preview?.content_category
+      || state.accountLookup?.state !== "ACCOUNT_NOT_FOUND";
   };
 
   const profileForImport = () => ({
@@ -417,6 +428,38 @@
     fieldElements.capture_status.textContent = profile?.capture_status || "idle";
     diagnosticsRefresh.hidden = diagnosticsHint.hidden = !/tiktok\.com\//i.test(location.href);
     diagnosticsText.textContent = JSON.stringify(diagnosticReport(), null, 2);
+
+    const lookup = state.accountLookup;
+    if (!lookup || lookup.state === "LOADING_PROFILE") {
+      accountAwarenessText.textContent = "正在核对 KOLConnect 收录状态…";
+      importButton.textContent = "正在核对…";
+      importButton.disabled = true;
+    } else if (lookup.state === "ACCOUNT_NOT_FOUND") {
+      accountAwarenessText.textContent = "未收录。可按当前资料导入 KOLConnect。";
+      importButton.textContent = "导入 KOLConnect";
+      importButton.disabled = !state.profile || !state.preview?.content_category;
+    } else if (lookup.state === "ACCOUNT_EXISTS") {
+      const creatorName = String(lookup.creator?.display_name || "已收录达人");
+      const linked = (lookup.linked_accounts || []).map((account) => (
+        `${account.platform || ""} ${account.handle || account.profile_url || ""}`.trim()
+      )).filter(Boolean);
+      const updated = lookup.account?.updated_at ? `最近更新：${lookup.account.updated_at}` : "最近更新时间未知";
+      accountAwarenessText.textContent = `已收录：${creatorName}。${linked.length ? `关联账号：${linked.join("、")}。` : ""}${updated}`;
+      importButton.textContent = "已收录（更新功能即将推出）";
+      importButton.disabled = true;
+    } else if (lookup.state === "AMBIGUOUS") {
+      accountAwarenessText.textContent = "账号归属存在歧义，未执行自动判断。";
+      importButton.textContent = "账号归属待确认";
+      importButton.disabled = true;
+    } else if (lookup.state === "APP_OFFLINE") {
+      accountAwarenessText.textContent = "KOLConnect 未运行。请启动应用后重新分析资料。";
+      importButton.textContent = "KOLConnect 未运行";
+      importButton.disabled = true;
+    } else {
+      accountAwarenessText.textContent = "无法确认 KOLConnect 收录状态，请重新分析资料。";
+      importButton.textContent = "无法确认收录状态";
+      importButton.disabled = true;
+    }
   };
 
   const missingReasons = (item) => [
@@ -517,6 +560,7 @@
 
   const clearProfile = () => {
     state.profile = null;
+    state.accountLookup = null;
     initializePreview(null);
     renderProfile();
   };
@@ -558,8 +602,29 @@
       state.profile = response.profile;
       initializePreview(response.profile);
       state.analyzedUrl = state.lastUrl;
+      state.accountLookup = { state: "LOADING_PROFILE" };
       renderProfile();
       showProfileStatus(response.profile);
+      let lookupResponse;
+      try {
+        lookupResponse = await profileSessions.waitFor(
+          sendMessage({
+            type: MESSAGE.LOOKUP_ACCOUNT,
+            profile: {
+              platform: response.profile.platform,
+              profile_url: response.profile.profile_url
+            }
+          }),
+          activeSessionId
+        );
+      } catch (_) {
+        lookupResponse = { ok: false, code: "APP_OFFLINE" };
+      }
+      if (!profileSessions.isCurrent(activeSessionId)) return;
+      state.accountLookup = lookupResponse?.ok
+        ? lookupResponse.lookup
+        : { state: lookupResponse?.code === "APP_OFFLINE" ? "APP_OFFLINE" : "ERROR" };
+      renderProfile();
     } catch (error) {
       if (!profileSessions.isCurrent(activeSessionId)) return;
       profileSessions.invalidate();

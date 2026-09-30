@@ -291,6 +291,15 @@ def handle(handler, request: dict, context: dict) -> bool:
             handler._error(str(exc))
         return True
 
+    # GET /api/extension/accounts/lookup → SQLite-authoritative, read-only account awareness.
+    if method == "GET" and path == "/api/extension/accounts/lookup":
+        result = creator_service.lookup_extension_account(
+            query.get("platform", [""])[0],
+            query.get("profile_url", [""])[0],
+        )
+        handler._json({"ok": True, **result})
+        return True
+
     # POST /api/extension/import → 导入插件达人数据；{"ok": true, "duplicate": false, "is_new_creator": true, "task": {...}, "account_uid": "...", "analysis_id": "...", "account_id": "...", "snapshot_id": "..."}
     if method == "POST" and path == "/api/extension/import":
         payload = request["get_payload"]()

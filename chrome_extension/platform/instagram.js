@@ -35,6 +35,10 @@ function instagramApiField(value, source, missingReason) {
   };
 }
 
+export function normalizeInstagramIdentity(value) {
+  return String(value ?? "").trim().replace(/^@/, "").toLowerCase();
+}
+
 export function fetchInstagramWebProfilePage(appId) {
   const clean = (value, limit = 5000) => String(value ?? "").trim().slice(0, limit);
   const current = new URL(location.href);
@@ -75,6 +79,13 @@ export function fetchInstagramWebProfilePage(appId) {
         ok: false,
         status: response.status,
         reason: "web_profile_info_user_missing"
+      };
+    }
+    if (normalizeInstagramIdentity(username) !== normalizeInstagramIdentity(user.username)) {
+      return {
+        ok: false,
+        status: response.status,
+        reason: "web_profile_info_identity_mismatch"
       };
     }
     return {

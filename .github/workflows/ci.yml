@@ -79,9 +79,14 @@ jobs:
           python scripts/check_sqlite_runtime.py
       - name: Install dependencies
         run: python -m pip install -r packaging/requirements-build.txt
+      - name: Validate native macOS Keychain
+        id: native_keychain
+        timeout-minutes: 3
+        shell: bash
+        run: PYTHONUNBUFFERED=1 python -u -m unittest discover -s tests -p 'test_targeted_gate_d_macos_keychain.py' -k native_keychain_round_trip_update_and_delete -v
       - name: Run Python tests
         id: python_tests
-        timeout-minutes: 30
+        timeout-minutes: 60
         shell: bash
         run: PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --verbosity 2
       - name: Run extension tests

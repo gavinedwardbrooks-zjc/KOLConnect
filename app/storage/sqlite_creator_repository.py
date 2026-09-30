@@ -100,6 +100,38 @@ class SQLiteCreatorRepository(CreatorRepository):
         with self._projection("Creators", "CreatorAccounts"):
             return super().getCreatorAccountIdentityRows()
 
+    def getExtensionAccountLookup(self, account_uid: str) -> dict | None:
+        """Read one CreatorAccount ownership summary without materializing the workbook view."""
+        account_uid = str(account_uid or "").strip()
+        if not account_uid:
+            return None
+        with self.store.factory.read_connection() as connection:
+            row = connection.execute(
+                "SELECT a.*, c.name AS creator_name FROM creator_accounts AS a "
+                "JOIN creators AS c ON c.creator_id=a.creator_id "
+                "WHERE a.account_uid=?",
+                (account_uid,),
+            ).fetchone()
+            if row is None:
+                return None
+            account = dict(row)
+            linked_accounts = [
+                dict(linked) for linked in connection.execute(
+                    "SELECT account_uid, creator_id, platform, username, profile_url, updated_at "
+                    "FROM creator_accounts WHERE creator_id=? "
+                    "ORDER BY platform, created_at, account_uid",
+                    (account["creator_id"],),
+                )
+            ]
+        return {
+            "creator": {
+                "creator_id": account["creator_id"],
+                "name": account.get("creator_name") or "",
+            },
+            "account": account,
+            "linked_accounts": linked_accounts,
+        }
+
     def getExistingCreatorAccountUids(self, account_uids: set[str]):
         with self._projection("Creators", "CreatorAccounts"):
             return super().getExistingCreatorAccountUids(account_uids)

@@ -97,6 +97,20 @@
   background: #fffdf9;
 }
 
+#kolconnect-next-root .kol-account-awareness {
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #dce8da;
+  border-radius: 14px;
+  background: #f5f9f3;
+}
+
+#kolconnect-next-root .kol-account-awareness-text {
+  color: #526052;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 #kolconnect-next-root .kol-preview-field {
   display: grid;
   grid-template-columns: 108px minmax(0, 1fr);

@@ -5,6 +5,13 @@ export const CONTENT_CATEGORY_OPTIONS = globalThis.KOLConnectConfig.CONTENT_CATE
 
 const clean = (value) => String(value ?? "").trim();
 
+export class LocalApiError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.code = code;
+  }
+}
+
 export async function loadLocalApiUrl() {
   const stored = await chrome.storage.local.get("localApiUrl");
   return stored.localApiUrl || DEFAULT_API_URL;
@@ -29,6 +36,40 @@ export async function loadAgencies() {
       agency_id: clean(agency.agency_id),
       name: clean(agency.name) || clean(agency.agency_id)
     }));
+}
+
+export async function lookupAccount(platform, profileUrl) {
+  const cleanPlatform = clean(platform);
+  const cleanProfileUrl = clean(profileUrl);
+  if (!cleanPlatform || !cleanProfileUrl) return { state: "INVALID_REQUEST" };
+
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL("/api/extension/accounts/lookup", apiUrl);
+  endpoint.searchParams.set("platform", cleanPlatform);
+  endpoint.searchParams.set("profile_url", cleanProfileUrl);
+  let response;
+  try {
+    response = await fetch(endpoint, { method: "GET", cache: "no-store" });
+  } catch (_) {
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。");
+  }
+  let result = {};
+  try {
+    result = await response.json();
+  } catch (_) {}
+  if (!response.ok || result.ok === false) {
+    throw new LocalApiError("LOOKUP_FAILED", result.error || `KOLConnect 请求失败（HTTP ${response.status}）。`);
+  }
+  const state = clean(result.state);
+  if (!new Set(["ACCOUNT_NOT_FOUND", "ACCOUNT_EXISTS", "AMBIGUOUS", "INVALID_REQUEST"]).has(state)) {
+    throw new LocalApiError("LOOKUP_FAILED", "KOLConnect 返回了无效的账号查询结果。");
+  }
+  return {
+    state,
+    creator: result.creator && typeof result.creator === "object" ? result.creator : null,
+    account: result.account && typeof result.account === "object" ? result.account : null,
+    linked_accounts: Array.isArray(result.linked_accounts) ? result.linked_accounts : []
+  };
 }
 
 function buildVideoImportItem(video = {}, capturedAt = "") {
