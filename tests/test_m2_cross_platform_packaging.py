@@ -8,9 +8,36 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import yaml
+
 
 ROOT = Path(__file__).resolve().parents[1]
 APP_DIR = ROOT / "app"
+TESTS_DIR = ROOT / "tests"
+MACOS_PYTHON_SHARD_PATTERNS = {
+    "runtime-http": (
+        "test_m2_*.py", "test_m4_*.py", "test_m5_*.py", "test_phase3_*.py",
+        "test_agency_delete_sqlite.py", "test_campaign_execution_foundation.py",
+        "test_dashboard_v2.py", "test_discovery_ux_consolidation.py",
+        "test_discovery_workflow_polish.py", "test_fx_service.py", "test_locale_state_authority.py",
+    ),
+    "platform-integrations": (
+        "test_m3_*.py", "test_m6_*.py", "test_m7_*.py", "test_m8_*.py", "test_plugin_*.py",
+        "test_pre_m9_google_auth_status.py", "test_pre_m9_google_sheets_data_sync.py",
+    ),
+    "storage-mail-security": (
+        "test_pre_m8_*.py", "test_mail_*.py", "test_data_foundation_phase1.py",
+        "test_data_foundation_phase1_6.py", "test_m1_b1_c1.py", "test_m1_c2_bio_archived_columns.py",
+        "test_targeted_gate_b_observability.py", "test_targeted_gate_c_mail_secret_storage.py",
+        "test_targeted_gate_c1_mail_sync_redaction.py", "test_targeted_gate_d_macos_keychain.py",
+    ),
+    "product-contracts": (
+        "test_phase4_*.py", "test_pre_cloud_product_cleanup.py", "test_pre_m9_browser_mode_retirement.py",
+        "test_pre_m9_email_deduplication.py", "test_release_critical_fixes.py",
+        "test_test_artifact_hygiene.py", "test_uuid7_compatibility.py", "test_v2_*.py",
+        "test_version_consistency.py",
+    ),
+}
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
@@ -110,23 +137,38 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("runs-on: windows-latest", ci)
         self.assertIn("runs-on: macos-15", ci)
         self.assertEqual(ci.count("python scripts/run_python_tests.py --verbosity 1"), 1)
-        self.assertIn(
-            "PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --verbosity 2",
-            ci,
+        workflow = yaml.safe_load(ci)
+        jobs = workflow["jobs"]
+        keychain_job = jobs["test-macos-arm64-keychain"]
+        shard_job = jobs["test-macos-arm64-python"]
+        static_job = jobs["test-macos-arm64-extension-static"]
+        self.assertEqual("test-macos-arm64-keychain", shard_job["needs"])
+        self.assertEqual(
+            ["test-macos-arm64-keychain", "test-macos-arm64-python"],
+            static_job["needs"],
         )
-        macos_job = ci.split("  test-macos-arm64:", 1)[1]
-        self.assertIn("name: Validate native macOS Keychain", macos_job)
+        self.assertFalse(shard_job["strategy"]["fail-fast"])
+        matrix = shard_job["strategy"]["matrix"]["include"]
+        self.assertEqual(4, len(matrix))
+        self.assertEqual(
+            {entry["shard"]: tuple(entry["patterns"].split(",")) for entry in matrix},
+            MACOS_PYTHON_SHARD_PATTERNS,
+        )
+        self.assertEqual(
+            {entry["shard"]: entry["timeout_minutes"] for entry in matrix},
+            {"runtime-http": 30, "platform-integrations": 30, "storage-mail-security": 30, "product-contracts": 20},
+        )
+        self.assertIn("name: Validate native macOS Keychain", ci)
         self.assertIn(
             "-m unittest discover -s tests -p 'test_targeted_gate_d_macos_keychain.py' -k native_keychain_round_trip_update_and_delete -v",
-            macos_job,
+            ci,
         )
-        self.assertIn("timeout-minutes: 3", macos_job)
-        self.assertIn("timeout-minutes: 60", macos_job)
-        self.assertNotIn("continue-on-error:", macos_job)
-        self.assertLess(
-            macos_job.index("name: Validate native macOS Keychain"),
-            macos_job.index("name: Run Python tests"),
-        )
+        self.assertEqual("macos-15", keychain_job["runs-on"])
+        self.assertIn("timeout-minutes: 3", ci)
+        self.assertNotIn("continue-on-error:", ci)
+        self.assertNotIn("name: Run Python tests\n        id: python_tests", ci.split("  test-macos-arm64-keychain:", 1)[1])
+        self.assertIn("PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --pattern", ci)
+        self.assertIn("node tests/run_extension_tests.js", ci)
         self.assertNotIn("python -m unittest discover", ci)
         self.assertIn("brew install python@3.12 sqlite", ci)
         self.assertIn("brew upgrade python@3.12 sqlite", ci)
@@ -171,6 +213,29 @@ class PackagingConfigurationTests(unittest.TestCase):
 
         runner = (ROOT / "tests" / "run_extension_tests.js").read_text(encoding="utf-8")
         self.assertIn(r"/^test_.*\.(js|mjs)$/", runner)
+
+    def test_macos_python_shards_assign_every_canonical_test_module_once(self):
+        canonical_modules = {path.name for path in TESTS_DIR.glob("test_*.py")}
+        owners: dict[str, list[str]] = {}
+        for shard, patterns in MACOS_PYTHON_SHARD_PATTERNS.items():
+            matched = {
+                path.name
+                for pattern in patterns
+                for path in TESTS_DIR.glob(pattern)
+            }
+            self.assertTrue(matched, f"{shard} has no matching test modules")
+            for module in matched:
+                owners.setdefault(module, []).append(shard)
+
+        unassigned = canonical_modules - set(owners)
+        duplicate_owners = {
+            module: module_owners
+            for module, module_owners in owners.items()
+            if len(module_owners) != 1
+        }
+        self.assertFalse(unassigned, f"Unassigned macOS shard modules: {sorted(unassigned)}")
+        self.assertFalse(duplicate_owners, f"Duplicate macOS shard modules: {duplicate_owners}")
+        self.assertEqual(canonical_modules, set(owners))
 
     def test_generated_mac_artifacts_are_ignored(self):
         ignore = (ROOT / ".gitignore").read_text(encoding="utf-8")

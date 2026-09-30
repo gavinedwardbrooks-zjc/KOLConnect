@@ -54,7 +54,7 @@ jobs:
             "| Windows | ${{ runner.arch }} | ${{ steps.python_tests.outcome }} | ${{ steps.extension_tests.outcome }} |"
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
-  test-macos-arm64:
+  test-macos-arm64-keychain:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -84,11 +84,66 @@ jobs:
         timeout-minutes: 3
         shell: bash
         run: PYTHONUNBUFFERED=1 python -u -m unittest discover -s tests -p 'test_targeted_gate_d_macos_keychain.py' -k native_keychain_round_trip_update_and_delete -v
-      - name: Run Python tests
-        id: python_tests
-        timeout-minutes: 60
+
+  test-macos-arm64-python:
+    needs: test-macos-arm64-keychain
+    runs-on: macos-15
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shard: runtime-http
+            timeout_minutes: 30
+            patterns: test_m2_*.py,test_m4_*.py,test_m5_*.py,test_phase3_*.py,test_agency_delete_sqlite.py,test_campaign_execution_foundation.py,test_dashboard_v2.py,test_discovery_ux_consolidation.py,test_discovery_workflow_polish.py,test_fx_service.py,test_locale_state_authority.py
+          - shard: platform-integrations
+            timeout_minutes: 30
+            patterns: test_m3_*.py,test_m6_*.py,test_m7_*.py,test_m8_*.py,test_plugin_*.py,test_pre_m9_google_auth_status.py,test_pre_m9_google_sheets_data_sync.py
+          - shard: storage-mail-security
+            timeout_minutes: 30
+            patterns: test_pre_m8_*.py,test_mail_*.py,test_data_foundation_phase1.py,test_data_foundation_phase1_6.py,test_m1_b1_c1.py,test_m1_c2_bio_archived_columns.py,test_targeted_gate_b_observability.py,test_targeted_gate_c_mail_secret_storage.py,test_targeted_gate_c1_mail_sync_redaction.py,test_targeted_gate_d_macos_keychain.py
+          - shard: product-contracts
+            timeout_minutes: 20
+            patterns: test_phase4_*.py,test_pre_cloud_product_cleanup.py,test_pre_m9_browser_mode_retirement.py,test_pre_m9_email_deduplication.py,test_release_critical_fixes.py,test_test_artifact_hygiene.py,test_uuid7_compatibility.py,test_v2_*.py,test_version_consistency.py
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install approved SQLite Python runtime
         shell: bash
-        run: PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --verbosity 2
+        run: |
+          set -euo pipefail
+          brew update
+          brew install python@3.12 sqlite
+          brew upgrade python@3.12 sqlite
+          "$(brew --prefix python@3.12)/bin/python3.12" -m venv .venv-ci
+          echo "${PWD}/.venv-ci/bin" >> "${GITHUB_PATH}"
+      - name: Confirm Apple Silicon runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          uname -m
+          python -c "import platform; print(platform.machine())"
+          python -c "import sqlite3; print(f'SQLite runtime: {sqlite3.sqlite_version}')"
+          [[ "$(uname -m)" == "arm64" ]]
+          [[ "$(python -c 'import platform; print(platform.machine())')" == "arm64" ]]
+          python scripts/check_sqlite_runtime.py
+      - name: Install dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Run ${{ matrix.shard }} Python shard
+        shell: bash
+        run: |
+          set -euo pipefail
+          IFS=',' read -r -a patterns <<< "${{ matrix.patterns }}"
+          for pattern in "${patterns[@]}"; do
+            PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --pattern "${pattern}" --verbosity 2
+          done
+
+  test-macos-arm64-extension-static:
+    needs:
+      - test-macos-arm64-keychain
+      - test-macos-arm64-python
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
       - name: Run extension tests
         id: extension_tests
         run: node tests/run_extension_tests.js
@@ -116,7 +171,7 @@ jobs:
           {
             echo "## macOS CI"
             echo
-            echo "| Platform | Architecture | Python tests | Extension tests |"
-            echo "|---|---|---|---|"
-            echo "| macOS | $(uname -m) | ${{ steps.python_tests.outcome }} | ${{ steps.extension_tests.outcome }} |"
+            echo "| Platform | Architecture | Keychain | Python shards | Extension tests |"
+            echo "|---|---|---|---|---|"
+            echo "| macOS | $(uname -m) | ${{ needs.test-macos-arm64-keychain.result }} | ${{ needs.test-macos-arm64-python.result }} | ${{ steps.extension_tests.outcome }} |"
           } >> "${GITHUB_STEP_SUMMARY}"
