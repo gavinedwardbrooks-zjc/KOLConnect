@@ -1,5 +1,7 @@
 """Settings, health, account, and mail HTTP endpoints."""
 
+import copy
+
 from services.workbook_backup_service import (
     WorkbookBackupError,
     WorkbookBackupNotFoundError,
@@ -213,13 +215,34 @@ def handle(handler, request: dict, context: dict) -> bool:
     # POST /api/settings/mail → 保存邮件配置；{"ok": true}
     if path == "/api/settings/mail":
         try:
-            state["mail"] = _merge_mail_configuration_update(payload, state.get("mail"), services)
-            state_access["save"]()
+            previous_state = copy.deepcopy(state)
+            previous_mail = previous_state.get("mail")
+            state["mail"] = _merge_mail_configuration_update(payload, previous_mail, services)
+            state_access["save"](previous_mail)
         except MailSecretProtectionError:
+            state.clear()
+            state.update(previous_state)
+            context["logging"]["error"](
+                "MailSecretStorage",
+                "邮件凭据保护或 Keychain 清理失败；未在日志中记录凭据内容。",
+            )
             handler._api_error(
                 "MAIL_SECRET_PROTECTION_UNAVAILABLE",
                 "当前平台无法安全保存邮箱密码/授权码。请在 Windows 桌面版中完成邮箱配置。",
                 status=400,
+            )
+            return True
+        except Exception:
+            state.clear()
+            state.update(previous_state)
+            context["logging"]["error"](
+                "MailSecretStorage",
+                "邮箱设置保存失败；未在日志中记录凭据内容。",
+            )
+            handler._api_error(
+                "MAIL_SETTINGS_SAVE_FAILED",
+                "邮箱设置未保存，请稍后重试。",
+                status=500,
             )
             return True
         handler._ok()

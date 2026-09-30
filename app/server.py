@@ -96,8 +96,14 @@ from services.mail_auth_service import classify_imap_error, classify_smtp_error
 from services.mail_secret_storage import (
     MailSecretProtectionError,
     is_protected_mail_secret,
+    normalize_pending_secret_cleanup,
+    prepare_macos_mail_secret_transition,
     protect_mail_state_for_storage,
+    mail_secret_recovery_path,
+    record_failed_keychain_compensation,
+    retry_failed_keychain_compensation,
     unprotect_mail_secret,
+    uses_macos_keychain,
 )
 from services.risk_service import RiskService
 from app_logging import log_error, log_event, log_sanitized_exception
@@ -308,13 +314,17 @@ def normalize_mail_account(raw: dict | None) -> dict:
 def normalize_mail_state(raw_mail: dict | None) -> dict:
     raw_mail = raw_mail or {}
     if isinstance(raw_mail.get("accounts"), list):
-        return {
+        normalized = {
             "accounts": [
                 normalize_mail_account(item)
                 for item in raw_mail["accounts"]
                 if isinstance(item, dict) and str(item.get("name") or item.get("email") or item.get("username") or "").strip()
             ],
         }
+        pending_cleanup = normalize_pending_secret_cleanup(raw_mail.get("pending_secret_cleanup"))
+        if pending_cleanup:
+            normalized["pending_secret_cleanup"] = pending_cleanup
+        return normalized
     return clone_default_state()["mail"]
 
 
@@ -351,6 +361,20 @@ def merge_masked_mail_passwords(raw_mail: dict | None, existing_mail: dict | Non
         account = dict(raw_account)
         if is_sensitive_mask(account.get("password")):
             saved_account = existing_by_identity.get(mail_account_identity(account))
+            if saved_account is None:
+                # Retain an opaque credential across an unambiguous account edit.
+                candidates = [
+                    existing for existing in existing_accounts
+                    if isinstance(existing, dict)
+                    and any(
+                        str(existing.get(key) or "").strip().lower()
+                        and str(existing.get(key) or "").strip().lower()
+                        == str(account.get(key) or "").strip().lower()
+                        for key in ("email", "username", "name")
+                    )
+                ]
+                if len(candidates) == 1:
+                    saved_account = candidates[0]
             account["password"] = saved_account.get("password") if saved_account else ""
         merged_accounts.append(account)
     merged["accounts"] = merged_accounts
@@ -373,6 +397,8 @@ def state_for_client(state: dict) -> dict:
     if google_sheets.get("client_secret"):
         google_sheets["client_secret"] = SENSITIVE_MASK
     mail = client_state.get("mail") if isinstance(client_state.get("mail"), dict) else {}
+    # Keychain cleanup metadata is internal lifecycle state, never a UI setting.
+    mail.pop("pending_secret_cleanup", None)
     accounts = mail.get("accounts") if isinstance(mail.get("accounts"), list) else []
     for account in accounts:
         if isinstance(account, dict) and account.get("password"):
@@ -577,10 +603,7 @@ def load_state() -> dict:
         return state
 
 
-def save_state(state: dict) -> None:
-    protected_state, _changed = protect_mail_state_for_storage(state)
-    state.clear()
-    state.update(protected_state)
+def _write_protected_state(protected_state: dict) -> None:
     atomic_write_json(
         STATE_FILE,
         protected_state,
@@ -590,7 +613,64 @@ def save_state(state: dict) -> None:
     )
 
 
+def _retry_mail_secret_recovery() -> None:
+    """Retry non-secret macOS compensation cleanup without blocking app lifecycle."""
+    if not uses_macos_keychain():
+        return
+    try:
+        retry_failed_keychain_compensation(mail_secret_recovery_path(STATE_FILE))
+    except MailSecretProtectionError:
+        log_error("MailSecretStorage", "Keychain 补偿清理重试失败；未记录凭据内容。")
+
+
+def save_state(state: dict, previous_mail: dict | None = None) -> None:
+    """Persist state, compensating macOS Keychain writes if the settings write fails."""
+    if not uses_macos_keychain():
+        protected_state, _changed = protect_mail_state_for_storage(state)
+        _write_protected_state(protected_state)
+        state.clear()
+        state.update(protected_state)
+        return
+
+    _retry_mail_secret_recovery()
+    transition = prepare_macos_mail_secret_transition(state, previous_mail)
+    try:
+        _write_protected_state(transition.protected_state)
+    except Exception:
+        failed_compensation = transition.rollback()
+        if failed_compensation:
+            try:
+                record_failed_keychain_compensation(
+                    mail_secret_recovery_path(STATE_FILE),
+                    failed_compensation,
+                    operation="rollback_cleanup",
+                )
+            except MailSecretProtectionError:
+                log_error("MailSecretStorage", "Keychain 补偿恢复记录失败；未记录凭据内容。")
+                raise MailSecretProtectionError(
+                    "macOS Keychain compensation recovery could not be recorded."
+                )
+        raise
+    state.clear()
+    state.update(transition.protected_state)
+
+    # Cleanup is deliberately post-commit and non-fatal. The first write already
+    # contains every candidate reference, so a second-write failure remains safe.
+    transition.finish_cleanup()
+    if transition.pending_cleanup:
+        state.clear()
+        state.update(transition.protected_state)
+    try:
+        _write_protected_state(transition.protected_state)
+    except Exception:
+        # The committed state still holds the conservative pending-cleanup list.
+        return
+    state.clear()
+    state.update(transition.protected_state)
+
+
 STATE = load_state()
+_retry_mail_secret_recovery()
 
 
 def _load_diagnostics() -> dict:
@@ -2642,8 +2722,8 @@ class Handler(BaseHTTPRequestHandler):
         def get_state() -> dict:
             return STATE
 
-        def save_current_state() -> None:
-            save_state(STATE)
+        def save_current_state(previous_mail: dict | None = None) -> None:
+            save_state(STATE, previous_mail=previous_mail)
 
         def normalize_and_save_state() -> None:
             global STATE
