@@ -109,9 +109,12 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("pull_request:\n    branches:\n      - main", ci)
         self.assertIn("runs-on: windows-latest", ci)
         self.assertIn("runs-on: macos-15", ci)
-        self.assertEqual(
-            ci.count("python scripts/run_python_tests.py --verbosity 1"), 2
+        self.assertEqual(ci.count("python scripts/run_python_tests.py --verbosity 1"), 1)
+        self.assertIn(
+            "PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --verbosity 2",
+            ci,
         )
+        self.assertIn("timeout-minutes: 15", ci)
         self.assertNotIn("python -m unittest discover", ci)
         self.assertIn("brew install python@3.12 sqlite", ci)
         self.assertIn("brew upgrade python@3.12 sqlite", ci)

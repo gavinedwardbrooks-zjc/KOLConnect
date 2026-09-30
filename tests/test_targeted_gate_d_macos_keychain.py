@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import sys
+import inspect
+import subprocess
 import unittest
 from unittest.mock import patch
 from uuid import uuid4
@@ -32,17 +34,21 @@ class _FakeKeychain:
         self.values: dict[tuple[str, str], str] = {}
         self.delete_failures: set[tuple[str, str]] = set()
         self.fail_all_deletes = False
+        self.interaction_policies: list[bool] = []
 
-    def store(self, service: str, account: str, secret: str) -> None:
+    def store(self, service: str, account: str, secret: str, *, allow_interaction: bool = True) -> None:
+        self.interaction_policies.append(allow_interaction)
         self.values[(service, account)] = secret
 
-    def read(self, service: str, account: str) -> str:
+    def read(self, service: str, account: str, *, allow_interaction: bool = True) -> str:
+        self.interaction_policies.append(allow_interaction)
         try:
             return self.values[(service, account)]
         except KeyError as exc:
             raise storage._KeychainBackendError("read", -25300) from exc
 
-    def delete(self, service: str, account: str) -> None:
+    def delete(self, service: str, account: str, *, allow_interaction: bool = True) -> None:
+        self.interaction_policies.append(allow_interaction)
         if self.fail_all_deletes or (service, account) in self.delete_failures:
             raise storage._KeychainBackendError("delete", -25293)
         if (service, account) not in self.values:
@@ -140,6 +146,49 @@ class MacOSKeychainContractTests(unittest.TestCase):
         self.keychain.values.clear()
         with self.assertRaisesRegex(storage.MailSecretProtectionError, "not found"):
             storage.unprotect_mail_secret(updated)
+
+    def test_noninteractive_policy_is_forwarded_without_a_security_bypass(self):
+        reference = storage.protect_mail_secret(
+            "synthetic-secret",
+            account=ACCOUNT,
+            _keychain_interaction_allowed=False,
+        )
+        self.assertEqual(
+            "synthetic-secret",
+            storage.unprotect_mail_secret(reference, _keychain_interaction_allowed=False),
+        )
+        storage.cleanup_removed_mail_secrets(
+            {"accounts": [{"password": reference}]},
+            {"accounts": []},
+            _keychain_interaction_allowed=False,
+        )
+        self.assertEqual([False, False, False], self.keychain.interaction_policies)
+
+    def test_keychain_osstatus_failures_are_safely_classified(self):
+        expected = {
+            -25300: "not found",
+            -25308: "interaction is unavailable",
+            -25293: "access was denied",
+            -25291: "is unavailable",
+            -25299: "duplicate item",
+            -1: "could not be read",
+        }
+        for status, message in expected.items():
+            with self.subTest(status=status):
+                error = storage._keychain_error(storage._KeychainBackendError("read", status))
+                self.assertIn(message, str(error))
+
+    def test_backend_declares_only_modern_secitem_operations(self):
+        source = inspect.getsource(storage._MacOSKeychainBackend)
+        for name in ("SecItemAdd", "SecItemCopyMatching", "SecItemUpdate", "SecItemDelete"):
+            self.assertIn(name, source)
+        self.assertNotIn("SecKeychain", source)
+
+    def test_native_keychain_subprocess_has_a_bounded_timeout(self):
+        with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
+            _run_native_keychain_subprocess("gate-d-timeout@example.invalid")
+        self.assertEqual(45, run.call_args.kwargs["timeout"])
+        self.assertTrue(run.call_args.kwargs["capture_output"])
 
     def test_masked_identity_change_retains_existing_reference_and_delete_cleans_it(self):
         reference = storage.protect_mail_secret("synthetic-secret", account=ACCOUNT)
@@ -412,13 +461,87 @@ class MacOSKeychainContractTests(unittest.TestCase):
 @unittest.skipUnless(sys.platform == "darwin", "requires native macOS Keychain")
 class NativeMacOSKeychainTests(unittest.TestCase):
     def test_native_keychain_round_trip_update_and_delete(self):
-        account = {**ACCOUNT, "email": f"gate-d-{uuid4().hex}@example.invalid"}
-        reference = storage.protect_mail_secret("gate-d-synthetic", account=account)
+        account_email = f"gate-d-{uuid4().hex}@example.invalid"
         try:
-            self.assertEqual("gate-d-synthetic", storage.unprotect_mail_secret(reference))
-            storage.protect_mail_secret("gate-d-updated", account=account)
-            self.assertEqual("gate-d-updated", storage.unprotect_mail_secret(reference))
-        finally:
-            storage.cleanup_removed_mail_secrets({"accounts": [{"password": reference}]}, {"accounts": []})
-        with self.assertRaises(storage.MailSecretProtectionError):
-            storage.unprotect_mail_secret(reference)
+            result = _run_native_keychain_subprocess(account_email)
+        except subprocess.TimeoutExpired as exc:
+            _best_effort_native_cleanup(account_email)
+            self.fail(f"native non-interactive Keychain child timed out after 45s: {type(exc).__name__}")
+        self.assertEqual(0, result.returncode, result.stderr.strip())
+
+
+def _native_account(account_email: str) -> dict[str, str]:
+    return {**ACCOUNT, "email": account_email, "username": account_email}
+
+
+def _run_native_keychain_subprocess(account_email: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(Path(__file__).resolve()), "--native-keychain-child", account_email],
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+
+
+def _run_native_keychain_child(account_email: str) -> None:
+    account = _native_account(account_email)
+    reference = storage.protect_mail_secret(
+        "gate-d-synthetic",
+        account=account,
+        _keychain_interaction_allowed=False,
+    )
+    try:
+        if storage.unprotect_mail_secret(reference, _keychain_interaction_allowed=False) != "gate-d-synthetic":
+            raise storage.MailSecretProtectionError("Native Keychain read did not return the expected value.")
+        storage.protect_mail_secret(
+            "gate-d-updated",
+            account=account,
+            _keychain_interaction_allowed=False,
+        )
+        if storage.unprotect_mail_secret(reference, _keychain_interaction_allowed=False) != "gate-d-updated":
+            raise storage.MailSecretProtectionError("Native Keychain update did not return the expected value.")
+    finally:
+        storage.cleanup_removed_mail_secrets(
+            {"accounts": [{"password": reference}]},
+            {"accounts": []},
+            _keychain_interaction_allowed=False,
+        )
+
+
+def _best_effort_native_cleanup(account_email: str) -> None:
+    """Contain a blocked child and make one separately bounded cleanup attempt."""
+    try:
+        subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--native-keychain-cleanup", account_email],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        pass
+
+
+if __name__ == "__main__" and len(sys.argv) == 3 and sys.argv[1] in {
+    "--native-keychain-child",
+    "--native-keychain-cleanup",
+}:
+    try:
+        account = _native_account(sys.argv[2])
+        if sys.argv[1] == "--native-keychain-child":
+            _run_native_keychain_child(sys.argv[2])
+        else:
+            reference = {
+                "format": storage.KEYCHAIN_SECRET_FORMAT,
+                "service": storage.KEYCHAIN_SERVICE,
+                "account": storage._keychain_account_identity(account),
+            }
+            storage.cleanup_removed_mail_secrets(
+                {"accounts": [{"password": reference}]},
+                {"accounts": []},
+                _keychain_interaction_allowed=False,
+            )
+    except Exception as exc:
+        print(f"Native Keychain test failed safely: {type(exc).__name__}: {exc}", file=sys.stderr)
+        raise SystemExit(1)

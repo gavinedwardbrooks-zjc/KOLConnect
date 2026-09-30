@@ -11,7 +11,6 @@ import base64
 import copy
 import ctypes
 import hashlib
-import json
 import sys
 from ctypes import wintypes
 from dataclasses import dataclass, field
@@ -84,7 +83,12 @@ def _keychain_account_identity(account: dict[str, Any] | None) -> str:
     return f"mail-{digest}"
 
 
-def protect_mail_secret(value: str, *, account: dict[str, Any] | None = None) -> dict[str, str]:
+def protect_mail_secret(
+    value: str,
+    *,
+    account: dict[str, Any] | None = None,
+    _keychain_interaction_allowed: bool = True,
+) -> dict[str, str]:
     """Protect a non-empty secret with the active platform-native backend."""
     if not isinstance(value, str) or not value:
         raise MailSecretProtectionError("Mail secret protection requires a non-empty value.")
@@ -98,7 +102,12 @@ def protect_mail_secret(value: str, *, account: dict[str, Any] | None = None) ->
     if _current_platform() == "darwin":
         keychain_account = _keychain_account_identity(account)
         try:
-            _get_keychain_backend().store(KEYCHAIN_SERVICE, keychain_account, value)
+            _get_keychain_backend().store(
+                KEYCHAIN_SERVICE,
+                keychain_account,
+                value,
+                allow_interaction=_keychain_interaction_allowed,
+            )
             return {"format": KEYCHAIN_SECRET_FORMAT, "service": KEYCHAIN_SERVICE, "account": keychain_account}
         except _KeychainBackendError as exc:
             raise _keychain_error(exc) from exc
@@ -109,7 +118,12 @@ def protect_mail_secret(value: str, *, account: dict[str, Any] | None = None) ->
     raise MailSecretProtectionError("Mail secret protection is unavailable on this platform.")
 
 
-def unprotect_mail_secret(value: object, *, allow_transient_plaintext: bool = False) -> str:
+def unprotect_mail_secret(
+    value: object,
+    *,
+    allow_transient_plaintext: bool = False,
+    _keychain_interaction_allowed: bool = True,
+) -> str:
     """Return plaintext only at the local IMAP/SMTP authentication boundary."""
     if value in (None, ""):
         return ""
@@ -132,7 +146,11 @@ def unprotect_mail_secret(value: object, *, allow_transient_plaintext: bool = Fa
         if _current_platform() != "darwin":
             raise MailSecretProtectionError("The stored macOS Keychain mail secret is unavailable on this platform.")
         try:
-            return _get_keychain_backend().read(value["service"], value["account"])
+            return _get_keychain_backend().read(
+                value["service"],
+                value["account"],
+                allow_interaction=_keychain_interaction_allowed,
+            )
         except _KeychainBackendError as exc:
             raise _keychain_error(exc) from exc
         except Exception as exc:  # pragma: no cover - defensive native boundary
@@ -215,10 +233,15 @@ def _read_keychain_secret_if_present(service: str, account: str) -> str | None:
         raise MailSecretProtectionError("macOS Keychain mail secret could not be read.") from exc
 
 
-def _delete_keychain_reference(service: str, account: str) -> bool:
+def _delete_keychain_reference(
+    service: str,
+    account: str,
+    *,
+    allow_interaction: bool = True,
+) -> bool:
     """Delete one reference; a missing item is already clean."""
     try:
-        _get_keychain_backend().delete(service, account)
+        _get_keychain_backend().delete(service, account, allow_interaction=allow_interaction)
         return True
     except _KeychainBackendError as exc:
         if exc.status == -25300:
@@ -408,12 +431,21 @@ def _normalize_recovery_entries(raw: object) -> list[dict[str, str]]:
     return normalized
 
 
-def cleanup_removed_mail_secrets(previous_mail: dict[str, Any] | None, current_mail: dict[str, Any] | None) -> None:
+def cleanup_removed_mail_secrets(
+    previous_mail: dict[str, Any] | None,
+    current_mail: dict[str, Any] | None,
+    *,
+    _keychain_interaction_allowed: bool = True,
+) -> None:
     """Delete Keychain items no longer referenced by the saved mail configuration."""
     if _current_platform() != "darwin":
         return
     for service, account in _keychain_references(previous_mail) - _keychain_references(current_mail):
-        if not _delete_keychain_reference(service, account):
+        if not _delete_keychain_reference(
+            service,
+            account,
+            allow_interaction=_keychain_interaction_allowed,
+        ):
             raise MailSecretProtectionError("macOS Keychain mail secret cleanup failed.")
 
 
@@ -431,8 +463,14 @@ def _keychain_references(mail: dict[str, Any] | None) -> set[tuple[str, str]]:
 def _keychain_error(exc: _KeychainBackendError) -> MailSecretProtectionError:
     if exc.status == -25300:
         return MailSecretProtectionError("The macOS Keychain mail secret was not found.")
-    if exc.status in {-25293, -25308}:
+    if exc.status == -25308:
+        return MailSecretProtectionError("macOS Keychain interaction is unavailable.")
+    if exc.status == -25293:
         return MailSecretProtectionError("macOS Keychain access was denied.")
+    if exc.status == -25291:
+        return MailSecretProtectionError("macOS Keychain is unavailable.")
+    if exc.status == -25299:
+        return MailSecretProtectionError("macOS Keychain duplicate item could not be updated.")
     if exc.operation == "delete":
         return MailSecretProtectionError("macOS Keychain mail secret cleanup failed.")
     if exc.operation == "store":
@@ -441,7 +479,7 @@ def _keychain_error(exc: _KeychainBackendError) -> MailSecretProtectionError:
 
 
 class _MacOSKeychainBackend:
-    """Small ctypes wrapper around Security.framework generic-password APIs."""
+    """Small ctypes wrapper around modern generic-password SecItem APIs."""
 
     _SUCCESS = 0
     _DUPLICATE = -25299
@@ -451,90 +489,156 @@ class _MacOSKeychainBackend:
             raise MailSecretProtectionError("macOS Keychain is unavailable on this platform.")
         self._security = ctypes.CDLL("/System/Library/Frameworks/Security.framework/Security")
         self._core_foundation = ctypes.CDLL("/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation")
-        self._security.SecKeychainAddGenericPassword.restype = ctypes.c_int32
-        self._security.SecKeychainFindGenericPassword.restype = ctypes.c_int32
-        self._security.SecKeychainItemModifyAttributesAndData.restype = ctypes.c_int32
-        self._security.SecKeychainItemDelete.restype = ctypes.c_int32
-        self._security.SecKeychainItemFreeContent.restype = ctypes.c_int32
-        self._security.SecKeychainAddGenericPassword.argtypes = [
-            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32,
-            ctypes.c_char_p, ctypes.c_uint32, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p),
+        self._security.SecItemAdd.restype = ctypes.c_int32
+        self._security.SecItemCopyMatching.restype = ctypes.c_int32
+        self._security.SecItemUpdate.restype = ctypes.c_int32
+        self._security.SecItemDelete.restype = ctypes.c_int32
+        self._security.SecItemAdd.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        self._security.SecItemCopyMatching.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        self._security.SecItemUpdate.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self._security.SecItemDelete.argtypes = [ctypes.c_void_p]
+        self._core_foundation.CFStringCreateWithCString.restype = ctypes.c_void_p
+        self._core_foundation.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+        self._core_foundation.CFDataCreate.restype = ctypes.c_void_p
+        self._core_foundation.CFDataCreate.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_long]
+        self._core_foundation.CFDataGetLength.restype = ctypes.c_long
+        self._core_foundation.CFDataGetLength.argtypes = [ctypes.c_void_p]
+        self._core_foundation.CFDataGetBytePtr.restype = ctypes.c_void_p
+        self._core_foundation.CFDataGetBytePtr.argtypes = [ctypes.c_void_p]
+        self._core_foundation.CFDictionaryCreateMutable.restype = ctypes.c_void_p
+        self._core_foundation.CFDictionaryCreateMutable.argtypes = [
+            ctypes.c_void_p, ctypes.c_long, ctypes.c_void_p, ctypes.c_void_p,
         ]
-        self._security.SecKeychainFindGenericPassword.argtypes = [
-            ctypes.c_void_p, ctypes.c_uint32, ctypes.c_char_p, ctypes.c_uint32,
-            ctypes.c_char_p, ctypes.POINTER(ctypes.c_uint32), ctypes.POINTER(ctypes.c_void_p),
-            ctypes.POINTER(ctypes.c_void_p),
-        ]
-        self._security.SecKeychainItemModifyAttributesAndData.argtypes = [
-            ctypes.c_void_p, ctypes.c_void_p, ctypes.c_uint32, ctypes.c_void_p,
-        ]
-        self._security.SecKeychainItemDelete.argtypes = [ctypes.c_void_p]
-        self._security.SecKeychainItemFreeContent.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        self._core_foundation.CFDictionarySetValue.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p]
         self._core_foundation.CFRelease.argtypes = [ctypes.c_void_p]
+        self._k_sec_class = self._constant("kSecClass")
+        self._k_sec_class_generic_password = self._constant("kSecClassGenericPassword")
+        self._k_sec_attr_service = self._constant("kSecAttrService")
+        self._k_sec_attr_account = self._constant("kSecAttrAccount")
+        self._k_sec_value_data = self._constant("kSecValueData")
+        self._k_sec_return_data = self._constant("kSecReturnData")
+        self._k_sec_use_authentication_ui = self._constant("kSecUseAuthenticationUI")
+        self._k_sec_use_authentication_ui_fail = self._constant("kSecUseAuthenticationUIFail")
+        self._k_cf_boolean_true = ctypes.c_void_p.in_dll(self._core_foundation, "kCFBooleanTrue").value
 
-    @staticmethod
-    def _encoded(service: str, account: str) -> tuple[bytes, bytes]:
-        return service.encode("utf-8"), account.encode("utf-8")
+    def _constant(self, name: str) -> int:
+        value = ctypes.c_void_p.in_dll(self._security, name).value
+        if not value:
+            raise MailSecretProtectionError("macOS Keychain constants are unavailable.")
+        return value
 
-    def _find(self, service: str, account: str) -> tuple[ctypes.c_void_p, ctypes.c_void_p, int]:
-        service_bytes, account_bytes = self._encoded(service, account)
-        password_length = ctypes.c_uint32()
-        password_data = ctypes.c_void_p()
-        item = ctypes.c_void_p()
-        status = self._security.SecKeychainFindGenericPassword(
-            None, len(service_bytes), service_bytes, len(account_bytes), account_bytes,
-            ctypes.byref(password_length), ctypes.byref(password_data), ctypes.byref(item),
+    def _string(self, value: str) -> int:
+        reference = self._core_foundation.CFStringCreateWithCString(None, value.encode("utf-8"), 0x08000100)
+        if not reference:
+            raise MailSecretProtectionError("macOS Keychain string conversion failed.")
+        return reference
+
+    def _data(self, value: bytes) -> int:
+        buffer = ctypes.create_string_buffer(value)
+        reference = self._core_foundation.CFDataCreate(None, ctypes.cast(buffer, ctypes.c_void_p), len(value))
+        if not reference:
+            raise MailSecretProtectionError("macOS Keychain data conversion failed.")
+        return reference
+
+    def _attributes(
+        self,
+        service: str,
+        account: str,
+        *,
+        secret: str | None = None,
+        return_data: bool = False,
+        allow_interaction: bool = True,
+    ) -> tuple[int, list[int]]:
+        service_value = self._string(service)
+        account_value = self._string(account)
+        owned = [service_value, account_value]
+        values = [
+            (self._k_sec_class, self._k_sec_class_generic_password),
+            (self._k_sec_attr_service, service_value),
+            (self._k_sec_attr_account, account_value),
+        ]
+        try:
+            if secret is not None:
+                secret_value = self._data(secret.encode("utf-8"))
+                owned.append(secret_value)
+                values.append((self._k_sec_value_data, secret_value))
+            if return_data:
+                values.append((self._k_sec_return_data, self._k_cf_boolean_true))
+            if not allow_interaction:
+                values.append((self._k_sec_use_authentication_ui, self._k_sec_use_authentication_ui_fail))
+            dictionary = self._core_foundation.CFDictionaryCreateMutable(None, 0, None, None)
+            if not dictionary:
+                raise MailSecretProtectionError("macOS Keychain query creation failed.")
+            owned.append(dictionary)
+            for key, value in values:
+                self._core_foundation.CFDictionarySetValue(dictionary, key, value)
+            return dictionary, owned
+        except Exception:
+            self._release_all(owned)
+            raise
+
+    def _release_all(self, references: list[int]) -> None:
+        for reference in reversed(references):
+            if reference:
+                self._core_foundation.CFRelease(reference)
+
+    def _update_attributes(self, secret: str) -> tuple[int, list[int]]:
+        secret_value = self._data(secret.encode("utf-8"))
+        dictionary = self._core_foundation.CFDictionaryCreateMutable(None, 0, None, None)
+        if not dictionary:
+            self._core_foundation.CFRelease(secret_value)
+            raise MailSecretProtectionError("macOS Keychain update creation failed.")
+        self._core_foundation.CFDictionarySetValue(dictionary, self._k_sec_value_data, secret_value)
+        return dictionary, [secret_value, dictionary]
+
+    def store(self, service: str, account: str, secret: str, *, allow_interaction: bool = True) -> None:
+        attributes, references = self._attributes(
+            service, account, secret=secret, allow_interaction=allow_interaction
         )
-        if status != self._SUCCESS:
-            raise _KeychainBackendError("read", status)
-        return item, password_data, password_length.value
-
-    def _release_find(self, item: ctypes.c_void_p, password_data: ctypes.c_void_p) -> None:
-        if password_data:
-            self._security.SecKeychainItemFreeContent(None, password_data)
-        if item:
-            self._core_foundation.CFRelease(item)
-
-    def store(self, service: str, account: str, secret: str) -> None:
-        secret_bytes = secret.encode("utf-8")
-        buffer = ctypes.create_string_buffer(secret_bytes)
-        service_bytes, account_bytes = self._encoded(service, account)
-        item = ctypes.c_void_p()
-        status = self._security.SecKeychainAddGenericPassword(
-            None, len(service_bytes), service_bytes, len(account_bytes), account_bytes,
-            len(secret_bytes), ctypes.cast(buffer, ctypes.c_void_p), ctypes.byref(item),
-        )
+        try:
+            status = self._security.SecItemAdd(attributes, None)
+        finally:
+            self._release_all(references)
         if status == self._SUCCESS:
-            if item:
-                self._core_foundation.CFRelease(item)
             return
         if status != self._DUPLICATE:
             raise _KeychainBackendError("store", status)
-        item, password_data, _length = self._find(service, account)
-        try:
-            status = self._security.SecKeychainItemModifyAttributesAndData(
-                item, None, len(secret_bytes), ctypes.cast(buffer, ctypes.c_void_p)
-            )
-            if status != self._SUCCESS:
-                raise _KeychainBackendError("store", status)
-        finally:
-            self._release_find(item, password_data)
 
-    def read(self, service: str, account: str) -> str:
-        item, password_data, password_length = self._find(service, account)
+        query, query_references = self._attributes(service, account, allow_interaction=allow_interaction)
+        update, update_references = self._update_attributes(secret)
         try:
-            return ctypes.string_at(password_data, password_length).decode("utf-8")
+            status = self._security.SecItemUpdate(query, update)
         finally:
-            self._release_find(item, password_data)
+            self._release_all(update_references)
+            self._release_all(query_references)
+        if status != self._SUCCESS:
+            raise _KeychainBackendError("store", status)
 
-    def delete(self, service: str, account: str) -> None:
-        item, password_data, _length = self._find(service, account)
+    def read(self, service: str, account: str, *, allow_interaction: bool = True) -> str:
+        query, references = self._attributes(
+            service, account, return_data=True, allow_interaction=allow_interaction
+        )
+        result = ctypes.c_void_p()
         try:
-            status = self._security.SecKeychainItemDelete(item)
+            status = self._security.SecItemCopyMatching(query, ctypes.byref(result))
             if status != self._SUCCESS:
-                raise _KeychainBackendError("delete", status)
+                raise _KeychainBackendError("read", status)
+            length = self._core_foundation.CFDataGetLength(result)
+            data = self._core_foundation.CFDataGetBytePtr(result)
+            return ctypes.string_at(data, length).decode("utf-8")
         finally:
-            self._release_find(item, password_data)
+            if result:
+                self._core_foundation.CFRelease(result)
+            self._release_all(references)
+
+    def delete(self, service: str, account: str, *, allow_interaction: bool = True) -> None:
+        query, references = self._attributes(service, account, allow_interaction=allow_interaction)
+        try:
+            status = self._security.SecItemDelete(query)
+        finally:
+            self._release_all(references)
+        if status != self._SUCCESS:
+            raise _KeychainBackendError("delete", status)
 
 
 _KEYCHAIN_BACKEND: _MacOSKeychainBackend | None = None

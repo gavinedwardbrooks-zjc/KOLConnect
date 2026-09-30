@@ -81,7 +81,9 @@ jobs:
         run: python -m pip install -r packaging/requirements-build.txt
       - name: Run Python tests
         id: python_tests
-        run: python scripts/run_python_tests.py --verbosity 1
+        timeout-minutes: 15
+        shell: bash
+        run: PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --verbosity 2
       - name: Run extension tests
         id: extension_tests
         run: node tests/run_extension_tests.js
