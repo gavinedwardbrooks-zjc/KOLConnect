@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import importlib.metadata
 import os
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -25,9 +26,12 @@ MACOS_PYTHON_SHARD_PATTERNS = {
         "test_m3_*.py", "test_m6_*.py", "test_m7_*.py", "test_m8_*.py", "test_plugin_*.py",
         "test_pre_m9_google_auth_status.py", "test_pre_m9_google_sheets_data_sync.py",
     ),
-    "storage-mail-security": (
-        "test_pre_m8_*.py", "test_mail_*.py", "test_data_foundation_phase1.py",
+    "storage-foundation": (
+        "test_pre_m8_*.py", "test_data_foundation_phase1.py",
         "test_data_foundation_phase1_6.py", "test_m1_b1_c1.py", "test_m1_c2_bio_archived_columns.py",
+    ),
+    "mail-security": (
+        "test_mail_*.py",
         "test_targeted_gate_b_observability.py", "test_targeted_gate_c_mail_secret_storage.py",
         "test_targeted_gate_c1_mail_sync_redaction.py", "test_targeted_gate_d_macos_keychain.py",
     ),
@@ -38,6 +42,29 @@ MACOS_PYTHON_SHARD_PATTERNS = {
         "test_version_consistency.py",
     ),
 }
+
+
+def macos_unpatterned_python_runners(workflow: dict) -> list[str]:
+    """Return macOS runner commands that would bypass shard ownership."""
+    violations: list[str] = []
+    for job_name, job in workflow.get("jobs", {}).items():
+        if not str(job.get("runs-on", "")).startswith("macos"):
+            continue
+        for step in job.get("steps", []):
+            run = step.get("run")
+            if not isinstance(run, str):
+                continue
+            normalized_run = re.sub(r"\\\s*\n", " ", run)
+            for line in normalized_run.splitlines():
+                for command in re.split(r"(?:&&|;|\|\|)", line):
+                    command = command.strip()
+                    if command.startswith("#") or "scripts/run_python_tests.py" not in command:
+                        continue
+                    if not re.search(r"(?:^|\s)--pattern(?:\s|=)", command):
+                        violations.append(f"{job_name}: {command}")
+    return violations
+
+
 if str(APP_DIR) not in sys.path:
     sys.path.insert(0, str(APP_DIR))
 
@@ -138,6 +165,40 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("runs-on: macos-15", ci)
         self.assertEqual(ci.count("python scripts/run_python_tests.py --verbosity 1"), 1)
         workflow = yaml.safe_load(ci)
+        self.assertFalse(macos_unpatterned_python_runners(workflow))
+        unpatterned_macos = {
+            "jobs": {
+                "macos-validation": {
+                    "runs-on": "macos-15",
+                    "steps": [{
+                        "run": "echo validation && PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --verbosity 2",
+                    }],
+                },
+            },
+        }
+        patterned_macos = {
+            "jobs": {
+                "macos-validation": {
+                    "runs-on": "macos-15",
+                    "steps": [{
+                        "run": "python -u \\\n                            scripts/run_python_tests.py --pattern 'test_mail_*.py' --verbosity 2",
+                    }],
+                },
+            },
+        }
+        unpatterned_windows = {
+            "jobs": {
+                "windows-validation": {
+                    "runs-on": "windows-latest",
+                    "steps": [{
+                        "run": "python scripts/run_python_tests.py --verbosity 1",
+                    }],
+                },
+            },
+        }
+        self.assertTrue(macos_unpatterned_python_runners(unpatterned_macos))
+        self.assertFalse(macos_unpatterned_python_runners(patterned_macos))
+        self.assertFalse(macos_unpatterned_python_runners(unpatterned_windows))
         jobs = workflow["jobs"]
         keychain_job = jobs["test-macos-arm64-keychain"]
         shard_job = jobs["test-macos-arm64-python"]
@@ -149,14 +210,41 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertFalse(shard_job["strategy"]["fail-fast"])
         matrix = shard_job["strategy"]["matrix"]["include"]
-        self.assertEqual(4, len(matrix))
+        self.assertEqual(5, len(matrix))
         self.assertEqual(
             {entry["shard"]: tuple(entry["patterns"].split(",")) for entry in matrix},
             MACOS_PYTHON_SHARD_PATTERNS,
         )
+        self.assertNotIn("storage-mail-security", MACOS_PYTHON_SHARD_PATTERNS)
+        self.assertEqual(
+            (
+                "test_pre_m8_*.py",
+                "test_data_foundation_phase1.py",
+                "test_data_foundation_phase1_6.py",
+                "test_m1_b1_c1.py",
+                "test_m1_c2_bio_archived_columns.py",
+            ),
+            MACOS_PYTHON_SHARD_PATTERNS["storage-foundation"],
+        )
+        self.assertEqual(
+            (
+                "test_mail_*.py",
+                "test_targeted_gate_b_observability.py",
+                "test_targeted_gate_c_mail_secret_storage.py",
+                "test_targeted_gate_c1_mail_sync_redaction.py",
+                "test_targeted_gate_d_macos_keychain.py",
+            ),
+            MACOS_PYTHON_SHARD_PATTERNS["mail-security"],
+        )
         self.assertEqual(
             {entry["shard"]: entry["timeout_minutes"] for entry in matrix},
-            {"runtime-http": 30, "platform-integrations": 30, "storage-mail-security": 30, "product-contracts": 20},
+            {
+                "runtime-http": 30,
+                "platform-integrations": 30,
+                "storage-foundation": 30,
+                "mail-security": 30,
+                "product-contracts": 20,
+            },
         )
         self.assertIn("name: Validate native macOS Keychain", ci)
         self.assertIn(
@@ -218,12 +306,18 @@ class PackagingConfigurationTests(unittest.TestCase):
         canonical_modules = {path.name for path in TESTS_DIR.glob("test_*.py")}
         owners: dict[str, list[str]] = {}
         for shard, patterns in MACOS_PYTHON_SHARD_PATTERNS.items():
-            matched = {
+            matches = [
                 path.name
                 for pattern in patterns
                 for path in TESTS_DIR.glob(pattern)
-            }
+            ]
+            matched = set(matches)
             self.assertTrue(matched, f"{shard} has no matching test modules")
+            self.assertEqual(
+                len(matches),
+                len(matched),
+                f"Overlapping patterns within {shard}: {patterns}",
+            )
             for module in matched:
                 owners.setdefault(module, []).append(shard)
 

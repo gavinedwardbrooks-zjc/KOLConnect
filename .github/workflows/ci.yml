@@ -99,9 +99,12 @@ jobs:
           - shard: platform-integrations
             timeout_minutes: 30
             patterns: test_m3_*.py,test_m6_*.py,test_m7_*.py,test_m8_*.py,test_plugin_*.py,test_pre_m9_google_auth_status.py,test_pre_m9_google_sheets_data_sync.py
-          - shard: storage-mail-security
+          - shard: storage-foundation
             timeout_minutes: 30
-            patterns: test_pre_m8_*.py,test_mail_*.py,test_data_foundation_phase1.py,test_data_foundation_phase1_6.py,test_m1_b1_c1.py,test_m1_c2_bio_archived_columns.py,test_targeted_gate_b_observability.py,test_targeted_gate_c_mail_secret_storage.py,test_targeted_gate_c1_mail_sync_redaction.py,test_targeted_gate_d_macos_keychain.py
+            patterns: test_pre_m8_*.py,test_data_foundation_phase1.py,test_data_foundation_phase1_6.py,test_m1_b1_c1.py,test_m1_c2_bio_archived_columns.py
+          - shard: mail-security
+            timeout_minutes: 30
+            patterns: test_mail_*.py,test_targeted_gate_b_observability.py,test_targeted_gate_c_mail_secret_storage.py,test_targeted_gate_c1_mail_sync_redaction.py,test_targeted_gate_d_macos_keychain.py
           - shard: product-contracts
             timeout_minutes: 20
             patterns: test_phase4_*.py,test_pre_cloud_product_cleanup.py,test_pre_m9_browser_mode_retirement.py,test_pre_m9_email_deduplication.py,test_release_critical_fixes.py,test_test_artifact_hygiene.py,test_uuid7_compatibility.py,test_v2_*.py,test_version_consistency.py
