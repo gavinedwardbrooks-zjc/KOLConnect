@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 import inspect
 import subprocess
@@ -17,7 +18,7 @@ if str(APP) not in sys.path:
 
 from services import mail_secret_storage as storage
 from runtime_paths import atomic_write_json, json_backup_path
-from test_support.runtime_sandbox import test_runtime_sandbox
+from test_support.runtime_sandbox import SANDBOX_ROOT, test_runtime_sandbox
 
 
 ACCOUNT = {
@@ -185,10 +186,37 @@ class MacOSKeychainContractTests(unittest.TestCase):
         self.assertNotIn("SecKeychain", source)
 
     def test_native_keychain_subprocess_has_a_bounded_timeout(self):
-        with patch.object(subprocess, "run", return_value=subprocess.CompletedProcess([], 0)) as run:
-            _run_native_keychain_subprocess("gate-d-timeout@example.invalid")
-        self.assertEqual(45, run.call_args.kwargs["timeout"])
-        self.assertTrue(run.call_args.kwargs["capture_output"])
+        with test_runtime_sandbox("gate_d_native_home") as runtime:
+            login_home = ROOT.resolve()
+            parent_home = os.environ["HOME"]
+            child_env = _native_keychain_child_environment(lambda: str(login_home))
+            self.assertEqual(str(login_home.resolve()), child_env["HOME"])
+            self.assertEqual(parent_home, os.environ["HOME"])
+            for key in ("APPDATA", "LOCALAPPDATA", "XDG_DATA_HOME", "TEMP", "TMP", "TMPDIR"):
+                self.assertEqual(os.environ[key], child_env[key])
+
+            with patch(
+                f"{__name__}._native_keychain_child_environment", return_value=child_env
+            ), patch.object(
+                subprocess, "run", return_value=subprocess.CompletedProcess([], 0)
+            ) as run:
+                _run_native_keychain_subprocess("gate-d-timeout@example.invalid")
+            self.assertEqual(45, run.call_args.kwargs["timeout"])
+            self.assertTrue(run.call_args.kwargs["capture_output"])
+            self.assertEqual(child_env, run.call_args.kwargs["env"])
+
+            invalid_homes = ("", "relative/home", str(runtime.root / "missing"))
+            for invalid_home in invalid_homes:
+                with self.subTest(invalid_home=invalid_home):
+                    with self.assertRaises(RuntimeError):
+                        _native_keychain_child_environment(lambda value=invalid_home: value)
+
+            not_directory = runtime.root / "not-a-directory"
+            not_directory.write_text("fixture", encoding="utf-8")
+            with self.assertRaises(RuntimeError):
+                _native_keychain_child_environment(lambda: str(not_directory))
+            with self.assertRaises(RuntimeError):
+                _native_keychain_child_environment(lambda: parent_home)
 
     def test_masked_identity_change_retains_existing_reference_and_delete_cleans_it(self):
         reference = storage.protect_mail_secret("synthetic-secret", account=ACCOUNT)
@@ -466,7 +494,11 @@ class NativeMacOSKeychainTests(unittest.TestCase):
             result = _run_native_keychain_subprocess(account_email)
         except subprocess.TimeoutExpired as exc:
             _best_effort_native_cleanup(account_email)
-            self.fail(f"native non-interactive Keychain child timed out after 45s: {type(exc).__name__}")
+            partial_stderr = exc.stderr.decode("utf-8", errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr
+            self.fail(
+                "native non-interactive Keychain child timed out after 45s: "
+                f"{type(exc).__name__}; checkpoints={str(partial_stderr or '').strip()}"
+            )
         self.assertEqual(0, result.returncode, result.stderr.strip())
 
 
@@ -481,32 +513,72 @@ def _run_native_keychain_subprocess(account_email: str) -> subprocess.CompletedP
         text=True,
         timeout=45,
         check=False,
+        env=_native_keychain_child_environment(),
     )
+
+
+def _native_keychain_child_environment(login_home_resolver=None) -> dict[str, str]:
+    if login_home_resolver is None:
+        import pwd
+
+        login_home_resolver = lambda: pwd.getpwuid(os.getuid()).pw_dir
+    raw_home = str(login_home_resolver() or "").strip()
+    login_home = Path(raw_home)
+    if not raw_home or not login_home.is_absolute() or not login_home.exists() or not login_home.is_dir():
+        raise RuntimeError("Native Keychain login HOME could not be resolved safely.")
+    login_home = login_home.resolve()
+    sandbox_root = SANDBOX_ROOT.resolve()
+    if login_home == sandbox_root or sandbox_root in login_home.parents:
+        raise RuntimeError("Native Keychain login HOME points inside the test sandbox.")
+
+    current_home_raw = str(os.environ.get("HOME") or "").strip()
+    if current_home_raw:
+        current_home = Path(current_home_raw).resolve()
+        if (current_home == sandbox_root or sandbox_root in current_home.parents) and current_home == login_home:
+            raise RuntimeError("Native Keychain login HOME still points to the test sandbox.")
+
+    child_env = os.environ.copy()
+    child_env["HOME"] = str(login_home)
+    return child_env
+
+
+def _native_keychain_checkpoint(step: str) -> None:
+    print(f"NATIVE_KEYCHAIN_STEP {step}", file=sys.stderr, flush=True)
 
 
 def _run_native_keychain_child(account_email: str) -> None:
     account = _native_account(account_email)
+    _native_keychain_checkpoint("add:start")
     reference = storage.protect_mail_secret(
         "gate-d-synthetic",
         account=account,
         _keychain_interaction_allowed=False,
     )
+    _native_keychain_checkpoint("add:done")
     try:
+        _native_keychain_checkpoint("read1:start")
         if storage.unprotect_mail_secret(reference, _keychain_interaction_allowed=False) != "gate-d-synthetic":
             raise storage.MailSecretProtectionError("Native Keychain read did not return the expected value.")
+        _native_keychain_checkpoint("read1:done")
+        _native_keychain_checkpoint("update:start")
         storage.protect_mail_secret(
             "gate-d-updated",
             account=account,
             _keychain_interaction_allowed=False,
         )
+        _native_keychain_checkpoint("update:done")
+        _native_keychain_checkpoint("read2:start")
         if storage.unprotect_mail_secret(reference, _keychain_interaction_allowed=False) != "gate-d-updated":
             raise storage.MailSecretProtectionError("Native Keychain update did not return the expected value.")
+        _native_keychain_checkpoint("read2:done")
     finally:
+        _native_keychain_checkpoint("delete:start")
         storage.cleanup_removed_mail_secrets(
             {"accounts": [{"password": reference}]},
             {"accounts": []},
             _keychain_interaction_allowed=False,
         )
+        _native_keychain_checkpoint("delete:done")
 
 
 def _best_effort_native_cleanup(account_email: str) -> None:
@@ -518,8 +590,9 @@ def _best_effort_native_cleanup(account_email: str) -> None:
             text=True,
             timeout=10,
             check=False,
+            env=_native_keychain_child_environment(),
         )
-    except subprocess.TimeoutExpired:
+    except (subprocess.TimeoutExpired, RuntimeError):
         pass
 
 

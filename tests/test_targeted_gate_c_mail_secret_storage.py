@@ -18,6 +18,7 @@ if str(ROOT / "tests") not in sys.path:
 
 from runtime_paths import atomic_write_json, json_backup_path  # noqa: E402
 from services.mail_secret_storage import (  # noqa: E402
+    MailSecretStateTransition,
     MailSecretProtectionError,
     is_protected_mail_secret,
     protect_mail_secret,
@@ -96,8 +97,21 @@ class MailSecretStorageTests(unittest.TestCase):
             protector = patch.object(
                 server, "protect_mail_state_for_storage", side_effect=_test_protect_mail_state
             )
+            transition = patch.object(
+                server,
+                "prepare_macos_mail_secret_transition",
+                side_effect=lambda state, _previous_mail=None: MailSecretStateTransition(
+                    _test_protect_mail_state(state)[0]
+                ),
+            )
+            native_backend = patch(
+                "services.mail_secret_storage._get_keychain_backend",
+                side_effect=AssertionError("platform-neutral persistence test reached native Keychain"),
+            )
             try:
                 protector.start()
+                transition_mock = transition.start()
+                native_backend_mock = native_backend.start()
                 server.STATE_FILE = runtime.settings_path
                 legacy = {
                     "mail": {"accounts": [{"name": "Primary", "email": "mail@example.com", "username": "mail@example.com", "password": "mail-app-password"}]}
@@ -121,11 +135,16 @@ class MailSecretStorageTests(unittest.TestCase):
                 state["mail"] = server.normalize_mail_state(
                     {"accounts": [{**merged["accounts"][0], "password": "replacement-app-password"}]}
                 )
-                server.save_state(state)
+                with patch.object(server, "uses_macos_keychain", return_value=True):
+                    server.save_state(state)
                 replaced = json.loads(runtime.settings_path.read_text(encoding="utf-8"))
                 self.assertNotIn("replacement-app-password", json.dumps(replaced))
                 self.assertTrue(is_protected_mail_secret(replaced["mail"]["accounts"][0]["password"]))
+                transition_mock.assert_called_once()
+                native_backend_mock.assert_not_called()
             finally:
+                native_backend.stop()
+                transition.stop()
                 protector.stop()
                 server.STATE_FILE = original_path
 
