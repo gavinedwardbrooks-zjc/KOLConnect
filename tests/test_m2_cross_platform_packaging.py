@@ -30,8 +30,12 @@ MACOS_PYTHON_SHARD_PATTERNS = {
         "test_pre_m8_*.py", "test_data_foundation_phase1.py",
         "test_data_foundation_phase1_6.py", "test_m1_b1_c1.py", "test_m1_c2_bio_archived_columns.py",
     ),
-    "mail-security": (
-        "test_mail_*.py",
+    "mail-followup-core": (
+        "test_mail_followup_gate2.py", "test_mail_followup_gate3.py",
+        "test_mail_followup_gate4.py", "test_mail_followup_gate5.py",
+    ),
+    "mail-security-native": (
+        "test_mail_followup_google_sheets_replica.py", "test_mail_followup_ui_api.py",
         "test_targeted_gate_b_observability.py", "test_targeted_gate_c_mail_secret_storage.py",
         "test_targeted_gate_c1_mail_sync_redaction.py", "test_targeted_gate_d_macos_keychain.py",
     ),
@@ -210,7 +214,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertFalse(shard_job["strategy"]["fail-fast"])
         matrix = shard_job["strategy"]["matrix"]["include"]
-        self.assertEqual(5, len(matrix))
+        self.assertEqual(6, len(matrix))
         self.assertEqual(
             {entry["shard"]: tuple(entry["patterns"].split(",")) for entry in matrix},
             MACOS_PYTHON_SHARD_PATTERNS,
@@ -228,13 +232,23 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(
             (
-                "test_mail_*.py",
+                "test_mail_followup_gate2.py",
+                "test_mail_followup_gate3.py",
+                "test_mail_followup_gate4.py",
+                "test_mail_followup_gate5.py",
+            ),
+            MACOS_PYTHON_SHARD_PATTERNS["mail-followup-core"],
+        )
+        self.assertEqual(
+            (
+                "test_mail_followup_google_sheets_replica.py",
+                "test_mail_followup_ui_api.py",
                 "test_targeted_gate_b_observability.py",
                 "test_targeted_gate_c_mail_secret_storage.py",
                 "test_targeted_gate_c1_mail_sync_redaction.py",
                 "test_targeted_gate_d_macos_keychain.py",
             ),
-            MACOS_PYTHON_SHARD_PATTERNS["mail-security"],
+            MACOS_PYTHON_SHARD_PATTERNS["mail-security-native"],
         )
         self.assertEqual(
             {entry["shard"]: entry["timeout_minutes"] for entry in matrix},
@@ -242,7 +256,8 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "runtime-http": 30,
                 "platform-integrations": 30,
                 "storage-foundation": 30,
-                "mail-security": 30,
+                "mail-followup-core": 30,
+                "mail-security-native": 30,
                 "product-contracts": 20,
             },
         )

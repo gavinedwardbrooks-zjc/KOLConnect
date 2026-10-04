@@ -116,9 +116,12 @@ jobs:
           - shard: storage-foundation
             timeout_minutes: 30
             patterns: test_pre_m8_*.py,test_data_foundation_phase1.py,test_data_foundation_phase1_6.py,test_m1_b1_c1.py,test_m1_c2_bio_archived_columns.py
-          - shard: mail-security
+          - shard: mail-followup-core
             timeout_minutes: 30
-            patterns: test_mail_*.py,test_targeted_gate_b_observability.py,test_targeted_gate_c_mail_secret_storage.py,test_targeted_gate_c1_mail_sync_redaction.py,test_targeted_gate_d_macos_keychain.py
+            patterns: test_mail_followup_gate2.py,test_mail_followup_gate3.py,test_mail_followup_gate4.py,test_mail_followup_gate5.py
+          - shard: mail-security-native
+            timeout_minutes: 30
+            patterns: test_mail_followup_google_sheets_replica.py,test_mail_followup_ui_api.py,test_targeted_gate_b_observability.py,test_targeted_gate_c_mail_secret_storage.py,test_targeted_gate_c1_mail_sync_redaction.py,test_targeted_gate_d_macos_keychain.py
           - shard: product-contracts
             timeout_minutes: 20
             patterns: test_phase4_*.py,test_pre_cloud_product_cleanup.py,test_pre_m9_browser_mode_retirement.py,test_pre_m9_email_deduplication.py,test_release_critical_fixes.py,test_test_artifact_hygiene.py,test_uuid7_compatibility.py,test_v2_*.py,test_version_consistency.py
