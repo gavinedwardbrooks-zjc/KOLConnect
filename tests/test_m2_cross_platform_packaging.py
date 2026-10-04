@@ -164,6 +164,9 @@ class PackagingConfigurationTests(unittest.TestCase):
         workflow_dir = ROOT / ".github" / "workflows"
         build = (workflow_dir / "build.yml").read_text(encoding="utf-8")
         ci = (workflow_dir / "ci.yml").read_text(encoding="utf-8")
+        manual_path = workflow_dir / "build-macos-client.yml"
+        self.assertTrue(manual_path.is_file())
+        manual = manual_path.read_text(encoding="utf-8")
 
         self.assertIn("workflow_dispatch:", ci)
         self.assertIn("push:\n    branches:\n      - main", ci)
@@ -336,6 +339,83 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertNotIn("node tests/run_extension_tests.js", build)
         self.assertEqual(build.count('retention-days: 30'), 3)
         self.assertEqual(build.count('GITHUB_STEP_SUMMARY'), 3)
+
+        self.assertIn("name: Build macOS Client", manual)
+        self.assertRegex(manual, r"(?m)^on:\n  workflow_dispatch:\s*$")
+        for forbidden_trigger in ("push", "pull_request", "schedule", "workflow_run"):
+            self.assertNotRegex(manual, rf"(?m)^  {forbidden_trigger}:")
+        manual_workflow = yaml.safe_load(manual)
+        self.assertEqual(["build-macos-client"], list(manual_workflow["jobs"]))
+        manual_job = manual_workflow["jobs"]["build-macos-client"]
+        self.assertEqual("macos-15", manual_job["runs-on"])
+        self.assertNotIn("needs", manual_job)
+        self.assertEqual("1", manual_job["env"]["HOMEBREW_NO_AUTO_UPDATE"])
+        self.assertIn("actions/checkout@v4", manual)
+        self.assertIn('full_sha="$(git rev-parse HEAD)"', manual)
+        self.assertIn('short_sha="$(git rev-parse --short=7 HEAD)"', manual)
+        self.assertIn('ARTIFACT_NAME=KOLConnect-macOS-arm64-${short_sha}', manual)
+        self.assertIn("brew install python@3.12", manual)
+        self.assertIn('python_prefix="$(brew --prefix python@3.12)"', manual)
+        self.assertIn('"${python_bin}" -m venv .venv-ci', manual)
+        self.assertNotIn("actions/setup-python", manual)
+        self.assertNotRegex(
+            manual,
+            r"brew\s+(?:unlink|link(?:\s+--overwrite)?)\s+openssl(?:@\S+)?",
+        )
+        self.assertIn('[[ "$(uname -m)" == "arm64" ]]', manual)
+        self.assertIn("platform.machine()", manual)
+        self.assertIn("python scripts/check_sqlite_runtime.py", manual)
+        self.assertIn("bash packaging/build_macos.sh", manual)
+        self.assertIn("packaging/.pyinstaller-dist-macos/KOLConnect.app", manual)
+        self.assertIn('test -d "${app}"', manual)
+        self.assertIn('test -x "${binary}"', manual)
+        self.assertIn("release/KOLConnect_v1.0.0_mac_arm64.dmg", manual)
+        self.assertIn('test -s "${dmg}"', manual)
+        self.assertIn('shasum -a 256 "${dmg}"', manual)
+        self.assertIn('lipo -archs "${binary}"', manual)
+        self.assertIn("codesign --verify --deep --strict", manual)
+        self.assertIn("actions/upload-artifact@v4", manual)
+        self.assertIn("KOLConnect-macOS-arm64-${short_sha}", manual)
+        self.assertIn("name: ${{ env.ARTIFACT_NAME }}", manual)
+        self.assertIn("if-no-files-found: error", manual)
+        self.assertIn("retention-days: 30", manual)
+        self.assertIn("GITHUB_STEP_SUMMARY", manual)
+        self.assertNotIn("continue-on-error", manual)
+        self.assertNotIn("|| true", manual)
+        self.assertNotIn("set +e", manual)
+        self.assertNotIn("scripts/run_python_tests.py", manual)
+        self.assertNotIn("Developer ID", manual)
+        self.assertNotIn("notary", manual.lower())
+        self.assertNotIn("secrets.", manual)
+
+        summary_step = next(
+            step for step in manual_job["steps"] if step.get("name") == "Write build summary"
+        )
+        summary = summary_step["run"]
+        for metadata in (
+            "${FULL_SHA}",
+            "${SHORT_SHA}",
+            "macos-15",
+            "arm64",
+            "${PYTHON_VERSION}",
+            "KOLConnect_v1.0.0_mac_arm64.dmg",
+            "${ARTIFACT_NAME}",
+            "${DMG_SHA256}",
+            "ad-hoc",
+            "Notarization: none",
+        ):
+            self.assertIn(metadata, summary)
+
+        upload_step = next(
+            step for step in manual_job["steps"] if step.get("uses") == "actions/upload-artifact@v4"
+        )
+        self.assertEqual("${{ env.ARTIFACT_NAME }}", upload_step["with"]["name"])
+        self.assertEqual(
+            "release/KOLConnect_v1.0.0_mac_arm64.dmg",
+            upload_step["with"]["path"],
+        )
+        self.assertEqual("error", upload_step["with"]["if-no-files-found"])
+        self.assertEqual(30, upload_step["with"]["retention-days"])
 
         runner = (ROOT / "tests" / "run_extension_tests.js").read_text(encoding="utf-8")
         self.assertIn(r"/^test_.*\.(js|mjs)$/", runner)

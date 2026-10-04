@@ -1,0 +1,103 @@
+name: Build macOS Client
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-client:
+    runs-on: macos-15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Resolve build metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          full_sha="$(git rev-parse HEAD)"
+          short_sha="$(git rev-parse --short=7 HEAD)"
+          {
+            echo "FULL_SHA=${full_sha}"
+            echo "SHORT_SHA=${short_sha}"
+            echo "ARTIFACT_NAME=KOLConnect-macOS-arm64-${short_sha}"
+          } >> "${GITHUB_ENV}"
+      - name: Install approved SQLite Python runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          brew install sqlite
+          brew upgrade sqlite
+          python_install_log="$(mktemp)"
+          if brew install python@3.12 2>&1 | tee "${python_install_log}"; then
+            :
+          elif ! grep -Fq "The formula built, but is not symlinked" "${python_install_log}" || \
+               ! grep -Fq "Could not symlink" "${python_install_log}"; then
+            exit 1
+          fi
+          python_prefix="$(brew --prefix python@3.12)"
+          python_bin="${python_prefix}/bin/python3.12"
+          test -x "${python_bin}"
+          "${python_bin}" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          "${python_bin}" -m venv .venv-ci
+          echo "${PWD}/.venv-ci/bin" >> "${GITHUB_PATH}"
+      - name: Validate arm64 runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$(uname -m)" == "arm64" ]]
+          [[ "$(python -c 'import platform; print(platform.machine())')" == "arm64" ]]
+          python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          python scripts/check_sqlite_runtime.py
+          python_version="$(python --version 2>&1)"
+          echo "PYTHON_VERSION=${python_version}" >> "${GITHUB_ENV}"
+      - name: Install packaging dependencies
+        run: python -m pip install -r packaging/requirements-build.txt
+      - name: Build macOS client
+        shell: bash
+        run: bash packaging/build_macos.sh
+      - name: Verify macOS client
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="packaging/.pyinstaller-dist-macos/KOLConnect.app"
+          binary="${app}/Contents/MacOS/KOLConnect"
+          dmg="release/KOLConnect_v1.0.0_mac_arm64.dmg"
+          test -d "${app}"
+          test -x "${binary}"
+          lipo -archs "${binary}" | tr ' ' '\n' | grep -Fxq arm64
+          codesign --verify --deep --strict --verbose=2 "${app}"
+          test -s "${dmg}"
+          dmg_sha256="$(shasum -a 256 "${dmg}" | awk '{print $1}')"
+          dmg_size="$(stat -f '%z' "${dmg}")"
+          test "${dmg_size}" -gt 0
+          {
+            echo "DMG_SHA256=${dmg_sha256}"
+            echo "DMG_SIZE=${dmg_size}"
+          } >> "${GITHUB_ENV}"
+      - name: Write build summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Build macOS Client"
+            echo
+            echo "- Commit: ${FULL_SHA}"
+            echo "- Short SHA: ${SHORT_SHA}"
+            echo "- Runner: macos-15"
+            echo "- Architecture: arm64"
+            echo "- Python: ${PYTHON_VERSION}"
+            echo "- DMG: KOLConnect_v1.0.0_mac_arm64.dmg"
+            echo "- Artifact: ${ARTIFACT_NAME}"
+            echo "- SHA-256: ${DMG_SHA256}"
+            echo "- Signing: ad-hoc"
+            echo "- Notarization: none"
+          } >> "${GITHUB_STEP_SUMMARY}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT_NAME }}
+          path: release/KOLConnect_v1.0.0_mac_arm64.dmg
+          if-no-files-found: error
+          retention-days: 30
