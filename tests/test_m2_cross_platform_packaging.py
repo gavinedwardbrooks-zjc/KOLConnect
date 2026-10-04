@@ -34,10 +34,13 @@ MACOS_PYTHON_SHARD_PATTERNS = {
         "test_mail_followup_gate2.py", "test_mail_followup_gate3.py",
         "test_mail_followup_gate4.py", "test_mail_followup_gate5.py",
     ),
-    "mail-security-native": (
+    "mail-security-core": (
         "test_mail_followup_google_sheets_replica.py", "test_mail_followup_ui_api.py",
         "test_targeted_gate_b_observability.py", "test_targeted_gate_c_mail_secret_storage.py",
-        "test_targeted_gate_c1_mail_sync_redaction.py", "test_targeted_gate_d_macos_keychain.py",
+        "test_targeted_gate_c1_mail_sync_redaction.py",
+    ),
+    "macos-keychain-canonical": (
+        "test_targeted_gate_d_macos_keychain.py",
     ),
     "product-contracts": (
         "test_phase4_*.py", "test_pre_cloud_product_cleanup.py", "test_pre_m9_browser_mode_retirement.py",
@@ -214,7 +217,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertFalse(shard_job["strategy"]["fail-fast"])
         matrix = shard_job["strategy"]["matrix"]["include"]
-        self.assertEqual(6, len(matrix))
+        self.assertEqual(7, len(matrix))
         self.assertEqual(
             {entry["shard"]: tuple(entry["patterns"].split(",")) for entry in matrix},
             MACOS_PYTHON_SHARD_PATTERNS,
@@ -246,9 +249,12 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "test_targeted_gate_b_observability.py",
                 "test_targeted_gate_c_mail_secret_storage.py",
                 "test_targeted_gate_c1_mail_sync_redaction.py",
-                "test_targeted_gate_d_macos_keychain.py",
             ),
-            MACOS_PYTHON_SHARD_PATTERNS["mail-security-native"],
+            MACOS_PYTHON_SHARD_PATTERNS["mail-security-core"],
+        )
+        self.assertEqual(
+            ("test_targeted_gate_d_macos_keychain.py",),
+            MACOS_PYTHON_SHARD_PATTERNS["macos-keychain-canonical"],
         )
         self.assertEqual(
             {entry["shard"]: entry["timeout_minutes"] for entry in matrix},
@@ -257,7 +263,8 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "platform-integrations": 30,
                 "storage-foundation": 30,
                 "mail-followup-core": 30,
-                "mail-security-native": 30,
+                "mail-security-core": 30,
+                "macos-keychain-canonical": 30,
                 "product-contracts": 20,
             },
         )
@@ -271,6 +278,9 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertNotIn("continue-on-error:", ci)
         self.assertNotIn("name: Run Python tests\n        id: python_tests", ci.split("  test-macos-arm64-keychain:", 1)[1])
         self.assertIn("PYTHONUNBUFFERED=1 python -u scripts/run_python_tests.py --pattern", ci)
+        self.assertIn("mail-security-core|macos-keychain-canonical", ci)
+        self.assertIn("MODULE_TIMING ${pattern}", ci)
+        self.assertIn('if [ "${status}" -ne 0 ]; then', ci)
         self.assertIn("node tests/run_extension_tests.js", ci)
         self.assertNotIn("python -m unittest discover", ci)
         self.assertEqual(ci.count('HOMEBREW_NO_AUTO_UPDATE: "1"'), 2)
