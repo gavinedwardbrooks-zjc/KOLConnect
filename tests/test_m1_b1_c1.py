@@ -166,7 +166,8 @@ class PluginContractAndEmailRecheckTests(unittest.TestCase):
                 "whatsapp": "  +5511999999999  ",
                 "language": "  Portuguese  ",
                 "content_category": "  Lifestyle  ",
-            }
+            },
+            "ADD",
         )
 
         task, paths = self.server.task_manager.load_task(self.server.TASKS_DIR, result["task"]["id"])

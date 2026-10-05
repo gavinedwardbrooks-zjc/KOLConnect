@@ -4,6 +4,7 @@ import re
 import json
 
 from creator_batch_import import CreatorBatchImportError
+from api_contract import error_payload
 from services.creator_hard_delete_service import CreatorHardDeleteError
 from services.creator_merge_service import CreatorMergeError
 
@@ -304,7 +305,8 @@ def handle(handler, request: dict, context: dict) -> bool:
     if method == "POST" and path == "/api/extension/import":
         payload = request["get_payload"]()
         try:
-            result = services["import_extension_capture"](payload)
+            action = payload.get("action") if isinstance(payload, dict) else None
+            result = services["import_extension_capture"](payload, action)
             creator = payload.get("creator") if isinstance(payload.get("creator"), dict) else {}
             services["record_diagnostic"](
                 "last_extension_import",
@@ -319,12 +321,20 @@ def handle(handler, request: dict, context: dict) -> bool:
                 "Extension",
                 f"导入成功 | creator={creator.get('creator_name') or '--'} | platform={creator.get('platform') or '--'}",
             )
-            handler._ok(**result)
+            handler._json(
+                {"ok": True, **result},
+                status=201 if result.get("action") == "ADD" else 200,
+            )
         except (RuntimeError, ValueError) as exc:
             services["record_diagnostic"](
                 "last_extension_import", {"status": "failed", "time": services["utc_now"]()}
             )
-            handler._error(str(exc))
+            code = getattr(exc, "code", "")
+            status = getattr(exc, "status", 0)
+            if code and status in {404, 409, 422}:
+                handler._json(error_payload(code, str(exc)), status=status)
+            else:
+                handler._error(str(exc))
         return True
 
     status_match = re.fullmatch(r"/api/creator-library/([^/]+)/status", path)

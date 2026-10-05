@@ -47,8 +47,8 @@ class TikTokPassiveImportTests(unittest.TestCase):
                 patch("local_storage_lock.get_shared_storage_lock_path", return_value=runtime.root / "locks/shared_storage.lock"),
                 patch("creator_repository.log_event"),
             ):
-                first = server.import_extension_capture(payload)
-                second = server.import_extension_capture(payload)
+                first = server.import_extension_capture(payload, "ADD")
+                second = server.import_extension_capture(payload, "UPDATE")
             self.assertEqual(first["account_uid"], second["account_uid"])
             self.assertEqual(first["account_id"], second["account_id"])
             self.assertEqual(first["analysis_id"], second["analysis_id"])

@@ -58,6 +58,32 @@ CREATOR_LIBRARY_FILTER_FIELDS = frozenset({
 })
 _PLATFORM_SORT_ORDER = {"instagram": 0, "tiktok": 1, "youtube": 2}
 
+
+class ExtensionMutationError(ValueError):
+    """Public, fail-closed error for explicit extension account mutations."""
+
+    def __init__(self, code: str, message: str, status: int) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
+def validate_extension_action(action: object) -> str:
+    """Require the exact server mutation action without inferring from storage."""
+    if action is None or action == "":
+        raise ExtensionMutationError(
+            "EXPLICIT_ACTION_REQUIRED",
+            "必须明确指定 ADD 或 UPDATE 操作。",
+            422,
+        )
+    if not isinstance(action, str) or action not in {"ADD", "UPDATE"}:
+        raise ExtensionMutationError(
+            "VALIDATION_ERROR",
+            "action 必须为 ADD 或 UPDATE。",
+            422,
+        )
+    return str(action)
+
 _TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
 CREATOR_LIBRARY_SCHEMA_VERSION = "2.0-product-campaign-phase2-api"
 _CREATORS_HEADERS = [
@@ -166,15 +192,61 @@ class CreatorRepository:
         self.store.register_before_save(self._prepare_workbook_save)
 
     @_mutation_synchronized
-    def saveCreator(self, analysis: dict[str, Any]) -> dict[str, Any]:
+    def saveCreator(
+        self,
+        analysis: dict[str, Any],
+        *,
+        extension_action: str | None = None,
+    ) -> dict[str, Any]:
         """Save the latest creator view and append an immutable analysis snapshot."""
         self._validate_analysis(analysis)
         workbook = self._load_workbook()
         requested_creator_id = str(analysis["analysis_id"])
         account_uid = str(analysis.get("account_uid") or "").strip()
         preferred_creator_id = str(analysis.get("creator_id") or "").strip()
+        extension_account = None
+        action = None
+        if extension_action is not None:
+            action = validate_extension_action(extension_action)
+            matching_accounts = [
+                row
+                for row in self._rows(workbook["CreatorAccounts"])
+                if str(row.get("account_uid") or "") == account_uid
+            ]
+            if len(matching_accounts) > 1:
+                raise ExtensionMutationError(
+                    "AMBIGUOUS",
+                    "该平台账号存在多条身份记录，无法安全执行操作。",
+                    409,
+                )
+            extension_account = matching_accounts[0] if matching_accounts else None
+            if action == "ADD" and extension_account is not None:
+                raise ExtensionMutationError(
+                    "ACCOUNT_ALREADY_EXISTS",
+                    "该平台账号已存在，不能重复添加。",
+                    409,
+                )
+            if action == "UPDATE" and extension_account is None:
+                raise ExtensionMutationError(
+                    "ACCOUNT_NOT_FOUND",
+                    "未找到要更新的平台账号。",
+                    404,
+                )
+            if extension_account is not None:
+                owner_id = str(extension_account.get("creator_id") or "").strip()
+                if not owner_id or not self._creator_row(workbook["Creators"], owner_id):
+                    raise ExtensionMutationError(
+                        "AMBIGUOUS",
+                        "平台账号归属不完整，无法安全执行操作。",
+                        409,
+                    )
+
         creator_id = (
-            self._creator_id_for_account_uid(workbook, account_uid)
+            str(extension_account.get("creator_id") or "")
+            if extension_account is not None
+            else requested_creator_id
+            if action == "ADD"
+            else self._creator_id_for_account_uid(workbook, account_uid)
             or (preferred_creator_id if self._creator_row(workbook["Creators"], preferred_creator_id) else "")
             or requested_creator_id
         )
@@ -313,6 +385,8 @@ class CreatorRepository:
         """Return the smallest account ownership view needed by the browser extension."""
         account_uid = str(account_uid or "").strip()
         if not account_uid:
+            return None
+        if not self.workbook_path.is_file():
             return None
         identities = self.getCreatorAccountIdentityRows()
         accounts = [

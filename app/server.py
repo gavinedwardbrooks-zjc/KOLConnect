@@ -2430,8 +2430,13 @@ def _extension_analysis_payload(payload: dict, task: dict, account_uid: str) -> 
     }
 
 
-def import_extension_capture(payload: dict) -> dict:
+def import_extension_capture(payload: dict, action: object) -> dict:
     """Create one reviewable manual task and persist its extension-only analysis snapshot."""
+    from creator_repository import validate_extension_action
+
+    action = validate_extension_action(action)
+    if not isinstance(payload, dict):
+        raise ValueError("请求内容格式无效。")
     creator = payload.get("creator") if isinstance(payload.get("creator"), dict) else {}
     profile_url = str(creator.get("profile_url") or "").strip()
     if not profile_url:
@@ -2441,6 +2446,24 @@ def import_extension_capture(payload: dict) -> dict:
     if not normalized.get("valid"):
         raise ValueError(str(normalized.get("reason") or "主页链接无效。"))
     normalized_url = str(normalized.get("normalized_url") or "").strip()
+    platform_by_key = {
+        "tiktok": "TikTok",
+        "instagram": "Instagram",
+        "youtube": "YouTube",
+    }
+    normalized_platform = platform_by_key.get(
+        str(normalized.get("platform") or "").strip().lower(), ""
+    )
+    selected_platform = str(creator.get("platform") or "").strip()
+    if selected_platform not in set(platform_by_key.values()):
+        raise ValueError("请选择平台。")
+    if selected_platform != normalized_platform:
+        raise ValueError(f"主页链接属于 {normalized_platform}，请确认所选平台。")
+    account_uid = scraper_module.build_creator_uid(
+        {"platform": selected_platform, "url": normalized_url}
+    )
+    if not account_uid:
+        raise ValueError("无法确定平台账号身份。")
     email = str(creator.get("email") or payload.get("email") or "").strip()
     whatsapp = str(creator.get("whatsapp") or payload.get("whatsapp") or "").strip()
     country = str(creator.get("country") or payload.get("country") or "").strip()
@@ -2461,42 +2484,51 @@ def import_extension_capture(payload: dict) -> dict:
         },
         "content_category": content_category,
     }
-    manual_result = create_manual_task(
-        {
-            "task_name": payload.get("task_name"),
-            "name": creator.get("creator_name"),
-            "platform": creator.get("platform"),
-            "profile_url": normalized_url,
-            "follower_count": creator.get("followers"),
-            "email": email,
-            "whatsapp": whatsapp,
-            "note": payload.get("note"),
-        },
-        defer_library_import=True,
-        task_port=get_task_port(),
-    )
-    task = manual_result["task"]
-    analysis = _extension_analysis_payload(normalized_payload, task, manual_result["account_uid"])
-    saved_analysis = get_creator_service().import_creator_from_extension(
-        analysis,
-        compensation_task_id=task["id"],
-    )
-    task = get_task_port().attach_creator_import(
-        task["id"],
-        CreatorImportLinkage(
-            creator_id=saved_analysis["creator_id"],
-            snapshot_id=saved_analysis["snapshot_id"],
-            imported_at=analysis["imported_at"],
-            country=country,
-            language=language,
-            content_category=content_category,
-        ),
-    ).to_response()
+    with shared_storage_lock():
+        creator_service = get_creator_service()
+        creator_service.assert_extension_mutation_allowed(action, account_uid)
+        task_port = get_task_port()
+        manual_result = create_manual_task(
+            {
+                "task_name": payload.get("task_name"),
+                "name": creator.get("creator_name"),
+                "platform": selected_platform,
+                "profile_url": normalized_url,
+                "follower_count": creator.get("followers"),
+                "email": email,
+                "whatsapp": whatsapp,
+                "note": payload.get("note"),
+            },
+            defer_library_import=True,
+            task_port=task_port,
+        )
+        if manual_result["account_uid"] != account_uid:
+            task_port.delete_task(manual_result["task"]["id"])
+            raise ValueError("平台账号身份校验失败。")
+        task = manual_result["task"]
+        analysis = _extension_analysis_payload(normalized_payload, task, account_uid)
+        saved_analysis = creator_service.import_creator_from_extension(
+            analysis,
+            action=action,
+            compensation_task_id=task["id"],
+        )
+        task = task_port.attach_creator_import(
+            task["id"],
+            CreatorImportLinkage(
+                creator_id=saved_analysis["creator_id"],
+                snapshot_id=saved_analysis["snapshot_id"],
+                imported_at=analysis["imported_at"],
+                country=country,
+                language=language,
+                content_category=content_category,
+            ),
+        ).to_response()
     return {
+        "action": action,
         "duplicate": False,
         "is_new_creator": saved_analysis["is_new_creator"],
         "task": task,
-        "account_uid": manual_result["account_uid"],
+        "account_uid": account_uid,
         "analysis_id": saved_analysis["creator_id"],
         "account_id": saved_analysis["account_id"],
         "snapshot_id": saved_analysis["snapshot_id"],

@@ -82,7 +82,7 @@ class ExtensionAgencyImportTests(unittest.TestCase):
         )
         self.assertEqual("agency_one", analysis["creator"]["agency_id"])
         saved = self.service.import_creator_from_extension(
-            analysis, compensation_task_id="task_20260817T000001Z_aaaaaaaa"
+            analysis, action="ADD", compensation_task_id="task_20260817T000001Z_aaaaaaaa"
         )
         detail = self.repository.getCreatorDetail(saved["creator_id"])
         self.assertEqual("agency_one", detail["record"]["agency_id"])
@@ -91,10 +91,12 @@ class ExtensionAgencyImportTests(unittest.TestCase):
         profile_url = "https://www.tiktok.com/@agency-existing"
         first = self.service.import_creator_from_extension(
             self.analysis(profile_url, "agency_one", "task_20260817T000002Z_bbbbbbbb"),
+            action="ADD",
             compensation_task_id="task_20260817T000002Z_bbbbbbbb",
         )
         self.service.import_creator_from_extension(
             self.analysis(profile_url, "", "task_20260817T000003Z_cccccccc"),
+            action="UPDATE",
             compensation_task_id="task_20260817T000003Z_cccccccc",
         )
         self.assertEqual(
@@ -103,6 +105,7 @@ class ExtensionAgencyImportTests(unittest.TestCase):
         )
         self.service.import_creator_from_extension(
             self.analysis(profile_url, "agency_two", "task_20260817T000004Z_dddddddd"),
+            action="UPDATE",
             compensation_task_id="task_20260817T000004Z_dddddddd",
         )
         self.assertEqual(
@@ -118,7 +121,7 @@ class ExtensionAgencyImportTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ValueError, "Agency 不存在"):
             self.service.import_creator_from_extension(
-                analysis, compensation_task_id="task_20260817T000005Z_eeeeeeee"
+                analysis, action="ADD", compensation_task_id="task_20260817T000005Z_eeeeeeee"
             )
         self.assertEqual([], self.repository.getCreators(include_archived=True))
 

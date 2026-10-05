@@ -36,6 +36,7 @@ from ports.creator_port import (
 from ports.task_port import TaskPort
 from local_storage_lock import shared_storage_lock
 from domain.creator_url_resolver import CreatorURLResolver
+from creator_repository import ExtensionMutationError, validate_extension_action
 
 
 REVIEW_FIELD_WHATSAPP = "WhatsApp"
@@ -153,7 +154,12 @@ def build_email_deduplication_payload(
 
 
 class CreatorRepositoryReader(Protocol):
-    def saveCreator(self, analysis: dict[str, Any]) -> dict[str, Any]: ...
+    def saveCreator(
+        self,
+        analysis: dict[str, Any],
+        *,
+        extension_action: str | None = None,
+    ) -> dict[str, Any]: ...
 
     def getCreatorsPage(self, **kwargs: Any) -> dict[str, Any]: ...
 
@@ -774,9 +780,11 @@ class CreatorService:
         self,
         analysis: dict[str, Any],
         *,
+        action: str,
         compensation_task_id: str,
     ) -> dict[str, Any]:
         """Persist one prepared Extension analysis through the Creator boundary."""
+        action = validate_extension_action(action)
         try:
             creator = (
                 analysis.get("creator")
@@ -788,7 +796,10 @@ class CreatorService:
                 if self._agency_port_provider is None:
                     raise ValueError("Agency boundary unavailable.")
                 self._agency_port_provider().get_agency(agency_id)
-            result = self._repository_provider().saveCreator(analysis)
+            result = self._repository_provider().saveCreator(
+                analysis,
+                extension_action=action,
+            )
             self._invalidate_creator_read_caches()
             return result
         except Exception:
@@ -798,6 +809,33 @@ class CreatorService:
             except Exception:
                 pass
             raise
+
+    def assert_extension_mutation_allowed(
+        self,
+        action: str,
+        account_uid: str,
+    ) -> None:
+        """Fail before task creation while the caller holds the mutation lock."""
+        action = validate_extension_action(action)
+        lookup = self._repository_provider().getExtensionAccountLookup(account_uid)
+        if lookup is not None and lookup.get("ambiguous"):
+            raise ExtensionMutationError(
+                "AMBIGUOUS",
+                "该平台账号存在多条身份记录，无法安全执行操作。",
+                409,
+            )
+        if action == "ADD" and lookup is not None:
+            raise ExtensionMutationError(
+                "ACCOUNT_ALREADY_EXISTS",
+                "该平台账号已存在，不能重复添加。",
+                409,
+            )
+        if action == "UPDATE" and lookup is None:
+            raise ExtensionMutationError(
+                "ACCOUNT_NOT_FOUND",
+                "未找到要更新的平台账号。",
+                404,
+            )
 
     def import_url_email_capture(
         self,

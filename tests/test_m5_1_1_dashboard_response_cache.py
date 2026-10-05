@@ -312,7 +312,7 @@ class _CreatorRepository:
             raise ValueError("write failed")
         return {"creator_id": "creator"}
 
-    def saveCreator(self, _analysis):
+    def saveCreator(self, _analysis, **_kwargs):
         if self.fail:
             raise ValueError("write failed")
         return {"creator_id": "creator", "snapshot_id": "snapshot"}
@@ -331,7 +331,9 @@ class DashboardInvalidationBoundaryTests(unittest.TestCase):
         service = self._creator_service(_CreatorRepository(), invalidate)
         service.update_creator_profile("creator", {"creator_name": "Updated"})
         service.update_creator_status("creator", "contacted")
-        service.import_creator_from_extension({"creator": {}}, compensation_task_id="task")
+        service.import_creator_from_extension(
+            {"creator": {}}, action="ADD", compensation_task_id="task"
+        )
         self.assertEqual(3, invalidate.call_count)
 
     def test_agency_id_only_creator_mutation_does_not_invalidate_dashboard(self) -> None:
