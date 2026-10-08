@@ -346,9 +346,21 @@ class SQLiteCreatorRepository(CreatorRepository):
         return {"removed": True, "account_uid": account_uid}
 
     @_mutation_synchronized
-    def createSnapshot(self, analysis: dict, creator_id: str, workbook=None):
+    def createSnapshot(
+        self,
+        analysis: dict,
+        creator_id: str,
+        workbook=None,
+        *,
+        extension_action: str | None = None,
+    ):
         if workbook is not None:
-            return super().createSnapshot(analysis, creator_id, workbook)
+            return super().createSnapshot(
+                analysis,
+                creator_id,
+                workbook,
+                extension_action=extension_action,
+            )
         creator_id = str(creator_id or "").strip()
         snapshot_id = f"snapshot_{analysis['task_id']}"
         creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}

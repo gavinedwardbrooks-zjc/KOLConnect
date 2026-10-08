@@ -36,6 +36,10 @@ from excel_workbook_store import (
 from product_repository import PRODUCTS_HEADERS
 from runtime_paths import load_json_with_backup
 from local_storage_lock import shared_storage_lock
+from services.extension_update_policy import (
+    decide_extension_snapshot,
+    decide_extension_update,
+)
 
 
 CREATOR_LIBRARY_STATUSES = {
@@ -262,8 +266,13 @@ class CreatorRepository:
         )
         status_updated_at = existing_metadata.get("status_updated_at", "")
         creator_values = self._creator_values(analysis, status, creator_id)
-        if existing:
-            # Extension imports should never erase optional data already curated in Excel.
+        updated_fields: tuple[str, ...] = ()
+        preserved_fields: tuple[str, ...] = ()
+        warnings: tuple[dict[str, str], ...] = ()
+        replace_current_videos = True
+        replace_current_insights = True
+        if existing and action != "UPDATE":
+            # Preserve the established merge behavior for non-extension import paths.
             for field in (
                 "country", "language", "tags", "email", "whatsapp", "cooperation_stage",
                 "recent_product", "quote", "owner", "last_contact_time",
@@ -277,15 +286,42 @@ class CreatorRepository:
             if not self._account_row_by_uid(workbook["CreatorAccounts"], account_uid):
                 for field in ("platform", "profile_url", "followers"):
                     creator_values[field] = existing.get(field) or creator_values.get(field)
-        self._upsert_row(workbook["Creators"], "creator_id", creator_id, creator_values)
-        account = self._upsert_account_from_analysis(workbook, analysis, creator_id)
-        self._replace_video_rows(workbook["Videos"], creator_id, analysis.get("videos"))
-        self._upsert_row(
-            workbook["Insights"],
-            "creator_id",
+        account_values = self._account_values_from_analysis(
+            analysis,
             creator_id,
-            self._insight_values(analysis, creator_id),
+            extension_account or {},
         )
+        if action == "UPDATE" and existing and extension_account:
+            decision = decide_extension_update(
+                analysis,
+                existing,
+                creator_values,
+                extension_account,
+                account_values,
+            )
+            creator_values = decision.creator_values
+            account_values = decision.account_values
+            updated_fields = decision.updated_fields
+            preserved_fields = decision.preserved_fields
+            warnings = decision.warnings
+            replace_current_videos = not decision.preserve_current_videos
+            replace_current_insights = not decision.preserve_current_insights
+        self._upsert_row(workbook["Creators"], "creator_id", creator_id, creator_values)
+        account = self._upsert_account_from_analysis(
+            workbook,
+            analysis,
+            creator_id,
+            values=account_values,
+        )
+        if replace_current_videos:
+            self._replace_video_rows(workbook["Videos"], creator_id, analysis.get("videos"))
+        if replace_current_insights:
+            self._upsert_row(
+                workbook["Insights"],
+                "creator_id",
+                creator_id,
+                self._insight_values(analysis, creator_id),
+            )
         stored_analysis = dict(analysis)
         if existing_crm:
             stored_analysis["_crm"] = dict(existing_crm)
@@ -302,7 +338,12 @@ class CreatorRepository:
                 "analysis_json": json.dumps(stored_analysis, ensure_ascii=False),
             },
         )
-        snapshot = self.createSnapshot(analysis, creator_id, workbook)
+        snapshot = self.createSnapshot(
+            analysis,
+            creator_id,
+            workbook,
+            extension_action=action,
+        )
         self._save_workbook(workbook)
         return {
             **analysis,
@@ -310,10 +351,20 @@ class CreatorRepository:
             "account_id": account["account_id"],
             "snapshot_id": snapshot["snapshot_id"],
             "is_new_creator": is_new_creator,
+            "updated_fields": list(updated_fields),
+            "preserved_fields": list(preserved_fields),
+            "warnings": list(warnings),
         }
 
     @_mutation_synchronized
-    def createSnapshot(self, analysis: dict[str, Any], creator_id: str, workbook=None) -> dict[str, Any]:
+    def createSnapshot(
+        self,
+        analysis: dict[str, Any],
+        creator_id: str,
+        workbook=None,
+        *,
+        extension_action: str | None = None,
+    ) -> dict[str, Any]:
         """Append one time-stamped analysis without replacing earlier snapshots."""
         should_save = workbook is None
         workbook = workbook or self._load_workbook()
@@ -322,22 +373,34 @@ class CreatorRepository:
         metrics = analysis.get("video_analysis") if isinstance(analysis.get("video_analysis"), dict) else {}
         insight = analysis.get("creator_insight") if isinstance(analysis.get("creator_insight"), dict) else {}
         captured_at = str(analysis.get("imported_at") or _utc_now())
+        snapshot_decision = decide_extension_snapshot(analysis, extension_action)
+        followers = creator.get("followers")
         snapshot = {
             "snapshot_id": snapshot_id,
             "creator_id": creator_id,
             "platform": str(creator.get("platform") or ""),
             "account_uid": str(analysis.get("account_uid") or ""),
-            "followers": str(creator.get("followers") or ""),
-            "average_views": metrics.get("average_views", ""),
-            "median_views": metrics.get("median_views", ""),
-            "video_count": len(analysis.get("videos") if isinstance(analysis.get("videos"), list) else []),
+            "followers": followers if snapshot_decision.followers_observed and followers not in (None, "") else "",
+            "average_views": snapshot_decision.metrics.get("average_views") if "average_views" in snapshot_decision.metrics else "",
+            "median_views": snapshot_decision.metrics.get("median_views") if "median_views" in snapshot_decision.metrics else "",
+            "video_count": len(snapshot_decision.videos) if snapshot_decision.video_count_observed else "",
             "creator_score": insight.get("creator_score", insight.get("rule_score", "")),
-            "insight_level": str(insight.get("level") or insight.get("grade") or "insufficient"),
+            "insight_level": str(
+                insight.get("level")
+                or insight.get("grade")
+                or snapshot_decision.default_insight_level
+            ),
             "captured_at": captured_at,
             "source": str(analysis.get("source") or ""),
         }
         self._upsert_row(workbook["CreatorSnapshots"], "snapshot_id", snapshot_id, snapshot)
-        self._replace_video_snapshot_rows(workbook["VideoSnapshots"], snapshot_id, creator_id, analysis.get("videos"), captured_at)
+        self._replace_video_snapshot_rows(
+            workbook["VideoSnapshots"],
+            snapshot_id,
+            creator_id,
+            list(snapshot_decision.videos),
+            captured_at,
+        )
         if should_save:
             self._save_workbook(workbook)
         return snapshot
@@ -1941,6 +2004,21 @@ class CreatorRepository:
         workbook,
         analysis: dict[str, Any],
         creator_id: str,
+        *,
+        values: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        values = values or self._account_values_from_analysis(analysis, creator_id, {})
+        account_uid = str(values.get("account_uid") or "").strip()
+        if not account_uid:
+            return {"account_id": ""}
+        self._upsert_row(workbook["CreatorAccounts"], "account_uid", account_uid, values)
+        return values
+
+    def _account_values_from_analysis(
+        self,
+        analysis: dict[str, Any],
+        creator_id: str,
+        existing: dict[str, Any],
     ) -> dict[str, Any]:
         creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}
         platform = str(creator.get("platform") or "").strip()
@@ -1950,8 +2028,17 @@ class CreatorRepository:
             account_uid = self._build_account_uid(platform, profile_url)
         if not account_uid:
             return {"account_id": ""}
-        existing = self._account_row_by_uid(workbook["CreatorAccounts"], account_uid)
         now = str(analysis.get("imported_at") or _utc_now())
+
+        def text(value: object) -> str:
+            return str(value if value is not None else "").strip()
+
+        incoming_username = creator.get("username")
+        incoming_email = (
+            creator.get("account_email")
+            if creator.get("account_email") not in (None, "")
+            else creator.get("email")
+        )
         values = {
             **existing,
             "account_id": str(existing.get("account_id") or self._account_id(account_uid)),
@@ -1959,14 +2046,20 @@ class CreatorRepository:
             "account_uid": account_uid,
             "platform": platform or str(existing.get("platform") or ""),
             "username": str(
-                creator.get("username")
+                incoming_username
                 or existing.get("username")
                 or self._username_from_profile_url(platform, profile_url)
                 or ""
             ),
             "profile_url": profile_url or str(existing.get("profile_url") or ""),
-            "followers": str(creator.get("followers") or existing.get("followers") or ""),
-            "account_email": str(creator.get("account_email") or creator.get("email") or existing.get("account_email") or ""),
+            "followers": text(
+                creator.get("followers")
+                if creator.get("followers") not in (None, "")
+                else existing.get("followers")
+            ),
+            "account_email": text(
+                incoming_email if incoming_email not in (None, "") else existing.get("account_email")
+            ),
             "latest_post_date": str(creator.get("latest_post_date") or existing.get("latest_post_date") or ""),
             "last_scrape_time": now,
             "data_source": str(analysis.get("source") or existing.get("data_source") or ""),
@@ -1978,7 +2071,6 @@ class CreatorRepository:
             "created_at": str(existing.get("created_at") or now),
             "updated_at": now,
         }
-        self._upsert_row(workbook["CreatorAccounts"], "account_uid", account_uid, values)
         return values
 
     def _task_account_values(
@@ -2269,8 +2361,16 @@ class CreatorRepository:
             "language": str(creator.get("language") or ""),
             "content_category": str(analysis.get("content_category") or ""),
             "tags": CreatorRepository._tags_value(analysis),
-            "followers": str(creator.get("followers") or ""),
-            "insight_level": str(insight.get("level") or insight.get("grade") or "insufficient"),
+            "followers": str(
+                creator.get("followers")
+                if creator.get("followers") is not None
+                else ""
+            ),
+            "insight_level": str(
+                insight.get("level")
+                or insight.get("grade")
+                or ("" if analysis.get("source") == "chrome_extension" else "insufficient")
+            ),
             "status": status,
             "created_at": str(analysis.get("imported_at") or _utc_now()),
             "updated_at": _utc_now(),

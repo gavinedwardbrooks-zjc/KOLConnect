@@ -87,7 +87,7 @@ class ExtensionAgencyImportTests(unittest.TestCase):
         detail = self.repository.getCreatorDetail(saved["creator_id"])
         self.assertEqual("agency_one", detail["record"]["agency_id"])
 
-    def test_empty_agency_is_allowed_and_existing_policy_is_preserved(self) -> None:
+    def test_extension_update_preserves_existing_agency_relationship(self) -> None:
         profile_url = "https://www.tiktok.com/@agency-existing"
         first = self.service.import_creator_from_extension(
             self.analysis(profile_url, "agency_one", "task_20260817T000002Z_bbbbbbbb"),
@@ -109,7 +109,7 @@ class ExtensionAgencyImportTests(unittest.TestCase):
             compensation_task_id="task_20260817T000004Z_dddddddd",
         )
         self.assertEqual(
-            "agency_two",
+            "agency_one",
             self.repository.getCreatorDetail(first["creator_id"])["record"]["agency_id"],
         )
 

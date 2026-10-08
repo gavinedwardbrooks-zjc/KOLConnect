@@ -2396,11 +2396,82 @@ def get_dashboard_data() -> dict:
 
 def _extension_analysis_payload(payload: dict, task: dict, account_uid: str) -> dict:
     creator = payload.get("creator") if isinstance(payload.get("creator"), dict) else {}
+    field_states = creator.get("fields") if isinstance(creator.get("fields"), dict) else {}
     videos = payload.get("videos") if isinstance(payload.get("videos"), list) else []
     video_analysis = payload.get("video_analysis") if isinstance(payload.get("video_analysis"), dict) else {}
     creator_insight = payload.get("creator_insight") if isinstance(payload.get("creator_insight"), dict) else {}
     # The extension is capped at 20 videos; keep the same bound when persisting its snapshot.
     videos = [item for item in videos[:20] if isinstance(item, dict)]
+    def field_value(name: str, *fallbacks: object) -> object:
+        state = field_states.get(name)
+        if isinstance(state, dict) and "value" in state:
+            value = state.get("value")
+            return value.strip() if isinstance(value, str) else value
+        if name in creator:
+            value = creator.get(name)
+            return value.strip() if isinstance(value, str) else value
+        value = next((value for value in fallbacks if value is not None), None)
+        return value.strip() if isinstance(value, str) else value
+
+    def field_observation(name: str, value: object) -> dict[str, object]:
+        state = field_states.get(name)
+        if isinstance(state, dict):
+            confidence = str(state.get("confidence") or "").strip().lower()
+            missing_reason = str(state.get("missing_reason") or "").strip()
+            observed = (
+                "value" in state
+                and state.get("value") not in (None, "")
+                and confidence != "missing"
+                and not missing_reason
+            )
+            return {
+                "observed": observed,
+                "source": str(state.get("source") or "").strip(),
+                "confidence": confidence,
+                "missing_reason": missing_reason,
+            }
+        # Legacy flat payloads can prove non-empty text, but cannot prove that a
+        # numeric zero was observed rather than produced by coercion upstream.
+        observed = value not in (None, "", 0, "0", False)
+        return {"observed": observed, "source": "legacy_flat" if observed else ""}
+
+    creator_values = {
+        "creator_name": field_value("creator_name"),
+        "platform": field_value("platform"),
+        "profile_url": field_value("profile_url"),
+        "username": field_value("username"),
+        "followers": field_value("followers"),
+        "bio": field_value("bio"),
+        "email": field_value("email", payload.get("email")),
+        "account_email": field_value("account_email"),
+        "whatsapp": field_value("whatsapp", payload.get("whatsapp")),
+        "country": field_value("country", payload.get("country")),
+        "language": field_value("language", payload.get("language")),
+        "language_source": field_value("language_source"),
+        "agency_id": field_value("agency_id", payload.get("agency_id")),
+        "platform_account_id": field_value("platform_account_id"),
+        "latest_post_date": field_value("latest_post_date"),
+    }
+    creator_values["platform"] = str(creator.get("platform") or "").strip()
+    creator_values["profile_url"] = str(creator.get("profile_url") or "").strip()
+    observations = {
+        name: field_observation(name, value)
+        for name, value in creator_values.items()
+    }
+    # Identity was independently validated and canonicalized before this helper.
+    observations["platform"] = {"observed": True, "source": "canonical_identity"}
+    observations["profile_url"] = {"observed": True, "source": "canonical_identity"}
+    content_category_state = field_states.get("content_category")
+    content_category = (
+        field_value("content_category")
+        if isinstance(content_category_state, dict)
+        else payload.get("content_category")
+        if payload.get("content_category") is not None
+        else field_value("content_category")
+    )
+    if isinstance(content_category, str):
+        content_category = content_category.strip()
+    observations["content_category"] = field_observation("content_category", content_category)
     return {
         "schema_version": "1.0",
         "analysis_id": f"analysis_{task['id']}",
@@ -2408,22 +2479,9 @@ def _extension_analysis_payload(payload: dict, task: dict, account_uid: str) -> 
         "account_uid": account_uid,
         "imported_at": _utc_now(),
         "source": "chrome_extension",
-        "creator": {
-            "creator_name": str(creator.get("creator_name") or "").strip(),
-            "platform": str(creator.get("platform") or "").strip(),
-            "profile_url": str(creator.get("profile_url") or "").strip(),
-            "followers": str(creator.get("followers") or "").strip(),
-            "bio": str(creator.get("bio") or "").strip(),
-            "email": str(creator.get("email") or payload.get("email") or "").strip(),
-            "whatsapp": str(creator.get("whatsapp") or payload.get("whatsapp") or "").strip(),
-            "country": str(creator.get("country") or payload.get("country") or "").strip(),
-            "language": str(creator.get("language") or payload.get("language") or "").strip(),
-            "language_source": str(creator.get("language_source") or "").strip(),
-            "agency_id": str(creator.get("agency_id") or payload.get("agency_id") or "").strip(),
-        },
-        "content_category": str(
-            payload.get("content_category") or creator.get("content_category") or ""
-        ).strip(),
+        "creator": creator_values,
+        "field_observations": observations,
+        "content_category": content_category,
         "video_analysis": video_analysis,
         "videos": videos,
         "creator_insight": creator_insight,
@@ -2476,6 +2534,7 @@ def import_extension_capture(payload: dict, action: object) -> dict:
         **payload,
         "creator": {
             **creator,
+            "profile_url": normalized_url,
             "email": email,
             "whatsapp": whatsapp,
             "country": country,
@@ -2532,6 +2591,9 @@ def import_extension_capture(payload: dict, action: object) -> dict:
         "analysis_id": saved_analysis["creator_id"],
         "account_id": saved_analysis["account_id"],
         "snapshot_id": saved_analysis["snapshot_id"],
+        "updated_fields": list(saved_analysis.get("updated_fields") or []),
+        "preserved_fields": list(saved_analysis.get("preserved_fields") or []),
+        "warnings": list(saved_analysis.get("warnings") or []),
     }
 
 
