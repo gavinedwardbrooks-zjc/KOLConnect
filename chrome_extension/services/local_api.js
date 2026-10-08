@@ -1,4 +1,5 @@
 import "../config.js";
+import { PROFILE_FIELD_NAMES } from "../core/schema.js";
 
 const DEFAULT_API_URL = "http://127.0.0.1:8765";
 export const CONTENT_CATEGORY_OPTIONS = globalThis.KOLConnectConfig.CONTENT_CATEGORY_OPTIONS;
@@ -6,9 +7,10 @@ export const CONTENT_CATEGORY_OPTIONS = globalThis.KOLConnectConfig.CONTENT_CATE
 const clean = (value) => String(value ?? "").trim();
 
 export class LocalApiError extends Error {
-  constructor(code, message) {
+  constructor(code, message, status = 0) {
     super(message);
     this.code = code;
+    this.status = status;
   }
 }
 
@@ -73,7 +75,7 @@ export async function lookupAccount(platform, profileUrl) {
 }
 
 function buildVideoImportItem(video = {}, capturedAt = "") {
-  return {
+  const item = {
     platform: video.platform || "",
     content_type: video.content_type || "",
     video_id: video.video_id || "",
@@ -86,32 +88,80 @@ function buildVideoImportItem(video = {}, capturedAt = "") {
     published_at: video.published_at?.value ?? null,
     engagement_rate: video.engagement_rate?.value ?? null,
     captured_at: capturedAt,
-    ...(video.platform === "TikTok" && video.capture_layer ? {
+    ...(video.capture_layer ? {
       capture_layer: video.capture_layer,
       observed_at: video.observed_at,
-      field_provenance: video.field_provenance,
-      shares: video.shares?.value ?? null,
     } : {})
+  };
+  const metricFields = ["views", "likes", "comments", "shares", "published_at", "engagement_rate"];
+  const fieldProvenance = { ...(video.field_provenance || {}) };
+  for (const field of metricFields) {
+    const state = video[field];
+    if (!state || typeof state !== "object") continue;
+    fieldProvenance[field] ||= {
+      source: state.source || "",
+      confidence: state.confidence || (state.value == null ? "missing" : ""),
+      missing_reason: state.missing_reason || "",
+      ...(state.raw_text !== undefined ? { raw_text: state.raw_text } : {}),
+      ...(state.is_estimated !== undefined ? { is_estimated: Boolean(state.is_estimated) } : {})
+    };
+  }
+  if (Object.keys(fieldProvenance).length) item.field_provenance = fieldProvenance;
+  if (video.shares && typeof video.shares === "object") item.shares = video.shares.value ?? null;
+  return item;
+}
+
+const MUTATION_ACTIONS = new Set(["ADD", "UPDATE"]);
+const MUTATION_FIELD_NAMES = [...PROFILE_FIELD_NAMES, "content_category"];
+
+function cloneFieldState(field) {
+  if (!field || typeof field !== "object") return null;
+  return {
+    ...(Object.prototype.hasOwnProperty.call(field, "value") ? { value: field.value } : {}),
+    source: clean(field.source),
+    confidence: clean(field.confidence),
+    missing_reason: clean(field.missing_reason)
   };
 }
 
-export function buildImportPayload(profile = {}, now = new Date()) {
+function mutationFields(profile) {
+  const source = profile.fields && typeof profile.fields === "object" ? profile.fields : {};
+  return Object.fromEntries(MUTATION_FIELD_NAMES.flatMap((name) => {
+    const state = cloneFieldState(source[name]);
+    return state ? [[name, state]] : [];
+  }));
+}
+
+function fieldValue(profile, fields, name) {
+  if (fields[name] && Object.prototype.hasOwnProperty.call(fields[name], "value")) {
+    return fields[name].value;
+  }
+  return Object.prototype.hasOwnProperty.call(profile, name) ? profile[name] : undefined;
+}
+
+function assignPresent(target, name, value) {
+  if (value !== undefined) target[name] = value;
+}
+
+export function buildMutationPayload(action, profile = {}, now = new Date()) {
+  if (!MUTATION_ACTIONS.has(action)) {
+    throw new LocalApiError("EXPLICIT_ACTION_REQUIRED", "必须明确指定 ADD 或 UPDATE 操作。", 422);
+  }
   const capturedAt = now.toISOString();
+  const fields = mutationFields(profile);
+  const creator = { fields };
+  for (const name of PROFILE_FIELD_NAMES) {
+    assignPresent(creator, name, fieldValue(profile, fields, name));
+  }
+  assignPresent(creator, "platform", profile.platform);
+  assignPresent(creator, "profile_url", fieldValue(profile, fields, "profile_url"));
+  assignPresent(creator, "username", fieldValue(profile, fields, "username"));
+  assignPresent(creator, "language_source", fields.language?.source || profile.language_source);
+  assignPresent(creator, "agency_id", profile.agency_id);
   return {
+    action,
     task_name: `Extension import ${now.toISOString().slice(0, 10)}`,
-    creator: {
-      creator_name: profile.creator_name || profile.username || "",
-      platform: profile.platform || "",
-      profile_url: profile.profile_url || "",
-      followers: profile.followers || "",
-      bio: profile.bio || "",
-      email: clean(profile.email),
-      whatsapp: clean(profile.whatsapp),
-      country: clean(profile.country),
-      language: clean(profile.language),
-      language_source: clean(profile.language_source),
-      agency_id: clean(profile.agency_id)
-    },
+    creator,
     videos: Array.isArray(profile.videos)
       ? profile.videos.map((video) => buildVideoImportItem(video, capturedAt))
       : [],
@@ -119,8 +169,8 @@ export function buildImportPayload(profile = {}, now = new Date()) {
       ? profile.video_analysis
       : {},
     creator_insight: {},
-    content_category: clean(profile.content_category),
-    note: profile.note || "",
+    content_category: fieldValue(profile, fields, "content_category"),
+    note: profile.note ?? "",
     analysis: profile.analysis && typeof profile.analysis === "object"
       ? profile.analysis
       : {
@@ -130,12 +180,15 @@ export function buildImportPayload(profile = {}, now = new Date()) {
   };
 }
 
-export function validateImportProfile(profile = {}) {
+export function validateMutationProfile(action, profile = {}) {
+  if (!MUTATION_ACTIONS.has(action)) return ["明确操作"];
   const missing = [];
   if (!profile.platform) missing.push("平台");
   if (!profile.profile_url) missing.push("主页链接");
   if (!profile.username) missing.push("用户名");
   if (
+    action === "ADD"
+    &&
     profile.platform
     && profile.profile_url
     && profile.username
@@ -146,16 +199,21 @@ export function validateImportProfile(profile = {}) {
   return missing;
 }
 
-export async function importProfile(profile) {
-  const missing = validateImportProfile(profile);
-  if (missing.length) throw new Error(`无法导入：缺少${missing.join("、")}。`);
+async function mutateAccount(action, profile) {
+  const missing = validateMutationProfile(action, profile);
+  if (missing.length) throw new LocalApiError("VALIDATION_ERROR", `无法执行操作：缺少${missing.join("、")}。`, 422);
   const apiUrl = await loadLocalApiUrl();
   const endpoint = new URL("/api/extension/import", apiUrl);
-  const response = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(buildImportPayload(profile))
-  });
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildMutationPayload(action, profile))
+    });
+  } catch (_) {
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。", 0);
+  }
   let result = {};
   try {
     result = await response.json();
@@ -163,7 +221,19 @@ export async function importProfile(profile) {
     result = {};
   }
   if (!response.ok || result.ok === false) {
-    throw new Error(result.error || `KOLConnect 请求失败（HTTP ${response.status}）。`);
+    const structured = result.error && typeof result.error === "object" ? result.error : null;
+    const code = clean(structured?.code || result.code) || `HTTP_${response.status}`;
+    const message = clean(structured?.message || result.message || (typeof result.error === "string" ? result.error : ""))
+      || `KOLConnect 请求失败（HTTP ${response.status}）。`;
+    throw new LocalApiError(code, message, response.status);
   }
   return result;
+}
+
+export function addAccount(profile) {
+  return mutateAccount("ADD", profile);
+}
+
+export function updateAccount(profile) {
+  return mutateAccount("UPDATE", profile);
 }

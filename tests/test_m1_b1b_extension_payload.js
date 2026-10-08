@@ -65,7 +65,7 @@ class FakeButtonElement extends FakeElement {}
     analysis_url: "https://www.instagram.com/demo/"
   };
   const fixedNow = new Date("2026-08-07T00:00:00.000Z");
-  const payload = api.buildImportPayload(profile, fixedNow);
+  const payload = api.buildMutationPayload("ADD", profile, fixedNow);
   assert.equal(payload.creator.email, "creator@example.com");
   assert.equal(payload.creator.whatsapp, "+5511999999999");
   assert.equal(payload.creator.country, "Brazil");
@@ -77,21 +77,21 @@ class FakeButtonElement extends FakeElement {}
   assert.equal(payload.note, "Keep existing fields");
   assert.equal(payload.analysis.capture_status, "success");
 
-  const emptyOptional = api.buildImportPayload({
+  const emptyOptional = api.buildMutationPayload("ADD", {
     platform: "TikTok",
     profile_url: "https://www.tiktok.com/@empty",
     username: "@empty",
     content_category: "Other"
   }, fixedNow);
-  assert.equal(emptyOptional.creator.email, "");
-  assert.equal(emptyOptional.creator.whatsapp, "");
-  assert.equal(emptyOptional.creator.country, "");
-  assert.equal(emptyOptional.creator.language, "");
+  assert.equal(Object.hasOwn(emptyOptional.creator, "email"), false);
+  assert.equal(Object.hasOwn(emptyOptional.creator, "whatsapp"), false);
+  assert.equal(Object.hasOwn(emptyOptional.creator, "country"), false);
+  assert.equal(Object.hasOwn(emptyOptional.creator, "language"), false);
   assert.deepEqual(
-    api.validateImportProfile({ ...profile, content_category: "" }),
+    api.validateMutationProfile("ADD", { ...profile, content_category: "" }),
     ["Content Category"]
   );
-  assert.deepEqual(api.validateImportProfile(profile), []);
+  assert.deepEqual(api.validateMutationProfile("ADD", profile), []);
 
   const publicResult = {
     fields: {},
@@ -171,13 +171,14 @@ class FakeButtonElement extends FakeElement {}
   }
   const assistant = context.__KOLCONNECT_NEXT_ASSISTANT__;
   const importMessages = () => sentMessages.filter(
-    message => message.type === "KOLCONNECT_NEXT_IMPORT"
+    message => message.type === "KOLCONNECT_NEXT_ADD_ACCOUNT"
   );
   assistant.state.profile = { ...profile, content_category: "" };
   assistant.initializePreview(assistant.state.profile);
+  assistant.state.accountLookup = { state: "ACCOUNT_NOT_FOUND" };
   assert.equal(assistant.previewInputs.email.value, "creator@example.com");
   assert.equal(assistant.previewInputs.content_category.value, "");
-  await assistant.importCurrent();
+  await assistant.mutateCurrent();
   assert.equal(importMessages().length, 0, "category validation must block import");
 
   assistant.previewInputs.email.value = "edited@example.com";
@@ -186,7 +187,7 @@ class FakeButtonElement extends FakeElement {}
   assistant.previewInputs.language.value = "pt-BR";
   assistant.previewInputs.content_category.value = "Gaming";
   assistant.previewInputs.content_category.listeners.change();
-  await assistant.importCurrent();
+  await assistant.mutateCurrent();
   assert.equal(importMessages().length, 1);
   assert.equal(importMessages()[0].profile.email, "edited@example.com");
   assert.equal(importMessages()[0].profile.whatsapp, "+5511888888888");
@@ -194,9 +195,11 @@ class FakeButtonElement extends FakeElement {}
   assert.equal(importMessages()[0].profile.language, "pt-BR");
   assert.equal(importMessages()[0].profile.content_category, "Gaming");
 
-  await api.importProfile(profile);
-  await api.importProfile(profile);
+  await api.addAccount(profile);
+  await api.updateAccount(profile);
   assert.equal(requests.length, 2);
+  assert.equal(requests[0].action, "ADD");
+  assert.equal(requests[1].action, "UPDATE");
   assert.deepEqual(requests[0].creator, requests[1].creator);
   assert.equal(requests[0].content_category, requests[1].content_category);
 

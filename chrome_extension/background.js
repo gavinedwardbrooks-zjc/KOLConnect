@@ -9,7 +9,7 @@ import {
 } from "./core/content_analysis.js";
 import { MESSAGE } from "./core/messaging.js";
 import { failedProfile, finalizeProfile } from "./core/schema.js";
-import { importProfile, loadAgencies, lookupAccount } from "./services/local_api.js";
+import { addAccount, loadAgencies, lookupAccount, updateAccount } from "./services/local_api.js";
 
 const PLATFORMS = [TikTok, Instagram, YouTube];
 const contentControllers = new Map();
@@ -179,17 +179,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .catch((error) => sendResponse({ ok: false, error: error?.message || "Profile collection failed." }));
     return true;
   }
-  if (message?.type === MESSAGE.IMPORT) {
+  if ([MESSAGE.ADD_ACCOUNT, MESSAGE.UPDATE_ACCOUNT].includes(message?.type)) {
+    const mutate = message.type === MESSAGE.ADD_ACCOUNT ? addAccount : updateAccount;
     Promise.resolve().then(async () => {
       if (String(message.profile?.platform).toLowerCase() === "tiktok") {
         const profile = new URL(message.profile.profile_url).pathname.match(/^\/@([A-Za-z0-9._]+)\/?$/)?.[1];
         const state = await TikTok.captureState(sender.tab?.id, profile);
         if (state.stopped) throw new Error(state.stopped);
       }
-      return importProfile(message.profile);
+      return mutate(message.profile);
     })
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error) => sendResponse({ ok: false, error: error?.message || "Import failed." }));
+      .then((result) => sendResponse({
+        ok: true,
+        result,
+        session_id: String(message.session_id || ""),
+        identity: message.identity || null
+      }))
+      .catch((error) => sendResponse({
+        ok: false,
+        code: error?.code || "MUTATION_FAILED",
+        error: error?.message || "Mutation failed.",
+        session_id: String(message.session_id || ""),
+        identity: message.identity || null
+      }));
     return true;
   }
   if (message?.type === MESSAGE.LOOKUP_ACCOUNT) {

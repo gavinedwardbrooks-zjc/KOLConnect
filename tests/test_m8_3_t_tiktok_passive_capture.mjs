@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import vm from "node:vm";
 import * as TikTok from "../chrome_extension/platform/tiktok.js";
 import { contentItem, finalizeContentAnalysis } from "../chrome_extension/core/content_analysis.js";
-import { buildImportPayload } from "../chrome_extension/services/local_api.js";
+import { buildMutationPayload } from "../chrome_extension/services/local_api.js";
 
 const require = createRequire(import.meta.url);
 const Protocol = require("../chrome_extension/capture/passive_capture_protocol.js");
@@ -161,7 +161,7 @@ const brokenFallback = await TikTok.collectRecentContent(1, options);
 assert.equal(brokenFallback.passive_capture_status, "CAPTURE_L1_ACTIVE");
 assert.equal(brokenFallback.returned_count, 2);
 assert.equal(brokenFallback.capture_diagnostics.fallback_error, "PARSER_ERROR");
-const payload = buildImportPayload({ platform: "TikTok", creator_name: "Fixture Creator", username: "fixture_creator",
+const payload = buildMutationPayload("ADD", { platform: "TikTok", creator_name: "Fixture Creator", username: "fixture_creator",
   profile_url: options.analysisUrl, content_category: "Gaming", videos: l1.contents });
 assert.equal(payload.videos.length, 2);
 assert.equal(payload.videos[0].field_provenance.views.layer, "L1");
@@ -279,12 +279,12 @@ const blockedAnalysis = await message({ type: "KOLCONNECT_NEXT_ANALYZE_CONTENT",
 assert.equal(blockedAnalysis.ok, true);
 assert.equal(blockedAnalysis.analysis.capture_status, "failed");
 assert.equal(blockedAnalysis.analysis.error, "LOGIN_REQUIRED");
-assert.equal((await message({ type: "KOLCONNECT_NEXT_IMPORT", profile: importProfile })).ok, false);
+assert.equal((await message({ type: "KOLCONNECT_NEXT_ADD_ACCOUNT", profile: importProfile })).ok, false);
 assert.equal(imports, 0, "challenge blocks even an old preview import");
 backgroundTab.block("");
 await message({ type: "KOLCONNECT_PASSIVE_RESET" });
 assert.equal(imports, 0);
-assert.equal((await message({ type: "KOLCONNECT_NEXT_IMPORT", profile: importProfile })).ok, true);
+assert.equal((await message({ type: "KOLCONNECT_NEXT_ADD_ACCOUNT", profile: importProfile })).ok, true);
 assert.equal(imports, 1, "only explicit user import uses the existing local API");
 
 // Extension reload recovery: an already-open page can retain MAIN capture while

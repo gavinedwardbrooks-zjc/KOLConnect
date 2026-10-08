@@ -13,7 +13,7 @@ import {
   sleepWithSignal
 } from "../core/content_analysis.js";
 import { finalizeProfile } from "../core/schema.js";
-import { buildImportPayload } from "../services/local_api.js";
+import { buildMutationPayload } from "../services/local_api.js";
 import * as Instagram from "../platform/instagram.js";
 import * as TikTok from "../platform/tiktok.js";
 import * as YouTube from "../platform/youtube.js";
@@ -356,7 +356,7 @@ const cancelledWait = sleepWithSignal(1000, cancellation.signal);
 cancellation.abort();
 await assert.rejects(cancelledWait, (error) => error.name === "AbortError");
 
-const payload = buildImportPayload({
+const payload = buildMutationPayload("ADD", {
   platform: "TikTok",
   profile_url: "https://www.tiktok.com/@creator",
   username: "@creator",
@@ -370,6 +370,7 @@ assert.equal(payload.videos[0].views, analysis.contents[0].views.value);
 assert.equal(typeof payload.videos[0].views, "number");
 assert.equal(payload.video_analysis.average_views, 2050);
 assert.deepEqual(Object.keys(payload), [
+  "action",
   "task_name",
   "creator",
   "videos",

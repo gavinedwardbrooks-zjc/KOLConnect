@@ -72,7 +72,7 @@ async function run() {
   assert.equal(ui.state.profile.diagnostic_report.content_analysis.capture_diagnostics.bridge_connected, true);
   const walk = node => [node, ...node.children.flatMap(walk)];
   const text = () => walk(html).map(node => node.textContent).join("\n");
-  const imports = () => sent.filter(message => message.type === "KOLCONNECT_NEXT_IMPORT");
+  const imports = () => sent.filter(message => message.type === "KOLCONNECT_NEXT_ADD_ACCOUNT");
   assert.equal(imports().length, 0, "preview must never auto-import");
   assert.match(text(), /L1 被动网络采集/);
   assert.match(text(), /来源 L1/);
@@ -86,7 +86,8 @@ async function run() {
   await ui.refreshCaptureDiagnostics();
   assert.match(text(), /CAPTURE_DIAGNOSTICS_UNAVAILABLE/);
   assert.doesNotMatch(text(), /secret-error-not-for-display/);
-  await ui.importCurrent();
+  ui.state.accountLookup = { state: "ACCOUNT_NOT_FOUND" };
+  await ui.mutateCurrent();
   assert.equal(imports().length, 1);
   assert.equal(imports()[0].profile.videos.length, 2);
   assert.equal(imports()[0].profile.videos[0].field_provenance.views.layer, "L1");

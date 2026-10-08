@@ -7,7 +7,7 @@ import { createField, finalizeProfile } from "../core/schema.js";
 import { matches as matchesInstagram } from "../platform/instagram.js";
 import { matches as matchesTikTok } from "../platform/tiktok.js";
 import { matches as matchesYouTube } from "../platform/youtube.js";
-import { buildImportPayload, validateImportProfile } from "../services/local_api.js";
+import { buildMutationPayload, validateMutationProfile } from "../services/local_api.js";
 
 assert.equal(normalizeFollowerText("1.2K"), "1200");
 assert.equal(normalizeFollowerText("3.5M"), "3500000");
@@ -62,8 +62,9 @@ for (const forbidden of ["token", "authorization", "cookie", "Gaming creator"]) 
   assert.equal(reportText.toLowerCase().includes(forbidden.toLowerCase()), false);
 }
 
-const payload = buildImportPayload(partialProfile, new Date("2026-07-29T00:00:00.000Z"));
+const payload = buildMutationPayload("ADD", partialProfile, new Date("2026-07-29T00:00:00.000Z"));
 assert.deepEqual(Object.keys(payload), [
+  "action",
   "task_name",
   "creator",
   "videos",
@@ -73,30 +74,43 @@ assert.deepEqual(Object.keys(payload), [
   "note",
   "analysis"
 ]);
-assert.deepEqual(Object.keys(payload.creator), [
+assert.deepEqual(Object.keys(payload.creator).sort(), [
+  "bio",
+  "country",
   "creator_name",
+  "email",
+  "fields",
+  "followers",
+  "language",
+  "language_source",
   "platform",
   "profile_url",
-  "followers",
-  "bio",
-  "email",
-  "whatsapp",
-  "country",
-  "language",
-  "language_source"
+  "username",
+  "whatsapp"
 ]);
-assert.equal(payload.creator.creator_name, "@creator");
+assert.deepEqual(
+  Object.keys(payload.creator.fields).sort(),
+  Object.keys(partialProfile.fields).sort()
+);
+for (const state of Object.values(payload.creator.fields)) {
+  assert.deepEqual(Object.keys(state).sort(), ["confidence", "missing_reason", "source", "value"]);
+}
+assert.equal(payload.action, "ADD");
+assert.equal(payload.creator.creator_name, null);
+assert.equal(payload.creator.username, "@creator");
+assert.equal(payload.creator.fields.followers.value, "1200");
 assert.deepEqual(payload.videos, []);
-assert.deepEqual(validateImportProfile(partialProfile), []);
-assert.deepEqual(validateImportProfile({ platform: "TikTok" }), ["主页链接", "用户名"]);
+assert.deepEqual(validateMutationProfile("ADD", partialProfile), []);
+assert.deepEqual(validateMutationProfile("UPDATE", { platform: "TikTok" }), ["主页链接", "用户名"]);
 
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 assert.equal(manifest.manifest_version, 3);
 assert.equal(manifest.version, "1.0.0");
 assert.equal(manifest.version_name, "KOLConnect v1.0.0");
 const runtimeFiles = JSON.stringify(manifest);
-for (const forbidden of ["popup", "sidepanel", "interceptor", "bridge"]) {
+for (const forbidden of ["popup", "sidepanel", "interceptor"]) {
   assert.equal(runtimeFiles.toLowerCase().includes(forbidden), false);
 }
+assert.equal(runtimeFiles.includes("content/passive_capture_bridge.js"), true);
 
 console.log("Core, schema, diagnostics, URL matching, and import compatibility tests passed.");

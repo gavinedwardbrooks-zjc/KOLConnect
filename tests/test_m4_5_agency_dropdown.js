@@ -106,7 +106,7 @@ async function run() {
   assert.deepEqual(await api.loadAgencies(), [{ agency_id: "agency_one", name: "North Studio" }]);
   assert.match(requests[0].url, /\/api\/local\/agencies$/);
   assert.equal(requests[0].options.method, "GET");
-  const payload = api.buildImportPayload({
+  const payload = api.buildMutationPayload("ADD", {
     platform: "Instagram",
     profile_url: "https://www.instagram.com/demo/",
     agency_id: "agency_one",
@@ -133,16 +133,17 @@ async function run() {
     username: "demo",
   };
   success.assistant.initializePreview(success.assistant.state.profile);
+  success.assistant.state.accountLookup = { state: "ACCOUNT_NOT_FOUND" };
   success.assistant.previewInputs.content_category.value = "Lifestyle";
   select.value = "agency_two";
   select.listeners.change();
-  await success.assistant.importCurrent();
-  const importMessage = success.messages.find(message => message.type === "KOLCONNECT_NEXT_IMPORT");
+  await success.assistant.mutateCurrent();
+  const importMessage = success.messages.find(message => message.type === "KOLCONNECT_NEXT_ADD_ACCOUNT");
   assert.equal(importMessage.profile.agency_id, "agency_two");
   assert.equal(Object.hasOwn(importMessage.profile, "agency_name"), false);
   select.value = "";
   select.listeners.change();
-  assert.equal(success.assistant.profileForImport().agency_id, "");
+  assert.equal(success.assistant.profileForMutation().agency_id, "");
 
   const failed = createAssistant({ ok: false, error: "Agency unavailable" });
   await flushPromises();
@@ -154,9 +155,10 @@ async function run() {
     username: "demo",
   };
   failed.assistant.initializePreview(failed.assistant.state.profile);
+  failed.assistant.state.accountLookup = { state: "ACCOUNT_NOT_FOUND" };
   failed.assistant.previewInputs.content_category.value = "Gaming";
-  await failed.assistant.importCurrent();
-  const fallbackImport = failed.messages.find(message => message.type === "KOLCONNECT_NEXT_IMPORT");
+  await failed.assistant.mutateCurrent();
+  const fallbackImport = failed.messages.find(message => message.type === "KOLCONNECT_NEXT_ADD_ACCOUNT");
   assert.equal(fallbackImport.profile.agency_id, "");
 
   const sources = [
