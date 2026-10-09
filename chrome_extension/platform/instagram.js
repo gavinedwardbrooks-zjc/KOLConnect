@@ -798,6 +798,8 @@ function discoverInstagramReels() {
       '[aria-label*="visualiza" i]',
       '[aria-label*="reproducciones" i]',
       '[aria-label*="播放"]',
+      '[aria-label*="观看量"]',
+      '[aria-label*="播放量"]',
       '[data-testid*="view-count" i]',
       '[data-testid*="play-count" i]'
     ];
@@ -806,9 +808,11 @@ function discoverInstagramReels() {
       addCandidate(node.textContent, "reel_card_dom");
     }
     for (const icon of card.querySelectorAll(
-      'svg[aria-label*="play" i], svg[aria-label*="view" i], svg[aria-label*="visualiza" i], svg[aria-label*="reproducciones" i]'
+      'svg[aria-label*="play" i], svg[aria-label*="view" i], svg[aria-label*="visualiza" i], svg[aria-label*="reproducciones" i], svg[aria-label*="观看量"], svg[aria-label*="播放量"]'
     )) {
       addCandidate(icon.getAttribute("aria-label"), "reel_card_icon");
+      addCandidate(icon.nextElementSibling?.textContent, "reel_card_icon_adjacent");
+      addCandidate(icon.parentElement?.nextElementSibling?.textContent, "reel_card_icon_adjacent");
       addCandidate(icon.parentElement?.textContent, "reel_card_icon_adjacent");
       addCandidate(icon.parentElement?.parentElement?.textContent, "reel_card_icon_adjacent");
     }
@@ -825,7 +829,7 @@ function discoverInstagramReels() {
       published_at: null,
       card_view_candidates: candidates,
       card_view_missing_reason: hasVisibleNumericOverlay
-        ? "reel_card_selector_failed"
+        ? "reel_card_view_candidate_not_found"
         : "reel_card_view_not_exposed",
       is_pinned: Boolean(pinElement),
       source: "page_dom"
@@ -1135,7 +1139,7 @@ function mergeInstagramDetail(item, detail) {
     ? item.published_source || item.source || ""
     : detail?.published_at != null ? detail.published_source || "" : "";
   const viewsMissingReason = views == null
-    ? item.card_view_missing_reason === "reel_card_selector_failed"
+    ? item.card_view_missing_reason === "reel_card_view_candidate_not_found"
       ? item.card_view_missing_reason
       : detail?.views_missing_reason
         || item.card_view_missing_reason
