@@ -290,15 +290,23 @@ assert.equal(imports, 1, "only explicit user import uses the existing local API"
 // Extension reload recovery: an already-open page can retain MAIN capture while
 // its old isolated receiver is gone. Opening the assistant restores the same
 // isolated dependency chain declared by the production manifest.
-vm.runInContext("delete globalThis.KOLConnectTikTokCapture", backgroundTab.target);
+vm.runInContext("delete globalThis.KOLConnectPassiveCaptureProtocol; delete globalThis.KOLConnectTikTokCapture", backgroundTab.target);
 assert.equal(vm.runInContext("typeof globalThis.KOLConnectTikTokCapture", backgroundTab.target), "undefined");
+assert.ok(backgroundTab.target.KOLConnectTikTokSession, "session can survive without the protocol");
 await actionClick(sender.tab);
 await tick();
 assert.ok(backgroundTab.target.KOLConnectTikTokCapture, "assistant fallback restores isolated capture runtime");
+assert.equal(typeof backgroundTab.target.KOLConnectPassiveCaptureProtocol.profileUsername, "function");
 assert.equal(backgroundTab.target.KOLConnectTikTokCapture.diagnostics().bridge_connected, true);
 const productionManifest = JSON.parse(readFileSync(new URL("../chrome_extension/manifest.json", import.meta.url), "utf8"));
 const manifestIsolated = productionManifest.content_scripts.find(entry =>
   entry.world === "ISOLATED" && entry.js.includes("content/tiktok_capture_runtime.js"));
+const recoveryMain = productionManifest.content_scripts.find(entry =>
+  entry.world === "MAIN" && entry.js.includes("capture/passive_capture_main.js"));
+assert.notEqual(recoveryMain.js[0], manifestIsolated.js[0], "Chrome must load distinct protocol resources in the two worlds");
+assert.equal(readFileSync(new URL(`../chrome_extension/${recoveryMain.js[0]}`, import.meta.url), "utf8").replace(/\r\n/g, "\n").trimEnd(),
+  readFileSync(new URL(`../chrome_extension/${manifestIsolated.js[0]}`, import.meta.url), "utf8").replace(/\r\n/g, "\n").trimEnd(),
+  "both worlds must use the same protocol implementation");
 assert.deepEqual(recoveryInjections[0], { world: "ISOLATED", files: manifestIsolated.js });
 assert.deepEqual(recoveryInjections[1].files,
   ["config.js", "core/analysis_session.js", "core/page_support.js", "content/floating_assistant.js"]);

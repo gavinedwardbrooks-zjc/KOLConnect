@@ -14,7 +14,7 @@ import { addAccount, loadAgencies, lookupAccount, updateAccount } from "./servic
 const PLATFORMS = [TikTok, Instagram, YouTube];
 const contentControllers = new Map();
 const TIKTOK_ISOLATED_CAPTURE_FILES = [
-  "capture/passive_capture_protocol.js",
+  "capture/passive_capture_protocol_isolated.js",
   "platform/tiktok_network.js",
   "capture/tiktok_capture_session.js",
   "content/passive_capture_bridge.js",
