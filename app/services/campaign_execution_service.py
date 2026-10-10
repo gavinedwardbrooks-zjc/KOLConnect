@@ -6,6 +6,8 @@ from datetime import date, datetime, timezone
 import uuid
 from typing import Any, Callable
 
+from storage.sqlite_workbook_store import SQLiteWorkbookStore
+
 
 TERMINAL_STAGES = frozenset({"completed", "cancelled", "rejected"})
 WAITING_ON = frozenset({"creator", "internal", "client", "self", "none"})
@@ -29,8 +31,9 @@ def _date(value: object, label: str = "截止日期") -> str | None:
 
 
 class CampaignExecutionService:
-    def __init__(self, connection_factory: Callable[[], Any]) -> None:
+    def __init__(self, connection_factory: Callable[[], Any], *, today_provider: Callable[[], date] = date.today) -> None:
         self._connection_factory = connection_factory
+        self._today_provider = today_provider
 
     def update_execution(self, relation_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         allowed = {"stage", "owner", "next_action", "due_date", "waiting_on", "need_my_decision"}
@@ -61,6 +64,7 @@ class CampaignExecutionService:
                 f"UPDATE campaign_creators SET {','.join(f'{key}=?' for key in updates)} WHERE id=?",
                 tuple(updates.values()) + (relation_id,),
             )
+            SQLiteWorkbookStore.increment_business_revision(connection)
         return self.execution_for(relation_id)
 
     def execution_for(self, relation_id: str) -> dict[str, Any]:
@@ -88,6 +92,81 @@ class CampaignExecutionService:
             "waiting_internal": [item for item in items if item.get("waiting_on") == "internal"],
             "need_my_decision": [item for item in items if item.get("need_my_decision")],
         }
+
+    def action_center(self) -> dict[str, Any]:
+        """Project explicit campaign work without changing its authoritative state."""
+        today = self._today_provider().isoformat()
+        active = (
+            "COALESCE(cc.archived_at, '')='' AND COALESCE(cr.archived_at, '')='' "
+            "AND COALESCE(c.archived_at, '')='' AND COALESCE(c.status, '')!='completed' "
+            "AND COALESCE(cc.stage, '') NOT IN ('completed', 'rejected', 'cancelled')"
+        )
+        with self._connection_factory().read_connection() as connection:
+            relations = [dict(row) for row in connection.execute(
+                "SELECT cc.id AS campaign_creator_id, cc.campaign_id, cc.creator_id, "
+                "cr.name AS creator_name, c.name AS campaign_name, cc.next_action, "
+                "cc.due_date, cc.need_my_decision FROM campaign_creators cc "
+                "JOIN campaigns c ON c.campaign_id=cc.campaign_id "
+                "JOIN creators cr ON cr.creator_id=cc.creator_id WHERE " + active
+            )]
+            submissions = [dict(row) for row in connection.execute(
+                "SELECT cs.submission_id, cs.content_type, cc.id AS campaign_creator_id, "
+                "cc.campaign_id, cc.creator_id, cr.name AS creator_name, "
+                "c.name AS campaign_name FROM content_submissions cs "
+                "JOIN campaign_creators cc ON cc.id=cs.campaign_creator_id "
+                "JOIN campaigns c ON c.campaign_id=cc.campaign_id "
+                "JOIN creators cr ON cr.creator_id=cc.creator_id "
+                "WHERE cs.review_status='pending' AND " + active
+            )]
+
+        ranked: list[tuple[int, str, str, dict[str, Any]]] = []
+        for row in relations:
+            action = str(row.get("next_action") or "").strip()
+            due = str(row.get("due_date") or "").strip()
+            try:
+                if due and date.fromisoformat(due).isoformat() != due:
+                    due = ""
+            except ValueError:
+                due = ""
+            decision = bool(row.get("need_my_decision"))
+            due_action = bool(action and due and due <= today)
+            if not due_action and not (decision and not action):
+                continue
+            priority = ("overdue" if due < today else "due_today") if due_action else "need_my_decision"
+            item = {
+                "type": "due_action" if due_action else "need_my_decision",
+                "priority": priority,
+                "campaign_id": row["campaign_id"],
+                "campaign_creator_id": row["campaign_creator_id"],
+                "submission_id": None,
+                "creator_id": row["creator_id"],
+                "creator_name": row["creator_name"],
+                "campaign_name": row["campaign_name"],
+                "next_action": action or None,
+                "due_date": due or None,
+                "need_my_decision": decision,
+                "content_type": None,
+            }
+            rank = {"overdue": 0, "due_today": 1, "need_my_decision": 2}[priority]
+            ranked.append((rank, due if due_action else "", str(row["campaign_creator_id"]), item))
+        for row in submissions:
+            item = {
+                "type": "content_review",
+                "priority": "pending_review",
+                "campaign_id": row["campaign_id"],
+                "campaign_creator_id": row["campaign_creator_id"],
+                "submission_id": row["submission_id"],
+                "creator_id": row["creator_id"],
+                "creator_name": row["creator_name"],
+                "campaign_name": row["campaign_name"],
+                "next_action": None,
+                "due_date": None,
+                "need_my_decision": False,
+                "content_type": row["content_type"],
+            }
+            ranked.append((3, "", str(row["submission_id"]), item))
+        ranked.sort(key=lambda entry: entry[:3])
+        return {"as_of_date": today, "items": [item for *_sort, item in ranked]}
 
     def get_brief(self, campaign_id: str) -> dict[str, Any] | None:
         with self._connection_factory().read_connection() as connection:
@@ -125,6 +204,7 @@ class CampaignExecutionService:
             if connection.execute("SELECT 1 FROM campaign_creators WHERE id=?", (relation_id,)).fetchone() is None:
                 raise ValueError("Campaign 达人记录不存在。")
             connection.execute(f"INSERT INTO content_submissions({','.join(record)}) VALUES ({','.join('?' for _ in record)})", tuple(record.values()))
+            SQLiteWorkbookStore.increment_business_revision(connection)
         return record
 
     def review_submission(self, submission_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -137,6 +217,7 @@ class CampaignExecutionService:
             if cursor.rowcount != 1:
                 raise ValueError("内容提交不存在。")
             row = connection.execute("SELECT * FROM content_submissions WHERE submission_id=?", (submission_id,)).fetchone()
+            SQLiteWorkbookStore.increment_business_revision(connection)
         return dict(row)
 
     def ai_review_submission(self, submission_id: str) -> dict[str, Any]:

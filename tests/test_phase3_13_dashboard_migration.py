@@ -249,6 +249,7 @@ class DashboardCampaignCreatorMigrationTests(unittest.TestCase):
                 "health_summary",
                 "cooperation_performance",
                 "action_items",
+                "action_center",
                 "platform_distribution",
                 "creator_status_distribution",
                 "creator_growth_trend",

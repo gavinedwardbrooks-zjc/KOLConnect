@@ -72,8 +72,8 @@
           </div>
 
           <div id="dashboard-v2-modules" class="dashboard-v2-grid">
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="today" aria-label="今日待处理" data-i18n-aria-label="dashboardModuleToday">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardTodayEyebrow">TODAY</p><h2 data-i18n="dashboardModuleToday">今日待处理</h2></div><span class="dashboard-v2-note" data-i18n="dashboardOpenItems">可直接进入对象</span></div>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="today" aria-label="下一步" data-i18n-aria-label="dashboardModuleToday">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardTodayEyebrow">NEXT ACTIONS</p><h2 data-i18n="dashboardModuleToday">下一步</h2></div><span class="dashboard-v2-note" data-i18n="dashboardOpenItems">来自现有合作记录</span></div>
               <div class="dashboard-v2-action-list" id="dashboard-v2-today-list"></div>
             </section>
 
@@ -1712,6 +1712,34 @@
                     <label class="campaign-inline-fx-input">1 USD = <input id="campaign-inline-fx-rate" type="number" min="0" step="any"> <span id="campaign-inline-fx-currency">--</span></label>
                     <button class="soft-btn compact-btn" id="campaign-inline-fx-save" type="button" data-i18n="campaignDetailSaveRate">保存汇率</button>
                   </div>
+                </div>
+
+                <div class="campaign-form-subsection" data-campaign-section="next-action">
+                  <h3 data-i18n="campaignDetailNextActionSection">下一步</h3>
+                  <div class="form-grid three">
+                    <label class="field">
+                      <span data-i18n="campaignDetailNextActionLabel">下一步</span>
+                      <input id="campaign-creator-next-action" type="text">
+                    </label>
+                    <label class="field">
+                      <span data-i18n="campaignDetailDueDateLabel">截止日期</span>
+                      <input id="campaign-creator-due-date" type="date">
+                    </label>
+                    <label class="field">
+                      <span data-i18n="campaignDetailWaitingOnLabel">等待谁</span>
+                      <select id="campaign-creator-waiting-on">
+                        <option value="none" data-i18n="campaignDetailNone">无</option>
+                        <option value="creator" data-i18n="campaignDetailWaitingCreator">等待达人</option>
+                        <option value="internal" data-i18n="campaignDetailWaitingInternal">等待内部</option>
+                        <option value="client" data-i18n="campaignDetailWaitingClient">等待客户</option>
+                        <option value="self" data-i18n="campaignDetailWaitingSelf">本人决策</option>
+                      </select>
+                    </label>
+                  </div>
+                  <p class="hint" data-i18n="campaignDetailDueActionHint">设置截止日期后，到期时会显示在首页“下一步”。</p>
+                  <label class="field">
+                    <span><input id="campaign-creator-need-my-decision" type="checkbox"> <span data-i18n="campaignDetailDecisionFlagLabel">需要我决定</span></span>
+                  </label>
                 </div>
 
                 <div class="campaign-form-subsection" data-campaign-section="publication-data">

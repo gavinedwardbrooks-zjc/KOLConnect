@@ -83,6 +83,17 @@ class DashboardResponseCacheTests(unittest.TestCase):
         self.assertEqual("second", self.cache.get_response(self.workbook_path, loader)["date"])
         self.assertEqual(2, loader.call_count)
 
+    def test_local_date_change_rebuilds_without_changing_utc_date(self) -> None:
+        local_today = date(2026, 8, 21)
+        cache = DashboardResponseCache(
+            utc_date_provider=lambda: date(2026, 8, 20),
+            local_date_provider=lambda: local_today,
+        )
+        loader = mock.Mock(side_effect=[{"date": "first"}, {"date": "second"}])
+        self.assertEqual("first", cache.get_response(self.workbook_path, loader)["date"])
+        local_today = date(2026, 8, 22)
+        self.assertEqual("second", cache.get_response(self.workbook_path, loader)["date"])
+
     def test_concurrent_first_requests_build_once(self) -> None:
         readers = 6
         barrier = threading.Barrier(readers)

@@ -99,7 +99,11 @@ async function run() {
     "campaign-creator-cost-currency", "campaign-creator-publish-links", "campaign-creator-publish-date",
     "campaign-creator-views", "campaign-creator-likes", "campaign-creator-comments",
     "campaign-creator-roi", "campaign-creator-performance-note", "campaign-creator-form-error",
+    "campaign-creator-next-action", "campaign-creator-due-date",
+    "campaign-creator-waiting-on", "campaign-creator-need-my-decision",
     "campaign-creator-form-save", "campaign-creator-form-cancel", "campaign-creator-empty",
+    "campaign-inline-fx", "campaign-inline-fx-label", "campaign-inline-fx-currency",
+    "campaign-inline-fx-rate", "campaign-inline-fx-save",
     "campaign-creator-table-wrap", "campaign-creator-list-body",
     "campaign-missing-publish-count", "campaign-missing-publish-empty",
     "campaign-missing-publish-table-wrap", "campaign-missing-publish-body",
@@ -165,6 +169,11 @@ async function run() {
     comments: 20,
     roi: 2.5,
     performance_note: "Good",
+    owner: "Maria",
+    next_action: "Confirm brief",
+    due_date: "2026-10-10",
+    waiting_on: "creator",
+    need_my_decision: false,
   }];
   const creators = [
     { creator_id: "creator_one", creator_name: "Ana", platform: "TikTok" },
@@ -175,6 +184,7 @@ async function run() {
     creator_two: [{ account_id: "account_two", platform: "Instagram", profile_url: "https://www.instagram.com/bella" }],
   };
   const calls = [];
+  let executionFailure = false;
 
   const api = {
     async get(url, options = {}) {
@@ -208,6 +218,12 @@ async function run() {
     },
     async post(url, payload, options = {}) {
       calls.push({ method: "POST", url, payload: clone(payload), signal: options.signal });
+      if (url === "/api/settings/fx") {
+        fxRates = fxRates.map(item => Object.hasOwn(payload.rates, item.currency_code)
+          ? { ...item, rate_per_usd: payload.rates[item.currency_code] }
+          : item);
+        return { rates: clone(fxRates) };
+      }
       if (url === "/api/content-submissions/submission_one/ai-review") {
         return { status: "success", human_review_status: "pending", findings: [{ finding_type: "required_missing" }] };
       }
@@ -225,6 +241,12 @@ async function run() {
     },
     async patch(url, payload, options = {}) {
       calls.push({ method: "PATCH", url, payload: clone(payload), signal: options.signal });
+      if (url.endsWith("/execution")) {
+        if (executionFailure) throw new Error("execution unavailable");
+        const recordId = url.split("/").at(-2);
+        relations = relations.map(item => item.id === recordId ? { ...item, ...clone(payload) } : item);
+        return { execution: clone(relations.find(item => item.id === recordId)) };
+      }
       const recordId = url.split("/").at(-1);
       relations = relations.map(item => item.id === recordId ? { ...item, ...clone(payload) } : item);
       return { campaign_creator: clone(relations.find(item => item.id === recordId)) };
@@ -278,8 +300,10 @@ async function run() {
     campaignDetailNoMissingPublish: "暂无缺失发布信息。", campaignDetailStageExecuting: "执行中", campaignDetailStageQuoted: "已报价",
     campaignDetailSelectCreator: "请选择达人", campaignDetailLoadingCreators: "正在加载达人...", campaignDetailAddCreator: "添加达人",
     campaignDetailSaveRelation: "保存合作记录", campaignSaving: "正在保存...", campaignDetailCreatorRequired: "请选择要加入 Campaign 的达人。",
+    campaignDetailRateInvalid: "请输入大于 0 的汇率。",
     campaignDetailExecutionAccountRequired: "请选择本次合作使用的执行账号。", campaignDetailRelationUpdated: "达人合作记录已更新。",
     campaignDetailCreatorAdded: "达人已加入 Campaign。", campaignDetailRelationSaveFailed: "合作记录保存失败。",
+    campaignDetailExecutionPartialSave: "合作记录已保存，但下一步信息未保存：{reason}。请重试。",
     campaignDetailNotFound: "Campaign 不存在或已删除。", campaignDetailLoadFailed: "Campaign 详情加载失败，请稍后重试。",
     campaignDetailFirstPassFindings: "规则一审发现 {count} 项，人工审核状态未改变。", campaignDetailPendingHumanReview: "待人工审核",
     campaignDetailAiReviewUnavailable: "AI 一审：未配置（不影响人工审核）", campaignDetailRulesFirstPass: "规则一审",
@@ -333,6 +357,11 @@ async function run() {
   assert.equal(elements.get("campaign-detail-content").hidden, false);
   assert.equal(elements.get("campaign-creator-add-open").disabled, false);
   assert.equal(elements.get("campaign-brief-title").value, "Launch brief");
+  const markup = fs.readFileSync(path.join(root, "webapp/index.html"), "utf8");
+  for (const id of ["campaign-creator-next-action", "campaign-creator-due-date", "campaign-creator-waiting-on", "campaign-creator-need-my-decision"]) {
+    assert.match(markup, new RegExp(`id="${id}"`), `${id} must be visible in the normal edit form`);
+  }
+  assert.match(markup, /data-i18n="campaignDetailDueActionHint"/);
 
   // Original currency stays authoritative; USD is a derived display only.
   relations[0].creator_quote = 500;
@@ -374,6 +403,13 @@ async function run() {
   assert.equal(elements.get("campaign-detail-error").hidden, true);
   assert.equal(elements.get("campaign-detail-content").hidden, false);
   relations = originalRelations.filter(item => item.id === "relation_one");
+  fxRates = [
+    { currency_code: "USD", rate_per_usd: 1 },
+    { currency_code: "CNY", rate_per_usd: null },
+    { currency_code: "BRL", rate_per_usd: null },
+    { currency_code: "EUR", rate_per_usd: 0.9 },
+    { currency_code: "GBP", rate_per_usd: null },
+  ];
   await registeredPage.load({ campaignId: "campaign_one" });
   calls.splice(0);
 
@@ -400,10 +436,35 @@ async function run() {
   elements.get("campaign-creator-account-id").value = "account_two";
   elements.get("campaign-creator-stage").value = "quoted";
   elements.get("campaign-creator-quote-currency").value = "USD";
+  elements.get("campaign-creator-cost-currency").value = "BRL";
+  await elements.get("campaign-creator-cost-currency").dispatch("change");
+  assert.equal(elements.get("campaign-inline-fx").hidden, false);
+  for (const invalid of ["", "0", "-1", "not-a-number", "Infinity"]) {
+    elements.get("campaign-inline-fx-rate").value = invalid;
+    await elements.get("campaign-inline-fx-save").dispatch("click");
+    assert.equal(elements.get("campaign-creator-form-error").textContent, "请输入大于 0 的汇率。");
+    assert.equal(calls.length, 0, `invalid rate ${JSON.stringify(invalid)} must not POST`);
+  }
+  elements.get("campaign-inline-fx-rate").value = "5";
+  const relationCountBeforeFx = relations.length;
+  await elements.get("campaign-inline-fx-save").dispatch("click");
+  const fxCalls = calls.splice(0);
+  assert.equal(fxCalls.length, 1, "inline FX save must not trigger CampaignCreator add/update");
+  assert.equal(fxCalls[0].url, "/api/settings/fx");
+  assert.deepEqual(fxCalls[0].payload, { rates: { BRL: 5 } }, "only the selected currency may be submitted");
+  assert.equal(fxRates.find(item => item.currency_code === "CNY").rate_per_usd, null);
+  assert.equal(fxRates.find(item => item.currency_code === "GBP").rate_per_usd, null);
+  assert.equal(fxRates.find(item => item.currency_code === "EUR").rate_per_usd, 0.9, "existing configured rate must be preserved");
+  assert.equal(relations.length, relationCountBeforeFx);
   elements.get("campaign-creator-quote-unit-amount").value = "100";
   elements.get("campaign-creator-quote-quantity").value = "2";
   elements.get("campaign-creator-quote-unit").value = "video";
   await elements.get("campaign-creator-quote-quantity").dispatch("input");
+  elements.get("campaign-creator-next-action").value = "Send proposal";
+  elements.get("campaign-creator-due-date").value = "2026-10-10";
+  elements.get("campaign-creator-waiting-on").value = "creator";
+  executionFailure = true;
+  const noticesBeforeAdd = notices.length;
   await elements.get("campaign-creator-form").dispatch("submit");
   const addCalls = calls.splice(0);
   const postCall = addCalls.find(call => call.method === "POST");
@@ -413,10 +474,25 @@ async function run() {
   assert.equal(postCall.payload.creator_quote, "200");
   assert.equal(postCall.payload.quote_currency, "USD");
   assert.equal(relations.length, 2);
+  assert.ok(addCalls.some(call => call.url === "/api/campaign-creators/relation_two/execution"));
+  assert.equal(notices.length, noticesBeforeAdd, "partial create must not report full success");
+  assert.equal(elements.get("campaign-creator-form-card").hidden, false);
+  executionFailure = false;
+  await elements.get("campaign-creator-form").dispatch("submit");
+  const retryCalls = calls.splice(0);
+  assert.equal(retryCalls.filter(call => call.method === "POST" && call.url === "/api/campaigns/campaign_one/creators").length, 0,
+    "retry must not create a duplicate CampaignCreator");
+  assert.ok(retryCalls.some(call => call.url === "/api/campaign-creators/relation_two/execution"));
+  assert.equal(relations.length, 2);
+  assert.equal(relations[1].next_action, "Send proposal");
 
   const editButton = findAction(elements.get("campaign-creator-list-body"), "edit", "relation_one");
   assert.ok(editButton, "active Campaign should expose relation edit action");
   await elements.get("campaign-creator-list-body").dispatch("click", { target: editButton });
+  assert.equal(elements.get("campaign-creator-next-action").value, "Confirm brief");
+  assert.equal(elements.get("campaign-creator-due-date").value, "2026-10-10");
+  assert.equal(elements.get("campaign-creator-waiting-on").value, "creator");
+  assert.equal(elements.get("campaign-creator-need-my-decision").checked, false);
   elements.get("campaign-creator-account-id").value = "account_one";
   elements.get("campaign-creator-stage").value = "completed";
   elements.get("campaign-creator-quote-currency").value = "BRL";
@@ -453,6 +529,42 @@ async function run() {
   assert.equal(patchCall.payload.comments, "35");
   assert.equal(patchCall.payload.roi, "3.2");
   assert.equal(patchCall.payload.performance_note, "Strong result");
+  assert.equal(editCalls.filter(call => call.url.endsWith("/execution")).length, 0, "unrelated edits must preserve execution fields without a second write");
+  assert.equal(relations[0].next_action, "Confirm brief");
+  assert.equal(relations[0].owner, "Maria");
+
+  const editAgain = findAction(elements.get("campaign-creator-list-body"), "edit", "relation_one");
+  await elements.get("campaign-creator-list-body").dispatch("click", { target: editAgain });
+  elements.get("campaign-creator-next-action").value = "Approve final quote";
+  elements.get("campaign-creator-due-date").value = "2026-10-12";
+  elements.get("campaign-creator-waiting-on").value = "internal";
+  elements.get("campaign-creator-need-my-decision").checked = true;
+  await elements.get("campaign-creator-form").dispatch("submit");
+  const actionCalls = calls.splice(0);
+  const actionPatch = actionCalls.find(call => call.url === "/api/campaign-creators/relation_one/execution");
+  assert.ok(actionPatch, "normal edit must use the existing execution endpoint");
+  assert.deepEqual(actionPatch.payload, {
+    next_action: "Approve final quote", due_date: "2026-10-12", waiting_on: "internal", need_my_decision: true,
+  });
+  assert.equal(relations[0].stage, "completed");
+  assert.equal(relations[0].owner, "Maria");
+  const reopen = findAction(elements.get("campaign-creator-list-body"), "edit", "relation_one");
+  await elements.get("campaign-creator-list-body").dispatch("click", { target: reopen });
+  assert.equal(elements.get("campaign-creator-next-action").value, "Approve final quote");
+  assert.equal(elements.get("campaign-creator-due-date").value, "2026-10-12");
+  assert.equal(elements.get("campaign-creator-waiting-on").value, "internal");
+  assert.equal(elements.get("campaign-creator-need-my-decision").checked, true);
+  elements.get("campaign-creator-next-action").value = "Call client";
+  executionFailure = true;
+  const noticeCount = notices.length;
+  await elements.get("campaign-creator-form").dispatch("submit");
+  assert.equal(notices.length, noticeCount, "partial save must not report success");
+  assert.equal(elements.get("campaign-creator-form-card").hidden, false, "failed execution save stays editable");
+  assert.match(elements.get("campaign-creator-form-error").textContent, /execution unavailable/);
+  executionFailure = false;
+  await elements.get("campaign-creator-form").dispatch("submit");
+  assert.equal(relations[0].next_action, "Call client", "retry persists the execution edit");
+  calls.splice(0);
 
   const removeActiveButton = findAction(elements.get("campaign-creator-list-body"), "remove", "relation_two");
   assert.ok(removeActiveButton, "active Campaign should expose relation remove action");

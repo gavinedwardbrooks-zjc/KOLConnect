@@ -127,6 +127,8 @@ assert.doesNotMatch(source, /\.nav-btn, th, label, h1, h2, h3/);
 
 const staticKeys = [...html.matchAll(/data-i18n(?:-placeholder|-aria-label)?="([^"]+)"/g)].map(match => match[1]);
 const dictionaries = i18n.getDictionaries();
+assert.equal(dictionaries.zh.dashboardModuleToday, "下一步");
+assert.equal(dictionaries.en.dashboardModuleToday, "Next Actions");
 for (const key of Object.keys(dictionaries.zh)) {
   assert.ok(dictionaries.en[key], `central English dictionary is missing ${key}`);
   assert.notEqual(dictionaries.en[key], "", `central English dictionary has a blank ${key}`);

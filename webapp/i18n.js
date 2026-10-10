@@ -5,6 +5,13 @@
   const dictionaries = { zh: Object.create(null), en: Object.create(null) };
 
   Object.assign(dictionaries.zh, {
+    campaignDetailNextActionSection: "下一步",
+    campaignDetailNextActionLabel: "下一步",
+    campaignDetailDueDateLabel: "截止日期",
+    campaignDetailWaitingOnLabel: "等待谁",
+    campaignDetailDecisionFlagLabel: "需要我决定",
+    campaignDetailDueActionHint: "设置截止日期后，到期时会显示在首页“下一步”。",
+    campaignDetailExecutionPartialSave: "合作记录已保存，但下一步信息未保存：{reason}。请重试。",
     apiServerUnreachable: "无法连接 KOLConnect 服务，请确认程序正在运行。",
     apiServerError: "服务处理请求时发生错误，请稍后重试。",
     apiInvalidResponse: "服务返回了无法识别的响应，请稍后重试。",
@@ -75,6 +82,13 @@
   });
 
   Object.assign(dictionaries.en, {
+    campaignDetailNextActionSection: "Next actions",
+    campaignDetailNextActionLabel: "Next action",
+    campaignDetailDueDateLabel: "Due date",
+    campaignDetailWaitingOnLabel: "Waiting on",
+    campaignDetailDecisionFlagLabel: "Needs my decision",
+    campaignDetailDueActionHint: "With a due date, this action appears under Next Actions on the dashboard when due.",
+    campaignDetailExecutionPartialSave: "Partnership record saved, but next-action details were not saved: {reason}. Please retry.",
     apiServerUnreachable: "Cannot connect to KOLConnect. Confirm the application is running.",
     apiServerError: "The service could not process this request. Please try again later.",
     apiInvalidResponse: "The service returned an unrecognized response. Please try again later.",
@@ -228,7 +242,9 @@
   });
 
   Object.assign(dictionaries.zh, {
-    dashboardModuleToday: "今日待处理", dashboardModuleTodayDescription: "可直接进入待联系或数据过期对象",
+    dashboardModuleToday: "下一步", dashboardModuleTodayDescription: "来自现有合作记录的待处理事项",
+    dashboardNoNextActions: "暂无需要处理的事项。", dashboardActionOverdue: "逾期", dashboardActionDueToday: "今天到期", dashboardActionNeedDecision: "需要我决定", dashboardActionContentReview: "内容待审核",
+    dashboardActionContentScript: "脚本", dashboardActionContentCopy: "文案", dashboardActionContentVideoDraft: "视频草稿", dashboardActionContentOther: "其他内容",
     dashboardModuleMailFollowUp: "邮件跟进", dashboardModuleMailFollowUpDescription: "按已同步邮件记录查看当前待处理联系人",
     dashboardModuleMissingInfo: "待补充信息", dashboardModuleMissingInfoDescription: "账号邮箱与达人基础资料缺口",
     dashboardModuleCampaigns: "Campaign 概览", dashboardModuleCampaignsDescription: "项目成员与发布进度",
@@ -251,11 +267,11 @@
     dashboardMissingCountryCreators: "缺少国家/地区的达人", dashboardMissingLanguageCreators: "缺少语言的达人", dashboardMissingContentTypeCreators: "缺少内容类型的达人",
     dashboardAccountUnit: "个账号", dashboardCreatorUnit: "位达人", dashboardBulkFillEmail: "批量补全邮箱", dashboardCreatorChart: "达人",
     dashboardCooperationChart: "合作", dashboardPublishedChart: "已发布", dashboardActiveCreators: "活跃 {count}", dashboardNoRecordedRoi: "暂无已录入 ROI",
-    dashboardTitle: "工作台", dashboardSubtitle: "从当前数据进入具体达人、账号与合作事项。", dashboardCustomize: "自定义工作台", dashboardRefreshData: "刷新数据", dashboardEyebrow: "KOL 运营", dashboardTodayEyebrow: "今日", dashboardMailEyebrow: "邮件跟进", dashboardDataCompletenessEyebrow: "数据完整度", dashboardCampaignsEyebrow: "Campaign", dashboardCreatorLibraryEyebrow: "达人库", dashboardDataHealthEyebrow: "数据健康", dashboardGeographyEyebrow: "地区", dashboardPerformanceEyebrow: "已记录表现", dashboardCampaignLabelShort: "Campaign",
+    dashboardTitle: "工作台", dashboardSubtitle: "从当前数据进入具体达人、账号与合作事项。", dashboardCustomize: "自定义工作台", dashboardRefreshData: "刷新数据", dashboardEyebrow: "KOL 运营", dashboardTodayEyebrow: "下一步", dashboardMailEyebrow: "邮件跟进", dashboardDataCompletenessEyebrow: "数据完整度", dashboardCampaignsEyebrow: "Campaign", dashboardCreatorLibraryEyebrow: "达人库", dashboardDataHealthEyebrow: "数据健康", dashboardGeographyEyebrow: "地区", dashboardPerformanceEyebrow: "已记录表现", dashboardCampaignLabelShort: "Campaign",
     dashboardAriaLabel: "KOL 运营工作台", dashboardCoreSummary: "核心业务摘要", dashboardCreators: "达人", dashboardCreatorUnitLabel: "位达人",
     dashboardPlatformAccounts: "平台账号", dashboardCreatorAccountUnitLabel: "个平台账号", dashboardSavedCampaigns: "个已保存项目",
     dashboardCooperationSpend: "合作花费", dashboardGroupedByCurrency: "按币种分组", dashboardRecordedRoi: "已录入 ROI", dashboardNoAutomaticConversion: "不自动换算",
-    dashboardOpenItems: "可直接进入对象", dashboardViewAll: "查看全部", dashboardMailSummary: "邮件跟进摘要", dashboardActionableTotal: "待处理总数",
+    dashboardOpenItems: "来自现有合作记录", dashboardViewAll: "查看全部", dashboardMailSummary: "邮件跟进摘要", dashboardActionableTotal: "待处理总数",
     dashboardNoActionableMail: "暂无待处理邮件跟进。", dashboardMailUnavailable: "邮件跟进数据暂不可用。", dashboardActualFieldCounts: "按实际字段统计",
     dashboardMissingEmail: "缺邮箱", dashboardMissingCountry: "缺国家/地区", dashboardMissingLanguage: "缺语言", dashboardMissingContentType: "缺内容类型",
     dashboardViewAccounts: "查看账号", dashboardHealthy: "正常", dashboardTrendDeclining: "趋势下滑", dashboardHealthHint: "基于达人快照新鲜度与现有趋势数据，不代表合作履约评价。",
@@ -264,7 +280,9 @@
     dashboardClose: "关闭", dashboardCountryRegion: "国家/地区", dashboardLanguage: "语言",
   });
   Object.assign(dictionaries.en, {
-    dashboardModuleToday: "Today's action items", dashboardModuleTodayDescription: "Open contacts awaiting action or expired data directly",
+    dashboardModuleToday: "Next Actions", dashboardModuleTodayDescription: "Action items from existing campaign records",
+    dashboardNoNextActions: "No actions need attention.", dashboardActionOverdue: "Overdue", dashboardActionDueToday: "Due today", dashboardActionNeedDecision: "Needs my decision", dashboardActionContentReview: "Content awaiting review",
+    dashboardActionContentScript: "Script", dashboardActionContentCopy: "Copy", dashboardActionContentVideoDraft: "Video draft", dashboardActionContentOther: "Other content",
     dashboardModuleMailFollowUp: "Mail follow-up", dashboardModuleMailFollowUpDescription: "Review contacts awaiting action from synced mail records",
     dashboardModuleMissingInfo: "Missing information", dashboardModuleMissingInfoDescription: "Gaps in account email and creator profile data",
     dashboardModuleCampaigns: "Campaign overview", dashboardModuleCampaignsDescription: "Project members and publication progress",
@@ -287,11 +305,11 @@
     dashboardMissingCountryCreators: "Creators missing country/region", dashboardMissingLanguageCreators: "Creators missing language", dashboardMissingContentTypeCreators: "Creators missing content category",
     dashboardAccountUnit: "accounts", dashboardCreatorUnit: "creators", dashboardBulkFillEmail: "Fill emails in bulk", dashboardCreatorChart: "Creators",
     dashboardCooperationChart: "Partnerships", dashboardPublishedChart: "Published", dashboardActiveCreators: "Active {count}", dashboardNoRecordedRoi: "No recorded ROI",
-    dashboardTitle: "Dashboard", dashboardSubtitle: "Open the relevant creators, accounts, and partnership items from current data.", dashboardCustomize: "Customize dashboard", dashboardRefreshData: "Refresh data", dashboardEyebrow: "KOL operations", dashboardTodayEyebrow: "Today", dashboardMailEyebrow: "Mail follow-up", dashboardDataCompletenessEyebrow: "Data completeness", dashboardCampaignsEyebrow: "Campaigns", dashboardCreatorLibraryEyebrow: "Creator Library", dashboardDataHealthEyebrow: "Data health", dashboardGeographyEyebrow: "Geography", dashboardPerformanceEyebrow: "Recorded performance", dashboardCampaignLabelShort: "Campaign",
+    dashboardTitle: "Dashboard", dashboardSubtitle: "Open the relevant creators, accounts, and partnership items from current data.", dashboardCustomize: "Customize dashboard", dashboardRefreshData: "Refresh data", dashboardEyebrow: "KOL operations", dashboardTodayEyebrow: "Next actions", dashboardMailEyebrow: "Mail follow-up", dashboardDataCompletenessEyebrow: "Data completeness", dashboardCampaignsEyebrow: "Campaigns", dashboardCreatorLibraryEyebrow: "Creator Library", dashboardDataHealthEyebrow: "Data health", dashboardGeographyEyebrow: "Geography", dashboardPerformanceEyebrow: "Recorded performance", dashboardCampaignLabelShort: "Campaign",
     dashboardAriaLabel: "KOL operations dashboard", dashboardCoreSummary: "Core business summary", dashboardCreators: "Creators", dashboardCreatorUnitLabel: "Creator records",
     dashboardPlatformAccounts: "Platform accounts", dashboardCreatorAccountUnitLabel: "CreatorAccount records", dashboardSavedCampaigns: "saved Campaigns",
     dashboardCooperationSpend: "Partnership spend", dashboardGroupedByCurrency: "Grouped by currency", dashboardRecordedRoi: "Recorded ROI", dashboardNoAutomaticConversion: "No automatic conversion",
-    dashboardOpenItems: "Open items directly", dashboardViewAll: "View all", dashboardMailSummary: "Mail follow-up summary", dashboardActionableTotal: "Actionable total",
+    dashboardOpenItems: "From existing campaign records", dashboardViewAll: "View all", dashboardMailSummary: "Mail follow-up summary", dashboardActionableTotal: "Actionable total",
     dashboardNoActionableMail: "No actionable mail follow-up items.", dashboardMailUnavailable: "Mail follow-up data is unavailable.", dashboardActualFieldCounts: "Counted from recorded fields",
     dashboardMissingEmail: "Missing email", dashboardMissingCountry: "Missing country/region", dashboardMissingLanguage: "Missing language", dashboardMissingContentType: "Missing content category",
     dashboardViewAccounts: "View accounts", dashboardHealthy: "Healthy", dashboardTrendDeclining: "Declining trend", dashboardHealthHint: "Based on creator snapshot freshness and available trends; it is not a partnership fulfillment assessment.",

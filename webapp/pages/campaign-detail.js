@@ -1044,9 +1044,7 @@
     const code = inlineFxCurrency();
     const rate = Number(element("campaign-inline-fx-rate")?.value);
     if (!code || !Number.isFinite(rate) || rate <= 0) return showFormError(t("campaignDetailRateInvalid"));
-    const rates = Object.fromEntries([...fxRates.entries()].filter(([currency]) => currency !== "USD"));
-    rates[code] = rate;
-    const data = await global.KOLConnectAPI.post("/api/settings/fx", { rates }, { signal: resources?.signal });
+    const data = await global.KOLConnectAPI.post("/api/settings/fx", { rates: { [code]: rate } }, { signal: resources?.signal });
     fxRates = new Map((Array.isArray(data?.rates) ? data.rates : []).map(item => [String(item.currency_code || "").toUpperCase(), item.rate_per_usd]));
     renderCurrencyOptions();
     updateCampaignFxPreview();
@@ -1261,13 +1259,18 @@
 
   function executionPayload() {
     return {
-      stage: element("campaign-creator-stage").value || "pending_contact",
-      owner: element("campaign-creator-execution-owner")?.value.trim() || "",
       next_action: element("campaign-creator-next-action")?.value.trim() || "",
       due_date: element("campaign-creator-due-date")?.value || "",
       waiting_on: element("campaign-creator-waiting-on")?.value || "none",
       need_my_decision: Boolean(element("campaign-creator-need-my-decision")?.checked),
     };
+  }
+
+  function executionChanged(relation, payload) {
+    return (relation?.next_action || "") !== payload.next_action
+      || (relation?.due_date || "") !== payload.due_date
+      || (relation?.waiting_on || "none") !== payload.waiting_on
+      || Boolean(relation?.need_my_decision) !== payload.need_my_decision;
   }
 
   function setSaving(value) {
@@ -1281,12 +1284,17 @@
     event.preventDefault();
     if (saving || !resources || isArchived()) return;
     const payload = formPayload();
+    const execution = executionPayload();
+    const priorRelation = relations.find(item => String(item.id) === String(editingRelationId));
+    const saveExecution = executionChanged(priorRelation, execution);
+    const wasEditing = Boolean(editingRelationId);
     if (!payload.account_ids.length) return showFormError(t("campaignDetailExecutionAccountRequired"));
     if (!editingRelationId && !element("campaign-creator-id").value) {
       return showFormError(t("campaignDetailCreatorRequired"));
     }
 
     setSaving(true);
+    let executionPending = false;
     try {
       let savedRelation;
       if (editingRelationId) {
@@ -1295,19 +1303,37 @@
           payload,
           { signal: resources.signal },
         );
-        getApp().showSaved(t("campaignDetailRelationUpdated"));
       } else {
         savedRelation = await global.KOLConnectAPI.post(
           `/api/campaigns/${encodeURIComponent(campaignId)}/creators`,
           { ...payload, creator_id: element("campaign-creator-id").value },
           { signal: resources.signal },
         );
-        getApp().showSaved(t("campaignDetailCreatorAdded"));
       }
+      const relationId = savedRelation?.campaign_creator?.id;
+      if (!relationId) throw new Error(t("campaignDetailRelationSaveFailed"));
+      if (!wasEditing) {
+        editingRelationId = String(relationId);
+        element("campaign-creator-id").disabled = true;
+      }
+      if (saveExecution) {
+        executionPending = true;
+        await global.KOLConnectAPI.patch(
+          `/api/campaign-creators/${encodeURIComponent(relationId)}/execution`,
+          execution,
+          { signal: resources.signal },
+        );
+        executionPending = false;
+      }
+      getApp().showSaved(t(wasEditing ? "campaignDetailRelationUpdated" : "campaignDetailCreatorAdded"));
       closeCreatorForm();
       await loadDetail();
     } catch (error) {
-      if (error?.name !== "AbortError") showFormError(error.message || t("campaignDetailRelationSaveFailed"));
+      if (error?.name !== "AbortError") {
+        showFormError(executionPending
+          ? t("campaignDetailExecutionPartialSave", { reason: error.message || t("campaignDetailRelationSaveFailed") })
+          : error.message || t("campaignDetailRelationSaveFailed"));
+      }
     } finally {
       setSaving(false);
     }

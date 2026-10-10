@@ -2383,6 +2383,11 @@ def get_dashboard_data() -> dict:
             "health_summary": service.getHealthSummary(),
             "cooperation_performance": service.getCooperationPerformance(),
             "action_items": service.getActionItems(),
+            "action_center": (
+                CampaignExecutionService(lambda: creator_repository.store.factory).action_center()
+                if getattr(creator_repository.store, "is_sqlite_authority", False)
+                else {"as_of_date": datetime.now().date().isoformat(), "items": []}
+            ),
             "platform_distribution": service.getPlatformDistribution(),
             "creator_status_distribution": service.getCreatorStatusDistribution(),
             "creator_growth_trend": service.getCreatorGrowthTrend(),

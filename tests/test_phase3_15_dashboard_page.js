@@ -146,6 +146,7 @@ function dashboardResponse(totalCreators = 12) {
       pending_contact: [],
       incomplete_cooperations: [],
     },
+    action_center: { as_of_date: "2026-10-10", items: [] },
     platform_distribution: [
       { platform: "TikTok", count: 8 },
       { platform: "YouTube", count: 4 },
@@ -351,6 +352,8 @@ async function run() {
           dashboardExpiredDays: "已过期 {days} 天", dashboardPendingContactStatus: "状态：待联系", dashboardCampaignLabel: "Campaign：{campaign}",
           dashboardUnnamedCampaign: "未命名 Campaign", dashboardRoiUnavailable: "ROI 暂无", dashboardCampaignSummary: "{count} 个 Campaign · {roi}",
           dashboardNoPriorityItems: "暂无需要优先处理的事项。", dashboardDataExpired: "数据过期", dashboardPendingContact: "待联系",
+          dashboardNoNextActions: "暂无需要处理的事项。", dashboardActionOverdue: "逾期", dashboardActionDueToday: "今天到期",
+          dashboardActionNeedDecision: "需要我决定", dashboardActionContentReview: "内容待审核", dashboardActionContentScript: "脚本",
           dashboardWaitingToConnect: "等待建立联系", dashboardUnnamedObject: "未命名对象", dashboardNoCampaigns: "暂无 Campaign。",
           dashboardCampaignProgress: "{status} · {creators} 位达人 · 已发布 {published}", dashboardNoPlatformAccounts: "暂无平台账号数据。",
           dashboardOtherPlatform: "其他", dashboardAccountCount: "{count} 个账号", dashboardHealthScore: "{score} 分", dashboardNoData: "暂无数据",
@@ -405,6 +408,17 @@ async function run() {
     campaign: "Campaign One",
     campaign_id: "campaign_one",
   }];
+  initialDashboard.action_items.expired_creators = [{ creator_id: "stale_creator", creator_name: "Old stale creator" }];
+  initialDashboard.action_items.pending_contact = [{ creator_id: "old_contact", creator_name: "Old pending contact" }];
+  initialDashboard.action_center.items = [
+    { type: "due_action", priority: "overdue", campaign_id: "campaign_one", creator_name: "Maria", campaign_name: "Campaign One", next_action: "Send brief", due_date: "2026-10-08", need_my_decision: true },
+    { type: "due_action", priority: "due_today", campaign_id: "campaign_two", creator_name: "Ana", campaign_name: "Campaign Two", next_action: "Confirm quote", due_date: "2026-10-10", need_my_decision: false },
+    { type: "need_my_decision", priority: "need_my_decision", campaign_id: "campaign_three", creator_name: "Jo", campaign_name: "Campaign Three", next_action: "Pick a format" },
+    { type: "content_review", priority: "pending_review", campaign_id: "campaign_four", creator_name: "Lee", campaign_name: "Campaign Four", content_type: "script" },
+    { type: "content_review", priority: "pending_review", creator_id: "unrelated_creator", creator_name: "No campaign", campaign_name: "Orphan", content_type: "script" },
+    { type: "content_review", priority: "pending_review", campaign_id: "campaign_six", creator_name: "Six", campaign_name: "Campaign Six" },
+    { type: "content_review", priority: "pending_review", campaign_id: "campaign_seven", creator_name: "Seven", campaign_name: "Campaign Seven" },
+  ];
   responses.push(initialDashboard);
   await window.KOLConnectPages.navigate("dashboard");
   assert.equal(calls.length, 6);
@@ -434,6 +448,20 @@ async function run() {
   assert.equal(elements.get("dashboard-v2-creator-count").textContent, "30");
   assert.equal(elements.get("dashboard-v2-account-count").textContent, "33");
   assert.equal(elements.get("dashboard-v2-missing-email").textContent, "1");
+  const nextActions = elements.get("dashboard-v2-today-list").children;
+  assert.equal(nextActions.length, 6, "existing Dashboard list stays compact and preserves backend ordering");
+  assert.equal(nextActions[0].children[0].textContent, "逾期 · 需要我决定", "due and decision stay on one item");
+  assert.equal(nextActions[0].children[1].textContent, "Send brief");
+  assert.equal(nextActions[0].children[2].textContent, "Maria · Campaign One");
+  assert.equal(nextActions[1].children[0].textContent, "今天到期");
+  assert.equal(nextActions[1].children[1].textContent, "Confirm quote");
+  assert.equal(nextActions[2].children[1].textContent, "需要我决定");
+  assert.match(nextActions[2].children[2].textContent, /Jo · Campaign Three · Pick a format/);
+  assert.equal(nextActions[3].children[1].textContent, "内容待审核");
+  assert.equal(nextActions[3].children[2].textContent, "Lee · Campaign Four · 脚本");
+  assert.equal(nextActions[4].disabled, true, "missing Campaign ID must fail closed");
+  assert.equal(nextActions[4].dataset.dashboardCreatorId, undefined, "no Creator detail fallback on Action Center rows");
+  assert.doesNotMatch(nextActions.flatMap(row => row.children.map(child => child.textContent)).join(" "), /Old stale creator|Old pending contact|数据过期|待联系/);
   assert.equal(elements.get("dashboard-v2-mail-waiting-me").textContent, "1");
   assert.equal(elements.get("dashboard-v2-mail-waiting-creator").textContent, "1");
   assert.equal(elements.get("dashboard-v2-mail-waiting-unknown").textContent, "1");
@@ -442,6 +470,13 @@ async function run() {
   assert.match(elements.get("dashboard-v2-mail-followup-list").children[0].children[0].textContent, /邮件达人/);
   assert.doesNotMatch(elements.get("dashboard-v2-mail-followup-list").children.map(row => row.children.map(child => child.textContent).join("")).join(""), /creator_internal/);
   assert.equal(elements.get("dashboard-v2-campaign-list").children[0].dataset.dashboardCampaignId, "campaign_one");
+  await sections[0].dispatch("click", { target: nextActions[0].children[1] });
+  assert.equal(navigations.at(-1).pageName, "campaign-detail");
+  assert.equal(navigations.at(-1).params.campaignId, "campaign_one");
+  const navigationCount = navigations.length;
+  await sections[0].dispatch("click", { target: nextActions[4].children[1] });
+  assert.equal(navigations.length, navigationCount, "missing Campaign ID cannot navigate to an unrelated Creator");
+  navigations.pop();
   const missingEmailButton = new FakeElement("button");
   missingEmailButton.dataset.dashboardV2Open = "missing-email";
   await sections[0].dispatch("click", { target: missingEmailButton });
@@ -552,6 +587,15 @@ async function run() {
   assert.equal(elements.get("dashboard-refresh").listenerCount("click"), 1);
   assert.equal(sections[0].listenerCount("click"), 1);
   assert.equal(elements.get("dashboard-total-creators").textContent, "31");
+  assert.equal(elements.get("dashboard-v2-today-list").children.length, 1);
+  assert.equal(elements.get("dashboard-v2-today-list").children[0].textContent, "暂无需要处理的事项。");
+
+  const legacyDashboard = dashboardResponse(31);
+  delete legacyDashboard.action_center;
+  legacyDashboard.action_items.pending_contact = [{ creator_id: "legacy", creator_name: "Legacy contact" }];
+  responses.push(legacyDashboard);
+  await elements.get("dashboard-refresh").dispatch("click");
+  assert.equal(elements.get("dashboard-v2-today-list").children[0].textContent, "暂无需要处理的事项。", "missing Action Center must not fall back to legacy items");
 
   const emptyCharts = dashboardResponse(32);
   emptyCharts.platform_distribution = [];
@@ -606,6 +650,8 @@ async function run() {
   assert.match(html, /id="dashboard-v2-drawer"/);
   assert.match(html, /data-dashboard-v2-open="missing-email"/);
   assert.match(html, /data-dashboard-v2-module="mail_follow_up"/);
+  assert.match(html, /data-dashboard-v2-module="today" aria-label="下一步"/);
+  assert.match(html, /data-i18n="dashboardModuleToday">下一步</);
   assert.match(html, /data-dashboard-v2-open="mail-follow-up"/);
   assert.doesNotMatch(read("webapp/pages/dashboard.js"), /account_uid/);
   const styles = read("webapp/styles.css");

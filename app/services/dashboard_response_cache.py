@@ -14,6 +14,7 @@ from local_storage_lock import shared_storage_lock
 
 DashboardLoader = Callable[[], dict[str, Any]]
 UtcDateProvider = Callable[[], date]
+LocalDateProvider = Callable[[], date]
 BuildEventLogger = Callable[[str], None]
 
 
@@ -31,19 +32,22 @@ class DashboardFingerprint:
     size: int
     utc_date: str
     generation: str = ""
+    local_date: str = ""
 
 
 class DashboardResponseCache:
-    """Serve immutable Dashboard payloads until the workbook or UTC day changes."""
+    """Serve immutable Dashboard payloads until the source or either day boundary changes."""
 
     def __init__(
         self,
         utc_date_provider: UtcDateProvider | None = None,
         build_event_logger: BuildEventLogger | None = None,
+        local_date_provider: LocalDateProvider | None = None,
     ) -> None:
         self._lock = RLock()
         self._entry: tuple[DashboardFingerprint, dict[str, Any]] | None = None
         self._utc_date_provider = utc_date_provider or self._current_utc_date
+        self._local_date_provider = local_date_provider or date.today
         self._build_event_logger = build_event_logger
 
     def get_response(
@@ -93,6 +97,7 @@ class DashboardResponseCache:
                 size=0,
                 utc_date=self._utc_date_provider().isoformat(),
                 generation=f"sqlite:{revision_reader()}",
+                local_date=self._local_date_provider().isoformat(),
             )
         try:
             stat = resolved.stat()
@@ -106,6 +111,7 @@ class DashboardResponseCache:
             mtime_ns=mtime_ns,
             size=size,
             utc_date=self._utc_date_provider().isoformat(),
+            local_date=self._local_date_provider().isoformat(),
         )
 
     def _record_generation_change(

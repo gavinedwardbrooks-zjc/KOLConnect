@@ -341,34 +341,51 @@
     target.appendChild(empty);
   }
 
-  function renderV2Today(actionItems) {
+  function renderV2Today(actionCenter) {
     const target = element("dashboard-v2-today-list");
     if (!target) return;
     target.replaceChildren();
-    const groups = [
-      { label: t("dashboardDataExpired"), records: actionItems?.expired_creators, reason: record => t("dashboardExpiredDays", { days: record?.freshness?.days ?? "--" }) },
-      { label: t("dashboardPendingContact"), records: actionItems?.pending_contact, reason: () => t("dashboardWaitingToConnect") },
-    ];
-    const hasRecords = groups.some(group => Array.isArray(group.records) && group.records.length);
-    if (!hasRecords) {
-      appendEmpty(target, t("dashboardNoPriorityItems"));
+    const items = Array.isArray(actionCenter?.items) ? actionCenter.items.slice(0, 6) : [];
+    if (!items.length) {
+      appendEmpty(target, t("dashboardNoNextActions"));
       return;
     }
-    groups.forEach(group => (Array.isArray(group.records) ? group.records : []).forEach(record => {
+    const contentTypes = {
+      script: "dashboardActionContentScript",
+      copy: "dashboardActionContentCopy",
+      video_draft: "dashboardActionContentVideoDraft",
+      other: "dashboardActionContentOther",
+    };
+    items.forEach(record => {
       const item = document.createElement("button");
       item.type = "button";
       item.className = "dashboard-v2-action-item";
-      if (record.creator_id) item.dataset.dashboardCreatorId = String(record.creator_id);
-      if (record.campaign_id) item.dataset.dashboardCampaignId = String(record.campaign_id);
+      const campaignId = String(record?.campaign_id || "").trim();
+      if (campaignId) item.dataset.dashboardCampaignId = campaignId;
+      else item.disabled = true;
       const label = document.createElement("span");
-      label.textContent = group.label;
       const title = document.createElement("strong");
-      title.textContent = record.creator_name || record.campaign || t("dashboardUnnamedObject");
       const detail = document.createElement("small");
-      detail.textContent = `${record.platform || "--"} · ${group.reason(record)}`;
+      const context = [record?.creator_name || t("dashboardUnnamedCreator"), record?.campaign_name || t("dashboardUnnamedCampaign")];
+      if (record?.type === "due_action") {
+        label.textContent = record.priority === "overdue" ? t("dashboardActionOverdue") : t("dashboardActionDueToday");
+        if (record.need_my_decision) label.textContent += ` · ${t("dashboardActionNeedDecision")}`;
+        title.textContent = record.next_action || t("dashboardActionDueToday");
+      } else if (record?.type === "need_my_decision") {
+        label.textContent = t("dashboardActionNeedDecision");
+        title.textContent = t("dashboardActionNeedDecision");
+        if (record.next_action) context.push(record.next_action);
+      } else if (record?.type === "content_review") {
+        label.textContent = t("dashboardActionContentReview");
+        title.textContent = t("dashboardActionContentReview");
+        if (contentTypes[record.content_type]) context.push(t(contentTypes[record.content_type]));
+      } else {
+        return;
+      }
+      detail.textContent = context.join(" · ");
       item.append(label, title, detail);
       target.appendChild(item);
-    }));
+    });
   }
 
   function renderV2Campaigns(campaigns) {
@@ -461,7 +478,7 @@
     setText("dashboard-v2-missing-country", formatNumber((missing.country_creators || []).length));
     setText("dashboard-v2-missing-language", formatNumber((missing.language_creators || []).length));
     setText("dashboard-v2-missing-content-type", formatNumber((missing.content_type_creators || []).length));
-    renderV2Today(data?.action_items || {});
+    renderV2Today(data?.action_center);
     renderV2Campaigns(snapshot.campaigns);
     renderV2PlatformAccounts(snapshot.platform_accounts);
   }
