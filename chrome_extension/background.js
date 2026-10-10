@@ -9,7 +9,7 @@ import {
 } from "./core/content_analysis.js";
 import { MESSAGE } from "./core/messaging.js";
 import { failedProfile, finalizeProfile } from "./core/schema.js";
-import { addAccount, loadAgencies, lookupAccount, updateAccount } from "./services/local_api.js";
+import { addAccount, linkExistingCreator, loadAgencies, lookupAccount, searchCreators, updateAccount } from "./services/local_api.js";
 
 const PLATFORMS = [TikTok, Instagram, YouTube];
 const contentControllers = new Map();
@@ -213,6 +213,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ok: false,
         code: error?.code || "LOOKUP_FAILED",
         error: error?.message || "Account lookup failed."
+      }));
+    return true;
+  }
+  if (message?.type === MESSAGE.SEARCH_CREATORS) {
+    searchCreators(message.query, message.page)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, code: error?.code || "CREATOR_SEARCH_FAILED" }));
+    return true;
+  }
+  if (message?.type === MESSAGE.LINK_EXISTING_CREATOR) {
+    linkExistingCreator(message.creator_id, message.identity?.platform, message.identity?.profile_url)
+      .then((result) => sendResponse({
+        ok: true, result, session_id: String(message.session_id || ""), identity: message.identity || null
+      }))
+      .catch((error) => sendResponse({
+        ok: false, code: error?.code || "LINK_FAILED",
+        session_id: String(message.session_id || ""), identity: message.identity || null
       }));
     return true;
   }

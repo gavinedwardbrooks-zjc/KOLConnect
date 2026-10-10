@@ -10,6 +10,8 @@
     ADD_ACCOUNT: "KOLCONNECT_NEXT_ADD_ACCOUNT",
     UPDATE_ACCOUNT: "KOLCONNECT_NEXT_UPDATE_ACCOUNT",
     LOOKUP_ACCOUNT: "KOLCONNECT_NEXT_LOOKUP_ACCOUNT",
+    SEARCH_CREATORS: "KOLCONNECT_NEXT_SEARCH_CREATORS",
+    LINK_EXISTING_CREATOR: "KOLCONNECT_NEXT_LINK_EXISTING_CREATOR",
     LOAD_AGENCIES: "KOLCONNECT_NEXT_LOAD_AGENCIES",
     PAGE_CHANGED: "KOLCONNECT_NEXT_PAGE_CHANGED",
     ANALYZE_CONTENT: "KOLCONNECT_NEXT_ANALYZE_CONTENT",
@@ -63,7 +65,17 @@
     mutationSequence: 0,
     pendingAction: "",
     mutationOffline: false,
-    previewDirty: new Set()
+    previewDirty: new Set(),
+    creatorSelectorOpen: false,
+    creatorSelectorGeneration: 0,
+    creatorSearchQuery: "",
+    creatorSearchPage: 0,
+    creatorSearchPages: 0,
+    creatorSearchResults: [],
+    creatorSearchLoading: false,
+    creatorSearchError: "",
+    selectedCreatorId: "",
+    creatorSelectorContext: null
   };
 
   const create = (tag, className = "", text = "") => {
@@ -160,6 +172,28 @@
   const accountAwarenessText = create("div", "kol-account-awareness-text", "等待资料读取完成。");
   accountAwareness.append(accountAwarenessText);
 
+  const creatorSelector = create("section", "kol-creator-selector");
+  creatorSelector.hidden = true;
+  creatorSelector.append(create("h3", "kol-section-title", "关联已有 Creator"));
+  const creatorSearchInput = create("input", "kol-preview-input");
+  creatorSearchInput.type = "search";
+  creatorSearchInput.placeholder = "搜索达人名称或主页";
+  creatorSearchInput.autocomplete = "off";
+  const creatorSearchButton = create("button", "", "搜索");
+  const creatorSearchStatus = create("div", "kol-field-status");
+  const creatorSearchResults = create("div", "kol-creator-results");
+  const creatorLoadMoreButton = create("button", "", "加载更多");
+  const creatorSelectionStatus = create("div", "kol-field-status");
+  const creatorConfirmButton = create("button", "kol-link-confirm", "确认关联");
+  const creatorCancelButton = create("button", "", "取消");
+  for (const button of [creatorSearchButton, creatorLoadMoreButton, creatorConfirmButton, creatorCancelButton]) {
+    button.type = "button";
+  }
+  creatorSelector.append(
+    creatorSearchInput, creatorSearchButton, creatorSearchStatus, creatorSearchResults,
+    creatorLoadMoreButton, creatorSelectionStatus, creatorConfirmButton, creatorCancelButton
+  );
+
   const contentSection = create("section", "kol-content-section");
   contentSection.append(create("h3", "kol-section-title", "最近内容分析"));
   const contentStatus = create("div", "kol-content-status", "尚未分析。");
@@ -223,19 +257,22 @@
   const cancelContentButton = create("button", "kol-danger", "取消内容分析");
   const copyButton = create("button", "", "复制诊断报告");
   const importButton = create("button", "kol-primary", "导入 KOLConnect");
+  const linkButton = create("button", "", "关联已有 Creator");
   for (const button of [
     refreshButton,
     analyzeContentButton,
     cancelContentButton,
     copyButton,
-    importButton
+    importButton,
+    linkButton
   ]) {
     button.type = "button";
   }
   cancelContentButton.hidden = true;
   importButton.disabled = true;
-  actions.append(refreshButton, analyzeContentButton, cancelContentButton, copyButton, importButton);
-  body.append(status, card, accountAwareness, previewSection, contentSection, diagnostics, actions);
+  linkButton.hidden = true;
+  actions.append(refreshButton, analyzeContentButton, cancelContentButton, copyButton, importButton, linkButton);
+  body.append(status, card, accountAwareness, creatorSelector, previewSection, contentSection, diagnostics, actions);
   panel.append(head, body);
   root.append(panel);
   document.documentElement.append(root);
@@ -300,6 +337,109 @@
   const mutationAction = () => state.accountLookup?.state === "ACCOUNT_NOT_FOUND"
     ? "ADD"
     : state.accountLookup?.state === "ACCOUNT_EXISTS" ? "UPDATE" : "";
+
+  const resetCreatorSelector = () => {
+    state.creatorSelectorGeneration += 1;
+    state.creatorSelectorOpen = false;
+    state.creatorSearchQuery = "";
+    state.creatorSearchPage = 0;
+    state.creatorSearchPages = 0;
+    state.creatorSearchResults = [];
+    state.creatorSearchLoading = false;
+    state.creatorSearchError = "";
+    state.selectedCreatorId = "";
+    state.creatorSelectorContext = null;
+    creatorSearchInput.value = "";
+    renderCreatorSelector();
+  };
+
+  const selectorContextCurrent = () => {
+    const context = state.creatorSelectorContext;
+    return Boolean(context && state.creatorSelectorOpen
+      && state.accountLookup?.state === "ACCOUNT_NOT_FOUND"
+      && lookupContextCurrent(context.sessionId, context.identity, context.pageUrl));
+  };
+
+  const renderCreatorSelector = () => {
+    creatorSelector.hidden = !state.creatorSelectorOpen || state.accountLookup?.state !== "ACCOUNT_NOT_FOUND";
+    creatorSearchButton.disabled = state.creatorSearchLoading || state.mutationPending;
+    creatorSearchStatus.textContent = state.creatorSearchError
+      || (state.creatorSearchLoading ? "正在搜索…" : state.creatorSearchPage
+        ? `第 ${state.creatorSearchPage}/${state.creatorSearchPages} 页`
+        : "输入关键词并搜索，明确选择一位 Creator。");
+    const entries = state.creatorSearchResults.map((creator) => {
+      const row = create("button", "kol-creator-result");
+      row.type = "button";
+      row.dataset.creatorId = creator.creator_id;
+      row.textContent = `${creator.creator_name || "未命名 Creator"} · ${creator.account_count ?? "—"} 个账号${creator.profile_url ? ` · ${creator.profile_url}` : ` · ${creator.creator_id.slice(0, 8)}`}`;
+      row.disabled = state.mutationPending;
+      row.dataset.selected = String(state.selectedCreatorId === creator.creator_id);
+      row.addEventListener("click", () => {
+        if (state.mutationPending || !selectorContextCurrent()) return;
+        state.selectedCreatorId = creator.creator_id;
+        renderCreatorSelector();
+      });
+      return row;
+    });
+    creatorSearchResults.replaceChildren(...entries);
+    creatorLoadMoreButton.hidden = !state.creatorSearchPage || state.creatorSearchPage >= state.creatorSearchPages;
+    creatorLoadMoreButton.disabled = state.creatorSearchLoading || state.mutationPending;
+    const selected = state.creatorSearchResults.find((row) => row.creator_id === state.selectedCreatorId);
+    creatorSelectionStatus.textContent = selected
+      ? `已选择：${selected.creator_name || "未命名 Creator"}。确认后将当前账号关联到该 Creator。`
+      : "尚未选择 Creator。";
+    creatorConfirmButton.disabled = !selected || !selectorContextCurrent()
+      || state.creatorSearchLoading || Boolean(state.creatorSearchError) || state.mutationPending;
+  };
+
+  const searchCreatorLibrary = async (page = 1) => {
+    if (!selectorContextCurrent() || state.mutationPending || state.creatorSearchLoading) return;
+    const context = state.creatorSelectorContext;
+    const generation = ++state.creatorSelectorGeneration;
+    const query = creatorSearchInput.value.trim();
+    if (page === 1) {
+      state.creatorSearchQuery = query;
+      state.creatorSearchResults = [];
+      state.selectedCreatorId = "";
+      state.creatorSearchPage = 0;
+    } else if (query !== state.creatorSearchQuery) {
+      return;
+    }
+    state.creatorSearchLoading = true;
+    state.creatorSearchError = "";
+    renderCreatorSelector();
+    try {
+      const response = await sendMessage({ type: MESSAGE.SEARCH_CREATORS, query, page });
+      if (generation !== state.creatorSelectorGeneration || !selectorContextCurrent()
+          || context !== state.creatorSelectorContext) return;
+      if (!response?.ok || !Array.isArray(response.result?.creators)) throw new Error("搜索暂不可用，请确认 KOLConnect 已启动。");
+      state.creatorSearchResults = page === 1
+        ? response.result.creators
+        : [...state.creatorSearchResults, ...response.result.creators];
+      state.creatorSearchPage = response.result.page;
+      state.creatorSearchPages = response.result.pages;
+    } catch (_) {
+      if (generation !== state.creatorSelectorGeneration || !selectorContextCurrent()) return;
+      state.creatorSearchError = "搜索暂不可用，请确认 KOLConnect 已启动。";
+      state.selectedCreatorId = "";
+    } finally {
+      if (generation === state.creatorSelectorGeneration) {
+        state.creatorSearchLoading = false;
+        renderCreatorSelector();
+      }
+    }
+  };
+
+  const openCreatorSelector = () => {
+    if (state.mutationPending || state.accountLookup?.state !== "ACCOUNT_NOT_FOUND"
+        || !hasValidProfileIdentity()) return;
+    resetCreatorSelector();
+    state.creatorSelectorOpen = true;
+    state.creatorSelectorContext = {
+      sessionId: state.currentSessionId, pageUrl: location.href, identity: profileIdentity()
+    };
+    renderCreatorSelector();
+  };
 
   const syncPreviewState = (changedField = "") => {
     if (!state.preview) return;
@@ -466,6 +606,8 @@
 
     const lookup = state.accountLookup;
     const validIdentity = hasValidProfileIdentity(profile);
+    linkButton.hidden = lookup?.state !== "ACCOUNT_NOT_FOUND";
+    linkButton.disabled = state.mutationPending || state.mutationOffline || !validIdentity;
     if (!lookup || lookup.state === "LOADING_PROFILE") {
       accountAwarenessText.textContent = "正在核对 KOLConnect 收录状态…";
       importButton.textContent = "正在核对…";
@@ -503,6 +645,7 @@
       importButton.textContent = "无法确认收录状态";
       importButton.disabled = true;
     }
+    renderCreatorSelector();
   };
 
   const missingReasons = (item) => [
@@ -608,6 +751,7 @@
     state.mutationOffline = false;
     state.profile = null;
     state.accountLookup = null;
+    resetCreatorSelector();
     initializePreview(null);
     renderProfile();
   };
@@ -673,6 +817,7 @@
     state.accountLookup = response?.ok
       ? response.lookup
       : { state: response?.code === "APP_OFFLINE" ? "APP_OFFLINE" : "ERROR" };
+    if (state.accountLookup?.state !== "ACCOUNT_NOT_FOUND") resetCreatorSelector();
     state.mutationOffline = response?.code === "APP_OFFLINE";
     renderProfile();
     return Boolean(response?.ok);
@@ -872,6 +1017,7 @@
       setStatus("请选择 Content Category 后再添加。", "warning");
       return;
     }
+    if (action === "ADD") resetCreatorSelector();
     const context = {
       sequence: state.mutationSequence + 1,
       sessionId: state.currentSessionId,
@@ -938,6 +1084,74 @@
     }
   };
 
+  const linkSelectedCreator = async () => {
+    if (state.mutationPending || !selectorContextCurrent() || !hasValidProfileIdentity()) return;
+    const selectedId = state.selectedCreatorId;
+    if (!selectedId || !state.creatorSearchResults.some((row) => row.creator_id === selectedId)) return;
+    const context = {
+      sequence: state.mutationSequence + 1,
+      sessionId: state.currentSessionId,
+      pageUrl: location.href,
+      identity: profileIdentity()
+    };
+    state.mutationSequence = context.sequence;
+    state.mutationPending = true;
+    state.pendingAction = "LINK_EXISTING_CREATOR";
+    renderProfile();
+    try {
+      // Recheck the authoritative account state before sending the explicit link.
+      const checked = await refreshAccountLookup(state.profile, context.sessionId, { pageUrl: context.pageUrl });
+      if (!mutationContextCurrent(context)) return;
+      if (!checked || !selectorContextCurrent()) {
+        resetCreatorSelector();
+        setStatus("账号状态已变化，请重新分析后再关联。", "warning");
+        return;
+      }
+      const response = await sendMessage({
+        type: MESSAGE.LINK_EXISTING_CREATOR,
+        creator_id: selectedId,
+        session_id: context.sessionId,
+        identity: context.identity
+      });
+      if (!mutationContextCurrent(context)) return;
+      if (!response?.ok) {
+        const code = String(response?.code || "LINK_FAILED");
+        const messages = {
+          CREATOR_NOT_FOUND: "所选 Creator 已不存在，请重新搜索。",
+          CREATOR_ARCHIVED: "所选 Creator 已归档，请重新选择。",
+          ACCOUNT_IDENTITY_INVALID: "当前账号身份无效，请重新分析。",
+          ACCOUNT_IDENTITY_AMBIGUOUS: "账号身份存在歧义，未执行关联。",
+          ACCOUNT_IDENTITY_STALE: "页面账号身份已变化，请重新分析。",
+          ACCOUNT_IDENTITY_CONFLICT: "账号身份与现有记录冲突，未执行关联。",
+          ACCOUNT_OWNED_BY_OTHER_CREATOR: "账号已属于其他 Creator；本阶段不支持重新关联。",
+          APP_OFFLINE: "KOLConnect 未运行，请启动后重试。"
+        };
+        setStatus(messages[code] || "关联未完成，请稍后重试。", "warning");
+        resetCreatorSelector();
+        if (code !== "APP_OFFLINE") await refreshAccountLookup(state.profile, context.sessionId, { pageUrl: context.pageUrl });
+        return;
+      }
+      if (response.session_id !== context.sessionId || !identityMatches(response.identity, context.identity)
+          || response.result?.creator_id !== selectedId) return;
+      resetCreatorSelector();
+      setStatus("关联完成，正在刷新收录状态…");
+      await refreshAccountLookup(state.profile, context.sessionId, { pageUrl: context.pageUrl });
+      if (mutationContextCurrent(context) && state.accountLookup?.state === "ACCOUNT_EXISTS") {
+        setStatus("已关联到所选 Creator。");
+      }
+    } catch (_) {
+      if (!mutationContextCurrent(context)) return;
+      resetCreatorSelector();
+      setStatus("KOLConnect 暂不可用，未确认关联结果。", "error");
+    } finally {
+      if (context.sequence === state.mutationSequence) {
+        state.mutationPending = false;
+        state.pendingAction = "";
+        renderProfile();
+      }
+    }
+  };
+
   const open = (manual = false) => {
     if (!pageSupport.isSupportedCreatorPage(location.href)) return;
     if (!manual && state.dismissedUrl === location.href) return;
@@ -953,6 +1167,7 @@
     state.dismissedUrl = location.href;
     state.visible = false;
     root.style.display = "none";
+    resetCreatorSelector();
     cancelContentAnalysis(false);
   };
 
@@ -966,6 +1181,24 @@
   cancelContentButton.addEventListener("click", () => cancelContentAnalysis(true));
   copyButton.addEventListener("click", copyDiagnostics);
   importButton.addEventListener("click", mutateCurrent);
+  linkButton.addEventListener("click", openCreatorSelector);
+  creatorSearchButton.addEventListener("click", () => searchCreatorLibrary(1));
+  creatorSearchInput.addEventListener("input", () => {
+    state.selectedCreatorId = "";
+    state.creatorSearchResults = [];
+    state.creatorSearchPage = 0;
+    state.creatorSearchPages = 0;
+    state.creatorSelectorGeneration += 1;
+    state.creatorSearchLoading = false;
+    state.creatorSearchError = "";
+    renderCreatorSelector();
+  });
+  creatorSearchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") searchCreatorLibrary(1);
+  });
+  creatorLoadMoreButton.addEventListener("click", () => searchCreatorLibrary(state.creatorSearchPage + 1));
+  creatorConfirmButton.addEventListener("click", linkSelectedCreator);
+  creatorCancelButton.addEventListener("click", resetCreatorSelector);
   for (const [name, input] of Object.entries(previewInputs)) {
     input.addEventListener("input", () => syncPreviewState(name));
     input.addEventListener("change", () => syncPreviewState(name));
@@ -1041,6 +1274,9 @@
     state,
     previewInputs,
     mutateCurrent,
+    openCreatorSelector,
+    searchCreatorLibrary,
+    linkSelectedCreator,
     initializePreview,
     profileForMutation,
     agencyStatus,

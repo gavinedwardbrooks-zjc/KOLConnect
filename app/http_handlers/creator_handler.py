@@ -5,6 +5,8 @@ import json
 
 from creator_batch_import import CreatorBatchImportError
 from api_contract import error_payload
+from creator_repository import ExtensionMutationError
+from storage.errors import StorageError
 from services.creator_hard_delete_service import CreatorHardDeleteError
 from services.creator_merge_service import CreatorMergeError
 
@@ -299,6 +301,20 @@ def handle(handler, request: dict, context: dict) -> bool:
             query.get("profile_url", [""])[0],
         )
         handler._json({"ok": True, **result})
+        return True
+
+    if method == "POST" and path == "/api/extension/accounts/link-existing-creator":
+        try:
+            result = creator_service.link_existing_creator_account(request["get_payload"]())
+            handler._json({"ok": True, **result})
+        except ExtensionMutationError as exc:
+            handler._json(error_payload(exc.code, str(exc)), status=exc.status)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            handler._json(error_payload("INVALID_REQUEST", "请求正文不是有效的 JSON。"), status=400)
+        except StorageError:
+            handler._json(error_payload("LOCAL_AUTHORITY_UNAVAILABLE", "本地数据暂不可用。"), status=503)
+        except Exception:
+            handler._json(error_payload("LINK_INTERNAL_ERROR", "账号关联未完成。"), status=500)
         return True
 
     # POST /api/extension/import → 导入插件达人数据；{"ok": true, "duplicate": false, "is_new_creator": true, "task": {...}, "account_uid": "...", "analysis_id": "...", "account_id": "...", "snapshot_id": "..."}

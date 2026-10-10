@@ -9,8 +9,9 @@ import json
 from typing import Iterator
 from urllib.parse import urlparse
 
-from creator_repository import CreatorRepository, _mutation_synchronized, _utc_now
+from creator_repository import CreatorRepository, ExtensionMutationError, _mutation_synchronized, _utc_now
 from domain.creator_url_resolver import CreatorURLResolver
+from storage.sqlite_runtime import sqlite_module
 from storage.migration import _value
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
 
@@ -324,6 +325,64 @@ class SQLiteCreatorRepository(CreatorRepository):
             )
             self.store.increment_business_revision(connection)
         return {"created": True, "account": account}
+
+    @_mutation_synchronized
+    def linkNewAccountToCreator(
+        self, creator_id: str, platform: str, profile_url: str, account_uid: str
+    ) -> dict:
+        """Link a newly observed identity without changing existing ownership."""
+        with self.store.factory.write_transaction() as connection:
+            creator = connection.execute(
+                "SELECT archived_at FROM creators WHERE creator_id=?", (creator_id,)
+            ).fetchone()
+            if creator is None:
+                raise ExtensionMutationError("CREATOR_NOT_FOUND", "目标达人不存在。", 404)
+            if creator["archived_at"]:
+                raise ExtensionMutationError("CREATOR_ARCHIVED", "目标达人已归档。", 409)
+
+            rows = [dict(row) for row in connection.execute(
+                "SELECT account_uid, creator_id, platform, username, profile_url, platform_account_id "
+                "FROM creator_accounts"
+            )]
+            resolved = CreatorURLResolver().resolve(profile_url, account_rows=rows)
+            match_state = resolved["account_match_status"]
+            if match_state == "ambiguous":
+                raise ExtensionMutationError("ACCOUNT_IDENTITY_AMBIGUOUS", "账号身份存在歧义。", 409)
+            matched_uid = str(resolved.get("account_uid") or "")
+            if matched_uid and matched_uid != account_uid:
+                raise ExtensionMutationError("ACCOUNT_IDENTITY_CONFLICT", "账号身份与现有记录不一致。", 409)
+            existing = connection.execute(
+                "SELECT creator_id FROM creator_accounts WHERE account_uid=?", (account_uid,)
+            ).fetchone()
+            if existing is not None:
+                if existing["creator_id"] != creator_id:
+                    raise ExtensionMutationError(
+                        "ACCOUNT_OWNED_BY_OTHER_CREATOR", "账号已关联其他达人；此操作不支持重新关联。", 409
+                    )
+                changed = False
+            else:
+                now = _utc_now()
+                try:
+                    connection.execute(
+                        "INSERT INTO creator_accounts "
+                        "(account_uid, account_id, creator_id, platform, username, profile_url, "
+                        "platform_account_id, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                        (account_uid, self._account_id(account_uid), creator_id, platform,
+                         str(resolved.get("username") or ""), profile_url,
+                         resolved.get("platform_account_id"), now, now),
+                    )
+                except sqlite_module().IntegrityError as exc:
+                    raise ExtensionMutationError(
+                        "ACCOUNT_IDENTITY_CONFLICT", "账号身份已被其他记录占用。", 409
+                    ) from exc
+                self.store.increment_business_revision(connection)
+                changed = True
+        return {
+            "action": "LINK_EXISTING_CREATOR", "changed": changed,
+            "account_uid": account_uid, "creator_id": creator_id,
+            "relationship_state": "LINKED", "platform": platform,
+            "profile_url": profile_url, "warnings": [],
+        }
 
     @_mutation_synchronized
     def removeCreatorAccount(self, creator_id: str, account_uid: str) -> dict:

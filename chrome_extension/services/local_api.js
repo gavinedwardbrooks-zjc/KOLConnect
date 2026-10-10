@@ -74,6 +74,66 @@ export async function lookupAccount(platform, profileUrl) {
   };
 }
 
+export async function searchCreators(query = "", page = 1) {
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL("/api/creator-library", apiUrl);
+  endpoint.searchParams.set("search", clean(query));
+  endpoint.searchParams.set("page", String(page));
+  endpoint.searchParams.set("page_size", "12");
+  let response;
+  try {
+    response = await fetch(endpoint, { method: "GET", cache: "no-store" });
+  } catch (_) {
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。");
+  }
+  let result = {};
+  try { result = await response.json(); } catch (_) {}
+  if (!response.ok || result.ok !== true || !Array.isArray(result.creators)) {
+    throw new LocalApiError("CREATOR_SEARCH_FAILED", "达人搜索暂不可用。", response.status);
+  }
+  return {
+    creators: result.creators.filter((row) => clean(row?.creator_id)).map((row) => ({
+      creator_id: clean(row.creator_id),
+      creator_name: clean(row.creator_name),
+      account_count: Number.isFinite(Number(row.account_count)) ? Number(row.account_count) : null,
+      profile_url: clean(row.profile_url)
+    })),
+    page: Number(result.page) || page,
+    pages: Number(result.pages) || 0
+  };
+}
+
+export async function linkExistingCreator(creatorId, platform, profileUrl) {
+  if (!clean(creatorId) || !clean(platform) || !clean(profileUrl)) {
+    throw new LocalApiError("VALIDATION_ERROR", "缺少明确的达人或账号身份。", 422);
+  }
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL("/api/extension/accounts/link-existing-creator", apiUrl);
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "LINK_EXISTING_CREATOR", creator_id: clean(creatorId),
+        platform: clean(platform), profile_url: clean(profileUrl)
+      })
+    });
+  } catch (_) {
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。");
+  }
+  let result = {};
+  try { result = await response.json(); } catch (_) {}
+  if (!response.ok || result.ok !== true) {
+    const error = result.error && typeof result.error === "object" ? result.error : {};
+    throw new LocalApiError(clean(error.code) || "LINK_FAILED", "账号关联未完成。", response.status);
+  }
+  if (result.action !== "LINK_EXISTING_CREATOR" || !clean(result.creator_id) || !clean(result.account_uid)) {
+    throw new LocalApiError("INVALID_RESPONSE", "账号关联结果无法核实。", response.status);
+  }
+  return result;
+}
+
 function buildVideoImportItem(video = {}, capturedAt = "") {
   const item = {
     platform: video.platform || "",

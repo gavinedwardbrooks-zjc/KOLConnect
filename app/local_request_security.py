@@ -6,7 +6,10 @@ from urllib.parse import urlparse
 
 
 MUTATING_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
-EXTENSION_MUTATION_PATHS = frozenset({"/api/extension/import"})
+EXTENSION_MUTATION_PATHS = frozenset({
+    "/api/extension/import",
+    "/api/extension/accounts/link-existing-creator",
+})
 STORAGE_MIGRATION_PREFIX = "/api/settings/storage-migration/"
 
 

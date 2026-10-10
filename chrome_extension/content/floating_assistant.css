@@ -111,6 +111,46 @@
   line-height: 1.5;
 }
 
+#kolconnect-next-root .kol-creator-selector:not([hidden]) {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 13px;
+  border: 1px solid #dce8da;
+  border-radius: 14px;
+  background: #fffdf9;
+}
+
+#kolconnect-next-root .kol-creator-results {
+  display: grid;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+#kolconnect-next-root .kol-creator-result {
+  padding: 8px 10px;
+  border: 1px solid #e9e5dd;
+  border-radius: 9px;
+  background: #fff;
+  color: #344038;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+#kolconnect-next-root .kol-creator-result[data-selected="true"] {
+  border-color: #64866c;
+  background: #edf5ea;
+}
+
+#kolconnect-next-root .kol-link-confirm {
+  border: 0;
+  border-radius: 9px;
+  padding: 8px 10px;
+  background: #64866c;
+  color: #fff;
+}
+
 #kolconnect-next-root .kol-preview-field {
   display: grid;
   grid-template-columns: 108px minmax(0, 1fr);

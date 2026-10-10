@@ -752,6 +752,35 @@ class CreatorService:
         self._invalidate_creator_read_caches()
         return result
 
+    def link_existing_creator_account(self, payload: object) -> dict[str, Any]:
+        if not isinstance(payload, dict) or payload.get("action") != "LINK_EXISTING_CREATOR":
+            raise ExtensionMutationError("EXPLICIT_ACTION_REQUIRED", "必须明确指定关联操作。", 422)
+        creator_id = str(payload.get("creator_id") or "").strip()
+        platform = str(payload.get("platform") or "").strip().casefold()
+        profile_url = payload.get("profile_url")
+        labels = {"tiktok": "TikTok", "instagram": "Instagram", "youtube": "YouTube"}
+        resolved = CreatorURLResolver.resolve_syntax(profile_url)
+        if (
+            not creator_id or platform not in labels
+            or resolved.get("resolution_status") != "resolved"
+            or resolved.get("input_type") != "profile"
+            or resolved.get("platform") != labels.get(platform)
+        ):
+            raise ExtensionMutationError("ACCOUNT_IDENTITY_INVALID", "达人或账号主页身份无效。", 422)
+        canonical_url = str(resolved["canonical_profile_url"])
+        account_uid = scraper_module.build_creator_uid({
+            "platform": labels[platform], "url": canonical_url,
+        })
+        expected_uid = str(payload.get("expected_account_uid") or "").strip()
+        if expected_uid and expected_uid != account_uid:
+            raise ExtensionMutationError("ACCOUNT_IDENTITY_STALE", "页面账号身份已变化。", 409)
+        result = self._repository_provider().linkNewAccountToCreator(
+            creator_id, labels[platform], canonical_url, account_uid
+        )
+        if result["changed"]:
+            self._invalidate_creator_read_caches()
+        return result
+
     def remove_creator_account(self, creator_id: str, account_uid: str) -> dict[str, Any]:
         result = self._repository_provider().removeCreatorAccount(creator_id, account_uid)
         self._invalidate_creator_read_caches()
