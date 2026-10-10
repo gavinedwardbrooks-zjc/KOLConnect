@@ -369,7 +369,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("packaging/.pyinstaller-dist-macos/KOLConnect.app", manual)
         self.assertIn('test -d "${app}"', manual)
         self.assertIn('test -x "${binary}"', manual)
-        self.assertIn("release/KOLConnect_v1.0.0_mac_arm64.dmg", manual)
+        self.assertIn("release/KOLConnect_v2.0.0_mac_arm64.dmg", manual)
         self.assertIn('test -s "${dmg}"', manual)
         self.assertIn('shasum -a 256 "${dmg}"', manual)
         self.assertIn('lipo -archs "${binary}"', manual)
@@ -398,7 +398,7 @@ class PackagingConfigurationTests(unittest.TestCase):
             "macos-15",
             "arm64",
             "${PYTHON_VERSION}",
-            "KOLConnect_v1.0.0_mac_arm64.dmg",
+            "KOLConnect_v2.0.0_mac_arm64.dmg",
             "${ARTIFACT_NAME}",
             "${DMG_SHA256}",
             "ad-hoc",
@@ -411,7 +411,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertEqual("${{ env.ARTIFACT_NAME }}", upload_step["with"]["name"])
         self.assertEqual(
-            "release/KOLConnect_v1.0.0_mac_arm64.dmg",
+            "release/KOLConnect_v2.0.0_mac_arm64.dmg",
             upload_step["with"]["path"],
         )
         self.assertEqual("error", upload_step["with"]["if-no-files-found"])
@@ -482,8 +482,8 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('[[ "$(uname -m)" == "x86_64" ]]', build)
         self.assertIn("KOLConnect-macos-arm64", build)
         self.assertIn("KOLConnect-macos-intel", build)
-        self.assertIn("KOLConnect_v1.0.0_mac_arm64.dmg", build)
-        self.assertIn("KOLConnect_v1.0.0_mac_intel.dmg", build)
+        self.assertIn("KOLConnect_v2.0.0_mac_arm64.dmg", build)
+        self.assertIn("KOLConnect_v2.0.0_mac_intel.dmg", build)
         self.assertIn("- build-macos-intel", build)
         self.assertIn("actions/download-artifact@v4", build)
         self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", build)

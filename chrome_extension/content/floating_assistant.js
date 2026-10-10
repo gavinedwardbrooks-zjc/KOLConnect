@@ -90,7 +90,7 @@
   root.style.display = "none";
   const panel = create("section", "kol-panel");
   const head = create("header", "kol-head");
-  const brand = create("span", "kol-brand", "KOLConnect v1.0.0");
+  const brand = create("span", "kol-brand", "KOLConnect v2.0.0");
   const minimizeButton = create("button", "kol-icon-button", "−");
   const closeButton = create("button", "kol-icon-button", "×");
   minimizeButton.type = "button";

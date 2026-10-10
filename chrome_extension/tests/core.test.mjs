@@ -105,8 +105,8 @@ assert.deepEqual(validateMutationProfile("UPDATE", { platform: "TikTok" }), ["ä¸
 
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 assert.equal(manifest.manifest_version, 3);
-assert.equal(manifest.version, "1.0.0");
-assert.equal(manifest.version_name, "KOLConnect v1.0.0");
+assert.equal(manifest.version, "2.0.0");
+assert.equal(manifest.version_name, "KOLConnect v2.0.0");
 const runtimeFiles = JSON.stringify(manifest);
 for (const forbidden of ["popup", "sidepanel", "interceptor"]) {
   assert.equal(runtimeFiles.toLowerCase().includes(forbidden), false);

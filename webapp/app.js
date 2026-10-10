@@ -1863,7 +1863,7 @@ function renderSystemHealth(data) {
   }));
   const debug = data?.debug || {};
   info.replaceChildren(...[
-    ["版本", debug.version || "KOLConnect v1.0.0"],
+    ["版本", debug.version || "KOLConnect v2.0.0"],
     ["API状态", debug.api_status || "正常"],
     ["Excel路径", debug.excel_path || "--"],
     ["Excel状态", healthStatusLabel(debug.excel_status)],

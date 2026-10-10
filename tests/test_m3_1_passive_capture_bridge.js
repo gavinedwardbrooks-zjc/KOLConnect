@@ -378,7 +378,7 @@ async function testBridgeValidationAndTokens() {
 async function testManifestWiring() {
   const manifestPath = path.join(__dirname, "..", "chrome_extension", "manifest.json");
   const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  assert.equal(manifest.version, "1.0.0");
+  assert.equal(manifest.version, "2.0.0");
   const activeScripts = manifest.content_scripts.flatMap(entry => entry.js || []);
   assert.equal(activeScripts.includes("content/passive_capture_bridge.js"), true);
   assert.equal(activeScripts.includes("capture/passive_capture_main.js"), true);

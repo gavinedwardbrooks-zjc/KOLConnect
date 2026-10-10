@@ -383,7 +383,7 @@ assert.deepEqual(Object.keys(payload), [
 
 const manifest = JSON.parse(readFileSync(new URL("../manifest.json", import.meta.url), "utf8"));
 const manifestText = JSON.stringify(manifest).toLowerCase();
-assert.equal(manifest.version, "1.0.0");
+assert.equal(manifest.version, "2.0.0");
 for (const forbiddenPermission of ["cookies", "webRequest", "webRequestBlocking"]) {
   assert.equal((manifest.permissions || []).includes(forbiddenPermission), false);
 }

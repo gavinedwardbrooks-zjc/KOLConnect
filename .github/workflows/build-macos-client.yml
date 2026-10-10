@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           app="packaging/.pyinstaller-dist-macos/KOLConnect.app"
           binary="${app}/Contents/MacOS/KOLConnect"
-          dmg="release/KOLConnect_v1.0.0_mac_arm64.dmg"
+          dmg="release/KOLConnect_v2.0.0_mac_arm64.dmg"
           test -d "${app}"
           test -x "${binary}"
           lipo -archs "${binary}" | tr ' ' '\n' | grep -Fxq arm64
@@ -89,7 +89,7 @@ jobs:
             echo "- Runner: macos-15"
             echo "- Architecture: arm64"
             echo "- Python: ${PYTHON_VERSION}"
-            echo "- DMG: KOLConnect_v1.0.0_mac_arm64.dmg"
+            echo "- DMG: KOLConnect_v2.0.0_mac_arm64.dmg"
             echo "- Artifact: ${ARTIFACT_NAME}"
             echo "- SHA-256: ${DMG_SHA256}"
             echo "- Signing: ad-hoc"
@@ -98,6 +98,6 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ARTIFACT_NAME }}
-          path: release/KOLConnect_v1.0.0_mac_arm64.dmg
+          path: release/KOLConnect_v2.0.0_mac_arm64.dmg
           if-no-files-found: error
           retention-days: 30

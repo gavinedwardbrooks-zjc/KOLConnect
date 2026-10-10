@@ -65,7 +65,7 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         )
         self.assertIn("exclude_binaries=True", spec)
         self.assertIn("COLLECT(", spec)
-        self.assertIn('RELEASE_NAME = "KOLConnect_v1.0.0"', spec)
+        self.assertIn('RELEASE_NAME = "KOLConnect_v2.0.0"', spec)
         self.assertIn('Write-Host "RELEASE_FORMAT = ONEDIR"', build)
         self.assertIn('$release = Join-Path $root "release"', build)
         self.assertIn('$releaseDirectory = Join-Path $release $releaseName', build)
