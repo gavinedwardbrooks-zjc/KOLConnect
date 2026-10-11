@@ -47,7 +47,11 @@ class Element {
   replaceChildren(...children) { this.children = children; this.textContent = ""; }
   remove() {}
   click() { return this.listeners.get("click")?.({ target: this }); }
-  closest(selector) { return selector === "[data-followup-action]" && this.dataset.followupAction ? this : null; }
+  closest(selector) {
+    if (selector === "[data-followup-action]" && this.dataset.followupAction) return this;
+    if (selector === "[data-followup-creator-id]" && this.dataset.followupCreatorId) return this;
+    return null;
+  }
   get text() { return `${this.textContent}${this.children.map(child => child.text).join("")}`; }
 }
 
@@ -99,6 +103,7 @@ function harness({ groups, queue, prompt = () => "", postFailure = null, postGat
         return String(translations[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values?.[name] ?? ""));
       },
       showSaved: value => calls.saved.push(value), showError: error => calls.errors.push(String(error.message || error)),
+      navigate: (...args) => calls.navigation = args,
     },
     KOLConnectAPI: {
       get: async url => {
@@ -161,6 +166,12 @@ async function run() {
   const unnamedRow = h.get("mail-followup-list").children[1];
   assert.match(unnamedRow.children[2].title, /无法可靠判断由谁继续回复/);
   assert.match(unnamedRow.children[7].title, /无法确认是否包含该联系人全部历史邮件/);
+  const creatorLink = h.get("mail-followup-list").children[0].children[0].children[0];
+  assert.equal(creatorLink.dataset.followupCreatorId, "creator-a", "matched rows use the authoritative creator ID");
+  h.get("mail-followup-list").listeners.get("click")({ target: creatorLink });
+  assert.deepEqual(h.calls.navigation, ["creator-library-detail", { creatorId: "creator-a" }]);
+  assert.match(appSource, /if \(pageName === "creator-library" \|\| pageName === "creator-library-detail"\)[\s\S]*?state,[\s\S]*?api: window\.KOLConnectAPI,[\s\S]*?resources: window\.KOLConnectPageResources\.create\(\)/, "Creator navigation injects the detail loader context");
+  assert.equal(unnamedRow.children[0].children.length, 0, "unmatched rows do not invent a Creator link");
 
   await h.get("mail-followup-refresh").click();
   assert.equal(h.calls.gets.filter(url => url === "/api/mail/follow-up").length, 2);

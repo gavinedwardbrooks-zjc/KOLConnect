@@ -12,6 +12,8 @@
   let activeCreators = [];
   let listLifecycle = 0;
   let detailLifecycle = 0;
+  let detailMode = "view";
+  let requestedDetailMode = "view";
 
   function element(id) {
     return document.getElementById(id);
@@ -102,8 +104,10 @@
       row.appendChild(createCell(t("agencyCreators", { count: creatorCount, plural: creatorCount === 1 ? "" : "s" })));
       row.appendChild(createCell(formatDate(agency.updated_at || agency.created_at)));
       const action = document.createElement("td");
-      action.appendChild(createLink(global.KOLConnectI18n?.text("查看") || "查看", { agencyDetailId: agencyId }));
-      action.appendChild(createLink(global.KOLConnectI18n?.text("编辑") || "编辑", { agencyEditId: agencyId }));
+      const actions = document.createElement("div");
+      actions.className = "agency-row-actions";
+      actions.appendChild(createLink(global.KOLConnectI18n?.text("查看") || "查看", { agencyDetailId: agencyId }));
+      actions.appendChild(createLink(global.KOLConnectI18n?.text("编辑") || "编辑", { agencyEditId: agencyId }));
       const more = document.createElement("details");
       more.className = "task-card-more";
       const summary = document.createElement("summary");
@@ -113,7 +117,8 @@
       moreActions.appendChild(createLink(t("agencyDelete"), { agencyDeleteId: agencyId }));
       more.appendChild(summary);
       more.appendChild(moreActions);
-      action.appendChild(more);
+      actions.appendChild(more);
+      action.appendChild(actions);
       row.appendChild(action);
       body.appendChild(row);
     });
@@ -264,31 +269,76 @@
     setDetailState("loaded");
   }
 
+  function setDetailMode(mode, contact = null) {
+    detailMode = ["view", "agency-edit", "contact-edit"].includes(mode) ? mode : "view";
+    const agencyEditing = detailMode === "agency-edit";
+    const contactEditing = detailMode === "contact-edit";
+    const setHidden = (id, hidden) => {
+      const target = element(id);
+      if (target) target.hidden = hidden;
+    };
+    const editForm = element("agency-edit-form");
+    const editFormHome = element("agency-edit-form-home");
+    const editFormHost = element("agency-edit-form-host");
+
+    if (agencyEditing && editForm && editFormHost && editForm.parentNode !== editFormHost) {
+      editFormHost.appendChild(editForm);
+    }
+    if (!agencyEditing && editForm && editFormHome && editForm.parentNode !== editFormHome) {
+      editFormHome.appendChild(editForm);
+    }
+
+    setHidden("agency-profile-card", agencyEditing);
+    setHidden("agency-edit-mode", !agencyEditing);
+    setHidden("agency-profile-readonly", agencyEditing || contactEditing);
+    setHidden("agency-profile-actions", agencyEditing || contactEditing);
+    setHidden("agency-edit-form", !agencyEditing);
+    setHidden("agency-contacts-card", agencyEditing);
+    setHidden("agency-contacts-heading", contactEditing);
+    setHidden("agency-contacts-empty", contactEditing || activeContacts.length > 0);
+    setHidden("agency-contacts-table-wrap", contactEditing || activeContacts.length === 0);
+    setHidden("agency-contact-edit-form", !contactEditing);
+    setHidden("agency-creators-card", agencyEditing || contactEditing);
+    setHidden("agency-campaigns-card", agencyEditing || contactEditing);
+
+    if (agencyEditing && activeAgency) {
+      [
+        ["agency-edit-name", "name"], ["agency-edit-country", "country"],
+        ["agency-edit-website", "website"], ["agency-edit-email", "public_email"],
+        ["agency-edit-stage", "cooperation_stage"], ["agency-edit-owner", "owner"],
+        ["agency-edit-note", "note"],
+      ].forEach(([id, field]) => {
+        const target = element(id);
+        if (target) target.value = String(activeAgency[field] || "");
+      });
+    }
+
+    if (contactEditing) {
+      const form = element("agency-contact-edit-form");
+      if (form) form.dataset.contactId = String(contact?.contact_id || "");
+      [
+        ["agency-contact-edit-name", "name"],
+        ["agency-contact-edit-position", "position"],
+        ["agency-contact-edit-email", "email"],
+        ["agency-contact-edit-whatsapp", "whatsapp"],
+      ].forEach(([id, field]) => {
+        const target = element(id);
+        if (target) target.value = String(contact?.[field] || "");
+      });
+    }
+  }
+
   function setEditFormVisible(visible) {
-    const form = element("agency-edit-form");
-    if (!form) return;
-    form.hidden = !visible;
-    if (!visible || !activeAgency) return;
-    [
-      ["agency-edit-name", "name"], ["agency-edit-country", "country"],
-      ["agency-edit-website", "website"], ["agency-edit-email", "public_email"],
-      ["agency-edit-stage", "cooperation_stage"], ["agency-edit-owner", "owner"],
-      ["agency-edit-note", "note"],
-    ].forEach(([id, field]) => { element(id).value = String(activeAgency[field] || ""); });
+    setDetailMode(visible ? "agency-edit" : "view");
   }
 
   function setContactEditFormVisible(visible, contact = null) {
-    const form = element("agency-contact-edit-form");
-    if (!form) return;
-    form.hidden = !visible;
-    if (!visible || !contact) return;
-    form.dataset.contactId = String(contact.contact_id || "");
-    [
-      ["agency-contact-edit-name", "name"],
-      ["agency-contact-edit-position", "position"],
-      ["agency-contact-edit-email", "email"],
-      ["agency-contact-edit-whatsapp", "whatsapp"],
-    ].forEach(([id, field]) => { element(id).value = String(contact[field] || ""); });
+    setDetailMode(visible ? "contact-edit" : "view", contact);
+  }
+
+  function resetDetailMode() {
+    requestedDetailMode = "view";
+    setDetailMode("view");
   }
 
   async function saveAgencyEdit(event) {
@@ -306,7 +356,7 @@
     };
     try {
       await global.KOLConnectAPI.post("/api/local/agencies", payload, { signal: detailResources?.signal });
-      setEditFormVisible(false);
+      resetDetailMode();
       await loadAgencyDetail();
       app().showSaved(t("agencyProfileSaved"));
     } catch (error) {
@@ -342,18 +392,18 @@
     event.preventDefault();
     const form = element("agency-contact-edit-form");
     const contactId = String(form?.dataset.contactId || "").trim();
-    if (!contactId || !activeAgencyId) return;
+    if (!activeAgencyId) return;
     const payload = {
-      contact_id: contactId,
       agency_id: activeAgencyId,
       name: element("agency-contact-edit-name").value.trim(),
       position: element("agency-contact-edit-position").value.trim(),
       email: element("agency-contact-edit-email").value.trim(),
       whatsapp: element("agency-contact-edit-whatsapp").value.trim(),
     };
+    if (contactId) payload.contact_id = contactId;
     try {
       await global.KOLConnectAPI.post("/api/local/agency-contacts", payload, { signal: detailResources?.signal });
-      setContactEditFormVisible(false);
+      resetDetailMode();
       await loadAgencyDetail();
       app().showSaved(t("agencyContactSaved"));
     } catch (error) {
@@ -367,7 +417,7 @@
     if (!global.confirm(`确定删除联系人 ${name} 吗？\n此操作只删除该 Agency 下的联系人，不会删除达人、Campaign 或发布记录。`)) return;
     try {
       await global.KOLConnectAPI.delete(`/api/local/agency-contacts/${encodeURIComponent(contact.contact_id)}`, { signal: detailResources?.signal });
-      setContactEditFormVisible(false);
+      resetDetailMode();
       await loadAgencyDetail();
       app().showSaved(t("agencyContactDeleted"));
     } catch (error) {
@@ -424,6 +474,7 @@
       const campaignResult = await loadCampaignsForCreators(detail.creators, detailController.signal);
       if (!detailResources || lifecycle !== detailLifecycle) return;
       renderAgencyDetail(detail, contacts, campaignResult);
+      setDetailMode(requestedDetailMode);
     } catch (error) {
       if (error?.name === "AbortError" || lifecycle !== detailLifecycle) return;
       setDetailState("error", error.message || "Agency 详情加载失败，请返回列表重试。");
@@ -449,10 +500,10 @@
         const deleteButton = event.target.closest("[data-agency-delete-id]");
         if (deleteButton?.dataset.agencyDeleteId) return deleteAgencyFromList(deleteButton.dataset.agencyDeleteId);
         const editButton = event.target.closest("[data-agency-edit-id]");
-        if (editButton?.dataset.agencyEditId) return app().navigate("agency-detail", { agencyId: editButton.dataset.agencyEditId });
+        if (editButton?.dataset.agencyEditId) return app().navigate("agency-detail", { agencyId: editButton.dataset.agencyEditId, mode: "edit" });
         const button = event.target.closest("[data-agency-detail-id]");
         if (button?.dataset.agencyDetailId) {
-          app().navigate("agency-detail", { agencyId: button.dataset.agencyDetailId });
+          app().navigate("agency-detail", { agencyId: button.dataset.agencyDetailId, mode: "view" });
         }
       });
     },
@@ -470,6 +521,7 @@
       detailResources = global.KOLConnectPageResources.create();
       detailLifecycle += 1;
       activeAgencyId = String(context?.agencyId || "").trim();
+      requestedDetailMode = context?.mode === "edit" ? "agency-edit" : "view";
       if (!activeAgencyId) {
         setDetailState("error", "缺少 Agency ID，请返回列表重新进入。");
         return;
@@ -483,6 +535,7 @@
       listen(detailResources, "agency-edit-cancel", "click", () => setEditFormVisible(false));
       listen(detailResources, "agency-edit-form", "submit", saveAgencyEdit);
       listen(detailResources, "agency-detail-delete", "click", deleteAgency);
+      listen(detailResources, "agency-contact-add-open", "click", () => setContactEditFormVisible(true));
       listen(detailResources, "agency-contact-edit-cancel", "click", () => setContactEditFormVisible(false));
       listen(detailResources, "agency-contact-edit-form", "submit", saveAgencyContact);
       listen(detailResources, "agency-contacts-body", "click", event => {

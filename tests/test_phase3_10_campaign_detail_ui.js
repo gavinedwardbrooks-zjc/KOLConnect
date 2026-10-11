@@ -90,8 +90,11 @@ async function run() {
     "campaign-detail-title", "campaign-detail-subtitle", "campaign-detail-back", "campaign-detail-delete",
     "campaign-detail-loading", "campaign-detail-error", "campaign-detail-error-message",
     "campaign-detail-retry", "campaign-detail-content", "campaign-detail-badges",
+    "campaign-detail-tab-overview", "campaign-detail-tab-creators", "campaign-detail-tab-brief", "campaign-detail-tab-performance",
+    "campaign-detail-panel-overview", "campaign-detail-panel-overview-risks", "campaign-detail-panel-creators", "campaign-detail-panel-brief", "campaign-detail-panel-brief-review", "campaign-detail-panel-performance",
+    "campaign-performance-tab-overview", "campaign-performance-tab-details", "campaign-performance-overview", "campaign-performance-details",
     "campaign-detail-overview", "campaign-detail-goal", "campaign-detail-readonly",
-    "campaign-creator-count", "campaign-creator-add-open", "campaign-creator-form-card",
+    "campaign-creator-count", "campaign-creator-add-open", "campaign-creator-list-header", "campaign-creator-list-content", "campaign-creator-form-card",
     "campaign-creator-form-title", "campaign-creator-form", "campaign-creator-id",
     "campaign-creator-account-id", "campaign-creator-stage", "campaign-creator-quote-currency",
     "campaign-creator-quote-unit-amount", "campaign-creator-quote-quantity",
@@ -354,6 +357,8 @@ async function run() {
   ].sort(), "initial load must use four read-only requests, including batched performance");
   assert.equal(elements.get("campaign-detail-title").textContent, "Brazil Launch");
   assert.equal(elements.get("campaign-creator-count").textContent, "1 位达人");
+  assert.equal(elements.get("campaign-detail-panel-overview").hidden, false, "overview is the default detail tab");
+  assert.equal(elements.get("campaign-detail-panel-creators").hidden, true, "creator table is not part of the overview");
   assert.equal(elements.get("campaign-detail-content").hidden, false);
   assert.equal(elements.get("campaign-creator-add-open").disabled, false);
   assert.equal(elements.get("campaign-brief-title").value, "Launch brief");
@@ -409,12 +414,32 @@ async function run() {
     { currency_code: "BRL", rate_per_usd: null },
     { currency_code: "EUR", rate_per_usd: 0.9 },
     { currency_code: "GBP", rate_per_usd: null },
+    { currency_code: "XYZ", rate_per_usd: null },
+    { currency_code: undefined, rate_per_usd: null },
   ];
   await registeredPage.load({ campaignId: "campaign_one" });
   calls.splice(0);
 
+  const quoteCurrencyOptions = elements.get("campaign-creator-quote-currency").children;
+  assert.ok(quoteCurrencyOptions.some(option => option.value === "XYZ" && option.textContent === "XYZ"), "a valid unknown stored currency must remain selectable");
+  assert.equal(quoteCurrencyOptions.some(option => option.textContent === "undefined"), false, "missing currency metadata must never render as undefined");
+
   registeredPage.bind();
   assert.equal(elements.get("campaign-creator-add-open").listenerCount("click"), 1);
+  const performanceCallsBeforeSwitch = calls.length;
+  await elements.get("campaign-detail-tab-performance").dispatch("click");
+  assert.equal(elements.get("campaign-detail-panel-performance").hidden, false, "Performance tab opens the performance workspace");
+  assert.equal(elements.get("campaign-performance-overview").hidden, false, "aggregate performance is the default subview");
+  await elements.get("campaign-performance-tab-details").dispatch("click");
+  assert.equal(elements.get("campaign-performance-overview").hidden, true, "content cards are separated from aggregate metrics");
+  assert.equal(elements.get("campaign-performance-details").hidden, false);
+  assert.equal(calls.length, performanceCallsBeforeSwitch, "performance view switching must not refetch data");
+  await elements.get("campaign-performance-tab-overview").dispatch("click");
+  assert.equal(elements.get("campaign-performance-overview").hidden, false);
+  assert.equal(elements.get("campaign-performance-details").hidden, true);
+  await elements.get("campaign-detail-tab-creators").dispatch("click");
+  assert.equal(elements.get("campaign-detail-panel-creators").hidden, false, "creator tab exposes cooperation management");
+  assert.equal(elements.get("campaign-detail-panel-overview").hidden, true, "tab changes remove inactive panels from layout");
   const firstPassButton = findSubmissionAction(elements.get("content-submission-list"), "submissionAiReview", "submission_one");
   assert.ok(firstPassButton, "content submission should expose a rules-first-pass action");
   await elements.get("content-submission-list").dispatch("click", { target: firstPassButton });
@@ -429,6 +454,8 @@ async function run() {
   assert.equal(elements.get("campaign-detail-error").hidden, true);
   calls.splice(0);
   await elements.get("campaign-creator-add-open").dispatch("click");
+  assert.equal(elements.get("campaign-creator-list-header").hidden, true, "creator editor must hide the list heading");
+  assert.equal(elements.get("campaign-creator-list-content").hidden, true, "creator editor must hide the list content");
   assert.equal(calls.splice(0)[0].url, "/api/creator-library");
   elements.get("campaign-creator-id").value = "creator_two";
   await elements.get("campaign-creator-id").dispatch("change");

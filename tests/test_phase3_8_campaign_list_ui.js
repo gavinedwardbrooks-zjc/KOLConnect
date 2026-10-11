@@ -110,6 +110,7 @@ function clone(value) {
 async function run() {
   const ids = [
     "campaign-create-open",
+    "campaign-filter-card", "campaign-list-card",
     "campaign-product-filter",
     "campaign-status-filter",
     "campaign-start-date-from",
@@ -314,6 +315,9 @@ async function run() {
   await elements.get("campaign-status-filter").dispatch("change");
 
   await elements.get("campaign-create-open").dispatch("click");
+  assert.equal(elements.get("campaign-form-card").hidden, false, "create mode must show only the focused form");
+  assert.equal(elements.get("campaign-filter-card").hidden, true, "filters must leave the layout while editing");
+  assert.equal(elements.get("campaign-list-card").hidden, true, "list must leave the layout while editing");
   elements.get("campaign-name").value = "US Launch";
   elements.get("campaign-product-id").value = "product_two";
   elements.get("campaign-platform").value = "YouTube";
@@ -321,6 +325,8 @@ async function run() {
   elements.get("campaign-budget").value = "2500";
   elements.get("campaign-owner").value = "John";
   await elements.get("campaign-form").dispatch("submit");
+  assert.equal(elements.get("campaign-filter-card").hidden, false, "saving returns to list mode");
+  assert.equal(elements.get("campaign-list-card").hidden, false, "saving restores the list");
   assert.equal(calls.filter(call => call.method === "POST").length, 1);
   assert.equal(campaigns.length, 2);
   assert.equal(campaigns[1].product_id, "product_two");
@@ -329,6 +335,8 @@ async function run() {
   let action = findAction(elements.get("campaign-list-body"), "edit", "campaign_two");
   assert.ok(action, "active Campaign must provide edit");
   await elements.get("campaign-list-body").dispatch("click", { target: action });
+  assert.equal(elements.get("campaign-filter-card").hidden, true, "editing must hide filters");
+  assert.equal(elements.get("campaign-list-card").hidden, true, "editing must hide the Campaign list");
   elements.get("campaign-name").value = "US Launch Updated";
   elements.get("campaign-status").value = "running";
   await elements.get("campaign-form").dispatch("submit");

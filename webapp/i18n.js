@@ -106,11 +106,13 @@
 
   Object.assign(dictionaries.zh, {
     settingsAvailable: "可用", settingsUnavailable: "不可用", settingsNeedsAttention: "需处理", settingsConfigurationError: "配置异常", settingsCreated: "已创建", settingsMigrationError: "迁移错误", settingsUnsupportedSchema: "不支持的 Schema",
+    settingsCategoryGeneral: "常规", settingsCategoryGeneralHint: "界面偏好与默认本机 Profile。", settingsCategoryAccounts: "账号与邮箱", settingsCategoryAccountsHint: "管理浏览器 Profile 与已连接邮箱。", settingsAccountsHint: "管理用于抓取的 Chrome Profile 和已连接的邮箱账户。", settingsCategoryIntegrations: "集成", settingsCategoryIntegrationsHint: "可选的 Feishu 与 Google Sheets 连接。", settingsCategoryData: "数据与备份", settingsCategoryDataHint: "本机 SQLite 数据、汇率和兼容导出设置。", settingsCategoryAdvanced: "高级", settingsCategoryAdvancedHint: "诊断、恢复与高风险本机维护工具。",
     settingsFeishuSchemaNeedsReview: "飞书表结构需要补充", settingsFeishuMissingFields: "{table} 缺少：", settingsFeishuIncompatibleFields: "{table} 字段类型不兼容：", settingsFeishuCurrentType: "{field}（当前类型：{type}）",
     settingsFeishuSyncComplete: "同步完成：达人新增 {creatorCreated}、更新 {creatorUpdated}；账号新增 {accountCreated}、更新 {accountUpdated}；关系更新 {relationUpdated}。", settingsFeishuValidationPassed: "连接与字段合同验证通过。", settingsFeishuDryRunComplete: "预检查完成，未写入飞书。", settingsFeishuSyncPartial: "同步部分完成，失败记录 {count} 条；后续批次已停止，可修复后重新同步。", settingsFeishuSyncConfirm: "KOLConnect / Excel 将保持为权威数据源。同步可能在飞书创建缺失记录并更新精确匹配记录；M7.1 不会删除任何飞书记录。确认继续吗？", settingsListSeparator: "、",
   });
   Object.assign(dictionaries.en, {
     settingsAvailable: "Available", settingsUnavailable: "Unavailable", settingsNeedsAttention: "Needs Attention", settingsConfigurationError: "Configuration Error", settingsCreated: "Created", settingsMigrationError: "Migration Error", settingsUnsupportedSchema: "Unsupported Schema",
+    settingsCategoryGeneral: "General", settingsCategoryGeneralHint: "Interface preferences and the default local Profile.", settingsCategoryAccounts: "Accounts & mail", settingsCategoryAccountsHint: "Manage browser Profiles and connected mailboxes.", settingsAccountsHint: "Manage Chrome Profiles for capture and connected mailboxes.", settingsCategoryIntegrations: "Integrations", settingsCategoryIntegrationsHint: "Optional Feishu and Google Sheets connections.", settingsCategoryData: "Data & backup", settingsCategoryDataHint: "Local SQLite data, exchange rates, and compatibility export settings.", settingsCategoryAdvanced: "Advanced", settingsCategoryAdvancedHint: "Diagnostics, recovery, and high-risk local maintenance tools.",
     settingsFeishuSchemaNeedsReview: "Feishu table schema needs attention", settingsFeishuMissingFields: "{table} is missing:", settingsFeishuIncompatibleFields: "{table} has incompatible field types:", settingsFeishuCurrentType: "{field} (current type: {type})",
     settingsFeishuSyncComplete: "Sync complete: creators created {creatorCreated}, updated {creatorUpdated}; accounts created {accountCreated}, updated {accountUpdated}; relations updated {relationUpdated}.", settingsFeishuValidationPassed: "Connection and field contract validation passed.", settingsFeishuDryRunComplete: "Preflight complete; Feishu was not modified.", settingsFeishuSyncPartial: "Sync partially completed with {count} failed records. Later batches stopped; repair and sync again.", settingsFeishuSyncConfirm: "KOLConnect / Excel remains authoritative. Sync may create missing Feishu records and update exact matches; M7.1 never deletes Feishu records. Continue?", settingsListSeparator: ", ",
   });
@@ -613,6 +615,33 @@
     if (localeHydrated || userSelectedLocale) return locale;
     return setLocale(value, { source: "persisted", refreshCurrent: false });
   }
+
+  Object.assign(dictionaries.zh, {
+    agencyContactAdd: "添加联系人",
+    campaignDetailTabOverview: "概览",
+    campaignDetailTabCreators: "达人",
+    campaignDetailTabBrief: "Brief",
+    campaignDetailTabPerformance: "表现",
+    campaignDetailTabsAriaLabel: "Campaign 详情栏目",
+    campaignPerformanceOverview: "总体表现",
+    campaignPerformanceContentDetails: "内容明细",
+    campaignPerformanceTabsAriaLabel: "Campaign 表现视图",
+    agencyEditEyebrow: "EDIT AGENCY",
+    agencyEditTitle: "编辑 Agency",
+  });
+  Object.assign(dictionaries.en, {
+    agencyContactAdd: "Add contact",
+    campaignDetailTabOverview: "Overview",
+    campaignDetailTabCreators: "Creators",
+    campaignDetailTabBrief: "Brief",
+    campaignDetailTabPerformance: "Performance",
+    campaignDetailTabsAriaLabel: "Campaign detail sections",
+    campaignPerformanceOverview: "Overview",
+    campaignPerformanceContentDetails: "Content details",
+    campaignPerformanceTabsAriaLabel: "Campaign performance views",
+    agencyEditEyebrow: "EDIT AGENCY",
+    agencyEditTitle: "Edit agency",
+  });
 
   global.KOLConnectI18n = Object.freeze({
     register(source) {

@@ -18,6 +18,7 @@
   let saving = false;
   let mutationInProgress = false;
   let lifecycleId = 0;
+  let pageMode = "list";
 
   function element(id) {
     return document.getElementById(id);
@@ -288,14 +289,25 @@
     element("campaign-form-error").textContent = "";
   }
 
+  function setPageMode(mode) {
+    pageMode = mode === "list" ? "list" : "editor";
+    const listVisible = pageMode === "list";
+    ["campaign-filter-card", "campaign-list-card", "campaign-create-open"].forEach(id => {
+      const target = element(id);
+      if (target) target.hidden = !listVisible;
+    });
+    const form = element("campaign-form-card");
+    if (form) form.hidden = listVisible;
+  }
+
   function closeForm() {
     resetForm();
-    element("campaign-form-card").hidden = true;
+    setPageMode("list");
   }
 
   function openCreateForm() {
     resetForm();
-    element("campaign-form-card").hidden = false;
+    setPageMode("editor");
     element("campaign-name").focus();
   }
 
@@ -319,7 +331,7 @@
     element("campaign-owner").value = String(campaign.owner || "");
     element("campaign-goal").value = String(campaign.goal || "");
     element("campaign-form-error").hidden = true;
-    element("campaign-form-card").hidden = false;
+    setPageMode("editor");
     element("campaign-name").focus();
   }
 

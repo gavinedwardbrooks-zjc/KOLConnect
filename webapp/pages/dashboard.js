@@ -16,9 +16,9 @@
   const MODULES = [
     { id: "today", labelKey: "dashboardModuleToday", descriptionKey: "dashboardModuleTodayDescription", essential: true },
     { id: "mail_follow_up", labelKey: "dashboardModuleMailFollowUp", descriptionKey: "dashboardModuleMailFollowUpDescription" },
-    { id: "missing_info", labelKey: "dashboardModuleMissingInfo", descriptionKey: "dashboardModuleMissingInfoDescription" },
     { id: "campaigns", labelKey: "dashboardModuleCampaigns", descriptionKey: "dashboardModuleCampaignsDescription" },
     { id: "creator_overview", labelKey: "dashboardModuleCreatorOverview", descriptionKey: "dashboardModuleCreatorOverviewDescription" },
+    { id: "missing_info", labelKey: "dashboardModuleMissingInfo", descriptionKey: "dashboardModuleMissingInfoDescription" },
     { id: "data_freshness", labelKey: "dashboardModuleDataFreshness", descriptionKey: "dashboardModuleDataFreshnessDescription" },
     { id: "geography", labelKey: "dashboardModuleGeography", descriptionKey: "dashboardModuleGeographyDescription" },
     { id: "roi", labelKey: "dashboardModuleRoi", descriptionKey: "dashboardModuleRoiDescription" },

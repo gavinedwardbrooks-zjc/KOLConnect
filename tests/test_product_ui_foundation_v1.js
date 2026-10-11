@@ -71,7 +71,7 @@ class DashboardModuleContainer {
   querySelectorAll() { return this.nodes; }
   appendChild(node) { this.nodes.splice(this.nodes.indexOf(node), 1); this.nodes.push(node); }
 }
-const moduleNodes = ["today", "missing_info", "campaigns", "creator_overview", "data_freshness", "geography", "roi"]
+const moduleNodes = ["today", "mail_follow_up", "campaigns", "creator_overview", "missing_info", "data_freshness", "geography", "roi"]
   .map(id => ({ dataset: { dashboardV2Module: id }, hidden: false }));
 const local = new Map();
 let registeredPage = null;
@@ -94,6 +94,6 @@ assert.equal(preferences.get().order[0], "today", "today must remain first");
 local.set("kolconnect-dashboard-layout-v2", "not-json");
 assert.equal(preferences.get().visible.today, true, "malformed preferences must fail safe");
 preferences.reset();
-assert.equal(preferences.get().order.join(","), "today,mail_follow_up,missing_info,campaigns,creator_overview,data_freshness,geography,roi");
+assert.equal(preferences.get().order.join(","), "today,mail_follow_up,campaigns,creator_overview,missing_info,data_freshness,geography,roi");
 
 console.log("Product UI Foundation V1: OK");

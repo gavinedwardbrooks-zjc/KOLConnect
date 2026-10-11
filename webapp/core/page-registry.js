@@ -65,7 +65,9 @@
     document.querySelectorAll(".nav-btn").forEach(button => {
       const isPrimary = button.classList.contains("nav-primary");
       if (!isPrimary) {
-        button.hidden = button.dataset.primary !== primaryName;
+        // Settings has its own page-level categories; do not duplicate them in the global sub-nav.
+        button.hidden = (primaryName === "settings" && pageName === "settings")
+          || button.dataset.primary !== primaryName;
         if (!button.hidden) visibleSecondaryCount += 1;
       }
       button.classList.toggle(

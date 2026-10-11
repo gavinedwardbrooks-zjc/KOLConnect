@@ -295,6 +295,7 @@ body {
 .product-page-actions,
 .product-row-actions,
 .product-list-error,
+.agency-row-actions,
 .campaign-row-actions,
 .campaign-list-error {
   gap: 10px;
@@ -588,7 +589,7 @@ body {
 }
 
 .agency-table {
-  min-width: 920px;
+  min-width: 0;
 }
 
 .agency-name-cell {
@@ -599,6 +600,8 @@ body {
 .agency-detail-content {
   display: grid;
   gap: 20px;
+  max-width: 1180px;
+  margin: 0 auto;
 }
 
 .agency-profile-card {
@@ -680,7 +683,13 @@ body {
 .agency-contact-edit-form {
   margin: 0;
   padding: 18px 24px 22px;
-  border-top: 1px solid var(--border);
+  border-top: 0;
+}
+
+.agency-edit-mode-card,
+.agency-contacts-card:has(.agency-contact-edit-form:not([hidden])) {
+  max-width: 860px;
+  margin: 0 auto;
 }
 
 .agency-campaign-note {
@@ -695,11 +704,50 @@ body {
 }
 
 .product-table {
-  min-width: 980px;
+  min-width: 0;
 }
 
 .campaign-table {
-  min-width: 1280px;
+  min-width: 0;
+}
+
+.campaign-form-card {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.campaign-detail-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 5px;
+  width: fit-content;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.campaign-detail-tab {
+  border: 0;
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: var(--muted);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.campaign-detail-tab.is-active {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-soft);
+}
+
+.campaign-detail-tab:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .campaign-detail-heading,
@@ -758,8 +806,8 @@ body {
 
 .campaign-detail-overview-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
 }
 
 .campaign-detail-overview-item,
@@ -772,8 +820,8 @@ body {
 }
 
 .campaign-detail-overview-item {
-  min-height: 78px;
-  padding: 14px 16px;
+  min-height: 68px;
+  padding: 12px 14px;
   background: var(--surface-soft);
 }
 
@@ -839,17 +887,17 @@ body {
 }
 
 .campaign-creator-table {
-  min-width: 1380px;
+  min-width: 0;
 }
 
 .campaign-creator-table th:first-child,
 .campaign-creator-table td:first-child {
-  padding-left: 24px;
+  padding-left: 12px;
 }
 
 .campaign-creator-table th:last-child,
 .campaign-creator-table td:last-child {
-  padding-right: 24px;
+  padding-right: 12px;
 }
 
 .campaign-creator-name-cell {
@@ -884,14 +932,14 @@ body {
 .product-table td:first-child,
 .campaign-table th:first-child,
 .campaign-table td:first-child {
-  padding-left: 24px;
+  padding-left: 12px;
 }
 
 .product-table th:last-child,
 .product-table td:last-child,
 .campaign-table th:last-child,
 .campaign-table td:last-child {
-  padding-right: 24px;
+  padding-right: 12px;
 }
 
 .campaign-name-cell {
@@ -932,6 +980,27 @@ body {
 .product-row-actions {
   flex-wrap: nowrap;
 }
+
+.agency-row-actions,
+.campaign-row-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.product-row-actions .mini-btn,
+.agency-row-actions .mini-btn,
+.campaign-row-actions .mini-btn,
+.agency-row-actions .task-card-more > summary {
+  min-height: 32px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.compact-management-table th:last-child,
+.compact-management-table td:last-child { white-space: nowrap; }
 
 .status-pill[data-status="archived"] {
   border-color: var(--border-strong);
@@ -1054,6 +1123,19 @@ button:disabled {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
   margin: 12px 0;
+}
+
+.campaign-performance-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.campaign-performance-tabs .is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--surface);
 }
 
 .campaign-performance-summary article,
@@ -1671,6 +1753,19 @@ button {
 .mail-followup-defer-menu:not([open]) .mail-followup-defer-options { display: none; }
 .mail-followup-defer-options .compact-btn { justify-content: flex-start; width: 100%; border-color: transparent; }
 .text-link { padding: 0; border: 0; color: var(--brand); background: transparent; cursor: pointer; font: inherit; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.mail-followup-creator-link { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.settings-categories { display: grid; gap: 18px; }
+.settings-category { display: grid; gap: 12px; }
+.settings-category[hidden] { display: none !important; }
+.settings-category-heading { display: grid; gap: 3px; padding: 0 2px; }
+.settings-category-heading h2 { margin: 0; font-size: 18px; }
+.settings-category-heading p { margin: 0; color: var(--muted); font-size: 13px; }
+.settings-category-cards { display: grid; gap: 14px; }
+.settings-category-cards > .section-card { margin: 0; }
+.settings-category-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 5px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface-soft); }
+.settings-category-tab { border: 0; border-radius: 10px; padding: 9px 13px; background: transparent; color: var(--muted); font: inherit; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.settings-category-tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow-soft); }
 
 .page[data-page="mail"] { min-width: 0; max-width: 100%; }
 .page[data-page="mail"] .section-card,
@@ -2426,8 +2521,13 @@ button {
 .creator-library-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18px;
+  gap: 12px;
   margin-bottom: 18px;
+}
+
+/* The overview has one primary card after freshness moved out of the visible UI. */
+.creator-library-detail-grid > .detail-panel[data-detail-panel="overview"] {
+  grid-column: 1 / -1;
 }
 
 .detail-tabs { display: flex; gap: 8px; margin: 0 0 18px; overflow-x: auto; }
@@ -2506,8 +2606,9 @@ button {
 .dashboard-v2-summary-item:first-child { border-left: 0; }
 .dashboard-v2-summary-item span, .dashboard-v2-summary-item small { color: var(--muted); }
 .dashboard-v2-summary-item strong { font-size: 22px; line-height: 1.15; overflow-wrap: anywhere; }
-.dashboard-v2-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(320px, .8fr); gap: 18px; align-items: start; }
-.dashboard-v2-module { display: grid; gap: 15px; min-width: 0; margin: 0; }
+.dashboard-v2-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; width: 100%; max-width: 1160px; margin: 0 auto; }
+.dashboard-v2-module { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 4px 0 0; background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+.dashboard-v2-module + .dashboard-v2-module { padding-top: 18px; border-top: 1px solid var(--border); }
 .dashboard-v2-module[hidden] { display: none !important; }
 .dashboard-v2-module.dashboard-v2-wide { grid-column: 1 / -1; }
 
@@ -2516,9 +2617,10 @@ button {
 .dashboard-v2-module-heading .eyebrow { margin: 0 0 4px; }
 .dashboard-v2-note { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .dashboard-v2-health-score { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; border-radius: 999px; background: var(--surface-muted); color: var(--accent); font-weight: 700; white-space: nowrap; }
-.dashboard-v2-action-list, .dashboard-v2-campaign-list, .dashboard-v2-platform-list { display: grid; gap: 8px; min-width: 0; }
-.dashboard-v2-mail-list { display: grid; gap: 8px; min-width: 0; }
-.dashboard-v2-mail-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.dashboard-v2-action-list, .dashboard-v2-campaign-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 360px)); justify-content: start; gap: 8px; min-width: 0; }
+.dashboard-v2-platform-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 360px)); justify-content: start; gap: 8px; min-width: 0; }
+.dashboard-v2-mail-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 460px)); justify-content: start; gap: 8px; min-width: 0; }
+.dashboard-v2-mail-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
 .dashboard-v2-mail-metrics > div { display: grid; gap: 3px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); }
 .dashboard-v2-mail-metrics span { color: var(--muted); font-size: 12px; }
 .dashboard-v2-mail-metrics strong { font-size: 20px; line-height: 1.1; }
@@ -2530,7 +2632,7 @@ button {
 .dashboard-v2-action-item > span { color: var(--accent); font-size: 12px; font-weight: 700; }
 .dashboard-v2-action-item strong, .dashboard-v2-campaign-item strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-v2-action-item small, .dashboard-v2-campaign-item span { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dashboard-v2-missing-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.dashboard-v2-missing-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
 .dashboard-v2-missing { display: grid; gap: 3px; min-width: 0; padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-soft); color: inherit; text-align: left; cursor: pointer; }
 .dashboard-v2-missing:hover { border-color: var(--accent); background: var(--surface-muted); }
 .dashboard-v2-missing span, .dashboard-v2-missing small { color: var(--muted); }
@@ -2539,11 +2641,12 @@ button {
 .dashboard-v2-platform-row:first-child { border-top: 0; padding-top: 0; }
 .dashboard-v2-platform-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dashboard-v2-platform-row strong { white-space: nowrap; }
-.dashboard-v2-health-grid, .dashboard-v2-insight-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.dashboard-v2-health-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 180px), 240px)); justify-content: start; gap: 10px; }
 .dashboard-v2-health-grid > div { display: grid; gap: 5px; padding: 11px; border-radius: 10px; background: var(--surface-muted); }
 .dashboard-v2-health-grid span { color: var(--muted); font-size: 13px; }
 .dashboard-v2-health-grid strong { font-size: 20px; }
-.dashboard-v2-insight-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.dashboard-v2-insight-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 380px)); justify-content: start; gap: 10px; }
+.dashboard-v2-module[data-dashboard-v2-module="roi"] { max-width: 700px; }
 .dashboard-v2-insight-columns h3 { margin: 0 0 8px; font-size: 14px; }
 .dashboard-v2-drawer[hidden] { display: none; }
 .dashboard-v2-drawer { position: fixed; z-index: 50; inset: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(340px, 480px); }
@@ -2668,6 +2771,54 @@ button {
   border-collapse: collapse;
   font-size: 13px;
 }
+
+/* Ordinary management tables favor dense, wrapping desktop columns over a default scroll bar. */
+.review-table.compact-management-table {
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
+}
+
+.compact-management-table th,
+.compact-management-table td {
+  min-width: 0;
+  padding: 9px 10px;
+  overflow-wrap: anywhere;
+}
+
+.compact-management-table th,
+.compact-management-table td:last-child {
+  white-space: normal;
+}
+
+.agency-table th:nth-child(1), .agency-table td:nth-child(1) { width: 24%; }
+.agency-table th:nth-child(2), .agency-table td:nth-child(2) { width: 12%; }
+.agency-table th:nth-child(3), .agency-table td:nth-child(3) { width: 16%; }
+.agency-table th:nth-child(4), .agency-table td:nth-child(4) { width: 14%; }
+.agency-table th:nth-child(5), .agency-table td:nth-child(5) { width: 16%; }
+.agency-table th:last-child, .agency-table td:last-child { width: 180px; min-width: 180px; padding-right: 14px; }
+
+.product-table th:nth-child(1), .product-table td:nth-child(1) { width: 22%; }
+.product-table th:nth-child(2), .product-table td:nth-child(2) { width: 20%; }
+.product-table th:nth-child(3), .product-table td:nth-child(3) { width: 10%; }
+.product-table th:nth-child(4), .product-table td:nth-child(4),
+.product-table th:nth-child(5), .product-table td:nth-child(5) { width: 14%; }
+.product-table th:nth-child(6), .product-table td:nth-child(6) { width: 10%; }
+.product-table th:last-child, .product-table td:last-child { width: 160px; min-width: 160px; padding-right: 14px; }
+
+.campaign-table th:nth-child(1), .campaign-table td:nth-child(1) { width: 15%; }
+.campaign-table th:nth-child(2), .campaign-table td:nth-child(2) { width: 11%; }
+.campaign-table th:nth-child(4), .campaign-table td:nth-child(4) { width: 10%; }
+.campaign-table th:nth-child(7), .campaign-table td:nth-child(7) { width: 9%; }
+.campaign-table th:nth-child(8), .campaign-table td:nth-child(8),
+.campaign-table th:nth-child(9), .campaign-table td:nth-child(9) { width: 9%; }
+.campaign-table th:last-child, .campaign-table td:last-child { width: 180px; min-width: 180px; padding-right: 14px; }
+
+.campaign-creator-table th:nth-child(1), .campaign-creator-table td:nth-child(1) { width: 12%; }
+.campaign-creator-table th:nth-child(2), .campaign-creator-table td:nth-child(2) { width: 10%; }
+.campaign-creator-table th:nth-child(3), .campaign-creator-table td:nth-child(3) { width: 12%; }
+.campaign-creator-table th:nth-child(8), .campaign-creator-table td:nth-child(8) { width: 14%; }
+.campaign-creator-table th:last-child, .campaign-creator-table td:last-child { width: 11%; }
 
 .review-table th,
 .review-table td {
@@ -3110,6 +3261,8 @@ button {
   .dashboard-v2-drawer { grid-template-columns: 1fr; }
   .dashboard-v2-drawer-backdrop { display: none; }
   .dashboard-v2-drawer-panel { padding: 18px; }
+  .dashboard-v2-mail-metrics,
+  .dashboard-v2-missing-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .email-source-selector { grid-template-columns: 1fr; }
   .dashboard-settings-row { align-items: flex-start; }
   .dashboard-settings-actions { flex-direction: column; }

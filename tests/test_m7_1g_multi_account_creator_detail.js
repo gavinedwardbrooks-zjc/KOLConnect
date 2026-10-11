@@ -63,7 +63,7 @@ async function run() {
   const ids = [
     "creator-account-count", "creator-account-options", "creator-account-empty",
     "creator-library-detail-summary", "creator-library-detail-level", "creator-library-data-meta",
-    "creator-library-freshness", "creator-library-basic", "creator-library-video-metrics",
+    "creator-library-basic", "creator-library-video-metrics",
     "creator-library-recommendation", "creator-library-strengths", "creator-library-risks",
     "creator-library-detail-archive", "creator-library-detail-edit",
     "creator-library-detail-add-campaign", "creator-library-detail-task",

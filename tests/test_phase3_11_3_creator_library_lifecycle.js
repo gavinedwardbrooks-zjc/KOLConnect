@@ -160,7 +160,7 @@ async function run() {
     "creator-library-page-size", "creator-library-pagination", "creator-library-page-summary",
     "creator-library-page-buttons",
     "creator-library-basic", "creator-library-video-metrics", "creator-library-data-meta",
-    "creator-library-freshness", "creator-library-recommendation", "creator-library-strengths",
+    "creator-library-recommendation", "creator-library-strengths",
     "creator-library-risks", "creator-library-snapshots", "creator-library-snapshots-empty",
     "creator-library-videos", "creator-library-detail-back", "creator-library-detail-task",
     "creator-library-detail-edit", "creator-library-detail-archive",
@@ -481,7 +481,7 @@ async function run() {
   assert.ok(findNode(anaCard, node => node.dataset.creatorMetadata === "country" && node.textContent === "国家 Brazil"));
   assert.ok(findNode(anaCard, node => node.dataset.creatorMetadata === "language" && node.textContent === "语言 Portuguese"));
   assert.ok(findNode(anaCard, node => node.dataset.creatorMetadata === "content-category" && node.textContent === "分类 Gaming"));
-  assert.ok(findNode(anaCard, node => node.textContent === "⚠ 数据不足"), "technical insight state must use the friendly card label");
+  assert.equal(findNode(anaCard, node => node.textContent === "⚠ 数据不足"), null, "insufficient-data badge must stay out of the primary Creator card");
   const selectionControl = findNode(anaCard, node => node.dataset.creatorSelectId === "creator_a");
   assert.equal(selectionControl.parentElement.children.length, 1, "card selection must not render a redundant text label");
   const moreActions = findNode(anaCard, node => node.className === "creator-card-more");
@@ -593,7 +593,6 @@ async function run() {
   assert.equal(window.KOLConnectPages.getCurrentPage(), "creator-library-detail");
   assert.match(elements.get("creator-library-detail-summary").textContent, /Bella/);
   assert.equal(elements.get("creator-library-snapshots").children.length, 1, "snapshot history must render");
-  assert.match(elements.get("creator-library-freshness").textContent, /最新/, "trend freshness must render");
   assert.equal(elements.get("creator-campaigns-body").children.length, 2, "detail must show joined Campaigns");
   assert.equal(elements.get("creator-library-detail-back").listenerCount("click"), 1);
 

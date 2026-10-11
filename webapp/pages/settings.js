@@ -344,6 +344,9 @@
 
   function renderStorageMigration(data) {
     const authority = String(data?.authority || "legacy_excel");
+    const migrationCard = document.getElementById("storage-migration-card");
+    // Migration history remains supported, but its completed workflow is not a normal Settings surface.
+    if (migrationCard) migrationCard.hidden = true;
     const labels = { legacy_excel: "Excel", sqlite_active: "SQLite", migration_error: "settingsMigrationError", unsupported_schema: "settingsUnsupportedSchema" };
     setSyncText("storage-migration-authority", labels[authority]?.startsWith("settings") ? t(labels[authority]) : labels[authority] || authority);
     setSyncText("storage-migration-status", data?.migration_status || data?.status || "--");
@@ -392,10 +395,75 @@
     renderStorageMigration(data);
     return data;
   }
+
+  function showSettingsCategory(categories, name) {
+    categories.querySelectorAll('.settings-category').forEach(category => {
+      category.hidden = category.dataset.settingsCategory !== name;
+    });
+    categories.querySelectorAll('[data-settings-category-tab]').forEach(button => {
+      const active = button.dataset.settingsCategoryTab === name;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+    });
+  }
+
+  function organizeSettings() {
+    const page = document.querySelector?.('section.page[data-page="settings"]');
+    if (!page) return;
+    const existingCategories = page.querySelector?.('.settings-categories');
+    if (existingCategories) {
+      showSettingsCategory(existingCategories, 'General');
+      return;
+    }
+    const header = page.querySelector('.page-header');
+    if (!header) return;
+    const categories = document.createElement('div');
+    categories.className = 'settings-categories';
+    const controls = document.createElement('div');
+    controls.className = 'settings-category-tabs';
+    controls.setAttribute('role', 'tablist');
+    const categoryEntries = [
+      ['General', 'settingsCategoryGeneral', 'settingsCategoryGeneralHint', ['settings-general-card']],
+      ['Accounts', 'settingsCategoryAccounts', 'settingsCategoryAccountsHint', ['settings-accounts-card']],
+      ['Integrations', 'settingsCategoryIntegrations', 'settingsCategoryIntegrationsHint', ['settings-feishu-config-card', 'google-sheets-card', 'feishu-sync-card', 'feishu-chat-card']],
+      ['Data', 'settingsCategoryData', 'settingsCategoryDataHint', ['settings-workbook-card', 'fx-settings-card', 'settings-backup-card']],
+      ['Advanced', 'settingsCategoryAdvanced', 'settingsCategoryAdvancedHint', ['settings-advanced-tools-card', 'storage-migration-card', 'clean-reset-card']],
+    ];
+    categoryEntries.forEach(([name, titleKey, hintKey, ids]) => {
+      const tab = document.createElement('button');
+      tab.type = 'button';
+      tab.className = 'settings-category-tab';
+      tab.dataset.settingsCategoryTab = name;
+      tab.textContent = t(titleKey);
+      tab.addEventListener('click', () => showSettingsCategory(categories, name));
+      controls.appendChild(tab);
+      const category = document.createElement('section');
+      category.className = `settings-category settings-category-${name.toLowerCase()}`;
+      category.dataset.settingsCategory = name;
+      const heading = document.createElement('div');
+      heading.className = 'settings-category-heading';
+      const title = document.createElement('h2');
+      title.dataset.i18n = titleKey;
+      title.textContent = t(titleKey);
+      const hint = document.createElement('p');
+      hint.dataset.i18n = hintKey;
+      hint.textContent = t(hintKey);
+      heading.append(title, hint);
+      const cards = document.createElement('div');
+      cards.className = 'settings-category-cards';
+      ids.map(id => document.getElementById(id)).filter(Boolean).forEach(card => cards.appendChild(card));
+      category.append(heading, cards);
+      categories.appendChild(category);
+    });
+    categories.prepend(controls);
+    header.insertAdjacentElement('afterend', categories);
+    showSettingsCategory(categories, 'General');
+  }
   const settingsPage = {
     async load() {
       resources?.cleanup();
       resources = global.KOLConnectPageResources.create();
+      organizeSettings();
       cleanResetPreview = null;
       storageMigrationPreview = null;
       await reloadSettings();
@@ -439,6 +507,10 @@
           handleError(error);
         }
       });
+
+      listen("settings-open-chrome-accounts", "click", () => global.KOLConnectPages.navigate("accounts"));
+      listen("settings-open-mail-accounts", "click", () => global.KOLConnectPages.navigate("mail-accounts"));
+      listen("settings-open-logs", "click", () => global.KOLConnectPages.navigate("logs"));
 
       listen("fx-save", "click", async () => {
         try {

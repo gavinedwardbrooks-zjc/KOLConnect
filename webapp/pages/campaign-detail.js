@@ -37,6 +37,9 @@
   let saving = false;
   let deleting = false;
   let lifecycleId = 0;
+  let activeDetailTab = "overview";
+  let activePerformanceView = "overview";
+  let creatorEditorOpen = false;
   const accountCache = new Map();
 
   function element(id) {
@@ -78,7 +81,17 @@
 
   function stageLabel(value) { return t(STAGE_KEYS[value]) || value || "--"; }
   function statusLabel(value) { return t(STATUS_KEYS[value]) || value || "--"; }
-  function currencyLabel(code) { return t(CURRENCY_KEYS[code]) || code; }
+  function normalizeCurrencyCode(value) {
+    const code = String(value ?? "").trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(code) ? code : "";
+  }
+  function currencyLabel(code) {
+    const normalized = normalizeCurrencyCode(code);
+    if (!normalized) return "";
+    const key = CURRENCY_KEYS[normalized];
+    const translated = key ? t(key) : "";
+    return String(translated || normalized).trim() || normalized;
+  }
 
   function formatMoney(value, currency) {
     const amount = formatNumber(value);
@@ -125,6 +138,50 @@
     if (message && element("campaign-detail-error-message")) {
       element("campaign-detail-error-message").textContent = message;
     }
+  }
+
+  function setActiveDetailTab(tab) {
+    activeDetailTab = ["overview", "creators", "brief", "performance"].includes(tab) ? tab : "overview";
+    const panels = {
+      overview: ["campaign-detail-panel-overview", "campaign-detail-panel-overview-risks"],
+      creators: ["campaign-detail-panel-creators"],
+      brief: ["campaign-detail-panel-brief", "campaign-detail-panel-brief-review"],
+      performance: ["campaign-detail-panel-performance"],
+    };
+    Object.entries(panels).forEach(([name, ids]) => ids.forEach(id => {
+      const panel = element(id);
+      if (panel) panel.hidden = name !== activeDetailTab;
+    }));
+    Object.keys(panels).forEach(name => {
+      const control = element(`campaign-detail-tab-${name}`);
+      if (!control) return;
+      const selected = name === activeDetailTab;
+      control.classList?.toggle("is-active", selected);
+      control.setAttribute?.("aria-selected", String(selected));
+    });
+  }
+
+  function setActivePerformanceView(view) {
+    activePerformanceView = view === "details" ? "details" : "overview";
+    ["overview", "details"].forEach(name => {
+      const selected = name === activePerformanceView;
+      const panel = element(`campaign-performance-${name}`);
+      const control = element(`campaign-performance-tab-${name}`);
+      if (panel) panel.hidden = !selected;
+      if (!control) return;
+      control.classList?.toggle("is-active", selected);
+      control.setAttribute?.("aria-selected", String(selected));
+    });
+  }
+
+  function setCreatorEditorVisible(visible) {
+    creatorEditorOpen = Boolean(visible);
+    ["campaign-creator-list-header", "campaign-creator-list-content"].forEach(id => {
+      const target = element(id);
+      if (target) target.hidden = creatorEditorOpen;
+    });
+    const form = element("campaign-creator-form-card");
+    if (form) form.hidden = !creatorEditorOpen;
   }
 
   function appendOverviewItem(label, value) {
@@ -263,6 +320,7 @@
       row.appendChild(actionCell);
       body.appendChild(row);
     });
+    setCreatorEditorVisible(creatorEditorOpen);
   }
 
   function renderExecutionWorkspace() {
@@ -743,7 +801,7 @@
       campaignPerformance = performanceData;
       fxRates = new Map(
         (Array.isArray(fxData?.rates) ? fxData.rates : [])
-          .map(rate => [String(rate?.currency_code || "").trim().toUpperCase(), rate?.rate_per_usd])
+          .map(rate => [normalizeCurrencyCode(rate?.currency_code), rate?.rate_per_usd])
           .filter(([code]) => code),
       );
       renderCurrencyOptions();
@@ -976,14 +1034,14 @@
     appendOption(creatorSelect, "", t("campaignDetailSelectCreator"));
     creatorSelect.disabled = false;
     renderAccountOptions([]);
-    element("campaign-creator-form-card").hidden = true;
+    setCreatorEditorVisible(false);
   }
 
   async function openAddForm() {
     if (isArchived()) return;
     closeCreatorForm();
     element("campaign-creator-form-title").textContent = t("campaignDetailAddCreator");
-    element("campaign-creator-form-card").hidden = false;
+    setCreatorEditorVisible(true);
     await loadCreatorOptions();
     renderCreatorOptions();
   }
@@ -994,15 +1052,15 @@
   }
 
   function renderCurrencyOptions() {
-    const codes = [...new Set(["USD", ...fxRates.keys()])].sort();
+    const codes = [...new Set(["USD", ...fxRates.keys()].map(normalizeCurrencyCode).filter(Boolean))].sort();
     ["campaign-creator-quote-currency", "campaign-creator-cost-currency"].forEach(id => {
       const select = element(id);
       if (!select) return;
-      const selected = select.value;
+      const selected = normalizeCurrencyCode(select.value);
       select.replaceChildren();
       appendOption(select, "", id.includes("cost") ? t("campaignDetailCostCurrencyDefault") : t("campaignDetailSelectCurrency"));
       codes.forEach(code => appendOption(select, code, currencyLabel(code)));
-      if (selected && !codes.includes(selected)) appendOption(select, selected, selected);
+      if (selected && !codes.includes(selected)) appendOption(select, selected, currencyLabel(selected));
       select.value = selected;
     });
   }
@@ -1216,7 +1274,7 @@
     assignFormValue("campaign-creator-waiting-on", relation.waiting_on || "none");
     const decision = element("campaign-creator-need-my-decision");
     if (decision) decision.checked = Boolean(relation.need_my_decision);
-    element("campaign-creator-form-card").hidden = false;
+    setCreatorEditorVisible(true);
     await loadAccounts(
       relation.creator_id,
       Array.isArray(relation.account_ids) ? relation.account_ids : relation.account_id,
@@ -1471,6 +1529,9 @@
       campaignBrief = null;
       contentSubmissions = [];
       fxRates = new Map();
+      activeDetailTab = "overview";
+      activePerformanceView = "overview";
+      creatorEditorOpen = false;
       submissionReviewFindings.clear();
       publicationRefreshPending = false;
       googleSheetsSyncPending = false;
@@ -1478,6 +1539,8 @@
       creatorsLoaded = false;
       accountCache.clear();
       closeCreatorForm();
+      setActiveDetailTab("overview");
+      setActivePerformanceView("overview");
       if (!campaignId) {
         setDetailState("error", t("campaignDetailMissingId"));
         return;
@@ -1490,6 +1553,12 @@
       listen("campaign-detail-delete", "click", deleteCampaign);
       listen("campaign-google-sheets-sync", "click", syncGoogleSheetsReport);
       listen("campaign-detail-retry", "click", loadDetail);
+      ["overview", "creators", "brief", "performance"].forEach(tab => {
+        listen(`campaign-detail-tab-${tab}`, "click", () => setActiveDetailTab(tab));
+      });
+      ["overview", "details"].forEach(view => {
+        listen(`campaign-performance-tab-${view}`, "click", () => setActivePerformanceView(view));
+      });
       listen("campaign-creator-add-open", "click", openAddForm);
       listen("campaign-creator-form-cancel", "click", closeCreatorForm);
       listen("campaign-creator-form", "submit", saveRelation);

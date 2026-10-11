@@ -262,7 +262,7 @@ async function run() {
     }
   }
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
-  const v2Modules = ["today", "mail_follow_up", "missing_info", "campaigns", "creator_overview", "data_freshness", "geography", "roi"];
+  const v2Modules = ["today", "mail_follow_up", "campaigns", "creator_overview", "missing_info", "data_freshness", "geography", "roi"];
   const v2ModuleContainer = new FakeElement("div", "dashboard-v2-modules");
   v2Modules.forEach(id => {
     const module = new FakeElement("section");
@@ -537,14 +537,14 @@ async function run() {
   assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true);
   assert.equal(v2ModuleContainer.children[0].dataset.dashboardV2Module, "today", "today remains first");
   preferences.move("campaigns", -1);
-  assert.deepEqual(Array.from(preferences.get().order).slice(0, 4), ["today", "mail_follow_up", "campaigns", "missing_info"]);
+  assert.deepEqual(Array.from(preferences.get().order).slice(0, 4), ["today", "campaigns", "mail_follow_up", "creator_overview"]);
   await window.KOLConnectPages.navigate("products");
   responses.push(dashboardResponse(30));
   await window.KOLConnectPages.navigate("dashboard");
   assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true, "hidden optional section stays absent after Settings -> Dashboard navigation");
   assert.deepEqual(
     Array.from(v2ModuleContainer.children).map(node => node.dataset.dashboardV2Module).slice(0, 4),
-    ["today", "mail_follow_up", "campaigns", "missing_info"],
+    ["today", "campaigns", "mail_follow_up", "creator_overview"],
     "Dashboard reapplies the persisted V2 order when it becomes active",
   );
   preferences.setVisible("missing_info", true);
@@ -655,8 +655,15 @@ async function run() {
   assert.match(html, /data-dashboard-v2-open="mail-follow-up"/);
   assert.doesNotMatch(read("webapp/pages/dashboard.js"), /account_uid/);
   const styles = read("webapp/styles.css");
-  assert.match(styles, /\.dashboard-v2-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.2fr\) minmax\(320px, \.8fr\)/);
-  assert.match(styles, /\.dashboard-v2-module\.dashboard-v2-wide \{ grid-column: 1 \/ -1; \}/);
+  assert.match(styles, /\.dashboard-v2-grid \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: 16px; align-items: start; width: 100%; max-width: 1160px; margin: 0 auto;/);
+  assert.doesNotMatch(styles, /dashboard-v2-grid \{ display: grid; grid-template-columns: minmax\(0, 1\.2fr\)/);
+  assert.match(styles, /\.dashboard-v2-module \{ display: grid; gap: 12px; min-width: 0; margin: 0; padding: 4px 0 0; background: transparent; border: 0; border-radius: 0; box-shadow: none;/);
+  assert.match(styles, /\.dashboard-v2-action-list, \.dashboard-v2-campaign-list \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 260px\), 360px\)\); justify-content: start;/);
+  assert.match(styles, /\.dashboard-v2-mail-list \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 260px\), 460px\)\); justify-content: start;/);
+  assert.match(styles, /\.dashboard-v2-mail-metrics \{ display: grid; grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+  assert.match(styles, /\.dashboard-v2-missing-grid \{ display: grid; grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+  assert.match(styles, /\.dashboard-v2-insight-columns \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 260px\), 380px\)\); justify-content: start;/);
+  assert.match(styles, /\.dashboard-v2-module\[data-dashboard-v2-module="roi"\] \{ max-width: 700px; \}/);
   assert.match(styles, /\.dashboard-v2-grid \{ grid-template-columns: 1fr; \}/);
   assert.match(html, />活跃 Campaign</);
   assert.match(html, />待复盘</);

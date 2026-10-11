@@ -105,8 +105,21 @@
 
   function appendGroupRow(body, group, queueOnly = false) {
     const row = document.createElement("tr");
+    const creatorCell = document.createElement("td");
+    const creatorId = String(group.creator_id || "").trim();
+    const creatorName = text(group.creator_name, t("unnamedCreator"));
+    if (creatorId && String(group.creator_name || "").trim()) {
+      const creatorLink = document.createElement("button");
+      creatorLink.type = "button";
+      creatorLink.className = "text-link mail-followup-creator-link";
+      creatorLink.dataset.followupCreatorId = creatorId;
+      creatorLink.textContent = creatorName;
+      creatorCell.appendChild(creatorLink);
+    } else {
+      creatorCell.textContent = creatorName;
+    }
+    row.appendChild(creatorCell);
     const cells = [
-      [text(group.creator_name, t("unnamedCreator"))],
       [text(group.correspondent_email)],
       [waitingLabel(group.waiting_for), waitingHelp(group.waiting_for)],
       [daysLabel(group.days_waiting)],
@@ -243,10 +256,20 @@
     bind() {
       resources.listen(element("mail-followup-refresh"), "click", () => load().catch(app().showError));
       resources.listen(element("mail-followup-list"), "click", event => {
+        const creatorLink = event.target.closest("[data-followup-creator-id]");
+        if (creatorLink?.dataset.followupCreatorId) {
+          global.KOLConnectApp.navigate("creator-library-detail", { creatorId: creatorLink.dataset.followupCreatorId });
+          return;
+        }
         const button = event.target.closest("[data-followup-action]");
         if (button) performAction(button);
       });
       resources.listen(element("mail-followup-export-list"), "click", event => {
+        const creatorLink = event.target.closest("[data-followup-creator-id]");
+        if (creatorLink?.dataset.followupCreatorId) {
+          global.KOLConnectApp.navigate("creator-library-detail", { creatorId: creatorLink.dataset.followupCreatorId });
+          return;
+        }
         const button = event.target.closest("[data-followup-action]");
         if (button) performAction(button);
       });

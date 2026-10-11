@@ -67,7 +67,7 @@ async function run() {
 
   const ids = [
     "creator-library-detail-summary", "creator-library-detail-level", "creator-library-data-meta",
-    "creator-library-freshness", "creator-library-basic", "creator-library-video-metrics",
+    "creator-library-basic", "creator-library-video-metrics",
     "creator-library-strengths", "creator-library-risks", "creator-library-snapshots",
     "creator-library-snapshots-empty", "creator-cooperations-body", "creator-cooperations-empty",
     "cooperation-stat-count", "cooperation-stat-spend", "cooperation-stat-views", "cooperation-stat-roi",

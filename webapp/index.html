@@ -685,10 +685,6 @@
             <p class="creator-library-level" id="creator-library-detail-level">--</p>
             <p id="creator-library-recommendation">--</p>
           </div>
-          <div class="section-card creator-library-detail-card detail-panel" data-detail-panel="overview">
-            <h2 data-i18n="creatorDataFreshness">数据新鲜度</h2>
-            <p id="creator-library-freshness">--</p>
-          </div>
         </div>
 
         <section class="section-card creator-library-detail-card" id="creator-library-similar-card" hidden>
@@ -1211,7 +1207,7 @@
             <span data-i18n="productEmpty">暂无产品。点击“创建产品”建立第一条产品记录。</span>
           </div>
           <div class="review-table-wrap" id="product-list-table-wrap" hidden>
-            <table class="review-table product-table">
+            <table class="review-table compact-management-table product-table">
               <thead>
                 <tr>
                   <th data-i18n="productNameLabel">产品名称</th>
@@ -1259,7 +1255,7 @@
             <span data-i18n="agencyEmpty">暂无 Agency。可以在现有 Agency 数据入口建立第一条记录。</span>
           </div>
           <div class="review-table-wrap" id="agency-list-table-wrap" hidden>
-            <table class="review-table agency-table">
+            <table class="review-table compact-management-table agency-table">
               <thead><tr><th data-i18n="agencyTitle">Agency</th><th data-i18n="agencyCountryRegion">国家/地区</th><th data-i18n="agencyContactsLabel">联系人</th><th data-i18n="agencyAssociatedCreators">关联达人</th><th data-i18n="agencyUpdatedAt">更新时间</th><th></th></tr></thead>
               <tbody id="agency-list-body"></tbody>
             </table>
@@ -1284,15 +1280,15 @@
         </div>
 
         <div class="agency-detail-content" id="agency-detail-content" hidden>
-          <section class="section-card agency-profile-card">
+          <section class="section-card agency-profile-card" id="agency-profile-card">
             <div class="agency-detail-section-heading">
               <div>
                 <p class="eyebrow">BASIC INFO</p>
                 <h2>机构资料</h2>
               </div>
-              <div class="action-row"><span class="status-pill" data-status="active">本地资料</span><button class="soft-btn compact-btn" id="agency-detail-edit" type="button">编辑</button><details class="task-card-more"><summary>更多</summary><div class="task-card-more-actions"><button class="mini-btn danger" id="agency-detail-delete" type="button">删除 Agency</button></div></details></div>
+              <div class="action-row" id="agency-profile-actions"><span class="status-pill" data-status="active">本地资料</span><button class="soft-btn compact-btn" id="agency-detail-edit" type="button">编辑</button><details class="task-card-more"><summary>更多</summary><div class="task-card-more-actions"><button class="mini-btn danger" id="agency-detail-delete" type="button">删除 Agency</button></div></details></div>
             </div>
-            <dl class="agency-profile-grid">
+            <dl class="agency-profile-grid" id="agency-profile-readonly">
               <div><dt>名称</dt><dd id="agency-detail-name">--</dd></div>
               <div><dt>国家/地区</dt><dd id="agency-detail-country">--</dd></div>
               <div><dt>网站</dt><dd id="agency-detail-website">--</dd></div>
@@ -1301,20 +1297,27 @@
               <div><dt>负责人</dt><dd id="agency-detail-owner">--</dd></div>
               <div class="agency-profile-wide"><dt>备注</dt><dd id="agency-detail-note">--</dd></div>
             </dl>
-            <form class="form-grid two agency-edit-form" id="agency-edit-form" hidden>
-              <label class="field"><span>Agency 名称</span><input id="agency-edit-name" required></label>
-              <label class="field"><span>国家/地区</span><input id="agency-edit-country"></label>
-              <label class="field"><span>网站</span><input id="agency-edit-website" type="url"></label>
-              <label class="field"><span>公开邮箱</span><input id="agency-edit-email" type="email"></label>
-              <label class="field"><span>合作阶段</span><input id="agency-edit-stage"></label>
-              <label class="field"><span>负责人</span><input id="agency-edit-owner"></label>
-              <label class="field agency-profile-wide"><span>备注</span><textarea id="agency-edit-note" rows="3"></textarea></label>
-              <div class="action-row"><button class="soft-btn" id="agency-edit-cancel" type="button">取消</button><button class="primary-btn" type="submit">保存 Agency</button></div>
-            </form>
+            <div id="agency-edit-form-home">
+              <form class="form-grid two agency-edit-form" id="agency-edit-form" hidden>
+                <label class="field"><span>Agency 名称</span><input id="agency-edit-name" required></label>
+                <label class="field"><span>国家/地区</span><input id="agency-edit-country"></label>
+                <label class="field"><span>网站</span><input id="agency-edit-website" type="url"></label>
+                <label class="field"><span>公开邮箱</span><input id="agency-edit-email" type="email"></label>
+                <label class="field"><span>合作阶段</span><input id="agency-edit-stage"></label>
+                <label class="field"><span>负责人</span><input id="agency-edit-owner"></label>
+                <label class="field agency-profile-wide"><span>备注</span><textarea id="agency-edit-note" rows="3"></textarea></label>
+                <div class="action-row"><button class="soft-btn" id="agency-edit-cancel" type="button">取消</button><button class="primary-btn" type="submit">保存 Agency</button></div>
+              </form>
+            </div>
           </section>
 
-          <section class="section-card agency-related-card">
-            <div class="agency-detail-section-heading"><h2>联系人</h2><span id="agency-contact-count">0 位</span></div>
+          <section class="section-card agency-edit-mode-card" id="agency-edit-mode" hidden>
+            <div class="agency-detail-section-heading"><div><p class="eyebrow" data-i18n="agencyEditEyebrow">EDIT AGENCY</p><h2 data-i18n="agencyEditTitle">编辑 Agency</h2></div></div>
+            <div id="agency-edit-form-host"></div>
+          </section>
+
+          <section class="section-card agency-related-card" id="agency-contacts-card">
+            <div class="agency-detail-section-heading" id="agency-contacts-heading"><h2>联系人</h2><div class="action-row"><span id="agency-contact-count">0 位</span><button class="soft-btn compact-btn" id="agency-contact-add-open" type="button" data-i18n="agencyContactAdd">添加联系人</button></div></div>
             <div class="empty-note" id="agency-contacts-empty" hidden>暂无联系人。</div>
             <div class="review-table-wrap" id="agency-contacts-table-wrap" hidden>
               <table class="review-table agency-related-table"><thead><tr><th>姓名</th><th>职位</th><th>邮箱</th><th>WhatsApp</th><th>状态</th><th>操作</th></tr></thead><tbody id="agency-contacts-body"></tbody></table>
@@ -1328,7 +1331,7 @@
             </form>
           </section>
 
-          <section class="section-card agency-related-card">
+          <section class="section-card agency-related-card" id="agency-creators-card">
             <div class="agency-detail-section-heading"><h2>关联达人</h2><span id="agency-creator-count">0 位</span></div>
             <div class="empty-note" id="agency-creators-empty" hidden>暂无关联达人。</div>
             <div class="review-table-wrap" id="agency-creators-table-wrap" hidden>
@@ -1336,7 +1339,7 @@
             </div>
           </section>
 
-          <section class="section-card agency-related-card">
+          <section class="section-card agency-related-card" id="agency-campaigns-card">
             <div class="agency-detail-section-heading"><h2>相关 Campaign</h2><span id="agency-campaign-count">--</span></div>
             <p class="agency-campaign-note">通过已关联达人和现有 Campaign 查询只读汇总。</p>
             <div class="agency-inline-warning" id="agency-campaigns-unavailable" hidden>Campaign 数据当前不可用，Agency 和达人资料不受影响。</div>
@@ -1358,7 +1361,7 @@
           <button class="primary-btn" id="campaign-create-open" type="button" data-i18n="campaignCreate">创建 Campaign</button>
         </div>
 
-        <div class="section-card campaign-filter-card">
+        <div class="section-card campaign-filter-card" id="campaign-filter-card">
           <div class="campaign-filter-grid">
             <label class="field">
               <span data-i18n="campaignProductLabel">产品</span>
@@ -1460,7 +1463,7 @@
           </form>
         </div>
 
-        <div class="section-card campaign-list-card">
+        <div class="section-card campaign-list-card" id="campaign-list-card">
           <div class="campaign-list-heading">
             <div class="section-title" data-i18n="campaignListTitle">Campaign 列表</div>
             <span class="campaign-list-count" id="campaign-list-count">--</span>
@@ -1474,7 +1477,7 @@
             <span data-i18n="campaignEmpty">当前筛选条件下暂无 Campaign。</span>
           </div>
           <div class="review-table-wrap" id="campaign-list-table-wrap" hidden>
-            <table class="review-table campaign-table">
+            <table class="review-table compact-management-table campaign-table">
               <thead>
                 <tr>
                   <th data-i18n="campaignNameLabel">Campaign 名称</th>
@@ -1558,7 +1561,13 @@
         </div>
 
         <div class="campaign-detail-content" id="campaign-detail-content" hidden>
-          <section class="section-card campaign-detail-section" data-campaign-section="overview">
+          <nav class="campaign-detail-tabs" aria-label="Campaign detail sections" data-i18n-aria-label="campaignDetailTabsAriaLabel">
+            <button class="campaign-detail-tab is-active" id="campaign-detail-tab-overview" data-campaign-tab="overview" type="button" aria-selected="true" data-i18n="campaignDetailTabOverview">概览</button>
+            <button class="campaign-detail-tab" id="campaign-detail-tab-creators" data-campaign-tab="creators" type="button" aria-selected="false" data-i18n="campaignDetailTabCreators">达人</button>
+            <button class="campaign-detail-tab" id="campaign-detail-tab-brief" data-campaign-tab="brief" type="button" aria-selected="false" data-i18n="campaignDetailTabBrief">Brief</button>
+            <button class="campaign-detail-tab" id="campaign-detail-tab-performance" data-campaign-tab="performance" type="button" aria-selected="false" data-i18n="campaignDetailTabPerformance">表现</button>
+          </nav>
+          <section class="section-card campaign-detail-section" id="campaign-detail-panel-overview" data-campaign-section="overview" data-campaign-tab-panel="overview">
             <div class="campaign-detail-section-heading">
               <div>
                 <p class="eyebrow" data-i18n="campaignDetailOverviewEyebrow">CAMPAIGN OVERVIEW</p>
@@ -1576,7 +1585,7 @@
             </div>
           </section>
 
-          <section class="section-card campaign-detail-section" data-campaign-section="publish-risks">
+          <section class="section-card campaign-detail-section" id="campaign-detail-panel-overview-risks" data-campaign-section="publish-risks" data-campaign-tab-panel="overview">
             <div class="campaign-detail-section-heading">
               <div><p class="eyebrow" data-i18n="campaignDetailPublishingRisksEyebrow">PUBLISHING RISKS</p><h2 data-i18n="campaignDetailMissingPublish">缺失发布信息</h2></div>
               <span class="campaign-list-count" id="campaign-missing-publish-count" data-i18n="campaignDetailInitialRecordCount">0 条</span>
@@ -1590,7 +1599,7 @@
             </div>
           </section>
 
-          <section class="section-card campaign-detail-section" data-campaign-section="published-performance">
+          <section class="section-card campaign-detail-section" id="campaign-detail-panel-performance" data-campaign-section="published-performance" data-campaign-tab-panel="performance">
             <div class="campaign-detail-section-heading">
               <div><p class="eyebrow" data-i18n="campaignDetailPublishedContentEyebrow">PUBLISHED CONTENT</p><h2 data-i18n="campaignDetailPublishedPerformance">发布内容表现</h2></div>
               <div class="action-row">
@@ -1598,23 +1607,31 @@
                 <button class="soft-btn" id="campaign-publications-refresh-all" type="button" data-i18n="campaignDetailRefreshAll">刷新全部</button>
               </div>
             </div>
-            <p class="hint" data-i18n="campaignDetailPerformanceHint">显示每条实际发布内容最近一次可靠观察；缺失指标不会显示为 0。</p>
-            <div class="campaign-performance-summary" id="campaign-performance-summary">
+            <div class="campaign-performance-tabs" role="tablist" data-i18n-aria-label="campaignPerformanceTabsAriaLabel" aria-label="表现视图">
+              <button class="soft-btn compact-btn is-active" id="campaign-performance-tab-overview" type="button" role="tab" aria-selected="true" data-i18n="campaignPerformanceOverview">总体表现</button>
+              <button class="soft-btn compact-btn" id="campaign-performance-tab-details" type="button" role="tab" aria-selected="false" data-i18n="campaignPerformanceContentDetails">内容明细</button>
+            </div>
+            <div id="campaign-performance-overview" role="tabpanel">
+              <p class="hint" data-i18n="campaignDetailPerformanceHint">显示每条实际发布内容最近一次可靠观察；缺失指标不会显示为 0。</p>
+              <div class="campaign-performance-summary" id="campaign-performance-summary">
               <article><small data-i18n="campaignDetailTotalViewsLabel">总播放</small><strong id="campaign-performance-total-views">—</strong><span id="campaign-performance-views-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
               <article><small data-i18n="campaignDetailTotalLikesLabel">总点赞</small><strong id="campaign-performance-total-likes">—</strong><span id="campaign-performance-likes-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
               <article><small data-i18n="campaignDetailTotalCommentsLabel">总评论</small><strong id="campaign-performance-total-comments">—</strong><span id="campaign-performance-comments-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
               <article><small data-i18n="campaignDetailAverageEngagement">平均互动率</small><strong id="campaign-performance-average-er">—</strong><span id="campaign-performance-er-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
+              </div>
+              <div class="campaign-performance-highlights" id="campaign-performance-highlights"></div>
+              <p class="campaign-performance-money" id="campaign-performance-money" data-i18n="campaignDetailInitialMoneySummary">确认成本：— · 历史报价：— · ROI：—（缺少权威回报数据）</p>
+              <div class="campaign-performance-trends" id="campaign-performance-trends"></div>
             </div>
-            <div class="campaign-performance-highlights" id="campaign-performance-highlights"></div>
-            <p class="campaign-performance-money" id="campaign-performance-money" data-i18n="campaignDetailInitialMoneySummary">确认成本：— · 历史报价：— · ROI：—（缺少权威回报数据）</p>
-            <div class="campaign-performance-trends" id="campaign-performance-trends"></div>
-            <div class="campaign-detail-message" id="campaign-publication-performance-empty" data-i18n="campaignDetailNoPublications">暂无实际发布内容。</div>
-            <div class="campaign-publication-performance-list" id="campaign-publication-performance-list"></div>
-            <p class="campaign-form-error" id="campaign-publication-performance-status" role="status" hidden></p>
+            <div id="campaign-performance-details" role="tabpanel" hidden>
+              <div class="campaign-detail-message" id="campaign-publication-performance-empty" data-i18n="campaignDetailNoPublications">暂无实际发布内容。</div>
+              <div class="campaign-publication-performance-list" id="campaign-publication-performance-list"></div>
+              <p class="campaign-form-error" id="campaign-publication-performance-status" role="status" hidden></p>
+            </div>
           </section>
 
-          <section class="section-card campaign-detail-section campaign-creator-section" data-campaign-section="creator-management">
-            <div class="campaign-detail-section-heading">
+          <section class="section-card campaign-detail-section campaign-creator-section" id="campaign-detail-panel-creators" data-campaign-section="creator-management" data-campaign-tab-panel="creators">
+            <div class="campaign-detail-section-heading" id="campaign-creator-list-header">
               <div>
                 <p class="eyebrow" data-i18n="campaignDetailCreatorManagementEyebrow">CREATOR MANAGEMENT</p>
                 <h2 data-i18n="campaignDetailCreatorManagement">达人合作管理</h2>
@@ -1772,11 +1789,12 @@
               </form>
             </div>
 
+            <div id="campaign-creator-list-content">
             <div class="campaign-detail-message" id="campaign-creator-empty" hidden>
               <span data-i18n="campaignDetailNoCreators">暂无参与达人。点击“添加达人”建立第一条合作记录。</span>
             </div>
             <div class="review-table-wrap" id="campaign-creator-table-wrap" hidden>
-              <table class="review-table campaign-creator-table">
+              <table class="review-table compact-management-table campaign-creator-table">
                 <thead>
                   <tr>
                     <th data-i18n="campaignDetailCreatorName">达人名称</th>
@@ -1795,10 +1813,11 @@
                 <tbody id="campaign-creator-list-body"></tbody>
               </table>
             </div>
+            </div>
           </section>
 
 
-          <section class="section-card campaign-detail-section" data-campaign-section="brief">
+          <section class="section-card campaign-detail-section" id="campaign-detail-panel-brief" data-campaign-section="brief" data-campaign-tab-panel="brief">
             <div class="campaign-detail-section-heading"><div><p class="eyebrow" data-i18n="campaignDetailBriefEyebrow">CAMPAIGN BRIEF</p><h2 data-i18n="campaignDetailBrief">Campaign Brief</h2></div></div>
             <div class="form-grid two">
               <label class="field"><span data-i18n="campaignDetailBriefTitle">Brief 标题</span><input id="campaign-brief-title" type="text"></label>
@@ -1814,7 +1833,7 @@
             <div class="action-row"><button class="primary-btn" id="campaign-brief-save" type="button" data-i18n="campaignDetailSaveBrief">保存 Brief</button></div>
           </section>
 
-          <section class="section-card campaign-detail-section" data-campaign-section="content-review">
+          <section class="section-card campaign-detail-section" id="campaign-detail-panel-brief-review" data-campaign-section="content-review" data-campaign-tab-panel="brief">
             <div class="campaign-detail-section-heading"><div><p class="eyebrow" data-i18n="campaignDetailContentReviewEyebrow">CONTENT REVIEW</p><h2 data-i18n="campaignDetailContentReview">内容提交与人工审核</h2></div></div>
             <p class="hint" data-i18n="campaignDetailHumanReviewHint">AI 一审为未来可选辅助，人工审核始终是最终状态。</p>
             <div class="form-grid three">
@@ -1958,7 +1977,7 @@
           <p data-i18n="settingsSubtitle">管理界面语言、默认 Profile 和飞书配置。</p>
         </div>
 
-        <div class="section-card">
+        <div class="section-card" id="settings-general-card">
           <div class="section-title" data-i18n="uiSettingsTitle">界面设置</div>
           <div class="form-grid two">
             <label class="field">
@@ -1978,7 +1997,16 @@
           </div>
         </div>
 
-        <div class="section-card system-tools-card">
+        <div class="section-card" id="settings-accounts-card">
+          <div class="section-title" data-i18n="settingsCategoryAccounts">账号与邮箱</div>
+          <p class="hint" data-i18n="settingsAccountsHint">管理用于抓取的 Chrome Profile 和已连接的邮箱账户。</p>
+          <div class="action-row">
+            <button class="secondary-btn" id="settings-open-chrome-accounts" type="button" data-i18n="accountsTitle">Chrome 账号</button>
+            <button class="secondary-btn" id="settings-open-mail-accounts" type="button" data-i18n="mailAccountsTitle">邮箱账户</button>
+          </div>
+        </div>
+
+        <div class="section-card system-tools-card" id="settings-advanced-tools-card">
           <div class="section-title" data-i18n="settingsSystemTools">系统工具</div>
           <section class="system-tools-section" aria-labelledby="system-debug-title">
             <h3 id="system-debug-title" class="system-tools-subtitle" data-i18n="settingsDebug">系统调试</h3>
@@ -1998,9 +2026,12 @@
             </div>
             <div id="system-health-result" class="system-health-result" hidden></div>
           </section>
+          <div class="action-row">
+            <button class="secondary-btn" id="settings-open-logs" type="button" data-i18n="logsTitle">日志</button>
+          </div>
         </div>
 
-        <div class="section-card">
+        <div class="section-card" id="settings-workbook-card">
           <div class="section-title" data-i18n="settingsCreatorLibraryFile">达人库文件</div>
           <label class="field">
             <span data-i18n="settingsWorkbookPath">Excel 工作簿路径</span>
@@ -2025,7 +2056,7 @@
           <p class="hint" id="fx-calculator-result" data-i18n="settingsFxCalculatorHint">输入金额和币种以换算 USD。</p>
         </div>
 
-        <div class="section-card creator-library-backup-card">
+        <div class="section-card creator-library-backup-card" id="settings-backup-card">
           <div class="section-title" data-i18n="settingsBackupTitle">Creator Library Backup</div>
           <dl class="settings-backup-summary">
             <div><dt data-i18n="settingsCurrentWorkbook">Current workbook</dt><dd id="creator-library-backup-workbook">--</dd></div>
@@ -2037,7 +2068,7 @@
           </div>
         </div>
 
-        <div class="section-card storage-migration-card" id="storage-migration-card">
+        <div class="section-card storage-migration-card" id="storage-migration-card" hidden>
           <div class="section-title" data-i18n="settingsStorageMigrationTitle">本地数据存储升级</div>
           <p class="hint" data-i18n="settingsStorageMigrationHint">将本地业务数据从 Excel 迁移到 SQLite。原 Excel 会保留且不会删除；确认后 SQLite 将成为唯一运行数据源。</p>
           <dl class="settings-backup-summary">
@@ -2074,7 +2105,7 @@
           </div>
           <p class="form-message" id="clean-reset-result" hidden></p>
         </div>
-        <div class="section-card">
+        <div class="section-card" id="settings-feishu-config-card">
           <div class="section-title" data-i18n="feishuSettingsTitle">飞书配置（同一个 App）</div>
           <div class="form-grid two">
             <label class="field"><span>App ID</span><input id="feishu-app-id" type="text"></label>

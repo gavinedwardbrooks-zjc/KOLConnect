@@ -54,6 +54,10 @@ class FakeElement {
   }
 }
 
+function combinedText(element) {
+  return [element.textContent, ...element.children.map(combinedText)].join(" ");
+}
+
 function option(label, value, _defaultSelected = false, selected = false) {
   const item = new FakeElement("option");
   item.textContent = label;
@@ -193,6 +197,10 @@ async function run() {
   const row = env.elements.get("creator-library-body").children[0];
   assert.equal(row.children[4].textContent, "creator@example.test", "table must render the authoritative account email");
   assert.equal(row.children[7].textContent, "North Studio", "Agency column must render agency_name");
+  await env.elements.get("creator-library-card-view").dispatch("click");
+  const cardText = combinedText(env.elements.get("creator-library-cards").children[0]);
+  assert.doesNotMatch(cardText, /creator@example\.test/, "card mode must not repeat contact email");
+  assert.doesNotMatch(cardText, /数据不足|已发现/, "card mode must suppress low-signal badges");
 
   agency.value = "agency_one";
   await agency.dispatch("change");
@@ -223,7 +231,9 @@ async function run() {
   assert.match(errorText, /Agency 不存在/);
 
   const source = fs.readFileSync(path.join(ROOT, "webapp/pages/creator-library.js"), "utf8");
-  assert.match(source, /createCardMetadata\(t\("creatorLibraryEmail"\), record\.account_email/);
+  assert.doesNotMatch(source, /createCardMetadata\(t\("creatorLibraryEmail"\), record\.account_email/);
+  assert.match(source, /creatorStatus === "discovered" \? ""/);
+  assert.match(source, /insightLevel === "insufficient" \? ""/);
   assert.match(source, /record\.account_email \|\| "--"/);
   assert.doesNotMatch(source, /\/api\/agencies/);
   assert.doesNotMatch(source, /FileReader/);

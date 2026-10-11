@@ -700,14 +700,15 @@
         createCardMetadata(t("creatorLibraryCountry"), record.country, "country"),
         createCardMetadata(t("creatorLibraryLanguage"), record.language, "language"),
         createCardMetadata(t("creatorLibraryCategory"), record.content_category, "content-category"),
-        createCardMetadata(t("creatorLibraryEmail"), record.account_email, "email"),
       ].filter(Boolean).forEach(item => metadata.appendChild(item));
 
       const tags = document.createElement("div");
       tags.className = "creator-card-tags";
+      const insightLevel = String(record.insight_level || "insufficient").trim().toLowerCase();
+      const creatorStatus = String(record.status || "").trim().toLowerCase();
       [
-        insightLabel(record.insight_level),
-        statusLabel(record.status),
+        insightLevel === "insufficient" ? "" : insightLabel(record.insight_level),
+        creatorStatus === "discovered" ? "" : statusLabel(record.status),
       ].filter(Boolean).forEach((label, index) => {
         const tag = document.createElement("span");
         tag.className = index === 0 ? "creator-card-level" : "creator-card-tag";
@@ -755,7 +756,10 @@
       moreMenu.appendChild(createAction(t("creatorLibraryDeleteCreator"), "delete", creatorId, "soft-btn danger creator-card-action"));
       moreActions.append(moreToggle, moreMenu);
       actions.append(primaryActions, moreActions);
-      card.append(createSelectionControl(creatorId), identity, metadata, tags, metrics, actions);
+      const cardParts = [createSelectionControl(creatorId), identity, metadata];
+      if (tags.children.length) cardParts.push(tags);
+      cardParts.push(metrics, actions);
+      card.append(...cardParts);
       cards.appendChild(card);
     });
   }

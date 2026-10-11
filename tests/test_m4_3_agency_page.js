@@ -86,10 +86,13 @@ function createEnvironment() {
     "agency-list-body", "agency-overview-total", "agency-overview-creators", "agency-overview-contacts",
     "agency-detail-title", "agency-detail-subtitle", "agency-detail-back", "agency-detail-loading",
     "agency-detail-error", "agency-detail-error-message", "agency-detail-retry", "agency-detail-content",
+    "agency-profile-card", "agency-profile-actions", "agency-profile-readonly", "agency-edit-form", "agency-edit-form-home", "agency-edit-mode", "agency-edit-form-host",
+    "agency-detail-edit", "agency-edit-cancel", "agency-edit-name", "agency-edit-country", "agency-edit-website", "agency-edit-email", "agency-edit-stage", "agency-edit-owner", "agency-edit-note",
     "agency-detail-name", "agency-detail-country", "agency-detail-website", "agency-detail-email",
     "agency-detail-stage", "agency-detail-owner", "agency-detail-note", "agency-contact-count",
-    "agency-contacts-empty", "agency-contacts-table-wrap", "agency-contacts-body", "agency-creator-count",
+    "agency-contacts-card", "agency-contacts-heading", "agency-contact-add-open", "agency-contacts-empty", "agency-contacts-table-wrap", "agency-contacts-body", "agency-creator-count",
     "agency-creators-empty", "agency-creators-table-wrap", "agency-creators-body", "agency-campaign-count",
+    "agency-creators-card", "agency-campaigns-card",
     "agency-campaigns-unavailable", "agency-campaigns-empty", "agency-campaigns-table-wrap",
     "agency-campaigns-body", "agency-contact-edit-form", "agency-contact-edit-name",
     "agency-contact-edit-position", "agency-contact-edit-email", "agency-contact-edit-whatsapp",
@@ -192,7 +195,17 @@ function createEnvironment() {
     },
     async post(url, payload, options = {}) {
       calls.push({ method: "POST", url, payload, signal: options.signal });
+      if (url === "/api/local/agencies") {
+        state.detail.agency = { ...state.detail.agency, ...payload };
+        state.agencies = state.agencies.map(agency => agency.agency_id === payload.agency_id ? { ...agency, ...payload } : agency);
+        return { agency: structuredClone(state.detail.agency) };
+      }
       if (url === "/api/local/agency-contacts") {
+        if (!payload.contact_id) {
+          const contact = { ...payload, contact_id: "contact_new", status: "active" };
+          state.contacts.push(contact);
+          return { contact: structuredClone(contact) };
+        }
         state.contacts = state.contacts.map(contact => contact.contact_id === payload.contact_id
           ? { ...contact, ...payload }
           : contact);
@@ -248,6 +261,12 @@ async function run() {
   await elements.get("agency-list-body").dispatch("click", { target: detailButton });
   assert.equal(navigation.at(-1).page, "agency-detail");
   assert.equal(navigation.at(-1).params.agencyId, "agency_one");
+  assert.equal(navigation.at(-1).params.mode, "view", "View must open the read-only Agency detail");
+
+  const listEditButton = findByDataset(elements.get("agency-list-body"), "agencyEditId", "agency_one");
+  assert.ok(listEditButton, "Agency list must provide an edit action");
+  await elements.get("agency-list-body").dispatch("click", { target: listEditButton });
+  assert.equal(navigation.at(-1).params.mode, "edit", "Edit must explicitly enter the focused editor");
 
   await window.KOLConnectPages.navigate("agency-detail", { agencyId: "agency_one" });
   assert.equal(elements.get("agency-detail-title").textContent, "North Studio");
@@ -259,6 +278,27 @@ async function run() {
   assert.ok(calls.some(call => call.url === "/api/local/agency-contacts"));
   assert.ok(calls.some(call => call.url === "/api/campaigns?creator_id=creator_one"));
   assert.ok(calls.some(call => call.url === "/api/campaigns?creator_id=creator_two"));
+  assert.equal(elements.get("agency-edit-form").hidden, true, "View mode must not expose editable Agency fields");
+
+  await window.KOLConnectPages.navigate("agency-detail", { agencyId: "agency_one", mode: "edit" });
+  assert.equal(elements.get("agency-edit-mode").hidden, false, "list Edit opens only the focused editor");
+  assert.equal(elements.get("agency-profile-card").hidden, true, "editing hides read-only profile content");
+  assert.equal(elements.get("agency-contacts-card").hidden, true, "editing hides contact management");
+  assert.equal(elements.get("agency-creators-card").hidden, true, "editing hides related creators");
+  assert.equal(elements.get("agency-campaigns-card").hidden, true, "editing hides related campaigns");
+  assert.equal(elements.get("agency-edit-form").parentNode, elements.get("agency-edit-form-host"));
+  await elements.get("agency-edit-cancel").dispatch("click");
+  assert.equal(elements.get("agency-edit-mode").hidden, true, "cancel returns to the read-only detail");
+  assert.equal(elements.get("agency-profile-card").hidden, false);
+  assert.equal(elements.get("agency-edit-form").parentNode, elements.get("agency-edit-form-home"));
+
+  await elements.get("agency-detail-edit").dispatch("click");
+  elements.get("agency-edit-name").value = "North Studio Updated";
+  await elements.get("agency-edit-form").dispatch("submit");
+  assert.ok(calls.some(call => call.method === "POST" && call.url === "/api/local/agencies"));
+  assert.equal(elements.get("agency-edit-mode").hidden, true, "saving returns to the read-only detail");
+  assert.equal(elements.get("agency-profile-card").hidden, false);
+  assert.equal(elements.get("agency-detail-name").textContent, "North Studio Updated");
 
   const contactEditButton = findByDataset(elements.get("agency-contacts-body"), "agencyContactEditId", "contact_one");
   const contactDeleteButton = findByDataset(elements.get("agency-contacts-body"), "agencyContactDeleteId", "contact_one");
@@ -266,11 +306,23 @@ async function run() {
   assert.ok(contactDeleteButton, "contact rows must provide a delete action");
   await elements.get("agency-contacts-body").dispatch("click", { target: contactEditButton });
   assert.equal(elements.get("agency-contact-edit-form").hidden, false);
+  assert.equal(elements.get("agency-profile-readonly").hidden, true, "contact editing must hide read-only Agency details");
+  assert.equal(elements.get("agency-creators-card").hidden, true, "contact editing must hide related lists");
   assert.equal(elements.get("agency-contact-edit-name").value, "Sam");
   elements.get("agency-contact-edit-email").value = "updated@example.com";
   await elements.get("agency-contact-edit-form").dispatch("submit");
   assert.ok(calls.some(call => call.method === "POST" && call.url === "/api/local/agency-contacts"));
   assert.equal(state.contacts[0].email, "updated@example.com");
+  assert.equal(elements.get("agency-profile-readonly").hidden, false, "saving returns to the Agency view");
+
+  await elements.get("agency-contact-add-open").dispatch("click");
+  assert.equal(elements.get("agency-contact-edit-form").hidden, false, "adding a contact opens the focused contact editor");
+  assert.equal(elements.get("agency-contact-edit-name").value, "", "new contact editor must not reuse an existing contact");
+  elements.get("agency-contact-edit-name").value = "New Contact";
+  await elements.get("agency-contact-edit-form").dispatch("submit");
+  const newContactCall = calls.filter(call => call.method === "POST" && call.url === "/api/local/agency-contacts").at(-1);
+  assert.equal(Object.hasOwn(newContactCall.payload, "contact_id"), false, "new contact uses the existing create-compatible endpoint without inventing an ID");
+  assert.equal(elements.get("agency-contact-edit-form").hidden, true, "saving a new contact returns to the contact list");
 
   const unlinkButton = findByDataset(elements.get("agency-creators-body"), "agencyCreatorUnlinkId", "creator_one");
   assert.ok(unlinkButton, "linked creators must provide an unlink action");
@@ -287,8 +339,8 @@ async function run() {
   assert.equal(calls.filter(call => call.url === "/api/local/agency-contacts/contact_one").length, 0, "cancelled contact deletion must not call the API");
   state.confirmResult = true;
   await elements.get("agency-contacts-body").dispatch("click", { target: contactDeleteButton });
-  assert.equal(elements.get("agency-contact-count").textContent, "0 位", "contact deletion refreshes the count");
-  assert.equal(elements.get("agency-contacts-empty").hidden, false);
+  assert.equal(elements.get("agency-contact-count").textContent, "1 位", "contact deletion preserves the independently added contact");
+  assert.equal(elements.get("agency-contacts-empty").hidden, true);
 
   state.detail.creators = [];
   state.contacts = [];
@@ -341,8 +393,11 @@ async function run() {
   assert.match(html, /data-page="agency-detail"/);
   assert.match(html, /id="agency-detail-edit"/);
   assert.match(html, /id="agency-edit-form"/);
+  assert.match(html, /id="agency-edit-mode"/);
+  assert.match(html, /id="agency-edit-form-host"/);
   assert.match(html, /id="agency-detail-delete"/);
   assert.match(html, /id="agency-contact-edit-form"/);
+  assert.match(html, /id="agency-contact-add-open"/);
   assert.match(html, /<th>操作<\/th>/);
   assert.match(html, /src="pages\/agencies\.js"/);
 
