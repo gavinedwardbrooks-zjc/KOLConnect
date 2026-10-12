@@ -51,6 +51,29 @@ MACOS_PYTHON_SHARD_PATTERNS = {
 }
 
 
+def parse_macos_deployment_target(otool_output: str) -> str | None:
+    """Mirror the workflow parser against deterministic ``otool -l`` fixtures."""
+    command = ""
+    for line in otool_output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0] == "cmd":
+            command = parts[1]
+        elif len(parts) >= 2 and command == "LC_BUILD_VERSION" and parts[0] == "minos":
+            return parts[1]
+        elif len(parts) >= 2 and command == "LC_VERSION_MIN_MACOSX" and parts[0] == "version":
+            return parts[1]
+    return None
+
+
+def is_macos_14_compatible(deployment_target: str) -> bool:
+    """Use the release ceiling of exactly macOS 14.0, not a string comparison."""
+    parts = deployment_target.split(".")
+    if not parts or not all(part.isdigit() for part in parts):
+        return False
+    major, minor, patch = (int(part) for part in (parts + ["0", "0"])[:3])
+    return major < 14 or (major == 14 and minor == 0 and patch == 0)
+
+
 def macos_unpatterned_python_runners(workflow: dict) -> list[str]:
     """Return macOS runner commands that would bypass shard ownership."""
     violations: list[str] = []
@@ -114,6 +137,51 @@ class RuntimePathTests(unittest.TestCase):
 
 
 class PackagingConfigurationTests(unittest.TestCase):
+    def test_macos_deployment_target_parser_supports_build_version_and_legacy_commands(self):
+        build_version = """
+            Load command 9
+                  cmd LC_BUILD_VERSION
+              cmdsize 32
+             platform MACOS
+                 minos 14.0
+                   sdk 15.4
+        """
+        legacy_version = """
+            Load command 8
+                  cmd LC_VERSION_MIN_MACOSX
+              cmdsize 16
+              version 10.13
+                  sdk 15.4
+        """
+
+        self.assertEqual("14.0", parse_macos_deployment_target(build_version))
+        # Current Intel app evidence: an SDK of 15.4 does not change its 10.13 floor.
+        self.assertEqual("10.13", parse_macos_deployment_target(legacy_version))
+        self.assertTrue(is_macos_14_compatible("10.13"))
+        self.assertTrue(is_macos_14_compatible("14.0"))
+
+    def test_macos_deployment_target_compatibility_uses_a_numeric_14_0_ceiling(self):
+        macos_15 = """
+            Load command 9
+                  cmd LC_BUILD_VERSION
+             platform MACOS
+                 minos 15.0
+                   sdk 15.4
+        """
+        self.assertEqual("15.0", parse_macos_deployment_target(macos_15))
+        self.assertFalse(is_macos_14_compatible("14.1"))
+        self.assertFalse(is_macos_14_compatible("15.0"))
+
+    def test_macos_deployment_target_parser_fails_when_no_supported_command_exists(self):
+        unsupported = """
+            Load command 9
+                  cmd LC_LOAD_DYLIB
+              cmdsize 48
+                  name /usr/lib/libSystem.B.dylib
+                   sdk 15.4
+        """
+        self.assertIsNone(parse_macos_deployment_target(unsupported))
+
     def test_pywebview_owns_darwin_pyobjc_dependencies(self):
         requirements = (ROOT / "packaging" / "requirements.txt").read_text(encoding="utf-8")
         self.assertIn("pywebview", requirements.lower())
@@ -450,8 +518,11 @@ class PackagingConfigurationTests(unittest.TestCase):
             'file "${target}"',
             'lipo -info "${target}"',
             'lipo -archs "${target}"',
-            'otool -l "${target}"',
-            "vtool -show-build",
+            'otool -l "$1"',
+            "extract_macos_minimum",
+            "LC_BUILD_VERSION",
+            "LC_VERSION_MIN_MACOSX",
+            "is_macos_14_compatible",
             "PYEXPAT",
             "pyexpat.cpython-312-darwin.so",
             "TARGET_MIN_MACOS_MAJOR",
