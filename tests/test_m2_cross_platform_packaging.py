@@ -481,6 +481,8 @@ class PackagingConfigurationTests(unittest.TestCase):
 
         self.assertIn("Build job-local SQLite 3.51.3 and Python 3.12", manual)
         self.assertIn("sqlite-autoconf-3510300.tar.gz", manual)
+        self.assertIn("https://www.sqlite.org/2026/sqlite-autoconf-3510300.tar.gz", manual)
+        self.assertNotIn("https://www.sqlite.org/2025/sqlite-autoconf-3510300.tar.gz", manual)
         self.assertIn("Python-${PYTHON_SOURCE_VERSION}.tgz", manual)
         self.assertIn('MACOSX_DEPLOYMENT_TARGET: "14.0"', manual)
         self.assertIn('python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"', manual)

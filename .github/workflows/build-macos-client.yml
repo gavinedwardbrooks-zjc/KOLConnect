@@ -85,7 +85,7 @@ jobs:
           python_prefix="${RUNNER_TEMP}/kolconnect-python"
           work="${RUNNER_TEMP}/kolconnect-toolchain"
           mkdir -p "${work}"; cd "${work}"
-          curl --fail --location --retry 3 --output sqlite.tar.gz "https://www.sqlite.org/2025/sqlite-autoconf-3510300.tar.gz"
+          curl --fail --location --retry 3 --output sqlite.tar.gz "https://www.sqlite.org/2026/sqlite-autoconf-3510300.tar.gz"
           tar -xzf sqlite.tar.gz; cd sqlite-autoconf-3510300
           CFLAGS="-arch ${TARGET_ARCH} -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" ./configure --prefix="${sqlite_prefix}" --disable-shared --enable-static
           make -j2; make install
