@@ -10,6 +10,9 @@ env:
   FROZEN_RELEASE_SHA: 8b8f96ccd2b4971bf0d8383af65459cd81a9aab0
   PRODUCT_VERSION: 2.0.0
   FROZEN_PRODUCT_ROOT: frozen-src
+  PYTHON_SOURCE_VERSION: 3.12.11
+  SQLITE_SOURCE_VERSION: 3.51.3
+  MACOSX_DEPLOYMENT_TARGET: "14.0"
 
 jobs:
   build-macos-client:
@@ -74,34 +77,57 @@ jobs:
           [[ "${actual_sha}" == "${FROZEN_RELEASE_SHA}" ]] || { echo "Frozen release revision mismatch." >&2; exit 1; }
           echo "ACTUAL_BUILD_SHA=${actual_sha}" >> "${GITHUB_ENV}"
 
-      - name: Install architecture-matched Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          architecture: ${{ matrix.arch == 'arm64' && 'arm64' || 'x64' }}
-          cache: pip
-          cache-dependency-path: frozen-src/packaging/requirements-build.txt
+      - name: Build job-local SQLite 3.51.3 and Python 3.12
+        shell: bash
+        run: |
+          set -euo pipefail
+          sqlite_prefix="${RUNNER_TEMP}/kolconnect-sqlite"
+          python_prefix="${RUNNER_TEMP}/kolconnect-python"
+          work="${RUNNER_TEMP}/kolconnect-toolchain"
+          mkdir -p "${work}"; cd "${work}"
+          curl --fail --location --retry 3 --output sqlite.tar.gz "https://www.sqlite.org/2025/sqlite-autoconf-3510300.tar.gz"
+          tar -xzf sqlite.tar.gz; cd sqlite-autoconf-3510300
+          CFLAGS="-arch ${TARGET_ARCH} -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}" ./configure --prefix="${sqlite_prefix}" --disable-shared --enable-static
+          make -j2; make install
+          cd "${work}"
+          curl --fail --location --retry 3 --output python.tgz "https://www.python.org/ftp/python/${PYTHON_SOURCE_VERSION}/Python-${PYTHON_SOURCE_VERSION}.tgz"
+          tar -xzf python.tgz; cd "Python-${PYTHON_SOURCE_VERSION}"
+          export CPPFLAGS="-I${sqlite_prefix}/include"
+          export LDFLAGS="-L${sqlite_prefix}/lib"
+          export PKG_CONFIG_PATH="${sqlite_prefix}/lib/pkgconfig"
+          export CFLAGS="-arch ${TARGET_ARCH} -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
+          export LDFLAGS="${LDFLAGS} -arch ${TARGET_ARCH} -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}"
+          ./configure --prefix="${python_prefix}" --with-ensurepip=install
+          make -j2; make install
+          ln -sf python3 "${python_prefix}/bin/python"
+          echo "${python_prefix}/bin" >> "${GITHUB_PATH}"
+          echo "CUSTOM_PYTHON_PREFIX=${python_prefix}" >> "${GITHUB_ENV}"
+          echo "SQLITE_BUILD_PREFIX=${sqlite_prefix}" >> "${GITHUB_ENV}"
 
       - name: Validate native build runtime
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$(uname -m)" == "${TARGET_ARCH}" ]]
-          [[ "$(python -c 'import platform; print(platform.machine())')" == "${TARGET_ARCH}" ]]
-          python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
-          python "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"
-          echo "PYTHON_VERSION=$(python --version 2>&1)" >> "${GITHUB_ENV}"
+          [[ "$(uname -m)" == "${TARGET_ARCH}" ]]; command -v python3
+          [[ "$(command -v python3)" == "${CUSTOM_PYTHON_PREFIX}/bin/python3" ]]
+          [[ "$(command -v python)" == "${CUSTOM_PYTHON_PREFIX}/bin/python" ]]
+          python3 -c 'import sys, sqlite3, _sqlite3; print(sys.executable); print(sys.version); print(sqlite3.sqlite_version); print(_sqlite3.__file__)'
+          [[ "$(python3 -c 'import platform; print(platform.machine())')" == "${TARGET_ARCH}" ]]
+          [[ "$(python3 -c 'import sqlite3; print(sqlite3.sqlite_version)')" == "${SQLITE_SOURCE_VERSION}" ]]
+          otool -L "$(python3 -c 'import _sqlite3; print(_sqlite3.__file__)')"
+          python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"
+          echo "PYTHON_VERSION=$(python3 --version 2>&1)" >> "${GITHUB_ENV}"
 
       - name: Install packaging dependencies
         working-directory: frozen-src
-        run: python -m pip install -r packaging/requirements-build.txt
+        run: python3 -m pip install -r packaging/requirements-build.txt
 
       - name: Assert v2.0.0 version metadata
         working-directory: frozen-src
         shell: bash
         run: |
           set -euo pipefail
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           from pathlib import Path
           from app.version import APP_VERSION
@@ -124,9 +150,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/run_python_tests.py --pattern test_m2_cross_platform_packaging.py --verbosity 2
-          python scripts/run_python_tests.py --pattern test_version_consistency.py --verbosity 2
-          python scripts/run_python_tests.py --pattern test_targeted_gate_d_macos_keychain.py --verbosity 2
+          python3 scripts/run_python_tests.py --pattern test_m2_cross_platform_packaging.py --verbosity 2
+          python3 scripts/run_python_tests.py --pattern test_version_consistency.py --verbosity 2
+          python3 scripts/run_python_tests.py --pattern test_targeted_gate_d_macos_keychain.py --verbosity 2
 
       - name: Build native macOS client
         working-directory: frozen-src
@@ -134,6 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           touch "${RUNNER_TEMP}/kolconnect-macos-build-started"
+          [[ "$(command -v python)" == "${CUSTOM_PYTHON_PREFIX}/bin/python" ]]
           if [[ -n "${BUILD_ARGUMENT}" ]]; then bash packaging/build_macos.sh "${BUILD_ARGUMENT}"; else bash packaging/build_macos.sh; fi
           test -s "${SOURCE_DMG}"
           rm -f "${SOURCE_DMG}"
@@ -188,6 +215,9 @@ jobs:
           pyexpat="$(find "${app}/Contents" -name 'pyexpat.cpython-312-darwin.so' -print -quit)"
           test -n "${pyexpat}"
           inspect_macos_binary PYEXPAT "${pyexpat}" "${TARGET_ARCH}"
+          sqlite_module="$(find "${app}/Contents" -name '_sqlite3.cpython-312-darwin.so' -print -quit)"
+          test -n "${sqlite_module}"; inspect_macos_binary SQLITE_MODULE "${sqlite_module}" "${TARGET_ARCH}"
+          ! otool -L "${sqlite_module}" | grep -Fq "${RUNNER_TEMP}"
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" == "${PRODUCT_VERSION}" ]]
           [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" == "${PRODUCT_VERSION}" ]]
           webapp_index="$(find "${app}/Contents" -path '*/webapp/index.html' -print -quit)"

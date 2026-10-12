@@ -479,17 +479,21 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('"${actual_sha}" == "${FROZEN_RELEASE_SHA}"', revision_check)
         self.assertIn("exit 1", revision_check)
 
-        self.assertIn("name: Install architecture-matched Python 3.12", manual)
-        self.assertIn("actions/setup-python@v5", manual)
-        self.assertIn("architecture: ${{ matrix.arch == 'arm64' && 'arm64' || 'x64' }}", manual)
-        self.assertNotIn("brew install python@3.12", manual)
+        self.assertIn("Build job-local SQLite 3.51.3 and Python 3.12", manual)
+        self.assertIn("sqlite-autoconf-3510300.tar.gz", manual)
+        self.assertIn("Python-${PYTHON_SOURCE_VERSION}.tgz", manual)
+        self.assertIn('MACOSX_DEPLOYMENT_TARGET: "14.0"', manual)
+        self.assertIn('python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"', manual)
+        self.assertIn("CUSTOM_PYTHON_PREFIX", manual)
+        self.assertIn('ln -sf python3 "${python_prefix}/bin/python"', manual)
+        self.assertIn('[[ "$(command -v python)" == "${CUSTOM_PYTHON_PREFIX}/bin/python" ]]', manual)
         self.assertNotRegex(
             manual,
             r"brew\s+(?:unlink|link(?:\s+--overwrite)?)\s+openssl(?:@\S+)?",
         )
         self.assertIn('[[ "$(uname -m)" == "${TARGET_ARCH}" ]]', manual)
         self.assertIn("platform.machine()", manual)
-        self.assertIn('python "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"', manual)
+        self.assertIn('python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"', manual)
 
         version_check = steps_by_name["Assert v2.0.0 version metadata"]["run"]
         self.assertIn("from app.version import APP_VERSION", version_check)
