@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  FROZEN_RELEASE_SHA: 5aa4f5f50d1decd4fc49b84b268526e96e52a231
+  FROZEN_RELEASE_SHA: 8b8f96ccd2b4971bf0d8383af65459cd81a9aab0
   PRODUCT_VERSION: 2.0.0
   FROZEN_PRODUCT_ROOT: frozen-src
 
@@ -27,18 +27,19 @@ jobs:
             target_min_macos: "14"
             build_argument: ""
             source_dmg: release/KOLConnect_v2.0.0_mac_arm64.dmg
-            target_dmg: release/KOLConnect_v2.0.0_macOS14+_arm64.dmg
-            artifact_name: KOLConnect-v2.0.0-macOS14-arm64
+            target_dmg: release/KOLConnect_v2.0.0_macOS_arm64.dmg
+            artifact_name: KOLConnect-v2.0.0-macOS-arm64
             app_path: packaging/.pyinstaller-dist-macos/KOLConnect.app
-          # GitHub's hosted Intel image is macos-15-intel. The bundled Python
-          # runtime requires macOS 15, so this release is explicitly macOS 15+.
+          # GitHub's hosted Intel image is macos-15-intel. The artifact is only
+          # accepted when each checked native binary proves a macOS 14-or-earlier
+          # deployment target; the runner label is not compatibility evidence.
           - arch: x86_64
             runner: macos-15-intel
-            target_min_macos: "15"
+            target_min_macos: "14"
             build_argument: x86_64
             source_dmg: release/KOLConnect_v2.0.0_mac_intel.dmg
-            target_dmg: release/KOLConnect_v2.0.0_macOS15+_x64.dmg
-            artifact_name: KOLConnect-v2.0.0-macOS15-x64
+            target_dmg: release/KOLConnect_v2.0.0_macOS_x64.dmg
+            artifact_name: KOLConnect-v2.0.0-macOS-x64
             app_path: dist/pyinstaller-macos-intel/KOLConnect.app
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -59,7 +60,7 @@ jobs:
       - name: Check out frozen application source separately
         uses: actions/checkout@v4
         with:
-          ref: 5aa4f5f50d1decd4fc49b84b268526e96e52a231
+          ref: 8b8f96ccd2b4971bf0d8383af65459cd81a9aab0
           path: frozen-src
           fetch-depth: 1
 
@@ -73,21 +74,13 @@ jobs:
           [[ "${actual_sha}" == "${FROZEN_RELEASE_SHA}" ]] || { echo "Frozen release revision mismatch." >&2; exit 1; }
           echo "ACTUAL_BUILD_SHA=${actual_sha}" >> "${GITHUB_ENV}"
 
-      - name: Install approved SQLite Python runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          brew install sqlite
-          brew upgrade sqlite
-          python_install_log="$(mktemp)"
-          if brew install python@3.12 2>&1 | tee "${python_install_log}"; then :
-          elif ! grep -Fq "The formula built, but is not symlinked" "${python_install_log}" || ! grep -Fq "Could not symlink" "${python_install_log}"; then exit 1; fi
-          python_prefix="$(brew --prefix python@3.12)"
-          python_bin="${python_prefix}/bin/python3.12"
-          test -x "${python_bin}"
-          "${python_bin}" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
-          "${python_bin}" -m venv "${FROZEN_PRODUCT_ROOT}/.venv-ci"
-          echo "${PWD}/${FROZEN_PRODUCT_ROOT}/.venv-ci/bin" >> "${GITHUB_PATH}"
+      - name: Install architecture-matched Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: ${{ matrix.arch == 'arm64' && 'arm64' || 'x64' }}
+          cache: pip
+          cache-dependency-path: frozen-src/packaging/requirements-build.txt
 
       - name: Validate native build runtime
         shell: bash
@@ -157,7 +150,7 @@ jobs:
             # LC_BUILD_VERSION uses "minos"; older x86_64 binaries use
             # LC_VERSION_MIN_MACOSX and report the deployment floor as "version".
             # The current Intel app reports version 10.13 (with SDK 15.4), which
-            # is within the Intel macOS 15.0 release compatibility ceiling.
+            # is within the macOS 14 compatibility ceiling.
             # SDK values are intentionally ignored in both forms.
             otool -l "$1" | awk '
               $1 == "cmd" { command = $2; next }

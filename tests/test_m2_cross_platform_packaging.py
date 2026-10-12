@@ -422,7 +422,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertNotIn("needs", manual_job)
         self.assertEqual("1", manual_job["env"]["HOMEBREW_NO_AUTO_UPDATE"])
 
-        frozen_sha = "5aa4f5f50d1decd4fc49b84b268526e96e52a231"
+        frozen_sha = "8b8f96ccd2b4971bf0d8383af65459cd81a9aab0"
         workflow_env = manual_workflow["env"]
         self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
         self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
@@ -441,18 +441,18 @@ class PackagingConfigurationTests(unittest.TestCase):
                     "target_min_macos": "14",
                     "build_argument": "",
                     "source_dmg": "release/KOLConnect_v2.0.0_mac_arm64.dmg",
-                    "target_dmg": "release/KOLConnect_v2.0.0_macOS14+_arm64.dmg",
-                    "artifact_name": "KOLConnect-v2.0.0-macOS14-arm64",
+                    "target_dmg": "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
+                    "artifact_name": "KOLConnect-v2.0.0-macOS-arm64",
                     "app_path": "packaging/.pyinstaller-dist-macos/KOLConnect.app",
                 },
                 "x86_64": {
                     "arch": "x86_64",
                     "runner": "macos-15-intel",
-                    "target_min_macos": "15",
+                    "target_min_macos": "14",
                     "build_argument": "x86_64",
                     "source_dmg": "release/KOLConnect_v2.0.0_mac_intel.dmg",
-                    "target_dmg": "release/KOLConnect_v2.0.0_macOS15+_x64.dmg",
-                    "artifact_name": "KOLConnect-v2.0.0-macOS15-x64",
+                    "target_dmg": "release/KOLConnect_v2.0.0_macOS_x64.dmg",
+                    "artifact_name": "KOLConnect-v2.0.0-macOS-x64",
                     "app_path": "dist/pyinstaller-macos-intel/KOLConnect.app",
                 },
             },
@@ -479,10 +479,10 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('"${actual_sha}" == "${FROZEN_RELEASE_SHA}"', revision_check)
         self.assertIn("exit 1", revision_check)
 
-        self.assertIn("brew install python@3.12", manual)
-        self.assertIn('python_prefix="$(brew --prefix python@3.12)"', manual)
-        self.assertIn('"${python_bin}" -m venv "${FROZEN_PRODUCT_ROOT}/.venv-ci"', manual)
-        self.assertNotIn("actions/setup-python", manual)
+        self.assertIn("name: Install architecture-matched Python 3.12", manual)
+        self.assertIn("actions/setup-python@v5", manual)
+        self.assertIn("architecture: ${{ matrix.arch == 'arm64' && 'arm64' || 'x64' }}", manual)
+        self.assertNotIn("brew install python@3.12", manual)
         self.assertNotRegex(
             manual,
             r"brew\s+(?:unlink|link(?:\s+--overwrite)?)\s+openssl(?:@\S+)?",
