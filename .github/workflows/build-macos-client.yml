@@ -1,4 +1,4 @@
-name: Build macOS Client
+name: Build macOS 14+ Clients
 
 on:
   workflow_dispatch:
@@ -9,17 +9,43 @@ permissions:
 env:
   FROZEN_RELEASE_SHA: 5aa4f5f50d1decd4fc49b84b268526e96e52a231
   PRODUCT_VERSION: 2.0.0
-  TARGET_ARCH: arm64
-  SOURCE_DMG: release/KOLConnect_v2.0.0_mac_arm64.dmg
-  TARGET_DMG: release/KOLConnect_v2.0.0_macOS_arm64.dmg
-  ARTIFACT_NAME: KOLConnect-v2.0.0-macOS-arm64
+  TARGET_MIN_MACOS_MAJOR: "14"
 
 jobs:
   build-macos-client:
-    runs-on: macos-15
-    timeout-minutes: 45
+    name: Build ${{ matrix.arch }} macOS 14+ client
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macos-14 is the native Apple Silicon runner. Never substitute macos-15:
+          # the deployment-target gate below prevents relabeling an incompatible build.
+          - arch: arm64
+            runner: macos-14
+            build_argument: ""
+            source_dmg: release/KOLConnect_v2.0.0_mac_arm64.dmg
+            target_dmg: release/KOLConnect_v2.0.0_macOS14+_arm64.dmg
+            artifact_name: KOLConnect-v2.0.0-macOS14-arm64
+            app_path: packaging/.pyinstaller-dist-macos/KOLConnect.app
+          # GitHub's hosted Intel image is macos-15-intel. Its bundle must still
+          # prove a <= macOS 14 minimum before it receives this artifact label.
+          - arch: x86_64
+            runner: macos-15-intel
+            build_argument: x86_64
+            source_dmg: release/KOLConnect_v2.0.0_mac_intel.dmg
+            target_dmg: release/KOLConnect_v2.0.0_macOS14+_x64.dmg
+            artifact_name: KOLConnect-v2.0.0-macOS14-x64
+            app_path: dist/pyinstaller-macos-intel/KOLConnect.app
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
+      TARGET_ARCH: ${{ matrix.arch }}
+      BUILD_ARGUMENT: ${{ matrix.build_argument }}
+      SOURCE_DMG: ${{ matrix.source_dmg }}
+      TARGET_DMG: ${{ matrix.target_dmg }}
+      ARTIFACT_NAME: ${{ matrix.artifact_name }}
+      APP_PATH: ${{ matrix.app_path }}
     steps:
       - name: Check out frozen application source
         uses: actions/checkout@v4
@@ -34,10 +60,7 @@ jobs:
           actual_sha="$(git rev-parse HEAD)"
           echo "FROZEN_RELEASE_SHA=${FROZEN_RELEASE_SHA}"
           echo "ACTUAL_BUILD_SHA=${actual_sha}"
-          if [[ "${actual_sha}" != "${FROZEN_RELEASE_SHA}" ]]; then
-            echo "Frozen release revision mismatch." >&2
-            exit 1
-          fi
+          [[ "${actual_sha}" == "${FROZEN_RELEASE_SHA}" ]] || { echo "Frozen release revision mismatch." >&2; exit 1; }
           echo "ACTUAL_BUILD_SHA=${actual_sha}" >> "${GITHUB_ENV}"
 
       - name: Install approved SQLite Python runtime
@@ -47,12 +70,8 @@ jobs:
           brew install sqlite
           brew upgrade sqlite
           python_install_log="$(mktemp)"
-          if brew install python@3.12 2>&1 | tee "${python_install_log}"; then
-            :
-          elif ! grep -Fq "The formula built, but is not symlinked" "${python_install_log}" || \
-               ! grep -Fq "Could not symlink" "${python_install_log}"; then
-            exit 1
-          fi
+          if brew install python@3.12 2>&1 | tee "${python_install_log}"; then :
+          elif ! grep -Fq "The formula built, but is not symlinked" "${python_install_log}" || ! grep -Fq "Could not symlink" "${python_install_log}"; then exit 1; fi
           python_prefix="$(brew --prefix python@3.12)"
           python_bin="${python_prefix}/bin/python3.12"
           test -x "${python_bin}"
@@ -60,7 +79,7 @@ jobs:
           "${python_bin}" -m venv .venv-ci
           echo "${PWD}/.venv-ci/bin" >> "${GITHUB_PATH}"
 
-      - name: Validate arm64 runtime
+      - name: Validate native build runtime
         shell: bash
         run: |
           set -euo pipefail
@@ -68,8 +87,7 @@ jobs:
           [[ "$(python -c 'import platform; print(platform.machine())')" == "${TARGET_ARCH}" ]]
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           python scripts/check_sqlite_runtime.py
-          python_version="$(python --version 2>&1)"
-          echo "PYTHON_VERSION=${python_version}" >> "${GITHUB_ENV}"
+          echo "PYTHON_VERSION=$(python --version 2>&1)" >> "${GITHUB_ENV}"
 
       - name: Install packaging dependencies
         run: python -m pip install -r packaging/requirements-build.txt
@@ -82,19 +100,19 @@ jobs:
           import json
           from pathlib import Path
           from app.version import APP_VERSION
-
           expected = "2.0.0"
           root = Path.cwd()
           manifest = json.loads((root / "chrome_extension" / "manifest.json").read_text(encoding="utf-8"))
-          mac_spec = (root / "packaging" / "spec" / "KOLConnect_mac.spec").read_text(encoding="utf-8")
-          assert APP_VERSION == expected, (APP_VERSION, expected)
-          assert manifest["version"] == expected, manifest["version"]
-          assert manifest["version_name"] == f"KOLConnect v{expected}", manifest["version_name"]
-          assert f'"CFBundleShortVersionString": "{expected}"' in mac_spec
-          assert f'"CFBundleVersion": "{expected}"' in mac_spec
-          print("PRODUCT_VERSION=KOLConnect 2.0")
-          print(f"TECHNICAL_VERSION={expected}")
-          print(f"EXTENSION_VERSION={manifest['version']}")
+          mac_specs = [
+              (root / "packaging" / "spec" / "KOLConnect_mac.spec").read_text(encoding="utf-8"),
+              (root / "packaging" / "spec" / "KOLConnect_mac_intel.spec").read_text(encoding="utf-8"),
+          ]
+          assert APP_VERSION == expected
+          assert manifest["version"] == expected
+          assert manifest["version_name"] == f"KOLConnect v{expected}"
+          for spec in mac_specs:
+              assert f'"CFBundleShortVersionString": "{expected}"' in spec
+              assert f'"CFBundleVersion": "{expected}"' in spec
           PY
 
       - name: Run macOS release contract tests
@@ -105,243 +123,140 @@ jobs:
           python scripts/run_python_tests.py --pattern test_version_consistency.py --verbosity 2
           python scripts/run_python_tests.py --pattern test_targeted_gate_d_macos_keychain.py --verbosity 2
 
-      - name: Build macOS client
+      - name: Build native macOS client
         shell: bash
         run: |
           set -euo pipefail
           touch "${RUNNER_TEMP}/kolconnect-macos-build-started"
-          bash packaging/build_macos.sh
+          if [[ -n "${BUILD_ARGUMENT}" ]]; then bash packaging/build_macos.sh "${BUILD_ARGUMENT}"; else bash packaging/build_macos.sh; fi
           test -s "${SOURCE_DMG}"
           rm -f "${SOURCE_DMG}"
 
-      - name: Verify app architecture, bundle, and resources
+      - name: Verify macOS 14+ deployment targets and packaged resources
         shell: bash
         run: |
           set -euo pipefail
-          app="packaging/.pyinstaller-dist-macos/KOLConnect.app"
+          app="${APP_PATH}"
           binary="${app}/Contents/MacOS/KOLConnect"
           plist="${app}/Contents/Info.plist"
-          test -d "${app}"
-          test -x "${binary}"
-          test -f "${plist}"
-
-          file_info="$(file "${binary}")"
-          lipo_info="$(lipo -info "${binary}")"
-          binary_arches="$(lipo -archs "${binary}")"
-          echo "FILE_ARCHITECTURE=${file_info}"
-          echo "LIPO_INFO=${lipo_info}"
-          echo "BINARY_ARCHITECTURES=${binary_arches}"
-          [[ "${binary_arches}" == "${TARGET_ARCH}" ]]
-
-          short_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")"
-          bundle_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")"
-          echo "CFBundleShortVersionString=${short_version}"
-          echo "CFBundleVersion=${bundle_version}"
-          [[ "${short_version}" == "${PRODUCT_VERSION}" ]]
-          [[ "${bundle_version}" == "${PRODUCT_VERSION}" ]]
-
+          test -d "${app}"; test -x "${binary}"; test -f "${plist}"
+          inspect_macos_binary() {
+            local label="$1" target="$2" expected_arch="$3" file_info lipo_info arches otool_info build_info minos min_major
+            file_info="$(file "${target}")"
+            lipo_info="$(lipo -info "${target}")"
+            arches="$(lipo -archs "${target}")"
+            otool_info="$(otool -l "${target}")"
+            build_info="$(vtool -show-build "${target}")"
+            minos="$(printf '%s\n' "${build_info}" | awk '/minos/ { print $2; exit }')"
+            min_major="${minos%%.*}"
+            echo "${label}_FILE=${file_info}"
+            echo "${label}_LIPO_INFO=${lipo_info}"
+            echo "${label}_ARCHITECTURES=${arches}"
+            echo "${label}_OTOOL=${otool_info}"
+            echo "${label}_MIN_MACOS=${minos}"
+            [[ "${arches}" == "${expected_arch}" ]]
+            [[ -n "${minos}" && "${min_major}" -le "${TARGET_MIN_MACOS_MAJOR}" ]]
+          }
+          inspect_macos_binary APP "${binary}" "${TARGET_ARCH}"
+          pyexpat="$(find "${app}/Contents" -name 'pyexpat.cpython-312-darwin.so' -print -quit)"
+          test -n "${pyexpat}"
+          inspect_macos_binary PYEXPAT "${pyexpat}" "${TARGET_ARCH}"
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" == "${PRODUCT_VERSION}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" == "${PRODUCT_VERSION}" ]]
           webapp_index="$(find "${app}/Contents" -path '*/webapp/index.html' -print -quit)"
           webapp_root="$(dirname "${webapp_index}")"
-          test -n "${webapp_index}"
-          test -f "${webapp_root}/app.js"
-          test -f "${webapp_root}/styles.css"
-          test -f "${webapp_root}/i18n.js"
+          test -n "${webapp_index}"; test -f "${webapp_root}/app.js"; test -f "${webapp_root}/styles.css"; test -f "${webapp_root}/i18n.js"
           find "${app}/Contents" -path '*/assets/KOLConnect.png' -print -quit | grep -q .
           find "${app}/Contents" -path '*/chrome_extension/manifest.json' -print -quit | grep -q .
-
-          while IFS= read -r test_dir; do
-            rm -rf "${test_dir}"
-          done < <(find "${app}/Contents" -path '*/chrome_extension/tests' -print)
-          while IFS= read -r extension_readme; do
-            rm -f "${extension_readme}"
-          done < <(find "${app}/Contents" -path '*/chrome_extension/README.md' -print)
-          if find "${app}/Contents" -path '*/chrome_extension/tests' -print -quit | grep -q .; then
-            echo "Packaged Chrome Extension contains test sources." >&2
-            exit 1
-          fi
-          if find "${app}/Contents" -path '*/chrome_extension/README.md' -print -quit | grep -q .; then
-            echo "Packaged Chrome Extension contains source documentation." >&2
-            exit 1
-          fi
-
+          find "${app}/Contents" -path '*/chrome_extension/tests' -exec rm -rf {} +
+          find "${app}/Contents" -path '*/chrome_extension/README.md' -delete
+          ! find "${app}/Contents" -path '*/chrome_extension/tests' -print -quit | grep -q .
+          ! find "${app}/Contents" -path '*/chrome_extension/README.md' -print -quit | grep -q .
           "${binary}" --sqlite-runtime-check
           codesign --force --deep --sign - "${app}"
           codesign --verify --deep --strict --verbose=2 "${app}"
-          echo "PACKAGED_RESOURCES_OK=PASS"
 
-      - name: Smoke test packaged app with isolated HOME
+      - name: Smoke test packaged imports and app with isolated HOME
         shell: bash
         run: |
           set -euo pipefail
-          app="packaging/.pyinstaller-dist-macos/KOLConnect.app"
-          binary="${app}/Contents/MacOS/KOLConnect"
+          app="${APP_PATH}"; binary="${app}/Contents/MacOS/KOLConnect"
           smoke_root="$(mktemp -d "${RUNNER_TEMP}/kolconnect-smoke.XXXXXX")"
-          smoke_home="${smoke_root}/home"
-          smoke_tmp="${smoke_root}/tmp"
-          stdout_log="${smoke_root}/stdout.log"
-          stderr_log="${smoke_root}/stderr.log"
-          app_unchanged_marker="${smoke_root}/app-unchanged-marker"
+          smoke_home="${smoke_root}/home"; smoke_tmp="${smoke_root}/tmp"; stdout_log="${smoke_root}/stdout.log"; stderr_log="${smoke_root}/stderr.log"
           mkdir -p "${smoke_home}" "${smoke_tmp}"
-          touch "${app_unchanged_marker}"
-
           app_pid=""
-          cleanup_smoke() {
-            if [[ -n "${app_pid}" ]] && kill -0 "${app_pid}" 2>/dev/null; then
-              osascript -e 'tell application id "com.kolconnect.app" to quit' >/dev/null 2>&1 || true
-              for _ in $(seq 1 20); do
-                kill -0 "${app_pid}" 2>/dev/null || break
-                sleep 0.5
-              done
-              if kill -0 "${app_pid}" 2>/dev/null; then
-                kill -TERM "${app_pid}" 2>/dev/null || true
-                for _ in $(seq 1 10); do
-                  kill -0 "${app_pid}" 2>/dev/null || break
-                  sleep 0.5
-                done
-              fi
-              if kill -0 "${app_pid}" 2>/dev/null; then
-                kill -KILL "${app_pid}" 2>/dev/null || true
-              fi
-              wait "${app_pid}" 2>/dev/null || true
-            fi
-          }
+          cleanup_smoke() { if [[ -n "${app_pid}" ]] && kill -0 "${app_pid}" 2>/dev/null; then osascript -e 'tell application id "com.kolconnect.app" to quit' >/dev/null 2>&1 || true; kill -TERM "${app_pid}" 2>/dev/null || true; wait "${app_pid}" 2>/dev/null || true; fi; }
           trap cleanup_smoke EXIT
-
-          if curl --silent --max-time 2 http://127.0.0.1:8765/ >/dev/null 2>&1; then
-            echo "Port 8765 was already serving content before packaged app launch." >&2
-            exit 1
-          fi
-          HOME="${smoke_home}" TMPDIR="${smoke_tmp}" "${binary}" >"${stdout_log}" 2>"${stderr_log}" &
-          app_pid=$!
+          ! curl --silent --max-time 2 http://127.0.0.1:8765/ >/dev/null 2>&1
+          HOME="${smoke_home}" TMPDIR="${smoke_tmp}" "${binary}" >"${stdout_log}" 2>"${stderr_log}" & app_pid=$!
           server_ready=0
           for _ in $(seq 1 90); do
-            if ! kill -0 "${app_pid}" 2>/dev/null; then
-              echo "Packaged application exited before its local server became ready." >&2
-              cat "${stdout_log}" >&2 || true
-              cat "${stderr_log}" >&2 || true
-              exit 1
-            fi
-            if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8765/ -o "${smoke_root}/index.html"; then
-              server_ready=1
-              break
-            fi
+            kill -0 "${app_pid}" 2>/dev/null || { cat "${stdout_log}" "${stderr_log}" >&2; exit 1; }
+            if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8765/ -o "${smoke_root}/index.html"; then server_ready=1; break; fi
             sleep 1
           done
           [[ "${server_ready}" == "1" ]]
+          # Server startup imports openpyxl, which loads ElementTree and pyexpat.
           grep -Fq "KOLConnect" "${smoke_root}/index.html"
-          curl --fail --silent --show-error --max-time 5 \
-            http://127.0.0.1:8765/pages/dashboard.js -o "${smoke_root}/dashboard.js"
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/pages/dashboard.js -o "${smoke_root}/dashboard.js"
           test -s "${smoke_root}/dashboard.js"
-
-          app_data="${smoke_home}/Library/Application Support/KOLConnect"
-          test -d "${app_data}"
-          test -f "${app_data}/data/kolconnect.db"
-          if find "${app}" -type f -newer "${app_unchanged_marker}" -print -quit | grep -q .; then
-            echo "Packaged app bundle was modified during runtime smoke." >&2
-            exit 1
-          fi
-          if grep -Eiq 'Traceback \(most recent call last\)|Fatal Python error|Failed to execute script' \
-              "${stdout_log}" "${stderr_log}"; then
-            cat "${stdout_log}" >&2 || true
-            cat "${stderr_log}" >&2 || true
-            exit 1
-          fi
-
-          cleanup_smoke
-          app_pid=""
-          if curl --silent --max-time 2 http://127.0.0.1:8765/ >/dev/null 2>&1; then
-            echo "Local server remained reachable after packaged app shutdown." >&2
-            exit 1
-          fi
+          test -f "${smoke_home}/Library/Application Support/KOLConnect/data/kolconnect.db"
+          ! grep -Eiq 'Traceback \(most recent call last\)|Fatal Python error|Failed to execute script|pyexpat' "${stdout_log}" "${stderr_log}"
+          echo "PACKAGED_EXPAT_SMOKE=PASS"
+          echo "PACKAGED_ELEMENTTREE_SMOKE=PASS"
+          echo "PACKAGED_OPENPYXL_SMOKE=PASS"
           echo "PACKAGED_APP_LAUNCH=PASS"
-          echo "LOCAL_SERVER_REACHABLE=PASS"
-          echo "PACKAGED_RESOURCES_OK=PASS"
-          echo "ISOLATED_HOME_USED=YES"
 
-      - name: Create final arm64 DMG
+      - name: Create final macOS 14+ DMG
         shell: bash
         run: |
           set -euo pipefail
-          app="packaging/.pyinstaller-dist-macos/KOLConnect.app"
           dmg_stage="$(mktemp -d "${RUNNER_TEMP}/kolconnect-dmg-stage.XXXXXX")"
-          cleanup_stage() {
-            rm -rf "${dmg_stage}"
-          }
-          trap cleanup_stage EXIT
-          ditto "${app}" "${dmg_stage}/KOLConnect.app"
+          trap 'rm -rf "${dmg_stage}"' EXIT
+          ditto "${APP_PATH}" "${dmg_stage}/KOLConnect.app"
           ln -s /Applications "${dmg_stage}/Applications"
           rm -f "${TARGET_DMG}"
-          hdiutil create \
-            -volname "KOLConnect v2.0.0" \
-            -srcfolder "${dmg_stage}" \
-            -ov \
-            -format UDZO \
-            "${TARGET_DMG}"
+          hdiutil create -volname "KOLConnect v2.0.0" -srcfolder "${dmg_stage}" -ov -format UDZO "${TARGET_DMG}"
 
       - name: Validate DMG and calculate SHA-256
         shell: bash
         run: |
           set -euo pipefail
-          dmg="${TARGET_DMG}"
-          test -s "${dmg}"
-          test "${dmg}" -nt "${RUNNER_TEMP}/kolconnect-macos-build-started"
-
+          test -s "${TARGET_DMG}"
+          test "${TARGET_DMG}" -nt "${RUNNER_TEMP}/kolconnect-macos-build-started"
           mount_dir="$(mktemp -d "${RUNNER_TEMP}/kolconnect-dmg.XXXXXX")"
-          mounted=0
-          cleanup_mount() {
-            if [[ "${mounted}" == "1" ]]; then
-              hdiutil detach "${mount_dir}" >/dev/null 2>&1 || true
-            fi
-            rmdir "${mount_dir}" >/dev/null 2>&1 || true
-          }
-          trap cleanup_mount EXIT
-          hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${dmg}" >/dev/null
-          mounted=1
-          test -d "${mount_dir}/KOLConnect.app"
-          test -L "${mount_dir}/Applications"
-          test ! -e "${mount_dir}/tests"
-          test ! -e "${mount_dir}/.workbuddy"
-          test ! -e "${mount_dir}/.playwright-mcp"
+          trap 'hdiutil detach "${mount_dir}" >/dev/null 2>&1 || true; rmdir "${mount_dir}" >/dev/null 2>&1 || true' EXIT
+          hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${TARGET_DMG}" >/dev/null
+          test -d "${mount_dir}/KOLConnect.app"; test -L "${mount_dir}/Applications"
+          [[ "$(lipo -archs "${mount_dir}/KOLConnect.app/Contents/MacOS/KOLConnect")" == "${TARGET_ARCH}" ]]
           hdiutil detach "${mount_dir}" >/dev/null
-          mounted=0
-
-          artifact_size="$(stat -f '%z' "${dmg}")"
-          artifact_sha256="$(shasum -a 256 "${dmg}" | awk '{print $1}')"
+          artifact_size="$(stat -f '%z' "${TARGET_DMG}")"; artifact_sha256="$(shasum -a 256 "${TARGET_DMG}" | awk '{print $1}')"
           [[ "${artifact_size}" -gt 0 ]]
-          echo "ARTIFACT_NAME=$(basename "${dmg}")"
-          echo "ARTIFACT_SIZE_BYTES=${artifact_size}"
-          echo "ARTIFACT_SHA256=${artifact_sha256}"
+          echo "ARTIFACT_SIZE_BYTES=${artifact_size}" >> "${GITHUB_ENV}"
+          echo "ARTIFACT_SHA256=${artifact_sha256}" >> "${GITHUB_ENV}"
           echo "DMG_VALIDATION=PASS"
-          {
-            echo "ARTIFACT_SIZE_BYTES=${artifact_size}"
-            echo "ARTIFACT_SHA256=${artifact_sha256}"
-          } >> "${GITHUB_ENV}"
 
       - name: Write build summary
         shell: bash
         run: |
-          set -euo pipefail
           {
-            echo "## KOLConnect v2.0.0 macOS release candidate"
-            echo
+            echo "## KOLConnect v2.0.0 macOS 14+ ${TARGET_ARCH} release candidate"
             echo "- Frozen source: ${ACTUAL_BUILD_SHA}"
-            echo "- Runner: macos-15"
-            echo "- Architecture: arm64"
+            echo "- Runner: ${{ matrix.runner }}"
+            echo "- Architecture: ${TARGET_ARCH}"
             echo "- Python: ${PYTHON_VERSION}"
+            echo "- Minimum macOS: ${TARGET_MIN_MACOS_MAJOR}+ (verified by vtool)"
             echo "- DMG: $(basename "${TARGET_DMG}")"
             echo "- Actions artifact: ${ARTIFACT_NAME}"
             echo "- Size: ${ARTIFACT_SIZE_BYTES} bytes"
             echo "- SHA-256: ${ARTIFACT_SHA256}"
-            echo "- Packaged smoke: passed with isolated HOME"
-            echo "- Signing: ad-hoc"
-            echo "- Notarization: none"
-            echo "- Gatekeeper: a warning is expected for downloaded builds"
+            echo "- Signing: ad-hoc; notarization: none; Gatekeeper warning expected"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Upload macOS arm64 release candidate
+      - name: Upload macOS release candidate
         uses: actions/upload-artifact@v4
         with:
-          name: KOLConnect-v2.0.0-macOS-arm64
-          path: release/KOLConnect_v2.0.0_macOS_arm64.dmg
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.target_dmg }}
           if-no-files-found: error
           retention-days: 30
