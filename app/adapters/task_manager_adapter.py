@@ -35,6 +35,24 @@ from ports.task_port import (
 from repositories.task_repository import TaskCsvDocument, TaskRepository
 
 
+def _open_in_desktop(target: Path) -> None:
+    """Open an existing task file or directory with the host desktop shell."""
+    absolute_target = target.resolve()
+    if os.name == "nt":
+        command = ["explorer.exe", str(absolute_target)]
+        try:
+            subprocess.Popen(command)
+        except OSError as exc:
+            raise ValueError("无法打开结果文件。") from exc
+        return
+
+    command = ["open", str(absolute_target)] if sys.platform == "darwin" else ["xdg-open", str(absolute_target)]
+    try:
+        subprocess.run(command, check=True)
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError("无法打开结果文件。") from exc
+
+
 TasksDirectoryProvider = Callable[[], Path]
 ScrapeStatusProvider = Callable[[], Mapping[str, object]]
 
@@ -98,7 +116,7 @@ class TaskManagerAdapter:
         self._repository().get_task(task_id)
         if not paths["results"].exists():
             raise ValueError("当前任务尚未生成结果文件。")
-        subprocess.Popen(["explorer.exe", str(paths["results"])])
+        _open_in_desktop(paths["results"])
 
     def open_task_result_folder(self, task_id: str) -> None:
         paths = self._repository()._paths(task_id)
@@ -106,13 +124,7 @@ class TaskManagerAdapter:
         task_directory = paths["root"]
         if not task_directory.is_dir():
             raise ValueError("当前任务结果文件夹不可用。")
-        if os.name == "nt":
-            command = ["explorer.exe", str(task_directory)]
-        elif sys.platform == "darwin":
-            command = ["open", str(task_directory)]
-        else:
-            command = ["xdg-open", str(task_directory)]
-        subprocess.Popen(command)
+        _open_in_desktop(task_directory)
 
     def create_manual_task(self, command: ManualTaskCreateCommand) -> CreatedTask:
         task = self._repository().create_task(

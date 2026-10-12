@@ -28,6 +28,26 @@ assert.match(html, /应用筛选/);
 assert.match(css, /campaign-filter-grid[\s\S]*minmax\(170px/);
 assert.match(app, /capturePanel\.after\(emailPanel\)/);
 assert.match(html, /id="email-enrichment-card"/);
+assert.match(
+  html,
+  /<fieldset class="email-source-selector">[\s\S]*?<legend[^>]*data-i18n="emailSourceQuestion"/,
+  "Email enrichment keeps its source-selection question as a fieldset legend.",
+);
+assert.match(
+  css,
+  /\.email-source-selector\s*\{[^}]*min-width:\s*0[^}]*width:\s*100%/s,
+  "The email source selector remains a full-width, shrink-safe grid container.",
+);
+assert.match(
+  css,
+  /\.email-source-selector legend\s*\{[^}]*grid-column:\s*1\s*\/\s*-1[^}]*min-width:\s*max-content[^}]*white-space:\s*nowrap/s,
+  "The source-selection question spans the grid and cannot collapse into a one-character column.",
+);
+assert.match(
+  css,
+  /@media \(max-width: 960px\)[\s\S]*?\.email-source-selector\s*\{\s*grid-template-columns:\s*1fr/s,
+  "The source options still collapse to one responsive column on narrower screens.",
+);
 assert.match(html, /creator-library-more-filters/);
 assert.match(library, /more-filters-open/);
 assert.match(css, /creator-library-secondary-filter \{ display: none/);

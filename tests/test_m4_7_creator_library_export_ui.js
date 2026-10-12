@@ -263,6 +263,15 @@ async function run() {
   assert.match(source, /pywebview\?\.api\?\.save_xlsx/);
   assert.match(source, /creator-library-select-all/);
   assert.match(source, /creators\/batch/);
+  const html = fs.readFileSync(path.join(ROOT, "webapp/index.html"), "utf8");
+  const styles = fs.readFileSync(path.join(ROOT, "webapp/styles.css"), "utf8");
+  assert.match(html, /creator-library-card-view/);
+  assert.match(html, /creator-library-table-view/);
+  assert.match(html, /creator-library-select-all/);
+  assert.match(html, /creator-library-export/);
+  assert.match(styles, /\.creator-library-select-all\s*\{[^}]*gap:\s*8px/s);
+  assert.match(styles, /\.creator-library-select-all input\s*\{[^}]*margin:\s*0/s);
+  assert.match(styles, /@media \(max-width: 1100px\)[\s\S]*?\.creator-library-actions\s*\{[^}]*display:\s*grid/s);
   console.log("M4.7 Creator Library export UI: OK");
 }
 

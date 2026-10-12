@@ -2238,7 +2238,7 @@ button {
 
 .creator-library-actions {
   display: flex;
-  gap: 8px;
+  gap: 12px 18px;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
@@ -2257,6 +2257,9 @@ button {
   gap: 10px;
   flex-wrap: wrap;
 }
+
+.creator-library-actions-left { min-width: 0; }
+.creator-library-actions-right { margin-left: auto; }
 
 .selection-count { color: var(--muted); font-size: 13px; font-weight: 700; }
 .toolbar-divider { width: 1px; height: 28px; background: var(--border); }
@@ -2481,9 +2484,16 @@ button {
 .creator-library-select-all {
   align-items: center;
   display: inline-flex;
-  gap: 6px;
+  flex: 0 0 auto;
+  gap: 8px;
+  line-height: 1.25;
+  min-height: 32px;
+  padding: 0 2px;
   white-space: nowrap;
 }
+
+.creator-library-select-all input { flex: 0 0 auto; margin: 0; }
+.creator-library-select-all span { display: block; }
 
 .creator-card-select {
   display: inline-flex;
@@ -2567,8 +2577,8 @@ button {
 .creator-edit-account-row a { margin-top: 3px; font-size: 12px; }
 .creator-edit-accounts .action-row input { flex: 1 1 280px; min-width: 0; }
 
-.email-source-selector { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border: 0; padding: 0; margin: 16px 0; }
-.email-source-selector legend { grid-column: 1 / -1; font-weight: 700; margin-bottom: 2px; }
+.email-source-selector { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border: 0; padding: 0; margin: 16px 0; min-width: 0; width: 100%; }
+.email-source-selector legend { grid-column: 1 / -1; min-width: max-content; width: auto; white-space: nowrap; font-weight: 700; margin-bottom: 2px; }
 .email-source-option { display: flex; gap: 9px; align-items: flex-start; padding: 11px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
 .email-source-option:has(input:checked) { border-color: var(--accent); background: var(--surface-muted); }
 .email-source-option span { display: grid; gap: 3px; }
@@ -3313,4 +3323,14 @@ button {
     align-items: flex-start;
     flex-direction: column;
   }
+}
+
+@media (max-width: 1100px) {
+  .creator-library-actions {
+    align-items: flex-start;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .creator-library-actions-right { margin-left: 0; }
 }

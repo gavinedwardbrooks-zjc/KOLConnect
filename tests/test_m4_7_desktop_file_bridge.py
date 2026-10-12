@@ -15,7 +15,11 @@ APP_DIR = ROOT / "app"
 sys.path.insert(0, str(APP_DIR))
 sys.path.insert(0, str(ROOT / "tests"))
 
-from desktop_file_bridge import DesktopFileBridge  # noqa: E402
+from desktop_file_bridge import (  # noqa: E402
+    DesktopFileBridge,
+    _is_inside_application_bundle,
+    _resolve_save_target,
+)
 from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 
@@ -89,6 +93,40 @@ class DesktopFileBridgeTests(unittest.TestCase):
         )
         self.assertEqual(False, result["saved"])
         self.assertEqual(b"existing", target.read_bytes())
+
+    def test_directory_selection_generates_a_non_empty_export_filename(self) -> None:
+        target = _resolve_save_target(self.root, "KOLConnect_Creator_Export.xlsx")
+        self.assertEqual(self.root / "KOLConnect_Creator_Export.xlsx", target)
+        self.assertTrue(target.name)
+
+    def test_posix_root_selection_never_uses_empty_path_name(self) -> None:
+        target = _resolve_save_target(Path("/"), "KOLConnect_Creator_Export.xlsx")
+        self.assertEqual(Path("/KOLConnect_Creator_Export.xlsx"), target)
+        self.assertEqual("KOLConnect_Creator_Export.xlsx", target.name)
+
+    def test_explicit_unicode_filename_is_preserved(self) -> None:
+        target = self.root / "导出 文件.xlsx"
+        result = DesktopFileBridge(FakeWebView, FakeWindow((str(target),))).save_xlsx(
+            "KOLConnect_Creator_Export.xlsx", self.payload()
+        )
+        self.assertEqual({"saved": True, "canceled": False, "path": str(target)}, result)
+        self.assertEqual(b"xlsx-bytes", target.read_bytes())
+
+    def test_packaged_app_bundle_is_not_an_export_destination(self) -> None:
+        bundle = self.root / "KOLConnect.app"
+        executable = bundle / "Contents" / "MacOS" / "KOLConnect"
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"binary")
+        target = bundle / "Contents" / "KOLConnect_Creator_Export.xlsx"
+        with mock.patch("desktop_file_bridge.sys.frozen", True, create=True), mock.patch(
+            "desktop_file_bridge.sys.executable", str(executable)
+        ):
+            self.assertTrue(_is_inside_application_bundle(target))
+            result = DesktopFileBridge(FakeWebView, FakeWindow((str(target),))).save_xlsx(
+                "KOLConnect_Creator_Export.xlsx", self.payload()
+            )
+        self.assertEqual(False, result["saved"])
+        self.assertIn("应用程序外", str(result["error"]))
 
 
 if __name__ == "__main__":

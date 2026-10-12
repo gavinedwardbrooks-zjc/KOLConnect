@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +44,14 @@ class DesktopFileBridge:
         if not selected:
             return {"saved": False, "canceled": True, "path": None}
 
-        target = Path(str(selected[0])).with_suffix(".xlsx")
+        try:
+            target = _resolve_save_target(selected[0], filename)
+        except (TypeError, ValueError):
+            return {"saved": False, "canceled": False, "error": "请选择有效的 XLSX 保存位置。"}
+        if _is_inside_application_bundle(target):
+            return {"saved": False, "canceled": False, "error": "请选择应用程序外的保存位置。"}
+        if not target.parent.is_dir():
+            return {"saved": False, "canceled": False, "error": "保存位置不可用。"}
         if target.exists():
             return {"saved": False, "canceled": False, "error": "目标文件已存在，请选择其他文件名。"}
         try:
@@ -60,6 +68,28 @@ def _safe_xlsx_filename(value: object) -> str:
     if not candidate:
         candidate = "KOLConnect_Export"
     return f"{Path(candidate).stem or 'KOLConnect_Export'}.xlsx"
+
+
+def _resolve_save_target(selected_path: object, suggested_filename: str) -> Path:
+    """Turn a native Save dialog selection into a real non-empty XLSX filename."""
+    selected = Path(str(selected_path or "")).expanduser()
+    if not str(selected_path or "").strip():
+        raise ValueError("missing selection")
+    if selected.is_dir() or not selected.name:
+        return selected / suggested_filename
+    return selected if selected.suffix.lower() == ".xlsx" else selected.with_suffix(".xlsx")
+
+
+def _is_inside_application_bundle(target: Path) -> bool:
+    """A packaged macOS app must not use its read-only bundle as export storage."""
+    if not getattr(sys, "frozen", False):
+        return False
+    executable = Path(sys.executable).resolve()
+    app_bundle = next((parent for parent in executable.parents if parent.suffix == ".app"), None)
+    try:
+        return app_bundle is not None and target.resolve().is_relative_to(app_bundle)
+    except OSError:
+        return False
 
 
 def _decode_xlsx_payload(value: object) -> bytes:
