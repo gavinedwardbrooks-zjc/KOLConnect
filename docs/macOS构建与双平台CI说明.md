@@ -67,21 +67,21 @@ macOS job 使用 `macos-15` arm64 runner，并同时检查 `uname -m` 与 `platf
 
 ## v2.0.0 冻结源码手动构建
 
-`.github/workflows/build-macos-client.yml` 是 v2.0.0 macOS 14+ 双架构发布候选的手动构建入口。workflow root checkout 保留触发时的最新主线基础设施和合同测试；每个 matrix job 将冻结应用源码单独 checkout 到 `frozen-src/`，并在该目录中验证 SHA：
+`.github/workflows/build-macos-client.yml` 是 v2.0.0 双架构 macOS 发布候选的手动构建入口。workflow root checkout 保留触发时的最新主线基础设施和合同测试；每个 matrix job 将冻结应用源码单独 checkout 到 `frozen-src/`，并在该目录中验证 SHA：
 
 ```text
 5aa4f5f50d1decd4fc49b84b268526e96e52a231
 ```
 
-该 workflow 分别使用 `macos-14` 原生 arm64 runner 和 `macos-15-intel` 原生 x86_64 runner。每个 job 在构建前验证版本元数据并运行 macOS packaging、版本一致性和 Keychain 合同测试。构建后使用 `file`、`lipo`、`otool` 和 `vtool -show-build` 验证 APP 与包内 `pyexpat` 的架构及最低 macOS 版本；任一关键二进制要求高于 macOS 14 时，该架构 job 必须失败，不能标记为 macOS 14+。
+该 workflow 分别使用 `macos-14` 原生 arm64 runner 和 `macos-15-intel` 原生 x86_64 runner。Apple Silicon 发布目标为 macOS 14+；Intel 发布目标为 macOS 15+，因为当前 Intel Python runtime 的包内 `pyexpat` 最低版本为 15.0。每个 job 在构建前验证版本元数据并运行 macOS packaging、版本一致性和 Keychain 合同测试。构建后使用 `file`、`lipo` 和 `otool -l` 验证 APP 与包内 `pyexpat` 的架构及最低 macOS 版本；解析器同时支持 `LC_BUILD_VERSION/minos` 和旧式 `LC_VERSION_MIN_MACOSX/version`，并按每个架构的数字化兼容性上限失败。
 
 每个 job 使用隔离的临时 `HOME` 启动实际 `KOLConnect.app`，验证 localhost UI、用户数据目录以及通过 server 启动加载的 `openpyxl`、`ElementTree` 和 `pyexpat`。最终会分别上传：
 
 ```text
 KOLConnect-v2.0.0-macOS14-arm64
   KOLConnect_v2.0.0_macOS14+_arm64.dmg
-KOLConnect-v2.0.0-macOS14-x64
-  KOLConnect_v2.0.0_macOS14+_x64.dmg
+KOLConnect-v2.0.0-macOS15-x64
+  KOLConnect_v2.0.0_macOS15+_x64.dmg
 ```
 
 workflow 会挂载每个 DMG 确认其中包含正确架构的 `KOLConnect.app`，并在日志和 Job Summary 中输出实际文件大小与 DMG 文件的 SHA-256。运行完成后，在 GitHub Actions 对应 run 的 Artifacts 区域下载；该手动 workflow 不创建或修改 GitHub Release。
@@ -90,10 +90,10 @@ workflow 会挂载每个 DMG 确认其中包含正确架构的 `KOLConnect.app`�
 
 ## 首次 CI 验证
 
-首次验证只应从 GitHub Actions 手动运行 `Build macOS 14+ Clients` workflow，不创建 tag。成功后确认 artifacts 包含：
+首次验证只应从 GitHub Actions 手动运行 `Build macOS Clients` workflow，不创建 tag。成功后确认 artifacts 包含：
 
 - `KOLConnect_v2.0.0_macOS14+_arm64.dmg`
-- `KOLConnect_v2.0.0_macOS14+_x64.dmg`
+- `KOLConnect_v2.0.0_macOS15+_x64.dmg`
 
 然后在真实 Apple Silicon Mac 上检查：
 

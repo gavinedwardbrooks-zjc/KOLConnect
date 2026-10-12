@@ -1,4 +1,4 @@
-name: Build macOS 14+ Clients
+name: Build macOS Clients
 
 on:
   workflow_dispatch:
@@ -9,12 +9,11 @@ permissions:
 env:
   FROZEN_RELEASE_SHA: 5aa4f5f50d1decd4fc49b84b268526e96e52a231
   PRODUCT_VERSION: 2.0.0
-  TARGET_MIN_MACOS_MAJOR: "14"
   FROZEN_PRODUCT_ROOT: frozen-src
 
 jobs:
   build-macos-client:
-    name: Build ${{ matrix.arch }} macOS 14+ client
+    name: Build ${{ matrix.arch }} macOS ${{ matrix.target_min_macos }}+ client
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 50
     strategy:
@@ -25,19 +24,21 @@ jobs:
           # the deployment-target gate below prevents relabeling an incompatible build.
           - arch: arm64
             runner: macos-14
+            target_min_macos: "14"
             build_argument: ""
             source_dmg: release/KOLConnect_v2.0.0_mac_arm64.dmg
             target_dmg: release/KOLConnect_v2.0.0_macOS14+_arm64.dmg
             artifact_name: KOLConnect-v2.0.0-macOS14-arm64
             app_path: packaging/.pyinstaller-dist-macos/KOLConnect.app
-          # GitHub's hosted Intel image is macos-15-intel. Its bundle must still
-          # prove a <= macOS 14 minimum before it receives this artifact label.
+          # GitHub's hosted Intel image is macos-15-intel. The bundled Python
+          # runtime requires macOS 15, so this release is explicitly macOS 15+.
           - arch: x86_64
             runner: macos-15-intel
+            target_min_macos: "15"
             build_argument: x86_64
             source_dmg: release/KOLConnect_v2.0.0_mac_intel.dmg
-            target_dmg: release/KOLConnect_v2.0.0_macOS14+_x64.dmg
-            artifact_name: KOLConnect-v2.0.0-macOS14-x64
+            target_dmg: release/KOLConnect_v2.0.0_macOS15+_x64.dmg
+            artifact_name: KOLConnect-v2.0.0-macOS15-x64
             app_path: dist/pyinstaller-macos-intel/KOLConnect.app
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
@@ -47,6 +48,7 @@ jobs:
       TARGET_DMG: ${{ matrix.target_dmg }}
       ARTIFACT_NAME: ${{ matrix.artifact_name }}
       APP_PATH: ${{ matrix.app_path }}
+      TARGET_MIN_MACOS: ${{ matrix.target_min_macos }}
     steps:
       - name: Check out workflow infrastructure from latest main
         uses: actions/checkout@v4
@@ -143,7 +145,7 @@ jobs:
           test -s "${SOURCE_DMG}"
           rm -f "${SOURCE_DMG}"
 
-      - name: Verify macOS 14+ deployment targets and packaged resources
+      - name: Verify macOS deployment targets and packaged resources
         shell: bash
         run: |
           set -euo pipefail
@@ -155,7 +157,7 @@ jobs:
             # LC_BUILD_VERSION uses "minos"; older x86_64 binaries use
             # LC_VERSION_MIN_MACOSX and report the deployment floor as "version".
             # The current Intel app reports version 10.13 (with SDK 15.4), which
-            # is within the macOS 14.0 release compatibility ceiling.
+            # is within the Intel macOS 15.0 release compatibility ceiling.
             # SDK values are intentionally ignored in both forms.
             otool -l "$1" | awk '
               $1 == "cmd" { command = $2; next }
@@ -163,8 +165,8 @@ jobs:
               command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }
             '
           }
-          is_macos_14_compatible() {
-            awk -v candidate="$1" -v ceiling="${TARGET_MIN_MACOS_MAJOR}" '
+          is_macos_target_compatible() {
+            awk -v candidate="$1" -v ceiling="${TARGET_MIN_MACOS}" '
               BEGIN {
                 count = split(candidate, parts, ".")
                 if (count < 1 || parts[1] !~ /^[0-9]+$/) exit 1
@@ -187,7 +189,7 @@ jobs:
             echo "${label}_MIN_MACOS=${minos}"
             [[ "${arches}" == "${expected_arch}" ]]
             [[ -n "${minos}" ]] || { echo "No supported macOS deployment load command found." >&2; return 1; }
-            is_macos_14_compatible "${minos}"
+            is_macos_target_compatible "${minos}"
           }
           inspect_macos_binary APP "${binary}" "${TARGET_ARCH}"
           pyexpat="$(find "${app}/Contents" -name 'pyexpat.cpython-312-darwin.so' -print -quit)"
@@ -239,7 +241,7 @@ jobs:
           echo "PACKAGED_OPENPYXL_SMOKE=PASS"
           echo "PACKAGED_APP_LAUNCH=PASS"
 
-      - name: Create final macOS 14+ DMG
+      - name: Create final macOS DMG
         shell: bash
         run: |
           set -euo pipefail
@@ -274,12 +276,12 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## KOLConnect v2.0.0 macOS 14+ ${TARGET_ARCH} release candidate"
+            echo "## KOLConnect v2.0.0 macOS ${TARGET_MIN_MACOS}+ ${TARGET_ARCH} release candidate"
             echo "- Frozen source: ${ACTUAL_BUILD_SHA}"
             echo "- Runner: ${{ matrix.runner }}"
             echo "- Architecture: ${TARGET_ARCH}"
             echo "- Python: ${PYTHON_VERSION}"
-            echo "- Minimum macOS: ${TARGET_MIN_MACOS_MAJOR}+ (verified by vtool)"
+            echo "- Minimum macOS: ${TARGET_MIN_MACOS}+ (verified by otool load command)"
             echo "- DMG: ${FROZEN_PRODUCT_ROOT}/$(basename "${TARGET_DMG}")"
             echo "- Actions artifact: ${ARTIFACT_NAME}"
             echo "- Size: ${ARTIFACT_SIZE_BYTES} bytes"

@@ -65,13 +65,13 @@ def parse_macos_deployment_target(otool_output: str) -> str | None:
     return None
 
 
-def is_macos_14_compatible(deployment_target: str) -> bool:
-    """Use the release ceiling of exactly macOS 14.0, not a string comparison."""
+def is_macos_target_compatible(deployment_target: str, ceiling: int) -> bool:
+    """Use an exact numeric deployment-target ceiling, not string comparison."""
     parts = deployment_target.split(".")
     if not parts or not all(part.isdigit() for part in parts):
         return False
     major, minor, patch = (int(part) for part in (parts + ["0", "0"])[:3])
-    return major < 14 or (major == 14 and minor == 0 and patch == 0)
+    return major < ceiling or (major == ceiling and minor == 0 and patch == 0)
 
 
 def macos_unpatterned_python_runners(workflow: dict) -> list[str]:
@@ -157,10 +157,10 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual("14.0", parse_macos_deployment_target(build_version))
         # Current Intel app evidence: an SDK of 15.4 does not change its 10.13 floor.
         self.assertEqual("10.13", parse_macos_deployment_target(legacy_version))
-        self.assertTrue(is_macos_14_compatible("10.13"))
-        self.assertTrue(is_macos_14_compatible("14.0"))
+        self.assertTrue(is_macos_target_compatible("10.13", 14))
+        self.assertTrue(is_macos_target_compatible("14.0", 14))
 
-    def test_macos_deployment_target_compatibility_uses_a_numeric_14_0_ceiling(self):
+    def test_macos_deployment_target_compatibility_uses_architecture_specific_numeric_ceilings(self):
         macos_15 = """
             Load command 9
                   cmd LC_BUILD_VERSION
@@ -169,8 +169,10 @@ class PackagingConfigurationTests(unittest.TestCase):
                    sdk 15.4
         """
         self.assertEqual("15.0", parse_macos_deployment_target(macos_15))
-        self.assertFalse(is_macos_14_compatible("14.1"))
-        self.assertFalse(is_macos_14_compatible("15.0"))
+        self.assertFalse(is_macos_target_compatible("14.1", 14))
+        self.assertFalse(is_macos_target_compatible("15.0", 14))
+        self.assertTrue(is_macos_target_compatible("15.0", 15))
+        self.assertFalse(is_macos_target_compatible("15.1", 15))
 
     def test_macos_deployment_target_parser_fails_when_no_supported_command_exists(self):
         unsupported = """
@@ -408,7 +410,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(build.count('retention-days: 30'), 3)
         self.assertEqual(build.count('GITHUB_STEP_SUMMARY'), 3)
 
-        self.assertIn("name: Build macOS 14+ Clients", manual)
+        self.assertIn("name: Build macOS Clients", manual)
         self.assertRegex(manual, r"(?m)^on:\n  workflow_dispatch:\s*$")
         for forbidden_trigger in ("push", "pull_request", "schedule", "workflow_run"):
             self.assertNotRegex(manual, rf"(?m)^  {forbidden_trigger}:")
@@ -424,7 +426,6 @@ class PackagingConfigurationTests(unittest.TestCase):
         workflow_env = manual_workflow["env"]
         self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
         self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
-        self.assertEqual("14", workflow_env["TARGET_MIN_MACOS_MAJOR"])
         self.assertEqual("frozen-src", workflow_env["FROZEN_PRODUCT_ROOT"])
         matrix = manual_job["strategy"]["matrix"]["include"]
         self.assertFalse(manual_job["strategy"]["fail-fast"])
@@ -437,6 +438,7 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "arm64": {
                     "arch": "arm64",
                     "runner": "macos-14",
+                    "target_min_macos": "14",
                     "build_argument": "",
                     "source_dmg": "release/KOLConnect_v2.0.0_mac_arm64.dmg",
                     "target_dmg": "release/KOLConnect_v2.0.0_macOS14+_arm64.dmg",
@@ -446,10 +448,11 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "x86_64": {
                     "arch": "x86_64",
                     "runner": "macos-15-intel",
+                    "target_min_macos": "15",
                     "build_argument": "x86_64",
                     "source_dmg": "release/KOLConnect_v2.0.0_mac_intel.dmg",
-                    "target_dmg": "release/KOLConnect_v2.0.0_macOS14+_x64.dmg",
-                    "artifact_name": "KOLConnect-v2.0.0-macOS14-x64",
+                    "target_dmg": "release/KOLConnect_v2.0.0_macOS15+_x64.dmg",
+                    "artifact_name": "KOLConnect-v2.0.0-macOS15-x64",
                     "app_path": "dist/pyinstaller-macos-intel/KOLConnect.app",
                 },
             },
@@ -513,7 +516,8 @@ class PackagingConfigurationTests(unittest.TestCase):
             "frozen-src",
             steps_by_name["Assert v2.0.0 version metadata"]["working-directory"],
         )
-        verification = steps_by_name["Verify macOS 14+ deployment targets and packaged resources"]["run"]
+        self.assertEqual("${{ matrix.target_min_macos }}", manual_job["env"]["TARGET_MIN_MACOS"])
+        verification = steps_by_name["Verify macOS deployment targets and packaged resources"]["run"]
         for contract in (
             'file "${target}"',
             'lipo -info "${target}"',
@@ -522,10 +526,10 @@ class PackagingConfigurationTests(unittest.TestCase):
             "extract_macos_minimum",
             "LC_BUILD_VERSION",
             "LC_VERSION_MIN_MACOSX",
-            "is_macos_14_compatible",
+            "is_macos_target_compatible",
             "PYEXPAT",
             "pyexpat.cpython-312-darwin.so",
-            "TARGET_MIN_MACOS_MAJOR",
+            "TARGET_MIN_MACOS",
             "FROZEN_PRODUCT_ROOT",
             "CFBundleShortVersionString",
             "CFBundleVersion",
@@ -555,7 +559,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         ):
             self.assertIn(contract, smoke)
 
-        dmg_build = steps_by_name["Create final macOS 14+ DMG"]["run"]
+        dmg_build = steps_by_name["Create final macOS DMG"]["run"]
         self.assertIn("hdiutil create", dmg_build)
         self.assertIn('product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"', dmg_build)
         dmg_validation = steps_by_name["Validate DMG and calculate SHA-256"]["run"]
