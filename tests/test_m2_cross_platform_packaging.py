@@ -346,14 +346,41 @@ class PackagingConfigurationTests(unittest.TestCase):
             self.assertNotRegex(manual, rf"(?m)^  {forbidden_trigger}:")
         manual_workflow = yaml.safe_load(manual)
         self.assertEqual(["build-macos-client"], list(manual_workflow["jobs"]))
+        self.assertEqual({"contents": "read"}, manual_workflow["permissions"])
         manual_job = manual_workflow["jobs"]["build-macos-client"]
         self.assertEqual("macos-15", manual_job["runs-on"])
         self.assertNotIn("needs", manual_job)
         self.assertEqual("1", manual_job["env"]["HOMEBREW_NO_AUTO_UPDATE"])
-        self.assertIn("actions/checkout@v4", manual)
-        self.assertIn('full_sha="$(git rev-parse HEAD)"', manual)
-        self.assertIn('short_sha="$(git rev-parse --short=7 HEAD)"', manual)
-        self.assertIn('ARTIFACT_NAME=KOLConnect-macOS-arm64-${short_sha}', manual)
+
+        frozen_sha = "5aa4f5f50d1decd4fc49b84b268526e96e52a231"
+        workflow_env = manual_workflow["env"]
+        self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
+        self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
+        self.assertEqual("arm64", workflow_env["TARGET_ARCH"])
+        self.assertEqual(
+            "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
+            workflow_env["TARGET_DMG"],
+        )
+        self.assertEqual("KOLConnect-v2.0.0-macOS-arm64", workflow_env["ARTIFACT_NAME"])
+
+        checkout_step = next(
+            step for step in manual_job["steps"] if step.get("uses") == "actions/checkout@v4"
+        )
+        self.assertEqual(frozen_sha, checkout_step["with"]["ref"])
+        self.assertEqual(1, checkout_step["with"]["fetch-depth"])
+
+        steps_by_name = {
+            step["name"]: step
+            for step in manual_job["steps"]
+            if "name" in step
+        }
+        revision_check = steps_by_name["Enforce frozen release revision"]["run"]
+        self.assertIn('actual_sha="$(git rev-parse HEAD)"', revision_check)
+        self.assertIn('echo "FROZEN_RELEASE_SHA=${FROZEN_RELEASE_SHA}"', revision_check)
+        self.assertIn('echo "ACTUAL_BUILD_SHA=${actual_sha}"', revision_check)
+        self.assertIn('"${actual_sha}" != "${FROZEN_RELEASE_SHA}"', revision_check)
+        self.assertIn("exit 1", revision_check)
+
         self.assertIn("brew install python@3.12", manual)
         self.assertIn('python_prefix="$(brew --prefix python@3.12)"', manual)
         self.assertIn('"${python_bin}" -m venv .venv-ci', manual)
@@ -362,60 +389,99 @@ class PackagingConfigurationTests(unittest.TestCase):
             manual,
             r"brew\s+(?:unlink|link(?:\s+--overwrite)?)\s+openssl(?:@\S+)?",
         )
-        self.assertIn('[[ "$(uname -m)" == "arm64" ]]', manual)
+        self.assertIn('[[ "$(uname -m)" == "${TARGET_ARCH}" ]]', manual)
         self.assertIn("platform.machine()", manual)
         self.assertIn("python scripts/check_sqlite_runtime.py", manual)
-        self.assertIn("bash packaging/build_macos.sh", manual)
-        self.assertIn("packaging/.pyinstaller-dist-macos/KOLConnect.app", manual)
-        self.assertIn('test -d "${app}"', manual)
-        self.assertIn('test -x "${binary}"', manual)
-        self.assertIn("release/KOLConnect_v2.0.0_mac_arm64.dmg", manual)
-        self.assertIn('test -s "${dmg}"', manual)
-        self.assertIn('shasum -a 256 "${dmg}"', manual)
-        self.assertIn('lipo -archs "${binary}"', manual)
-        self.assertIn("codesign --verify --deep --strict", manual)
-        self.assertIn("actions/upload-artifact@v4", manual)
-        self.assertIn("KOLConnect-macOS-arm64-${short_sha}", manual)
-        self.assertIn("name: ${{ env.ARTIFACT_NAME }}", manual)
-        self.assertIn("if-no-files-found: error", manual)
-        self.assertIn("retention-days: 30", manual)
-        self.assertIn("GITHUB_STEP_SUMMARY", manual)
-        self.assertNotIn("continue-on-error", manual)
-        self.assertNotIn("|| true", manual)
-        self.assertNotIn("set +e", manual)
-        self.assertNotIn("scripts/run_python_tests.py", manual)
-        self.assertNotIn("Developer ID", manual)
-        self.assertNotIn("notary", manual.lower())
-        self.assertNotIn("secrets.", manual)
 
-        summary_step = next(
-            step for step in manual_job["steps"] if step.get("name") == "Write build summary"
-        )
-        summary = summary_step["run"]
+        version_check = steps_by_name["Assert v2.0.0 version metadata"]["run"]
+        self.assertIn("from app.version import APP_VERSION", version_check)
+        self.assertIn('expected = "2.0.0"', version_check)
+        self.assertIn("CFBundleShortVersionString", version_check)
+        self.assertIn("CFBundleVersion", version_check)
+
+        release_tests = steps_by_name["Run macOS release contract tests"]["run"]
+        for pattern in (
+            "test_m2_cross_platform_packaging.py",
+            "test_version_consistency.py",
+            "test_targeted_gate_d_macos_keychain.py",
+        ):
+            self.assertIn(f"--pattern {pattern}", release_tests)
+
+        self.assertIn("bash packaging/build_macos.sh", manual)
+        verification = steps_by_name["Verify app architecture, bundle, and resources"]["run"]
+        for contract in (
+            'file "${binary}"',
+            'lipo -info "${binary}"',
+            'lipo -archs "${binary}"',
+            "CFBundleShortVersionString",
+            "CFBundleVersion",
+            "webapp/index.html",
+            "chrome_extension/manifest.json",
+            "chrome_extension/tests",
+            "chrome_extension/README.md",
+            '"${binary}" --sqlite-runtime-check',
+            "codesign --force --deep --sign -",
+            "codesign --verify --deep --strict",
+        ):
+            self.assertIn(contract, verification)
+
+        smoke = steps_by_name["Smoke test packaged app with isolated HOME"]["run"]
+        for contract in (
+            'HOME="${smoke_home}"',
+            'TMPDIR="${smoke_tmp}"',
+            '"${binary}"',
+            "http://127.0.0.1:8765/",
+            "pages/dashboard.js",
+            "Library/Application Support/KOLConnect",
+            "kolconnect.db",
+            "PACKAGED_APP_LAUNCH=PASS",
+            "ISOLATED_HOME_USED=YES",
+        ):
+            self.assertIn(contract, smoke)
+
+        dmg_build = steps_by_name["Create final arm64 DMG"]["run"]
+        self.assertIn("hdiutil create", dmg_build)
+        self.assertIn('"${TARGET_DMG}"', dmg_build)
+        dmg_validation = steps_by_name["Validate DMG and calculate SHA-256"]["run"]
+        self.assertIn("hdiutil attach -readonly -nobrowse", dmg_validation)
+        self.assertIn('test -d "${mount_dir}/KOLConnect.app"', dmg_validation)
+        self.assertIn("shasum -a 256", dmg_validation)
+        self.assertIn("ARTIFACT_SIZE_BYTES=", dmg_validation)
+        self.assertIn("ARTIFACT_SHA256=", dmg_validation)
+        self.assertIn("DMG_VALIDATION=PASS", dmg_validation)
+
+        summary = steps_by_name["Write build summary"]["run"]
         for metadata in (
-            "${FULL_SHA}",
-            "${SHORT_SHA}",
+            "${ACTUAL_BUILD_SHA}",
             "macos-15",
             "arm64",
             "${PYTHON_VERSION}",
-            "KOLConnect_v2.0.0_mac_arm64.dmg",
+            "${TARGET_DMG}",
             "${ARTIFACT_NAME}",
-            "${DMG_SHA256}",
+            "${ARTIFACT_SHA256}",
             "ad-hoc",
             "Notarization: none",
+            "Gatekeeper",
         ):
             self.assertIn(metadata, summary)
 
         upload_step = next(
             step for step in manual_job["steps"] if step.get("uses") == "actions/upload-artifact@v4"
         )
-        self.assertEqual("${{ env.ARTIFACT_NAME }}", upload_step["with"]["name"])
+        self.assertEqual("KOLConnect-v2.0.0-macOS-arm64", upload_step["with"]["name"])
         self.assertEqual(
-            "release/KOLConnect_v2.0.0_mac_arm64.dmg",
+            "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
             upload_step["with"]["path"],
         )
         self.assertEqual("error", upload_step["with"]["if-no-files-found"])
         self.assertEqual(30, upload_step["with"]["retention-days"])
+
+        self.assertNotIn("softprops/action-gh-release", manual)
+        self.assertNotIn("contents: write", manual)
+        self.assertNotIn("continue-on-error", manual)
+        self.assertNotIn("set +e", manual)
+        self.assertNotIn("Developer ID", manual)
+        self.assertNotIn("secrets.", manual)
 
         runner = (ROOT / "tests" / "run_extension_tests.js").read_text(encoding="utf-8")
         self.assertIn(r"/^test_.*\.(js|mjs)$/", runner)

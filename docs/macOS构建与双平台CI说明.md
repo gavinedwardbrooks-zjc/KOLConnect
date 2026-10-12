@@ -1,4 +1,4 @@
-# KOLConnect v0.2.3 macOS 构建与双平台 CI 说明
+# KOLConnect v2.0.0 macOS 构建与双平台 CI 说明
 
 ## 支持边界
 
@@ -34,7 +34,7 @@ bash packaging/build_macos.sh
 3. 使用 `sips` 和 `iconutil` 临时生成 `assets/KOLConnect.icns`。
 4. 使用 `packaging/spec/KOLConnect_mac.spec` 生成 `KOLConnect.app`。
 5. 对 APP 执行 ad-hoc signing 并严格验证签名。
-6. 使用 `hdiutil` 生成 `release/KOLConnect_v0.2.3_mac_arm64.dmg`。
+6. 使用 `hdiutil` 生成 `release/KOLConnect_v2.0.0_mac_arm64.dmg`。
 7. 输出 APP 路径、DMG 路径、实际 CPU 架构和 SHA-256。
 
 不要直接在缺少 `assets/KOLConnect.icns` 时运行 Mac spec；应始终通过 `packaging/build_macos.sh` 先生成图标。
@@ -57,21 +57,41 @@ xattr -cr /Applications/KOLConnect.app
 - CI 不执行打包、签名、DMG 创建或 GitHub Release。
 - Extension 测试由 `tests/run_extension_tests.js` 自动发现 `tests/test_*.js` 与 `tests/test_*.mjs`，新增符合命名规则的测试无需修改 workflow。
 
-`.github/workflows/build.yml` 只负责打包与发布：
+`.github/workflows/build.yml` 只负责常规打包与 tag 发布：
 
-- 手动 `workflow_dispatch`：构建 Windows x64 EXE 和 macOS arm64 DMG，仅保存 Actions artifacts，不创建 Release。
-- 推送未来的 `v*` tag：两端构建成功后，Release job 下载两个 artifacts 并上传到对应 tag 的 GitHub Release。
+- 手动 `workflow_dispatch`：构建 Windows x64、macOS arm64 与 macOS Intel 产物，仅保存 Actions artifacts，不创建 Release。
+- 推送未来的 `v*` tag：各平台构建成功后，Release job 下载 artifacts 并上传到对应 tag 的 GitHub Release。
 - 普通 `main` push 不触发 Build。
 
 macOS job 使用 `macos-15` arm64 runner，并同时检查 `uname -m` 与 `platform.machine()`。任一结果不是 `arm64` 时立即失败，禁止把其他架构错误标记为 arm64。
+
+## v2.0.0 冻结源码手动构建
+
+`.github/workflows/build-macos-client.yml` 是 v2.0.0 arm64 发布候选的手动构建入口。workflow 可以在冻结之后提交，但其 checkout 和紧随其后的 SHA 断言始终将应用源码锁定到：
+
+```text
+5aa4f5f50d1decd4fc49b84b268526e96e52a231
+```
+
+该 workflow 使用 `macos-15` 原生 arm64 runner，在构建前验证版本元数据并运行 macOS packaging、版本一致性和 Keychain 合同测试。构建后同时使用 `file` 与 `lipo` 验证架构，读取 APP bundle 的 `CFBundleShortVersionString` 和 `CFBundleVersion`，检查打包资源，并以隔离的临时 `HOME` 启动实际 `KOLConnect.app`，验证 localhost UI 和用户数据目录。
+
+最终 Actions artifact 名为 `KOLConnect-v2.0.0-macOS-arm64`，其中包含：
+
+```text
+KOLConnect_v2.0.0_macOS_arm64.dmg
+```
+
+workflow 会挂载 DMG 确认其中包含 `KOLConnect.app`，并在日志和 Job Summary 中输出实际文件大小与 DMG 文件的 SHA-256。运行完成后，在 GitHub Actions 对应 run 的 Artifacts 区域下载；该手动 workflow 不创建或修改 GitHub Release。
+
+当前 APP 仅使用 ad-hoc signing，不包含 Apple Developer ID 签名，也未 notarize。从 GitHub 下载后 macOS Gatekeeper 可能显示警告，这是当前分发边界，不应将该产物描述为已公证。
 
 ## 首次 CI 验证
 
 首次验证只应从 GitHub Actions 手动运行 `Build` workflow，不创建 tag。成功后确认 artifacts 包含：
 
-- `KOLConnect_v0.2.3.exe`
-- `KOLConnect_v0.2.3_mac_arm64.dmg`
-- `KOLConnect_v0.2.3_mac_intel.dmg`
+- `KOLConnect_v2.0.0.zip`
+- `KOLConnect_v2.0.0_macOS_arm64.dmg`
+- `KOLConnect_v2.0.0_mac_intel.dmg`（可选的独立 Intel 构建）
 
 然后在真实 Apple Silicon Mac 上检查：
 
