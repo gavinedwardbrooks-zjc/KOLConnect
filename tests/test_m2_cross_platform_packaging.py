@@ -357,6 +357,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
         self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
         self.assertEqual("14", workflow_env["TARGET_MIN_MACOS_MAJOR"])
+        self.assertEqual("frozen-src", workflow_env["FROZEN_PRODUCT_ROOT"])
         matrix = manual_job["strategy"]["matrix"]["include"]
         self.assertFalse(manual_job["strategy"]["fail-fast"])
         self.assertEqual(
@@ -386,11 +387,16 @@ class PackagingConfigurationTests(unittest.TestCase):
             },
         )
 
-        checkout_step = next(
+        checkout_steps = [
             step for step in manual_job["steps"] if step.get("uses") == "actions/checkout@v4"
-        )
-        self.assertEqual(frozen_sha, checkout_step["with"]["ref"])
-        self.assertEqual(1, checkout_step["with"]["fetch-depth"])
+        ]
+        self.assertEqual(2, len(checkout_steps))
+        root_checkout, frozen_checkout = checkout_steps
+        self.assertEqual("main", root_checkout["with"]["ref"])
+        self.assertNotIn("path", root_checkout["with"])
+        self.assertEqual(frozen_sha, frozen_checkout["with"]["ref"])
+        self.assertEqual("frozen-src", frozen_checkout["with"]["path"])
+        self.assertEqual(1, frozen_checkout["with"]["fetch-depth"])
 
         steps_by_name = {
             step["name"]: step
@@ -398,13 +404,13 @@ class PackagingConfigurationTests(unittest.TestCase):
             if "name" in step
         }
         revision_check = steps_by_name["Enforce frozen release revision"]["run"]
-        self.assertIn('actual_sha="$(git rev-parse HEAD)"', revision_check)
+        self.assertIn('git -C "${FROZEN_PRODUCT_ROOT}" rev-parse HEAD', revision_check)
         self.assertIn('"${actual_sha}" == "${FROZEN_RELEASE_SHA}"', revision_check)
         self.assertIn("exit 1", revision_check)
 
         self.assertIn("brew install python@3.12", manual)
         self.assertIn('python_prefix="$(brew --prefix python@3.12)"', manual)
-        self.assertIn('"${python_bin}" -m venv .venv-ci', manual)
+        self.assertIn('"${python_bin}" -m venv "${FROZEN_PRODUCT_ROOT}/.venv-ci"', manual)
         self.assertNotIn("actions/setup-python", manual)
         self.assertNotRegex(
             manual,
@@ -412,7 +418,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertIn('[[ "$(uname -m)" == "${TARGET_ARCH}" ]]', manual)
         self.assertIn("platform.machine()", manual)
-        self.assertIn("python scripts/check_sqlite_runtime.py", manual)
+        self.assertIn('python "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"', manual)
 
         version_check = steps_by_name["Assert v2.0.0 version metadata"]["run"]
         self.assertIn("from app.version import APP_VERSION", version_check)
@@ -429,6 +435,16 @@ class PackagingConfigurationTests(unittest.TestCase):
             self.assertIn(f"--pattern {pattern}", release_tests)
 
         self.assertIn("bash packaging/build_macos.sh", manual)
+        build_step = steps_by_name["Build native macOS client"]
+        self.assertEqual("frozen-src", build_step["working-directory"])
+        self.assertEqual(
+            "frozen-src",
+            steps_by_name["Install packaging dependencies"]["working-directory"],
+        )
+        self.assertEqual(
+            "frozen-src",
+            steps_by_name["Assert v2.0.0 version metadata"]["working-directory"],
+        )
         verification = steps_by_name["Verify macOS 14+ deployment targets and packaged resources"]["run"]
         for contract in (
             'file "${target}"',
@@ -439,6 +455,7 @@ class PackagingConfigurationTests(unittest.TestCase):
             "PYEXPAT",
             "pyexpat.cpython-312-darwin.so",
             "TARGET_MIN_MACOS_MAJOR",
+            "FROZEN_PRODUCT_ROOT",
             "CFBundleShortVersionString",
             "CFBundleVersion",
             "webapp/index.html",
@@ -469,7 +486,7 @@ class PackagingConfigurationTests(unittest.TestCase):
 
         dmg_build = steps_by_name["Create final macOS 14+ DMG"]["run"]
         self.assertIn("hdiutil create", dmg_build)
-        self.assertIn('"${TARGET_DMG}"', dmg_build)
+        self.assertIn('product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"', dmg_build)
         dmg_validation = steps_by_name["Validate DMG and calculate SHA-256"]["run"]
         self.assertIn("hdiutil attach -readonly -nobrowse", dmg_validation)
         self.assertIn('test -d "${mount_dir}/KOLConnect.app"', dmg_validation)
@@ -497,7 +514,7 @@ class PackagingConfigurationTests(unittest.TestCase):
             step for step in manual_job["steps"] if step.get("uses") == "actions/upload-artifact@v4"
         )
         self.assertEqual("${{ matrix.artifact_name }}", upload_step["with"]["name"])
-        self.assertEqual("${{ matrix.target_dmg }}", upload_step["with"]["path"])
+        self.assertEqual("frozen-src/${{ matrix.target_dmg }}", upload_step["with"]["path"])
         self.assertEqual("error", upload_step["with"]["if-no-files-found"])
         self.assertEqual(30, upload_step["with"]["retention-days"])
 

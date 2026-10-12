@@ -10,6 +10,7 @@ env:
   FROZEN_RELEASE_SHA: 5aa4f5f50d1decd4fc49b84b268526e96e52a231
   PRODUCT_VERSION: 2.0.0
   TARGET_MIN_MACOS_MAJOR: "14"
+  FROZEN_PRODUCT_ROOT: frozen-src
 
 jobs:
   build-macos-client:
@@ -47,17 +48,24 @@ jobs:
       ARTIFACT_NAME: ${{ matrix.artifact_name }}
       APP_PATH: ${{ matrix.app_path }}
     steps:
-      - name: Check out frozen application source
+      - name: Check out workflow infrastructure from latest main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Check out frozen application source separately
         uses: actions/checkout@v4
         with:
           ref: 5aa4f5f50d1decd4fc49b84b268526e96e52a231
+          path: frozen-src
           fetch-depth: 1
 
       - name: Enforce frozen release revision
         shell: bash
         run: |
           set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
+          actual_sha="$(git -C "${FROZEN_PRODUCT_ROOT}" rev-parse HEAD)"
           echo "FROZEN_RELEASE_SHA=${FROZEN_RELEASE_SHA}"
           echo "ACTUAL_BUILD_SHA=${actual_sha}"
           [[ "${actual_sha}" == "${FROZEN_RELEASE_SHA}" ]] || { echo "Frozen release revision mismatch." >&2; exit 1; }
@@ -76,8 +84,8 @@ jobs:
           python_bin="${python_prefix}/bin/python3.12"
           test -x "${python_bin}"
           "${python_bin}" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
-          "${python_bin}" -m venv .venv-ci
-          echo "${PWD}/.venv-ci/bin" >> "${GITHUB_PATH}"
+          "${python_bin}" -m venv "${FROZEN_PRODUCT_ROOT}/.venv-ci"
+          echo "${PWD}/${FROZEN_PRODUCT_ROOT}/.venv-ci/bin" >> "${GITHUB_PATH}"
 
       - name: Validate native build runtime
         shell: bash
@@ -86,13 +94,15 @@ jobs:
           [[ "$(uname -m)" == "${TARGET_ARCH}" ]]
           [[ "$(python -c 'import platform; print(platform.machine())')" == "${TARGET_ARCH}" ]]
           python -c 'import sys; assert sys.version_info[:2] == (3, 12)'
-          python scripts/check_sqlite_runtime.py
+          python "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"
           echo "PYTHON_VERSION=$(python --version 2>&1)" >> "${GITHUB_ENV}"
 
       - name: Install packaging dependencies
+        working-directory: frozen-src
         run: python -m pip install -r packaging/requirements-build.txt
 
       - name: Assert v2.0.0 version metadata
+        working-directory: frozen-src
         shell: bash
         run: |
           set -euo pipefail
@@ -124,6 +134,7 @@ jobs:
           python scripts/run_python_tests.py --pattern test_targeted_gate_d_macos_keychain.py --verbosity 2
 
       - name: Build native macOS client
+        working-directory: frozen-src
         shell: bash
         run: |
           set -euo pipefail
@@ -136,7 +147,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app="${APP_PATH}"
+          app="${FROZEN_PRODUCT_ROOT}/${APP_PATH}"
           binary="${app}/Contents/MacOS/KOLConnect"
           plist="${app}/Contents/Info.plist"
           test -d "${app}"; test -x "${binary}"; test -f "${plist}"
@@ -180,7 +191,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          app="${APP_PATH}"; binary="${app}/Contents/MacOS/KOLConnect"
+          app="${FROZEN_PRODUCT_ROOT}/${APP_PATH}"; binary="${app}/Contents/MacOS/KOLConnect"
           smoke_root="$(mktemp -d "${RUNNER_TEMP}/kolconnect-smoke.XXXXXX")"
           smoke_home="${smoke_root}/home"; smoke_tmp="${smoke_root}/tmp"; stdout_log="${smoke_root}/stdout.log"; stderr_log="${smoke_root}/stderr.log"
           mkdir -p "${smoke_home}" "${smoke_tmp}"
@@ -213,24 +224,26 @@ jobs:
           set -euo pipefail
           dmg_stage="$(mktemp -d "${RUNNER_TEMP}/kolconnect-dmg-stage.XXXXXX")"
           trap 'rm -rf "${dmg_stage}"' EXIT
-          ditto "${APP_PATH}" "${dmg_stage}/KOLConnect.app"
+          ditto "${FROZEN_PRODUCT_ROOT}/${APP_PATH}" "${dmg_stage}/KOLConnect.app"
           ln -s /Applications "${dmg_stage}/Applications"
-          rm -f "${TARGET_DMG}"
-          hdiutil create -volname "KOLConnect v2.0.0" -srcfolder "${dmg_stage}" -ov -format UDZO "${TARGET_DMG}"
+          product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"
+          rm -f "${product_dmg}"
+          hdiutil create -volname "KOLConnect v2.0.0" -srcfolder "${dmg_stage}" -ov -format UDZO "${product_dmg}"
 
       - name: Validate DMG and calculate SHA-256
         shell: bash
         run: |
           set -euo pipefail
-          test -s "${TARGET_DMG}"
-          test "${TARGET_DMG}" -nt "${RUNNER_TEMP}/kolconnect-macos-build-started"
+          product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"
+          test -s "${product_dmg}"
+          test "${product_dmg}" -nt "${RUNNER_TEMP}/kolconnect-macos-build-started"
           mount_dir="$(mktemp -d "${RUNNER_TEMP}/kolconnect-dmg.XXXXXX")"
           trap 'hdiutil detach "${mount_dir}" >/dev/null 2>&1 || true; rmdir "${mount_dir}" >/dev/null 2>&1 || true' EXIT
-          hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${TARGET_DMG}" >/dev/null
+          hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${product_dmg}" >/dev/null
           test -d "${mount_dir}/KOLConnect.app"; test -L "${mount_dir}/Applications"
           [[ "$(lipo -archs "${mount_dir}/KOLConnect.app/Contents/MacOS/KOLConnect")" == "${TARGET_ARCH}" ]]
           hdiutil detach "${mount_dir}" >/dev/null
-          artifact_size="$(stat -f '%z' "${TARGET_DMG}")"; artifact_sha256="$(shasum -a 256 "${TARGET_DMG}" | awk '{print $1}')"
+          artifact_size="$(stat -f '%z' "${product_dmg}")"; artifact_sha256="$(shasum -a 256 "${product_dmg}" | awk '{print $1}')"
           [[ "${artifact_size}" -gt 0 ]]
           echo "ARTIFACT_SIZE_BYTES=${artifact_size}" >> "${GITHUB_ENV}"
           echo "ARTIFACT_SHA256=${artifact_sha256}" >> "${GITHUB_ENV}"
@@ -246,7 +259,7 @@ jobs:
             echo "- Architecture: ${TARGET_ARCH}"
             echo "- Python: ${PYTHON_VERSION}"
             echo "- Minimum macOS: ${TARGET_MIN_MACOS_MAJOR}+ (verified by vtool)"
-            echo "- DMG: $(basename "${TARGET_DMG}")"
+            echo "- DMG: ${FROZEN_PRODUCT_ROOT}/$(basename "${TARGET_DMG}")"
             echo "- Actions artifact: ${ARTIFACT_NAME}"
             echo "- Size: ${ARTIFACT_SIZE_BYTES} bytes"
             echo "- SHA-256: ${ARTIFACT_SHA256}"
@@ -257,6 +270,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.target_dmg }}
+          path: frozen-src/${{ matrix.target_dmg }}
           if-no-files-found: error
           retention-days: 30

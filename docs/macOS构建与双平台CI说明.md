@@ -67,7 +67,7 @@ macOS job 使用 `macos-15` arm64 runner，并同时检查 `uname -m` 与 `platf
 
 ## v2.0.0 冻结源码手动构建
 
-`.github/workflows/build-macos-client.yml` 是 v2.0.0 macOS 14+ 双架构发布候选的手动构建入口。workflow 可以在冻结之后提交，但每个 matrix job 的 checkout 和紧随其后的 SHA 断言始终将应用源码锁定到：
+`.github/workflows/build-macos-client.yml` 是 v2.0.0 macOS 14+ 双架构发布候选的手动构建入口。workflow root checkout 保留触发时的最新主线基础设施和合同测试；每个 matrix job 将冻结应用源码单独 checkout 到 `frozen-src/`，并在该目录中验证 SHA：
 
 ```text
 5aa4f5f50d1decd4fc49b84b268526e96e52a231
