@@ -340,7 +340,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(build.count('retention-days: 30'), 3)
         self.assertEqual(build.count('GITHUB_STEP_SUMMARY'), 3)
 
-        self.assertIn("name: Build macOS Client", manual)
+        self.assertIn("name: Build macOS 14+ Clients", manual)
         self.assertRegex(manual, r"(?m)^on:\n  workflow_dispatch:\s*$")
         for forbidden_trigger in ("push", "pull_request", "schedule", "workflow_run"):
             self.assertNotRegex(manual, rf"(?m)^  {forbidden_trigger}:")
@@ -348,7 +348,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(["build-macos-client"], list(manual_workflow["jobs"]))
         self.assertEqual({"contents": "read"}, manual_workflow["permissions"])
         manual_job = manual_workflow["jobs"]["build-macos-client"]
-        self.assertEqual("macos-15", manual_job["runs-on"])
+        self.assertEqual("${{ matrix.runner }}", manual_job["runs-on"])
         self.assertNotIn("needs", manual_job)
         self.assertEqual("1", manual_job["env"]["HOMEBREW_NO_AUTO_UPDATE"])
 
@@ -356,12 +356,35 @@ class PackagingConfigurationTests(unittest.TestCase):
         workflow_env = manual_workflow["env"]
         self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
         self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
-        self.assertEqual("arm64", workflow_env["TARGET_ARCH"])
+        self.assertEqual("14", workflow_env["TARGET_MIN_MACOS_MAJOR"])
+        matrix = manual_job["strategy"]["matrix"]["include"]
+        self.assertFalse(manual_job["strategy"]["fail-fast"])
         self.assertEqual(
-            "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
-            workflow_env["TARGET_DMG"],
+            {
+                entry["arch"]: entry
+                for entry in matrix
+            },
+            {
+                "arm64": {
+                    "arch": "arm64",
+                    "runner": "macos-14",
+                    "build_argument": "",
+                    "source_dmg": "release/KOLConnect_v2.0.0_mac_arm64.dmg",
+                    "target_dmg": "release/KOLConnect_v2.0.0_macOS14+_arm64.dmg",
+                    "artifact_name": "KOLConnect-v2.0.0-macOS14-arm64",
+                    "app_path": "packaging/.pyinstaller-dist-macos/KOLConnect.app",
+                },
+                "x86_64": {
+                    "arch": "x86_64",
+                    "runner": "macos-15-intel",
+                    "build_argument": "x86_64",
+                    "source_dmg": "release/KOLConnect_v2.0.0_mac_intel.dmg",
+                    "target_dmg": "release/KOLConnect_v2.0.0_macOS14+_x64.dmg",
+                    "artifact_name": "KOLConnect-v2.0.0-macOS14-x64",
+                    "app_path": "dist/pyinstaller-macos-intel/KOLConnect.app",
+                },
+            },
         )
-        self.assertEqual("KOLConnect-v2.0.0-macOS-arm64", workflow_env["ARTIFACT_NAME"])
 
         checkout_step = next(
             step for step in manual_job["steps"] if step.get("uses") == "actions/checkout@v4"
@@ -376,9 +399,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         }
         revision_check = steps_by_name["Enforce frozen release revision"]["run"]
         self.assertIn('actual_sha="$(git rev-parse HEAD)"', revision_check)
-        self.assertIn('echo "FROZEN_RELEASE_SHA=${FROZEN_RELEASE_SHA}"', revision_check)
-        self.assertIn('echo "ACTUAL_BUILD_SHA=${actual_sha}"', revision_check)
-        self.assertIn('"${actual_sha}" != "${FROZEN_RELEASE_SHA}"', revision_check)
+        self.assertIn('"${actual_sha}" == "${FROZEN_RELEASE_SHA}"', revision_check)
         self.assertIn("exit 1", revision_check)
 
         self.assertIn("brew install python@3.12", manual)
@@ -408,11 +429,16 @@ class PackagingConfigurationTests(unittest.TestCase):
             self.assertIn(f"--pattern {pattern}", release_tests)
 
         self.assertIn("bash packaging/build_macos.sh", manual)
-        verification = steps_by_name["Verify app architecture, bundle, and resources"]["run"]
+        verification = steps_by_name["Verify macOS 14+ deployment targets and packaged resources"]["run"]
         for contract in (
-            'file "${binary}"',
-            'lipo -info "${binary}"',
-            'lipo -archs "${binary}"',
+            'file "${target}"',
+            'lipo -info "${target}"',
+            'lipo -archs "${target}"',
+            'otool -l "${target}"',
+            "vtool -show-build",
+            "PYEXPAT",
+            "pyexpat.cpython-312-darwin.so",
+            "TARGET_MIN_MACOS_MAJOR",
             "CFBundleShortVersionString",
             "CFBundleVersion",
             "webapp/index.html",
@@ -425,7 +451,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         ):
             self.assertIn(contract, verification)
 
-        smoke = steps_by_name["Smoke test packaged app with isolated HOME"]["run"]
+        smoke = steps_by_name["Smoke test packaged imports and app with isolated HOME"]["run"]
         for contract in (
             'HOME="${smoke_home}"',
             'TMPDIR="${smoke_tmp}"',
@@ -434,12 +460,14 @@ class PackagingConfigurationTests(unittest.TestCase):
             "pages/dashboard.js",
             "Library/Application Support/KOLConnect",
             "kolconnect.db",
+            "PACKAGED_EXPAT_SMOKE=PASS",
+            "PACKAGED_ELEMENTTREE_SMOKE=PASS",
+            "PACKAGED_OPENPYXL_SMOKE=PASS",
             "PACKAGED_APP_LAUNCH=PASS",
-            "ISOLATED_HOME_USED=YES",
         ):
             self.assertIn(contract, smoke)
 
-        dmg_build = steps_by_name["Create final arm64 DMG"]["run"]
+        dmg_build = steps_by_name["Create final macOS 14+ DMG"]["run"]
         self.assertIn("hdiutil create", dmg_build)
         self.assertIn('"${TARGET_DMG}"', dmg_build)
         dmg_validation = steps_by_name["Validate DMG and calculate SHA-256"]["run"]
@@ -453,14 +481,14 @@ class PackagingConfigurationTests(unittest.TestCase):
         summary = steps_by_name["Write build summary"]["run"]
         for metadata in (
             "${ACTUAL_BUILD_SHA}",
-            "macos-15",
-            "arm64",
+            "${{ matrix.runner }}",
+            "${TARGET_ARCH}",
             "${PYTHON_VERSION}",
             "${TARGET_DMG}",
             "${ARTIFACT_NAME}",
             "${ARTIFACT_SHA256}",
             "ad-hoc",
-            "Notarization: none",
+            "notarization: none",
             "Gatekeeper",
         ):
             self.assertIn(metadata, summary)
@@ -468,11 +496,8 @@ class PackagingConfigurationTests(unittest.TestCase):
         upload_step = next(
             step for step in manual_job["steps"] if step.get("uses") == "actions/upload-artifact@v4"
         )
-        self.assertEqual("KOLConnect-v2.0.0-macOS-arm64", upload_step["with"]["name"])
-        self.assertEqual(
-            "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
-            upload_step["with"]["path"],
-        )
+        self.assertEqual("${{ matrix.artifact_name }}", upload_step["with"]["name"])
+        self.assertEqual("${{ matrix.target_dmg }}", upload_step["with"]["path"])
         self.assertEqual("error", upload_step["with"]["if-no-files-found"])
         self.assertEqual(30, upload_step["with"]["retention-days"])
 
