@@ -489,6 +489,9 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("CUSTOM_PYTHON_PREFIX", manual)
         self.assertIn('ln -sf python3 "${python_prefix}/bin/python"', manual)
         self.assertIn('[[ "$(command -v python)" == "${CUSTOM_PYTHON_PREFIX}/bin/python" ]]', manual)
+        self.assertIn("--enable-shared", manual)
+        self.assertIn('libpython3.12.dylib', manual)
+        self.assertIn('shared_minos=', manual)
         self.assertNotRegex(
             manual,
             r"brew\s+(?:unlink|link(?:\s+--overwrite)?)\s+openssl(?:@\S+)?",
