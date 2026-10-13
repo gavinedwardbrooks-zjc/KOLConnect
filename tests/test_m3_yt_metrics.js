@@ -136,7 +136,7 @@ globalThis.chrome = {
           ytInitialData: {
             contents: [{
               shortsLockupViewModel: {
-                videoId: "videoB",
+                videoId: "videoB12345",
                 headline: { simpleText: "Fixture Short B" },
                 overlayMetadata: { secondaryText: { content: "7 days ago" } }
               }

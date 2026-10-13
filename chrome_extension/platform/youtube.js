@@ -61,6 +61,8 @@ function collectYouTubePage() {
   let metadata = null;
   let headerName = "";
   let subscribers = "";
+  let subscriberHidden = false;
+  let subscriberSource = "";
   let country = "";
   let language = "";
   const queue = [window.ytInitialData, window.ytInitialPlayerResponse].filter(Boolean);
@@ -99,8 +101,20 @@ function collectYouTubePage() {
     if (!language && node.microformatDataRenderer?.language) {
       language = textFrom(node.microformatDataRenderer.language);
     }
+    if (
+      !subscribers
+      && /(?:^|\/)FollowAction$/i.test(String(node.interactionType?.type || ""))
+      && node.userInteractionCount != null
+    ) {
+      subscribers = textFrom(node.userInteractionCount);
+      if (subscribers) subscriberSource = "ytInitialData.interactionStatistic";
+    }
     for (const [key, value] of Object.entries(node)) {
-      if (!subscribers && /subscriberCountText/i.test(key)) subscribers = textFrom(value);
+      if (!subscribers && /^(?:subscriberCountText|subscriberCount)$/i.test(key)) {
+        subscribers = textFrom(value);
+        if (subscribers) subscriberSource = `ytInitialData.${key}`;
+      }
+      if (/^hiddenSubscriberCount$/i.test(key) && value === true) subscriberHidden = true;
       if (value && typeof value === "object") queue.push(value);
     }
   }
@@ -108,7 +122,15 @@ function collectYouTubePage() {
   const domName = text("yt-page-header-renderer h1")
     || text("ytd-c4-tabbed-header-renderer #channel-name")
     || text("#page-header #channel-name");
-  const domSubscribers = text("#subscriber-count") || text("yt-formatted-string#subscriber-count");
+  const localizedSubscriberText = [...document.querySelectorAll(
+    "yt-content-metadata-view-model [aria-label], yt-page-header-renderer [aria-label]"
+  )]
+    .map((node) => clean(node.getAttribute("aria-label") || node.textContent, 128))
+    .find((value) => /(?:位)?(?:订阅者|訂閱者)|\bsubscribers?\b|\binscritos?\b|\bsuscriptores?\b|\babonn[ée]s?\b/i.test(value))
+    || "";
+  const domSubscribers = text("#subscriber-count")
+    || text("yt-formatted-string#subscriber-count")
+    || localizedSubscriberText;
   const domDescriptionNode = document.querySelector(
     "ytd-channel-about-metadata-renderer #description, yt-description-preview-view-model #description, #description-container #description"
   );
@@ -133,19 +155,24 @@ function collectYouTubePage() {
       profile_url: field(profileUrl, "url", "high", ""),
       username: field(identifier, "url", "high", ""),
       creator_name: field(creatorName, creatorNameSource, metadataName || headerName || domName ? "high" : "medium", "Creator name was not exposed by the current public page."),
-      followers: field(subscribers || domSubscribers, subscribers ? "ytInitialData" : "page_dom", "high", "Subscriber count was not exposed by the current public page."),
+      followers: field(
+        subscribers || domSubscribers,
+        subscribers ? "ytInitialData" : "page_dom",
+        "high",
+        subscriberHidden
+          ? "The YouTube channel explicitly marks its subscriber count as hidden."
+          : "Subscriber count was not found in supported public YouTube profile sources."
+      ),
       bio: field(null, "", "missing", "The current YouTube channel page did not expose a public description.")
     },
     bio_candidates: [
       { source: "structured_data", value: multiline(metadata?.description) },
-      { source: "profile_dom", value: domDescription },
-      { source: "meta", value: metaDescription }
+      { source: "profile_dom", value: domDescription }
     ],
     public_profile: {
       email_candidates: [
         ...contactLinks.map((value) => ({ source: "profile_dom", value })),
-        { source: "profile_dom", value: domDescription },
-        { source: "meta", value: metaDescription }
+        { source: "profile_dom", value: domDescription }
       ],
       whatsapp_candidates: [
         ...contactLinks.map((value) => ({ source: "profile_dom", value })),
@@ -153,6 +180,13 @@ function collectYouTubePage() {
       ],
       country_candidates: [{ source: "structured_data", value: country }],
       language_candidates: [{ source: "structured_data", value: language }]
+    },
+    profile_diagnostics: {
+      structured_source_present: Boolean(window.ytInitialData || window.ytInitialPlayerResponse),
+      subscriber_candidate_source: subscriberSource || (domSubscribers ? "page_dom" : "missing"),
+      subscriber_visibility: subscriberHidden ? "publicly_hidden" : subscribers || domSubscribers ? "public" : "not_found",
+      bio_meta_rejected: Boolean(metaDescription),
+      bio_meta_rejection_reason: metaDescription ? "generic_meta_not_channel_owned" : ""
     },
     searched_sources: ["ytInitialData", "page_dom", "meta", "url"],
     errors: []
@@ -190,13 +224,22 @@ export async function collectProfile(tabId) {
           confidence: "high",
           missing_reason: ""
         };
+        result.profile_diagnostics ||= {};
+        result.profile_diagnostics.subscriber_candidate_source = "channel_home_structured_data";
+        result.profile_diagnostics.subscriber_visibility = "public";
       } else {
         result.fields.followers = {
           value: null,
           source: "missing",
           confidence: "missing",
-          missing_reason: "The YouTube channel hides or does not expose its subscriber count."
+          missing_reason: homeResult?.subscriber_hidden
+            ? "The YouTube channel explicitly marks its subscriber count as hidden."
+            : "Subscriber count was not found in supported public YouTube profile sources."
         };
+        result.profile_diagnostics ||= {};
+        result.profile_diagnostics.subscriber_visibility = homeResult?.subscriber_hidden
+          ? "publicly_hidden"
+          : "not_found";
       }
     }
     if (!hasText(result.fields.creator_name?.value) && hasText(homeResult?.creator_name)) {
@@ -231,7 +274,9 @@ export async function collectProfile(tabId) {
       value: null,
       source: "missing",
       confidence: "missing",
-      missing_reason: "The YouTube channel hides or does not expose its subscriber count."
+      missing_reason: result.profile_diagnostics?.subscriber_visibility === "publicly_hidden"
+        ? "The YouTube channel explicitly marks its subscriber count as hidden."
+        : "Subscriber count was not found in supported public YouTube profile sources."
     };
   }
   applyPublicProfileFields(result);
@@ -295,6 +340,7 @@ async function fetchYouTubeChannelHomeData(homeUrl) {
     const seen = new WeakSet();
     let visited = 0;
     let subscribers = "";
+    let subscriberHidden = false;
     let creatorName = "";
     let description = "";
     while (queue.length && visited < 12000) {
@@ -322,20 +368,29 @@ async function fetchYouTubeChannelHomeData(homeUrl) {
       if (node.pageHeaderViewModel) {
         creatorName ||= textFrom(node.pageHeaderViewModel.title);
       }
+      if (
+        !subscribers
+        && /(?:^|\/)FollowAction$/i.test(String(node.interactionType?.type || ""))
+        && node.userInteractionCount != null
+      ) {
+        subscribers = textFrom(node.userInteractionCount);
+      }
       for (const [key, value] of Object.entries(node)) {
         if (!subscribers && /^(?:subscriberCountText|subscriberCount)$/i.test(key)) {
           subscribers = textFrom(value);
         }
+        if (/^hiddenSubscriberCount$/i.test(key) && value === true) subscriberHidden = true;
         if (value && typeof value === "object") queue.push(value);
       }
     }
     return {
       subscribers: subscribers || null,
+      subscriber_hidden: subscriberHidden,
       creator_name: creatorName || null,
       description: description || null
     };
   } catch (_) {
-    return { subscribers: null, creator_name: null, description: null };
+    return { subscribers: null, subscriber_hidden: false, creator_name: null, description: null };
   }
 }
 
@@ -381,18 +436,22 @@ async function discoverYouTubeContent(targetUrl, contentType) {
   if (!root) {
     try {
       const response = await fetch(targetUrl, { credentials: "include", redirect: "follow" });
-      if (!response.ok) return [];
+      if (!response.ok) root = null;
       const html = await response.text();
-      root = extractAssignedJson(html, "var ytInitialData =")
-        || extractAssignedJson(html, 'window["ytInitialData"] =')
-        || extractAssignedJson(html, "ytInitialData =");
+      if (response.ok) {
+        root = extractAssignedJson(html, "var ytInitialData =")
+          || extractAssignedJson(html, 'window["ytInitialData"] =')
+          || extractAssignedJson(html, "ytInitialData =");
+      }
     } catch (_) {
-      return [];
+      root = null;
     }
   }
-  if (!root) return [];
 
   const byId = new Map();
+  let structuredCandidateCount = 0;
+  let domCandidateCount = 0;
+  const validVideoId = (value) => /^[A-Za-z0-9_-]{11}$/.test(String(value || ""));
   const add = (node, rendererType) => {
     const videoId = clean(
       node.videoId
@@ -400,7 +459,8 @@ async function discoverYouTubeContent(targetUrl, contentType) {
       || node.command?.reelWatchEndpoint?.videoId,
       128
     );
-    if (!videoId) return;
+    if (!validVideoId(videoId)) return;
+    structuredCandidateCount += 1;
     const isShort = contentType === "short";
     const metadata = node.overlayMetadata?.primaryText || node.overlayMetadata?.secondaryText;
     const accessibility = textFrom(
@@ -426,6 +486,7 @@ async function discoverYouTubeContent(targetUrl, contentType) {
       ? selectedRenderer.source
       : accessibilityViewsCandidate ? "accessibility" : "missing";
     const publishedText = textFrom(node.publishedTimeText);
+    if (byId.has(videoId)) return;
     byId.set(videoId, {
       video_id: videoId,
       video_url: isShort
@@ -443,7 +504,7 @@ async function discoverYouTubeContent(targetUrl, contentType) {
     });
   };
 
-  const queue = [root];
+  const queue = root ? [root] : [];
   const seen = new WeakSet();
   let visited = 0;
   while (queue.length && visited < 18000 && byId.size < 60) {
@@ -463,7 +524,65 @@ async function discoverYouTubeContent(targetUrl, contentType) {
       if (child && typeof child === "object") queue.push(child);
     }
   }
-  return [...byId.values()];
+
+  if (contentType === "short" && typeof document !== "undefined") {
+    const contentRoot = document.querySelector("ytd-rich-grid-renderer #contents, ytd-rich-grid-renderer")
+      || document.querySelector("main")
+      || document;
+    const anchors = [...contentRoot.querySelectorAll('a[href*="/shorts/"]')];
+    for (const anchor of anchors) {
+      let parsed;
+      try {
+        parsed = new URL(anchor.href || anchor.getAttribute("href"), location.origin);
+      } catch (_) {
+        continue;
+      }
+      const match = parsed.pathname.match(/^\/shorts\/([A-Za-z0-9_-]{11})(?:\/|$)/);
+      const videoId = match?.[1] || "";
+      if (!validVideoId(videoId)) continue;
+      domCandidateCount += 1;
+      if (byId.has(videoId)) continue;
+      const card = anchor.closest(
+        "ytd-rich-item-renderer, ytm-shorts-lockup-view-model, ytd-reel-item-renderer, ytd-grid-video-renderer"
+      ) || anchor;
+      const cardText = clean(
+        card.getAttribute?.("aria-label")
+        || anchor.getAttribute?.("aria-label")
+        || card.innerText
+        || card.textContent
+      );
+      const hasViewsSemantics = (value) => /\bviews?\b|(?:次)?观看|(?:次)?觀看|播放(?:量|次数|次數)?|visualiza(?:ção|ções)|vistas?/i.test(value);
+      const views = /\d/.test(cardText) && hasViewsSemantics(cardText)
+        ? cardText.match(
+            /[\d.,]+\s*(?:K|M|B|万|萬|億|亿|mio|mil|mi)?\s*(?:(?:次)?(?:观看|觀看)|播放(?:量|次数|次數)?|views?|visualiza(?:ção|ções)|vistas?)/i
+          )?.[0] || null
+        : null;
+      byId.set(videoId, {
+        video_id: videoId,
+        video_url: `https://www.youtube.com/shorts/${videoId}`,
+        title: clean(anchor.getAttribute?.("title") || anchor.textContent) || null,
+        views,
+        likes: null,
+        comments: null,
+        published_at: null,
+        published_raw_text: "",
+        is_pinned: false,
+        source: "page_dom:shorts_anchor",
+        views_source_hint: views ? "card_semantic_text" : "missing"
+      });
+      if (byId.size >= 60) break;
+    }
+  }
+
+  return {
+    items: [...byId.values()],
+    diagnostics: {
+      structured_source_present: Boolean(root),
+      structured_candidate_count: structuredCandidateCount,
+      dom_candidate_count: domCandidateCount,
+      unique_video_count: byId.size
+    }
+  };
 }
 
 async function fetchYouTubeContentDetail(videoId) {
@@ -860,11 +979,12 @@ export async function collectRecentContent(tabId, options = {}) {
   const limit = Math.max(1, Math.min(30, Number(options.limit) || 30));
   const target = youtubeContentTarget(options.analysisUrl);
   options.onProgress?.({ phase: "discovering" });
-  const discovered = await executePageFunction(
+  const discovery = await executePageFunction(
     tabId,
     discoverYouTubeContent,
     [target.targetUrl, target.contentType]
   );
+  const discovered = Array.isArray(discovery) ? discovery : discovery?.items || [];
   const eligible = discovered.slice(0, limit);
   options.onProgress?.({
     phase: "discovered",
@@ -899,6 +1019,16 @@ export async function collectRecentContent(tabId, options = {}) {
     contentType: target.contentType
   });
   analysis.rss_date_enrichment = enriched.diagnostics;
+  analysis.capture_diagnostics = {
+    youtube_discovery: Array.isArray(discovery)
+      ? {
+          structured_source_present: null,
+          structured_candidate_count: null,
+          dom_candidate_count: null,
+          unique_video_count: discovered.length
+        }
+      : discovery?.diagnostics || {}
+  };
   return analysis;
 }
 

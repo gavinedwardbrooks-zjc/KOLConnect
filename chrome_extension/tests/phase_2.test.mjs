@@ -121,7 +121,7 @@ assert.equal(youtubeHiddenSubscribers.fields.followers.value, null);
 assert.equal(youtubeHiddenSubscribers.fields.followers.confidence, "missing");
 assert.equal(
   youtubeHiddenSubscribers.fields.followers.missing_reason,
-  "The YouTube channel hides or does not expose its subscriber count."
+  "Subscriber count was not found in supported public YouTube profile sources."
 );
 globalThis.chrome = originalChrome;
 
