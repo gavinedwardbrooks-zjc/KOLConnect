@@ -7,7 +7,7 @@ permissions:
   contents: read
 
 env:
-  FROZEN_RELEASE_SHA: 8b8f96ccd2b4971bf0d8383af65459cd81a9aab0
+  FROZEN_RELEASE_SHA: edf68b436377289e07baecf4c7d798420ce8ba77
   PRODUCT_VERSION: 2.0.0
   FROZEN_PRODUCT_ROOT: frozen-src
   PYTHON_SOURCE_VERSION: 3.12.11
@@ -63,7 +63,7 @@ jobs:
       - name: Check out frozen application source separately
         uses: actions/checkout@v4
         with:
-          ref: 8b8f96ccd2b4971bf0d8383af65459cd81a9aab0
+          ref: edf68b436377289e07baecf4c7d798420ce8ba77
           path: frozen-src
           fetch-depth: 1
 

@@ -422,7 +422,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertNotIn("needs", manual_job)
         self.assertEqual("1", manual_job["env"]["HOMEBREW_NO_AUTO_UPDATE"])
 
-        frozen_sha = "8b8f96ccd2b4971bf0d8383af65459cd81a9aab0"
+        frozen_sha = "edf68b436377289e07baecf4c7d798420ce8ba77"
         workflow_env = manual_workflow["env"]
         self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
         self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
