@@ -270,7 +270,8 @@ async function run() {
   assert.match(html, /creator-library-select-all/);
   assert.match(html, /creator-library-export/);
   assert.match(styles, /\.creator-library-select-all\s*\{[^}]*gap:\s*8px/s);
-  assert.match(styles, /\.creator-library-select-all input\s*\{[^}]*margin:\s*0/s);
+  assert.match(styles, /\.creator-library-select-all input\s*\{[^}]*width:\s*auto[^}]*margin:\s*0[^}]*padding:\s*0/s);
+  assert.doesNotMatch(styles.match(/\.creator-library-select-all\s*\{[^}]*\}/s)?.[0] || "", /position:\s*absolute/);
   assert.match(styles, /@media \(max-width: 1100px\)[\s\S]*?\.creator-library-actions\s*\{[^}]*display:\s*grid/s);
   console.log("M4.7 Creator Library export UI: OK");
 }

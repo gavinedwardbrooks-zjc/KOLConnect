@@ -2492,7 +2492,7 @@ button {
   white-space: nowrap;
 }
 
-.creator-library-select-all input { flex: 0 0 auto; margin: 0; }
+.creator-library-select-all input { flex: 0 0 auto; width: auto; margin: 0; padding: 0; }
 .creator-library-select-all span { display: block; }
 
 .creator-card-select {

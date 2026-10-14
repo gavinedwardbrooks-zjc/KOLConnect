@@ -97,9 +97,12 @@
       (data.creators || data.records || [])
         .filter(item => String(item.creator_id || item.analysis_id || "") !== String(primary.creator_id || ""))
         .forEach(item => {
+          const creatorId = String(item.creator_id || item.analysis_id || "").trim();
+          if (!creatorId) return;
           const button = document.createElement("button");
           button.type = "button";
           button.className = "creator-merge-search-result";
+          button.dataset.creatorMergeCandidateId = creatorId;
           const identity = document.createElement("span");
           const name = document.createElement("strong");
           const detail = document.createElement("span");
@@ -109,16 +112,15 @@
           const choose = document.createElement("b");
           choose.textContent = "选择";
           button.append(identity, choose);
-          context.resources.listen(button, "click", async () => {
-            const detailData = await context.api.get(
-              `/api/creator-library/${encodeURIComponent(item.creator_id || item.analysis_id)}`,
-              { signal: context.resources.signal },
-            );
+          context.resources.listen(button, "click", () => {
             secondary = {
               ...item,
-              ...detailData.record,
-              creator_name: detailData.record?.creator_name || item.creator_name,
-              accounts: detailData.accounts || [],
+              creator_id: creatorId,
+              creator_name: item.creator_name || item.display_name || "未命名达人",
+              accounts: Array.isArray(item.accounts) ? item.accounts : [],
+              platforms: Array.isArray(item.platforms)
+                ? item.platforms
+                : [item.platform].filter(Boolean),
             };
             results.replaceChildren();
             renderSelection();

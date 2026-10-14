@@ -9,8 +9,9 @@ const root = path.join(__dirname, "..");
 const read = relative => fs.readFileSync(path.join(root, relative), "utf8");
 
 class Element {
-  constructor(id = "") {
+  constructor(id = "", tagName = "div") {
     this.id = id;
+    this.tagName = tagName.toUpperCase();
     this.listeners = new Map();
     this.children = [];
     this.dataset = {};
@@ -23,13 +24,18 @@ class Element {
     this.listeners.set(type, [...(this.listeners.get(type) || []), listener]);
   }
   removeEventListener() {}
-  append(...children) { this.children.push(...children); }
-  appendChild(child) { this.children.push(child); return child; }
-  replaceChildren(...children) { this.children = children; }
+  append(...children) { children.forEach(child => this.appendChild(child)); }
+  appendChild(child) { this.children.push(child); child.parentNode = this; return child; }
+  replaceChildren(...children) { this.children = []; this.append(...children); }
   focus() {}
-  async trigger(type) {
+  async trigger(type, event = {}) {
     if (this.disabled && type === "click") return;
-    for (const listener of this.listeners.get(type) || []) await listener({ target: this });
+    const payload = { target: event.target || this, ...event };
+    let node = this;
+    do {
+      for (const listener of node.listeners.get(type) || []) await listener(payload);
+      node = node.parentNode;
+    } while (node && payload.bubbles !== false);
   }
 }
 
@@ -69,11 +75,16 @@ async function run() {
   const api = {
     get: async url => {
       calls.push({ method: "GET", url });
-      if (url.startsWith("/api/creator-library?")) return {
-        creators: [{ creator_id: "secondary", creator_name: "Remote <unsafe>", platform: "TikTok", profile_url: "https://tiktok.com/@secondary" }],
-      };
+      if (url.startsWith("/api/creator-library?")) {
+        if (url.includes("search=other")) return {
+          creators: [{ creator_id: "other", creator_name: "Same display name", platform: "Instagram", profile_url: "https://instagram.com/other" }],
+        };
+        return {
+          creators: [{ creator_id: "secondary", creator_name: "Same display name", platform: "TikTok", profile_url: "https://tiktok.com/@secondary" }],
+        };
+      }
       if (url.endsWith("/primary")) return { record: { creator_id: "primary", creator_name: "Primary" }, accounts: [{ platform: "YouTube", username: "primary" }] };
-      if (url.endsWith("/secondary")) return { record: { creator_id: "secondary", creator_name: "Remote <unsafe>" }, accounts: [{ platform: "TikTok", username: "secondary" }] };
+      if (url.endsWith("/secondary") || url.endsWith("/other")) throw new Error("candidate selection must not depend on a detail fetch");
       throw new Error(`unexpected GET ${url}`);
     },
     post: async (url, payload) => {
@@ -97,13 +108,13 @@ async function run() {
   };
   const window = {
     confirm: message => {
-      assert.match(message, /将【Remote <unsafe>】合并到【Primary】/);
+      assert.match(message, /将【Same display name】合并到【Primary】/);
       return confirmations.shift();
     },
   };
   const document = {
     getElementById: id => elements.get(id) || null,
-    createElement: () => new Element(),
+    createElement: tagName => new Element("", tagName),
   };
   const sandbox = { console, document, window, setTimeout };
   sandbox.globalThis = sandbox;
@@ -121,12 +132,33 @@ async function run() {
   elements.get("creator-merge-search").value = "secondary";
   await elements.get("creator-merge-search").trigger("input");
   await flush();
-  const searchResult = elements.get("creator-merge-search-results").children[0];
+  let searchResult = elements.get("creator-merge-search-results").children[0];
   assert.ok(searchResult, "secondary search renders a result");
-  assert.equal(searchResult.children[0].children[0].textContent, "Remote <unsafe>");
-  await searchResult.trigger("click");
+  assert.equal(searchResult.type, "button");
+  assert.equal(searchResult.dataset.creatorMergeCandidateId, "secondary");
+  assert.equal(searchResult.children[0].children[0].textContent, "Same display name");
+  await searchResult.children[1].trigger("click");
+  assert.equal(elements.get("creator-merge-secondary-name").textContent, "Same display name", "visible choose action updates SECONDARY immediately");
+  assert.equal(elements.get("creator-merge-secondary-accounts").textContent, "TikTok", "candidate platform summary remains visible");
+  assert.equal(elements.get("creator-merge-preview").disabled, false, "selection enables preview without a detail request");
+
+  elements.get("creator-merge-search").value = "other";
+  await elements.get("creator-merge-search").trigger("input");
+  await flush();
+  searchResult = elements.get("creator-merge-search-results").children[0];
+  assert.equal(searchResult.dataset.creatorMergeCandidateId, "other");
+  await searchResult.children[1].trigger("click");
+  assert.equal(elements.get("creator-merge-secondary-accounts").textContent, "Instagram", "selection remains bound to the rerendered candidate ID");
+
+  elements.get("creator-merge-search").value = "secondary";
+  await elements.get("creator-merge-search").trigger("input");
+  await flush();
+  searchResult = elements.get("creator-merge-search-results").children[0];
+  await searchResult.children[1].trigger("click");
   await elements.get("creator-merge-preview").trigger("click");
   await flush();
+  const previewCall = calls.find(call => call.url.endsWith("/preview"));
+  assert.equal(previewCall.payload.secondary_creator_id, "secondary", "preview uses the explicit stable Creator ID, not display text");
   assert.equal(elements.get("creator-merge-confirm").disabled, false, "safe preview enables merge");
   assert.equal(elements.get("creator-merge-result-creators").textContent, "2 → 1");
   assert.equal(elements.get("creator-merge-result-accounts").textContent, "2 → 2");
@@ -142,6 +174,7 @@ async function run() {
   const execute = calls.find(call => call.url.endsWith("/execute"));
   assert.equal(execute.payload.confirm, true);
   assert.equal(execute.payload.preview_fingerprint, "fingerprint");
+  assert.equal(execute.payload.secondary_creator_id, "secondary");
   assert.equal(merged, 1, "success refresh callback runs once");
   assert.equal(calls.filter(call => /feishu|full-sync/i.test(call.url)).length, 0, "merge never starts Full Sync");
   console.log("M7.1e manual Creator merge UI: OK");
