@@ -20,6 +20,19 @@ assert.match(styles, /\.settings-categories \{ display: grid; gap: 18px; \}/);
 assert.match(styles, /\.settings-category\[hidden\] \{ display: none !important; \}/);
 assert.match(styles, /\.settings-category-cards > \.section-card \{ margin: 0; \}/);
 assert.match(styles, /\.settings-category-tabs \{ display: flex; flex-wrap: wrap;/);
+assert.match(styles, /\.primary-btn,\s*\.soft-btn,\s*\.secondary-btn,\s*\.danger-btn,\s*\.mini-btn \{[\s\S]*?border-radius: 12px;[\s\S]*?min-height: 42px;/);
+assert.match(styles, /\.soft-btn,\s*\.secondary-btn \{[\s\S]*?background: var\(--soft\);[\s\S]*?border-color: var\(--border\);/);
+assert.match(styles, /\.text-btn \{[\s\S]*?display: inline-flex;[\s\S]*?border: 1px solid var\(--border\);[\s\S]*?background: var\(--soft\);/);
+for (const id of [
+  "campaign-date-filter-apply", "mail-followup-show-export", "settings-open-chrome-accounts",
+  "settings-open-mail-accounts", "system-health-run", "settings-open-logs", "fx-show-all",
+  "creator-library-backup-create", "clean-reset-preview", "feishu-sync-validate", "feishu-sync-dry-run",
+]) {
+  assert.match(html, new RegExp(`class="[^"]*secondary-btn[^"]*"[^>]*id="${id}"`), `${id} uses the shared secondary button system`);
+}
+for (const target of ["mail-follow-up", "campaigns", "accounts"]) {
+  assert.match(html, new RegExp(`class="text-btn"[^>]*data-dashboard-v2-open="${target}"`), `${target} uses the compact Dashboard action style`);
+}
 assert.match(html, /id="settings-accounts-card"/);
 assert.match(settings, /settingsCategoryGeneral/);
 assert.match(settings, /settingsCategoryAccounts/);

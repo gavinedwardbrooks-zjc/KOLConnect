@@ -1358,7 +1358,11 @@
         : new Set();
       state.batchCampaignSubmitting = Boolean(state.batchCampaignSubmitting);
       const storedMode = global.localStorage.getItem(VIEW_MODE_STORAGE_KEY);
-      state.viewMode = storedMode === "table" || state.viewMode === "table" ? "table" : "card";
+      const requestedMode = ["card", "table"].includes(context.params.viewMode)
+        ? context.params.viewMode
+        : null;
+      state.viewMode = requestedMode || (storedMode === "table" || state.viewMode === "table" ? "table" : "card");
+      if (requestedMode) global.localStorage.setItem(VIEW_MODE_STORAGE_KEY, requestedMode);
       state.page = Number.isInteger(state.page) && state.page > 0 ? state.page : 1;
       state.pageSize = PAGE_SIZES[state.viewMode].includes(Number(state.pageSize))
         ? Number(state.pageSize)

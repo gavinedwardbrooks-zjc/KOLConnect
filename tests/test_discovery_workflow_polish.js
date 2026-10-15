@@ -31,9 +31,11 @@ assert.match(app, /setPage\("creator-library-detail", \{ creatorId: linkedCreato
 assert.doesNotMatch(app, /creatorName = [^\n]*email/);
 assert.match(css, /\.account-homepage-link[\s\S]*text-overflow:\s*ellipsis/);
 
-for (const value of ["task", "review_results", "creator_library", "manual"]) {
+for (const value of ["creator_library", "url_add"]) {
   assert.match(html, new RegExp(`name="email-source" value="${value}"`));
 }
+assert.equal((html.match(/name="email-source"/g) || []).length, 2);
+assert.doesNotMatch(html, /name="email-source" value="(?:task|review_results|manual|temporary)"/);
 assert.match(html, /name="email-scope" value="missing" checked/);
 assert.match(app, /\/api\/tasks\/email-recheck\/candidates/);
 assert.match(app, /\/api\/tasks\/email-recheck\/scan/);
@@ -47,7 +49,7 @@ assert.doesNotMatch(html, /account_uid/);
 
 assert.match(html, /查看待补充范围/);
 assert.match(app, /function openReviewEmailEnrichment/);
-assert.match(app, /value="review_results"/);
+assert.match(app, /value="creator_library"/);
 assert.match(app, /t\("emailReviewSelected"\)/);
 assert.match(html, /<option value="attention" selected data-i18n="reviewAttention">待补充<\/option>/);
 assert.match(html, /<th data-i18n="reviewCompletion">待补充<\/th>/);

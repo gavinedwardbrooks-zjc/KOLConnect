@@ -25,26 +25,26 @@ assert.match(detail, /creatorAccountRemoveBlocked/);
 assert.doesNotMatch(detail, /profile_url:\s*valueOf\("creator-edit-profile-url"\)/);
 
 for (const [value, title] of [
-  ["task", "最近抓取的达人"], ["review_results", "待处理的达人"],
-  ["creator_library", "达人库"], ["manual", "临时补邮箱"],
+  ["creator_library", "从达人库选择"],
+  ["url_add", "通过链接添加达人并补邮箱"],
 ]) {
   assert.match(html, new RegExp(`name="email-source" value="${value}"`));
   assert.match(html, new RegExp(title));
 }
-assert.match(html, /你想给哪些达人补邮箱？/);
-assert.match(html, /仅查找并补充邮箱，不创建新的达人抓取任务/);
+assert.match(html, /你想从哪里选择需要补邮箱的达人？/);
+assert.match(html, /查找并补充邮箱；新识别的达人会自动加入达人库/);
 assert.match(html, /批量抓取达人/);
 assert.match(html, /自动抓取账号资料并进入审核/);
 assert.match(html, /一行一个达人主页链接/);
 
 assert.match(html, /id="dashboard-v2-modules"/);
-for (const id of ["today", "missing_info", "campaigns", "creator_overview", "data_freshness", "geography", "roi"]) {
+for (const id of ["today", "mail_follow_up", "campaigns", "creator_profile_overview", "missing_info", "roi"]) {
   assert.match(html, new RegExp(`data-dashboard-v2-module="${id}"`));
 }
 assert.match(dashboard, /kolconnect-dashboard-layout-v2/);
 assert.match(dashboard, /setVisible/);
 assert.match(dashboard, /move\(id, direction\)/);
-assert.match(dashboard, /module\.essential \|\| saved\.visible\[module\.id\] !== false/);
+assert.match(dashboard, /function normalizeLayout\(saved\)/);
 assert.match(html, /id="dashboard-customization-dialog"/);
 assert.match(html, /id="dashboard-customization-modules"/);
 assert.match(html, /id="dashboard-customization-reset"/);
@@ -71,7 +71,7 @@ class DashboardModuleContainer {
   querySelectorAll() { return this.nodes; }
   appendChild(node) { this.nodes.splice(this.nodes.indexOf(node), 1); this.nodes.push(node); }
 }
-const moduleNodes = ["today", "mail_follow_up", "campaigns", "creator_overview", "missing_info", "data_freshness", "geography", "roi"]
+const moduleNodes = ["today", "mail_follow_up", "campaigns", "creator_profile_overview", "missing_info", "roi"]
   .map(id => ({ dataset: { dashboardV2Module: id }, hidden: false }));
 const local = new Map();
 let registeredPage = null;
@@ -87,13 +87,13 @@ const preferences = dashboardWindow.KOLConnectDashboardPreferences;
 assert.equal(preferences.get().visible.today, true);
 preferences.setVisible("missing_info", false);
 assert.equal(moduleNodes.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true);
-preferences.move("data_freshness", -1);
-assert.notEqual(preferences.get().order.at(-1), "data_freshness");
+preferences.move("roi", -1);
+assert.notEqual(preferences.get().order.at(-1), "roi");
 preferences.move("today", 1);
 assert.equal(preferences.get().order[0], "today", "today must remain first");
 local.set("kolconnect-dashboard-layout-v2", "not-json");
 assert.equal(preferences.get().visible.today, true, "malformed preferences must fail safe");
 preferences.reset();
-assert.equal(preferences.get().order.join(","), "today,mail_follow_up,campaigns,creator_overview,missing_info,data_freshness,geography,roi");
+assert.equal(preferences.get().order.join(","), "today,mail_follow_up,campaigns,creator_profile_overview,missing_info,roi");
 
 console.log("Product UI Foundation V1: OK");

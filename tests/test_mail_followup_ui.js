@@ -15,6 +15,10 @@ const styles = read("webapp/styles.css");
 
 assert.match(html, /data-page="mail-follow-up"[\s\S]*邮件跟进/);
 assert.match(html, /pages\/mail-follow-up\.js/);
+assert.match(html, /id="mail-followup-pagination"/);
+assert.match(html, /id="mail-followup-previous"/);
+assert.match(html, /id="mail-followup-next"/);
+assert.match(pageSource, /const PAGE_SIZE = 20;/);
 assert.equal((html.match(/id="mail-followup-google-sheets"/g) || []).length, 1, "Google sync must have one Mail-page entry point");
 assert.doesNotMatch(pageSource, /mail-followup-sync/);
 assert.doesNotMatch(pageSource, /\/api\/mail\/(inbox|sent)\/sync/);
@@ -90,6 +94,7 @@ function harness({ groups, queue, prompt = () => "", postFailure = null, postGat
     mailFollowupWaitingMe: "待我回复", mailFollowupWaitingCreator: "待对方回复", mailFollowupWaitingUnknown: "状态未知",
     mailFollowupHistoryPartial: "部分历史", mailFollowupHistoryUnknown: "历史范围未知", mailFollowupHistorySynced: "已同步范围内",
     mailFollowupDays: "{days} 天", mailFollowupResume: "恢复跟进", mailFollowupSnooze: "稍后处理 ▼", mailFollowupTomorrow: "明天再处理", mailFollowupThreeDays: "3 天后再处理", mailFollowupChooseDate: "选择日期…", mailFollowupClearSnooze: "取消稍后处理", mailFollowupStop: "停止跟进", mailFollowupExportAdd: "加入导出队列", mailFollowupExportRemove: "移出导出队列", unnamedCreator: "未命名达人", mailFollowupUnknownHelp: "当前邮件时间或联系人归属证据不足，暂时无法可靠判断由谁继续回复。", mailFollowupHistoryHelp: "当前同步的数据无法确认是否包含该联系人全部历史邮件，但不影响系统基于已同步邮件判断当前跟进状态。", mailFollowupUpdated: "邮件跟进状态已更新。",
+    mailFollowupRange: "显示 {start}–{end}，共 {total} 条", mailFollowupPage: "第 {page} / {total} 页",
   };
   let readCount = 0;
   const window = {
@@ -197,6 +202,32 @@ async function run() {
   await h.get("mail-followup-export-csv").click();
   await h.get("mail-followup-export-xlsx").click();
   assert.deepEqual(h.calls.fetches, ["/api/mail/follow-up/export?format=csv", "/api/mail/follow-up/export?format=xlsx"]);
+
+  const pageRows = Array.from({ length: 25 }, (_, index) => ({
+    ...alpha,
+    creator_id: `creator-${index + 1}`,
+    creator_name: `Creator ${index + 1}`,
+    correspondent_email: `creator-${index + 1}@example.com`,
+  }));
+  const paginated = harness({ groups: [pageRows, pageRows.slice(0, 5)], queue: pageRows });
+  await loadPage(paginated);
+  assert.equal(paginated.get("mail-followup-list").children.length, 20, "page one is fixed at 20 rows");
+  assert.equal(paginated.get("mail-followup-range").textContent, "显示 1–20，共 25 条");
+  assert.equal(paginated.get("mail-followup-page").textContent, "第 1 / 2 页");
+  assert.equal(paginated.get("mail-followup-previous").disabled, true);
+  assert.equal(paginated.get("mail-followup-next").disabled, false);
+  await paginated.get("mail-followup-next").click();
+  assert.equal(paginated.get("mail-followup-list").children.length, 5, "page two renders only the remainder");
+  assert.equal(paginated.get("mail-followup-range").textContent, "显示 21–25，共 25 条");
+  assert.equal(paginated.get("mail-followup-next").disabled, true);
+  await paginated.filters.find(button => button.dataset.followupFilter === "all").click();
+  assert.equal(paginated.get("mail-followup-page").textContent, "第 1 / 2 页", "filter changes reset to page one");
+  await paginated.get("mail-followup-next").click();
+  await paginated.get("mail-followup-refresh").click();
+  assert.equal(paginated.get("mail-followup-page").textContent, "第 1 / 1 页", "refresh clamps an invalid page");
+  assert.equal(paginated.get("mail-followup-list").children.length, 5);
+  await paginated.get("mail-followup-export-csv").click();
+  assert.equal(paginated.calls.fetches.at(-1), "/api/mail/follow-up/export?format=csv", "export remains server-side and independent of the visible page slice");
 
   const failing = harness({ groups: [[alpha]], queue: [], postFailure: "persistence unavailable" });
   await loadPage(failing);

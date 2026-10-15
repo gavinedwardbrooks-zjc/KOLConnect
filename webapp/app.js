@@ -501,8 +501,8 @@ Object.assign(I18N.zh, {
   linkRawLinks: "原始链接", linkEmailList: "邮箱列表", linkOnePerLine: "一行一个链接", linkOneEmailPerLine: "一行一个邮箱", linkClean: "清洗链接", linkCheckEmail: "检查邮箱", linkAccountSubtitle: "整理账号主页链接，方便后续抓取与归档。", linkEmailSubtitle: "检查邮箱是否已收录在本地达人账号中，不会修改数据。", linkReason: "原因：{reason}", linkStatusValid: "有效", linkStatusNormalized: "已标准化", linkStatusDuplicate: "重复", linkStatusInvalid: "无效", linkStatusUnknown: "未知", linkDuplicateLine: "，与第 {line} 行重复", linkDatabaseRecorded: "；已收录", linkEmailDuplicate: "{email}（与第 {line} 行重复{existing}）", linkInvalidEmail: "邮箱格式无效", linkInvalidEmailLine: "第 {line} 行：{value}（{reason}）", linkCountSummary: "共 {total} 行 · 非空 {nonEmpty} 行 · 原样重复 {duplicates} 行",
   taskDetailSelectTask: "请选择任务。", taskDetailSummary: "创建时间：{createdAt}\n进度：{completed}/{total}，剩余 {pending}\n平台：TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}", taskDetailEdit: "修改", taskDetailEditPrompt: "修改达人主页链接", taskDetailDelete: "删除", taskDetailDeleteConfirm: "确定删除第 {index} 条待处理链接吗？", taskDetailCompletedProtected: "已完成，受保护", taskDetailUrlRequired: "请输入达人主页链接。",
   reviewNoRetryable: "当前任务没有需要重新抓取的异常记录。", reviewRetryConfirm: "将在当前任务中重新抓取 {count} 条异常记录，是否继续？", reviewTaskCreated: "任务已创建：有效链接 {valid} 条，异常链接 {invalid} 条。", reviewPasteLinkRequired: "请粘贴至少一个链接。", reviewCreateTaskFirst: "请先创建任务。",
-  emailStatusCaptured: "已获取", emailStatusExisting: "已存在", emailStatusNotFound: "未找到", emailStatusUnavailable: "页面无法访问", emailStatusConfirm: "需要人工确认", emailStatusConflict: "邮箱冲突，未覆盖", emailStatusPending: "待抓取", emailSelectSource: "请选择来源并预览待处理账号。", emailTaskOption: "{name} · 原始链接 {count}", emailManualUrlRequired: "请粘贴至少一个主页或视频链接。", emailCandidateLinks: "待处理链接：{count}", emailSelectTask: "请选择抓取任务。", emailCandidateSummary: "总账号：{total} · 待处理：{candidates} · 缺少邮箱：{missing}", emailPreviewRequired: "请先预览待处理账号。", emailCompleteSummary: "处理完成：{total} · 已获取/已有：{found} · 未找到或需处理：{remaining}", emailNoCandidates: "当前范围没有需要抓取邮箱的账号。", emailTaskStarted: "邮箱补全任务已开始：{count} 个账号。", emailSelectReviewTask: "请选择审核任务。", emailEntryUnavailable: "邮箱补全入口暂不可用。", emailReviewSelected: "已选中当前审核任务；默认仅处理缺少邮箱的账号。", scrapeAllPlatforms: "全部平台", scrapeSelectPlatform: "请选择平台",
-  emailEnrichmentTitle: "联系邮箱补全", emailEnrichmentHint: "优先使用 KOLConnect 中已有账号；新结果通过现有服务安全写回 SQLite。", emailSourceQuestion: "你想给哪些达人补邮箱？", emailSourceTask: "最近抓取的达人", emailSourceTaskHint: "从历史抓取任务中选择一批账号", emailSourceReview: "待处理的达人", emailSourceReviewHint: "从审核结果中选择需要补邮箱的账号", emailSourceLibrary: "达人库", emailSourceLibraryHint: "给已经入库的达人补邮箱", emailSourceManual: "临时补邮箱", emailSourceManualHint: "粘贴一批达人链接，仅查找并补充邮箱，不创建新的达人抓取任务", emailScope: "范围", emailScopeMissing: "仅没有邮箱的账号", emailScopeAll: "所有账号", emailUrlLabel: "主页或视频链接", emailUrlPlaceholder: "一行一个 TikTok、Instagram 或 YouTube 链接", emailPreview: "查看待补充范围", emailStart: "开始抓取邮箱", emailSource: "来源", emailResultStatus: "状态", scrapeBatchTitle: "批量抓取达人", scrapeBatchHint: "粘贴 TikTok、Instagram 或 YouTube 达人主页链接，自动抓取账号资料并进入审核。", scrapeAll: "全部", scrapeNoTask: "尚未创建任务", scrapeIdleStatus: "当前状态：空闲", scrapeCompleteHint: "抓取完成后，请在“审核结果”页核对数据。", scrapeOpenFolder: "打开结果文件夹", taskLogWaiting: "等待运行...",
+  emailStatusCaptured: "已获取", emailStatusExisting: "已存在", emailStatusNotFound: "未找到", emailStatusUnavailable: "页面无法访问", emailStatusConfirm: "需要人工确认", emailStatusConflict: "邮箱冲突，未覆盖", emailStatusPending: "待抓取", emailSelectSource: "请选择来源并预览待处理账号。", emailTaskOption: "{name} · 原始链接 {count}", emailManualUrlRequired: "请粘贴至少一个与所选平台匹配的 TikTok、Instagram 或 YouTube 链接。", emailCandidateLinks: "待处理链接：{count}", emailSelectTask: "请选择抓取任务。", emailCandidateSummary: "总账号：{total} · 待处理：{candidates} · 缺少邮箱：{missing}", emailPreviewRequired: "请先预览待处理账号。", emailCompleteSummary: "处理完成：{total} · 已获取/已有：{found} · 未找到或需处理：{remaining}", emailNoCandidates: "当前范围没有需要抓取邮箱的账号。", emailTaskStarted: "邮箱补全任务已开始：{count} 个账号。", emailSelectReviewTask: "请选择审核任务。", emailEntryUnavailable: "邮箱补全入口暂不可用。", emailReviewSelected: "已选中当前审核任务；默认仅处理缺少邮箱的账号。", scrapeAllPlatforms: "全部平台", scrapeSelectPlatform: "请选择平台",
+  emailEnrichmentTitle: "联系邮箱补全", emailEnrichmentHint: "优先使用 KOLConnect 中已有账号；新结果通过现有服务安全写回 SQLite。", emailSourceQuestion: "你想从哪里选择需要补邮箱的达人？", emailSourceLibrary: "从达人库选择", emailSourceLibraryHint: "从现有达人库中按任务、平台和邮箱状态筛选账号。", emailSourceUrlAdd: "通过链接添加达人并补邮箱", emailSourceUrlAddHint: "粘贴达人主页或视频链接，查找并补充邮箱；新识别的达人会自动加入达人库。", emailTaskFilter: "抓取任务", emailAllTasks: "全部任务", emailScope: "范围", emailScopeMissing: "仅没有邮箱的账号", emailScopeAll: "所有账号", emailUrlLabel: "主页或视频链接", emailUrlPlaceholder: "一行一个 TikTok、Instagram 或 YouTube 链接", emailPreview: "查看待补充范围", emailStart: "开始抓取邮箱", emailSource: "来源", emailResultStatus: "状态", scrapeBatchTitle: "批量抓取达人", scrapeBatchHint: "粘贴 TikTok、Instagram 或 YouTube 达人主页链接，自动抓取账号资料并进入审核。", scrapeAll: "全部", scrapeNoTask: "尚未创建任务", scrapeIdleStatus: "当前状态：空闲", scrapeCompleteHint: "抓取完成后，请在“审核结果”页核对数据。", scrapeOpenFolder: "打开结果文件夹", taskLogWaiting: "等待运行...",
   reviewFilter: "结果筛选", reviewAttention: "待补充", reviewAll: "全部", reviewFailed: "抓取异常", reviewFillEmail: "补全当前任务邮箱", reviewRetryFailed: "重新抓取异常记录", reviewCreator: "达人", reviewCompletion: "待补充", reviewEmpty: "请选择任务后查看结果。", reviewOpenTaskRequired: "请选择任务。", reviewPlatformAll: "全部", reviewStatusSummary: "成功：{success} / 部分成功：{partial} / 缺少数据：{missing} / 失败：{failed}", reviewRunSummary: "本次抓取：{platforms}\n结果：TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}",
   taskDetailTitle: "任务详情", taskDetailSubtitle: "查看任务链接、进度和待处理队列；仅可修改尚未完成的链接。", taskDetailBack: "返回任务管理", taskDetailRefresh: "刷新详情", taskDetailSearch: "搜索链接", taskDetailSearchPlaceholder: "链接、平台或状态", taskDetailPlatform: "平台", taskDetailStatus: "状态", taskDetailAll: "全部", taskDetailCompleted: "已完成", taskDetailRunning: "处理中", taskDetailWaiting: "等待", taskDetailAddPlaceholder: "新增达人主页链接", taskDetailAdd: "新增链接", taskDetailNumber: "编号", taskDetailLink: "链接", taskDetailAction: "操作", taskDetailEmpty: "没有可显示的链接。",
   linkTitle: "账号清洗查重", linkMode: "清洗类型", linkAccount: "账号", linkEmail: "邮箱", linkSummary: "清洗结果汇总", linkInputCount: "非空输入", linkAcceptedCount: "有效且唯一", linkDuplicateCount: "重复", linkInvalidCount: "无效", linkDetails: "逐行处理明细", linkStatusFilter: "状态筛选", linkAllStatus: "全部状态", linkRow: "行", linkCanonicalLink: "标准链接", linkReasonLabel: "说明", linkDetailEmpty: "清洗后将在这里显示每一条非空输入的处理结果。", linkEmailSummary: "邮箱检查结果汇总", linkExisting: "已存在", linkBatchDuplicate: "本批重复", linkUnrecordedInvalid: "未收录 / 无效", linkEmailSource: "邮箱来源",
@@ -515,8 +515,8 @@ Object.assign(I18N.en, {
   linkRawLinks: "Raw links", linkEmailList: "Email list", linkOnePerLine: "One link per line", linkOneEmailPerLine: "One email per line", linkClean: "Clean links", linkCheckEmail: "Check emails", linkAccountSubtitle: "Organize account homepage links for later capture and filing.", linkEmailSubtitle: "Check whether emails are already recorded in local creator accounts. This does not modify data.", linkReason: "Reason: {reason}", linkStatusValid: "Valid", linkStatusNormalized: "Normalized", linkStatusDuplicate: "Duplicate", linkStatusInvalid: "Invalid", linkStatusUnknown: "Unknown", linkDuplicateLine: ", duplicate of line {line}", linkDatabaseRecorded: "; already recorded", linkEmailDuplicate: "{email} (duplicate of line {line}{existing})", linkInvalidEmail: "Invalid email format", linkInvalidEmailLine: "Line {line}: {value} ({reason})", linkCountSummary: "{total} lines · {nonEmpty} non-empty · {duplicates} exact duplicates",
   taskDetailSelectTask: "Select a task.", taskDetailSummary: "Created: {createdAt}\nProgress: {completed}/{total}, {pending} remaining\nPlatforms: TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}", taskDetailEdit: "Edit", taskDetailEditPrompt: "Edit creator profile URL", taskDetailDelete: "Delete", taskDetailDeleteConfirm: "Delete pending link #{index}?", taskDetailCompletedProtected: "Completed and protected", taskDetailUrlRequired: "Enter a creator profile URL.",
   reviewNoRetryable: "This task has no abnormal records to retry.", reviewRetryConfirm: "Retry {count} abnormal records in this task?", reviewTaskCreated: "Task created: {valid} valid links, {invalid} invalid links.", reviewPasteLinkRequired: "Paste at least one link.", reviewCreateTaskFirst: "Create a task first.",
-  emailStatusCaptured: "Captured", emailStatusExisting: "Already exists", emailStatusNotFound: "Not found", emailStatusUnavailable: "Page unavailable", emailStatusConfirm: "Needs manual review", emailStatusConflict: "Email conflict; existing value kept", emailStatusPending: "Pending", emailSelectSource: "Select a source and preview the accounts to process.", emailTaskOption: "{name} · {count} original links", emailManualUrlRequired: "Paste at least one profile or video URL.", emailCandidateLinks: "Links to process: {count}", emailSelectTask: "Select a capture task.", emailCandidateSummary: "Accounts: {total} · To process: {candidates} · Missing email: {missing}", emailPreviewRequired: "Preview the accounts to process first.", emailCompleteSummary: "Complete: {total} · Captured/already present: {found} · Not found or needs review: {remaining}", emailNoCandidates: "There are no accounts in this scope that need email capture.", emailTaskStarted: "Email enrichment task started for {count} accounts.", emailSelectReviewTask: "Select a review task.", emailEntryUnavailable: "Email enrichment is currently unavailable.", emailReviewSelected: "The current review task is selected; only accounts without email are included by default.", scrapeAllPlatforms: "All platforms", scrapeSelectPlatform: "Select platform",
-  emailEnrichmentTitle: "Contact email enrichment", emailEnrichmentHint: "Use existing KOLConnect accounts first; new results write back safely through the current SQLite service.", emailSourceQuestion: "Which creators need email enrichment?", emailSourceTask: "Recently captured creators", emailSourceTaskHint: "Choose a batch of accounts from historical capture tasks", emailSourceReview: "Creators needing attention", emailSourceReviewHint: "Choose accounts needing email from review results", emailSourceLibrary: "Creator Library", emailSourceLibraryHint: "Enrich email for creators already in the library", emailSourceManual: "One-time enrichment", emailSourceManualHint: "Paste creator links to find and add email only; no new creator capture task is created", emailScope: "Scope", emailScopeMissing: "Only accounts without email", emailScopeAll: "All accounts", emailUrlLabel: "Profile or video URLs", emailUrlPlaceholder: "One TikTok, Instagram, or YouTube URL per line", emailPreview: "Preview accounts to enrich", emailStart: "Start email capture", emailSource: "Source", emailResultStatus: "Status", scrapeBatchTitle: "Batch creator capture", scrapeBatchHint: "Paste TikTok, Instagram, or YouTube creator profile links to capture account data for review.", scrapeAll: "All", scrapeNoTask: "No task created", scrapeIdleStatus: "Current status: idle", scrapeCompleteHint: "After capture, review the data on the Review Results page.", scrapeOpenFolder: "Open results folder", taskLogWaiting: "Waiting to run...",
+  emailStatusCaptured: "Captured", emailStatusExisting: "Already exists", emailStatusNotFound: "Not found", emailStatusUnavailable: "Page unavailable", emailStatusConfirm: "Needs manual review", emailStatusConflict: "Email conflict; existing value kept", emailStatusPending: "Pending", emailSelectSource: "Select a source and preview the accounts to process.", emailTaskOption: "{name} · {count} original links", emailManualUrlRequired: "Paste at least one TikTok, Instagram, or YouTube URL matching the selected platforms.", emailCandidateLinks: "Links to process: {count}", emailSelectTask: "Select a capture task.", emailCandidateSummary: "Accounts: {total} · To process: {candidates} · Missing email: {missing}", emailPreviewRequired: "Preview the accounts to process first.", emailCompleteSummary: "Complete: {total} · Captured/already present: {found} · Not found or needs review: {remaining}", emailNoCandidates: "There are no accounts in this scope that need email capture.", emailTaskStarted: "Email enrichment task started for {count} accounts.", emailSelectReviewTask: "Select a review task.", emailEntryUnavailable: "Email enrichment is currently unavailable.", emailReviewSelected: "The current review task is selected; only accounts without email are included by default.", scrapeAllPlatforms: "All platforms", scrapeSelectPlatform: "Select platform",
+  emailEnrichmentTitle: "Contact email enrichment", emailEnrichmentHint: "Use existing KOLConnect accounts first; new results write back safely through the current SQLite service.", emailSourceQuestion: "Where should creators for email enrichment come from?", emailSourceLibrary: "Choose from Creator Library", emailSourceLibraryHint: "Filter existing Creator Library accounts by task, platform, and email status.", emailSourceUrlAdd: "Add creators by URL and enrich email", emailSourceUrlAddHint: "Paste creator profile or video URLs to find email; newly identified creators are added to Creator Library.", emailTaskFilter: "Capture task", emailAllTasks: "All tasks", emailScope: "Scope", emailScopeMissing: "Only accounts without email", emailScopeAll: "All accounts", emailUrlLabel: "Profile or video URLs", emailUrlPlaceholder: "One TikTok, Instagram, or YouTube URL per line", emailPreview: "Preview accounts to enrich", emailStart: "Start email capture", emailSource: "Source", emailResultStatus: "Status", scrapeBatchTitle: "Batch creator capture", scrapeBatchHint: "Paste TikTok, Instagram, or YouTube creator profile links to capture account data for review.", scrapeAll: "All", scrapeNoTask: "No task created", scrapeIdleStatus: "Current status: idle", scrapeCompleteHint: "After capture, review the data on the Review Results page.", scrapeOpenFolder: "Open results folder", taskLogWaiting: "Waiting to run...",
   reviewFilter: "Result filter", reviewAttention: "Needs completion", reviewAll: "All", reviewFailed: "Capture errors", reviewFillEmail: "Enrich email for this task", reviewRetryFailed: "Retry abnormal records", reviewCreator: "Creator", reviewCompletion: "Needs completion", reviewEmpty: "Select a task to view results.", reviewOpenTaskRequired: "Select a task.", reviewPlatformAll: "All", reviewStatusSummary: "Succeeded: {success} / Partial: {partial} / Missing data: {missing} / Failed: {failed}", reviewRunSummary: "This capture: {platforms}\nResults: TikTok {tiktok} / Instagram {instagram} / YouTube {youtube}",
   taskDetailTitle: "Task details", taskDetailSubtitle: "View task links, progress, and pending work. Only unfinished links can be changed.", taskDetailBack: "Back to task management", taskDetailRefresh: "Refresh details", taskDetailSearch: "Search links", taskDetailSearchPlaceholder: "Link, platform, or status", taskDetailPlatform: "Platform", taskDetailStatus: "Status", taskDetailAll: "All", taskDetailCompleted: "Completed", taskDetailRunning: "Running", taskDetailWaiting: "Waiting", taskDetailAddPlaceholder: "Add creator profile URL", taskDetailAdd: "Add link", taskDetailNumber: "No.", taskDetailLink: "Link", taskDetailAction: "Action", taskDetailEmpty: "No links to display.",
   linkTitle: "Account link cleanup", linkMode: "Cleanup type", linkAccount: "Account", linkEmail: "Email", linkSummary: "Cleanup summary", linkInputCount: "Non-empty input", linkAcceptedCount: "Valid and unique", linkDuplicateCount: "Duplicate", linkInvalidCount: "Invalid", linkDetails: "Line-by-line details", linkStatusFilter: "Status filter", linkAllStatus: "All statuses", linkRow: "Row", linkCanonicalLink: "Canonical link", linkReasonLabel: "Reason", linkDetailEmpty: "Processing results for each non-empty input will appear here.", linkEmailSummary: "Email check summary", linkExisting: "Already exists", linkBatchDuplicate: "Duplicate in this batch", linkUnrecordedInvalid: "Unrecorded / invalid", linkEmailSource: "Email source",
@@ -593,8 +593,8 @@ const state = {
   emailEnrichment: {
     candidates: [],
     previewed: false,
-    source: "task",
-    taskId: ""
+    source: "library",
+    request: null
   },
   mailInbox: {
     messages: [],
@@ -1523,7 +1523,8 @@ function readableAccountHomepage(rawUrl) {
 }
 
 function selectedEmailSource() {
-  return document.querySelector('input[name="email-source"]:checked')?.value || "task";
+  const selected = document.querySelector('input[name="email-source"]:checked')?.value || "creator_library";
+  return selected === "creator_library" ? "library" : selected;
 }
 
 function selectedEmailPlatforms() {
@@ -1532,6 +1533,69 @@ function selectedEmailPlatforms() {
 
 function emailMissingOnly() {
   return (document.querySelector('input[name="email-scope"]:checked')?.value || "missing") === "missing";
+}
+
+const EMAIL_SOURCE_CONFIG = Object.freeze({
+  library: Object.freeze({ task: true, platform: true, scope: true, manual: false, help: "emailSourceLibraryHint" }),
+  url_add: Object.freeze({ task: false, platform: true, scope: false, manual: true, help: "emailSourceUrlAddHint" }),
+});
+
+function emailPlatformFromUrl(rawUrl) {
+  try {
+    const host = new URL(String(rawUrl || "").trim()).hostname.toLowerCase().replace(/^www\./, "");
+    if (host === "tiktok.com" || host.endsWith(".tiktok.com")) return "tiktok";
+    if (host === "instagram.com" || host.endsWith(".instagram.com")) return "instagram";
+    if (host === "youtube.com" || host.endsWith(".youtube.com") || host === "youtu.be") return "youtube";
+  } catch (_error) {
+    return "";
+  }
+  return "";
+}
+
+function buildEmailEnrichmentRequest() {
+  const source = selectedEmailSource();
+  const config = EMAIL_SOURCE_CONFIG[source] || EMAIL_SOURCE_CONFIG.library;
+  const platforms = selectedEmailPlatforms();
+  if (!platforms.length) throw new Error(t("scrapeSelectPlatform"));
+  const request = { source, platforms };
+  if (config.task) {
+    request.taskId = valueOf("email-source-task").trim();
+  }
+  if (config.scope) request.missingOnly = emailMissingOnly();
+  if (config.manual) {
+    const selected = new Set(platforms);
+    request.links = valueOf("email-manual-links")
+      .split(/\r?\n/)
+      .map(value => value.trim())
+      .filter(Boolean)
+      .map(profileUrl => ({ profile_url: profileUrl, platform: emailPlatformFromUrl(profileUrl) }))
+      .filter(item => item.platform && selected.has(item.platform));
+    if (!request.links.length) throw new Error(t("emailManualUrlRequired"));
+  }
+  return request;
+}
+
+function emailEnrichmentBackendSource(request) {
+  return request.source === "library" && request.taskId ? "task" : "creator_library";
+}
+
+function emailEnrichmentScanPayload(request) {
+  const payload = {
+    source: emailEnrichmentBackendSource(request),
+    platforms: [...request.platforms],
+    missing_only: request.missingOnly,
+  };
+  if (request.taskId) payload.task_id = request.taskId;
+  return payload;
+}
+
+function invalidateEmailEnrichmentPreview() {
+  state.emailEnrichment.candidates = [];
+  state.emailEnrichment.previewed = false;
+  state.emailEnrichment.request = null;
+  $("email-enrichment-start").disabled = true;
+  setText("email-enrichment-summary", t("emailSelectSource"));
+  renderEmailEnrichmentRows([]);
 }
 
 function emailStatusLabel(status) {
@@ -1579,22 +1643,22 @@ function renderEmailEnrichmentRows(rows) {
 
 function renderEmailSourceControls() {
   const source = selectedEmailSource();
+  const config = EMAIL_SOURCE_CONFIG[source] || EMAIL_SOURCE_CONFIG.library;
   state.emailEnrichment.source = source;
-  $("email-existing-source-fields").hidden = source === "manual";
-  $("email-manual-source-field").hidden = source !== "manual";
-  $("email-scope-selector").hidden = source === "manual";
-  $("email-source-task-field").hidden = source === "creator_library";
-  state.emailEnrichment.previewed = false;
-  $("email-enrichment-start").disabled = true;
-  setText("email-enrichment-summary", t("emailSelectSource"));
-  renderEmailEnrichmentRows([]);
+  $("email-source-task-field").hidden = !config.task;
+  $("email-platform-field").hidden = !config.platform;
+  $("email-scope-selector").hidden = !config.scope;
+  $("email-manual-source-field").hidden = !config.manual;
+  setText("email-source-help", t(config.help));
+  invalidateEmailEnrichmentPreview();
 }
 
 function renderEmailTaskOptions() {
   const select = $("email-source-task");
   if (!select) return;
-  const selected = select.value || state.currentTaskId;
+  const selected = select.value;
   select.replaceChildren();
+  select.add(new Option(t("emailAllTasks"), ""));
   state.tasks.filter(task => task.task_type !== "manual").forEach(task => {
     select.add(new Option(t("emailTaskOption", { name: task.name || t("discoveryUnnamedTask"), count: task.total_links || 0 }), task.id));
   });
@@ -1602,34 +1666,32 @@ function renderEmailTaskOptions() {
 }
 
 async function previewEmailEnrichment() {
-  const source = selectedEmailSource();
-  if (source === "manual") {
-    const links = valueOf("email-manual-links").split(/\r?\n/).map(value => value.trim()).filter(Boolean);
-    if (!links.length) throw new Error(t("emailManualUrlRequired"));
-    state.emailEnrichment.candidates = links.map(profileUrl => ({ profile_url: profileUrl, status: "pending" }));
+  const request = buildEmailEnrichmentRequest();
+  if (request.source === "url_add") {
+    state.emailEnrichment.candidates = request.links.map(item => ({ ...item, status: "pending" }));
     state.emailEnrichment.previewed = true;
-    setText("email-enrichment-summary", t("emailCandidateLinks", { count: links.length }));
+    state.emailEnrichment.request = request;
+    setText("email-enrichment-summary", t("emailCandidateLinks", { count: request.links.length }));
     renderEmailEnrichmentRows(state.emailEnrichment.candidates);
     $("email-enrichment-start").disabled = false;
     return;
   }
-  const taskId = source === "creator_library" ? "" : valueOf("email-source-task");
-  if (source !== "creator_library" && !taskId) throw new Error(t("emailSelectTask"));
-  const params = new URLSearchParams({ source, task_id: taskId, missing_only: String(emailMissingOnly()) });
-  selectedEmailPlatforms().forEach(platform => params.append("platform", platform));
+  const params = new URLSearchParams({ source: emailEnrichmentBackendSource(request), missing_only: String(request.missingOnly) });
+  if (request.taskId) params.set("task_id", request.taskId);
+  request.platforms.forEach(platform => params.append("platform", platform));
   const data = await apiGet(`/api/tasks/email-recheck/candidates?${params}`);
-  state.emailEnrichment = { candidates: data.candidates || [], previewed: true, source, taskId };
+  state.emailEnrichment = { candidates: data.candidates || [], previewed: true, source: request.source, request };
   setText("email-enrichment-summary", t("emailCandidateSummary", { total: data.scanned_accounts || 0, candidates: data.candidate_count || 0, missing: data.missing_email_count || 0 }));
   renderEmailEnrichmentRows(state.emailEnrichment.candidates);
   $("email-enrichment-start").disabled = !state.emailEnrichment.candidates.length;
 }
 
 async function startEmailEnrichment() {
-  if (!state.emailEnrichment.previewed) throw new Error(t("emailPreviewRequired"));
-  const source = state.emailEnrichment.source;
+  if (!state.emailEnrichment.previewed || !state.emailEnrichment.request) throw new Error(t("emailPreviewRequired"));
+  const request = state.emailEnrichment.request;
   const button = $("email-enrichment-start");
   button.disabled = true;
-  if (source === "manual") {
+  if (request.source === "url_add") {
     const results = [];
     for (const candidate of state.emailEnrichment.candidates) {
       try {
@@ -1652,17 +1714,12 @@ async function startEmailEnrichment() {
     button.disabled = false;
     return;
   }
-  const data = await apiPost("/api/tasks/email-recheck/scan", {
-    source,
-    task_id: state.emailEnrichment.taskId,
-    platforms: selectedEmailPlatforms(),
-    missing_only: emailMissingOnly(),
-  });
+  const data = await apiPost("/api/tasks/email-recheck/scan", emailEnrichmentScanPayload(request));
   if (!data.task) throw new Error(t("emailNoCandidates"));
   state.currentTaskId = data.task.id;
   state.currentTask = data.task;
   window.localStorage.setItem("kolconnect.currentTaskId", data.task.id);
-  await apiPost("/api/scrape/start", { taskId: data.task.id, profile: valueOf("profile-select"), platforms: selectedEmailPlatforms() });
+  await apiPost("/api/scrape/start", { taskId: data.task.id, profile: valueOf("profile-select"), platforms: [...request.platforms] });
   await loadTaskList();
   await refreshScrapeStatus();
   showSaved(t("emailTaskStarted", { count: data.created_count || 0 }));
@@ -1670,13 +1727,15 @@ async function startEmailEnrichment() {
 
 async function openReviewEmailEnrichment() {
   if (!state.review.taskId) throw new Error(t("emailSelectReviewTask"));
-  const source = document.querySelector('input[name="email-source"][value="review_results"]');
+  const source = document.querySelector('input[name="email-source"][value="creator_library"]');
   const taskSelect = $("email-source-task");
   if (!source || !taskSelect) throw new Error(t("emailEntryUnavailable"));
   source.checked = true;
   await setPage("scrape");
   renderEmailTaskOptions();
   taskSelect.value = state.review.taskId;
+  const missingScope = document.querySelector('input[name="email-scope"][value="missing"]');
+  if (missingScope) missingScope.checked = true;
   renderEmailSourceControls();
   setText("email-enrichment-summary", t("emailReviewSelected"));
 }
@@ -2615,17 +2674,12 @@ function bindEvents() {
     input.addEventListener("change", renderEmailSourceControls);
   });
   ["email-source-task", "email-scope-selector"].forEach(id => {
-    $(id).addEventListener("change", () => {
-      state.emailEnrichment.previewed = false;
-      $("email-enrichment-start").disabled = true;
-    });
+    $(id).addEventListener("change", invalidateEmailEnrichmentPreview);
   });
   document.querySelectorAll(".email-platform-option").forEach(input => {
-    input.addEventListener("change", () => {
-      state.emailEnrichment.previewed = false;
-      $("email-enrichment-start").disabled = true;
-    });
+    input.addEventListener("change", invalidateEmailEnrichmentPreview);
   });
+  $("email-manual-links").addEventListener("input", invalidateEmailEnrichmentPreview);
   $("email-enrichment-preview").addEventListener("click", () => previewEmailEnrichment().catch(showError));
   $("email-enrichment-start").addEventListener("click", () => startEmailEnrichment().catch(error => {
     $("email-enrichment-start").disabled = false;

@@ -162,7 +162,11 @@ function dashboardResponse(totalCreators = 12) {
     dashboard_v2: {
       creator_count: totalCreators,
       account_count: totalCreators + 3,
-      platform_accounts: [{ platform: "TikTok", count: 8 }],
+      platform_accounts: [
+        { platform: "TikTok", count: 8 },
+        { platform: "Instagram", count: 5 },
+        { platform: "YouTube", count: 2 },
+      ],
       missing: {
         email_accounts: [{ creator_id: "creator_one", creator_name: "Maria", platform: "TikTok", username: "maria", profile_url: "https://www.tiktok.com/@maria" }],
         country_creators: [],
@@ -242,14 +246,13 @@ async function run() {
     "dashboard-geography-error", "dashboard-roi-trend-chart", "dashboard-roi-trend-empty",
     "dashboard-roi-trend-error", "dashboard-roi-latest",
     "dashboard-v2-creator-count", "dashboard-v2-account-count", "dashboard-v2-campaign-count",
-    "dashboard-v2-spend", "dashboard-v2-roi", "dashboard-v2-missing-email",
+    "dashboard-v2-spend", "dashboard-v2-missing-email",
     "dashboard-v2-missing-country", "dashboard-v2-missing-language", "dashboard-v2-missing-content-type",
     "dashboard-v2-today-list", "dashboard-v2-campaign-list", "dashboard-v2-platform-list",
     "dashboard-v2-mail-waiting-me", "dashboard-v2-mail-waiting-creator", "dashboard-v2-mail-waiting-unknown",
     "dashboard-v2-mail-actionable-total", "dashboard-v2-mail-followup-list", "dashboard-v2-mail-followup-empty",
     "dashboard-v2-mail-followup-error",
-    "dashboard-v2-health-score", "dashboard-v2-health-healthy", "dashboard-v2-health-warning",
-    "dashboard-v2-health-critical", "dashboard-v2-country-list", "dashboard-v2-language-list",
+    "dashboard-v2-country-list", "dashboard-v2-language-list",
     "dashboard-v2-roi-latest",
     "dashboard-v2-drawer", "dashboard-v2-drawer-title", "dashboard-v2-drawer-count",
     "dashboard-v2-drawer-search", "dashboard-v2-drawer-list", "dashboard-v2-drawer-primary",
@@ -262,7 +265,8 @@ async function run() {
     }
   }
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
-  const v2Modules = ["today", "mail_follow_up", "campaigns", "creator_overview", "missing_info", "data_freshness", "geography", "roi"];
+  const legacyV2Modules = ["today", "mail_follow_up", "campaigns", "creator_overview", "missing_info", "geography", "roi"];
+  const v2Modules = ["today", "mail_follow_up", "campaigns", "creator_profile_overview", "missing_info", "roi"];
   const v2ModuleContainer = new FakeElement("div", "dashboard-v2-modules");
   v2Modules.forEach(id => {
     const module = new FakeElement("section");
@@ -380,7 +384,7 @@ async function run() {
     localStorage: {
       values: new Map([
         ["kolconnect-dashboard-layout-v1", JSON.stringify({ order: ["cooperation_overview"], visible: { cooperation_overview: false } })],
-        ["kolconnect-dashboard-layout-v2", JSON.stringify({ version: 2, order: v2Modules, visible: {} })],
+        ["kolconnect-dashboard-layout-v2", JSON.stringify({ version: 2, order: legacyV2Modules, visible: {} })],
       ]),
       getItem(key) { return this.values.get(key) || null; },
       setItem(key, value) { this.values.set(key, String(value)); },
@@ -448,6 +452,14 @@ async function run() {
   assert.equal(elements.get("dashboard-v2-creator-count").textContent, "30");
   assert.equal(elements.get("dashboard-v2-account-count").textContent, "33");
   assert.equal(elements.get("dashboard-v2-missing-email").textContent, "1");
+  const platformRows = elements.get("dashboard-v2-platform-list").children;
+  assert.equal(platformRows.length, 3, "all platform summaries render as peer cells");
+  assert.deepEqual(platformRows.map(row => row.className), [
+    "dashboard-v2-platform-row",
+    "dashboard-v2-platform-row",
+    "dashboard-v2-platform-row",
+  ], "all platform summaries use the same shared layout class");
+  assert.deepEqual(platformRows.map(row => row.children.length), [2, 2, 2], "each platform cell uses the same label/count structure");
   const nextActions = elements.get("dashboard-v2-today-list").children;
   assert.equal(nextActions.length, 6, "existing Dashboard list stays compact and preserves backend ordering");
   assert.equal(nextActions[0].children[0].textContent, "逾期 · 需要我决定", "due and decision stay on one item");
@@ -493,14 +505,24 @@ async function run() {
   campaignOverview.dataset.dashboardV2Open = "campaigns";
   await sections[0].dispatch("click", { target: campaignOverview });
   assert.equal(navigations[1].pageName, "campaigns", "Campaign overview opens the existing Campaign workflow");
+  const creatorOverview = new FakeElement("button");
+  creatorOverview.dataset.dashboardV2Open = "creators";
+  await sections[0].dispatch("click", { target: creatorOverview });
+  assert.equal(navigations[2].pageName, "creator-library", "Creator summary opens Creator Library");
+  assert.equal(navigations[2].params.viewMode, "card", "Creator summary selects creator card view");
   const accountOverview = new FakeElement("button");
   accountOverview.dataset.dashboardV2Open = "accounts";
   await sections[0].dispatch("click", { target: accountOverview });
-  assert.equal(navigations[2].pageName, "creator-library", "Account overview opens the existing Creator Library workflow");
+  assert.equal(navigations[3].pageName, "creator-library", "Account summary opens Creator Library");
+  assert.equal(navigations[3].params.viewMode, "table", "Account summary selects account-oriented table view");
+  const spendOverview = new FakeElement("button");
+  spendOverview.dataset.dashboardV2Open = "spend";
+  await sections[0].dispatch("click", { target: spendOverview });
+  assert.equal(navigations[4].pageName, "campaigns", "Spend summary opens the existing Campaign list");
   const mailFollowUpOverview = new FakeElement("button");
   mailFollowUpOverview.dataset.dashboardV2Open = "mail-follow-up";
   await sections[0].dispatch("click", { target: mailFollowUpOverview });
-  assert.equal(navigations[3].pageName, "mail-follow-up", "Mail Follow-up overview opens the existing Mail Follow-up page");
+  assert.equal(navigations[5].pageName, "mail-follow-up", "Mail Follow-up overview opens the existing Mail Follow-up page");
   assert.equal(chartCalls.length, 5);
   assert.deepEqual(chartCalls[0].config.data.labels, ["TikTok", "YouTube"]);
   assert.deepEqual(chartCalls[1].config.data.datasets[0].data, [9, 3]);
@@ -511,8 +533,33 @@ async function run() {
   assert.equal(sections[0].listenerCount("click"), 1);
 
   const preferences = window.KOLConnectDashboardPreferences;
-  assert.deepEqual(Array.from(preferences.get().order), v2Modules, "V2 must ignore retired V1 layouts");
+  assert.deepEqual(Array.from(preferences.get().order), v2Modules, "V2 creator profile widgets migrate without using retired V1 layouts");
   assert.equal(preferences.get().visible.today, true, "today remains fixed and visible");
+  assert.equal(preferences.get().visible.creator_profile_overview, true, "either visible legacy profile widget keeps the composite visible");
+  assert.doesNotMatch(window.localStorage.getItem("kolconnect-dashboard-layout-v2"), /creator_overview|geography/, "legacy widget IDs are removed from persisted normalized layouts");
+
+  const separatedLegacyOrder = ["today", "campaigns", "creator_overview", "mail_follow_up", "geography", "missing_info", "roi"];
+  for (const [platformVisible, geographyVisible, expectedVisible] of [
+    [true, true, true],
+    [true, false, true],
+    [false, true, true],
+    [false, false, false],
+  ]) {
+    window.localStorage.setItem("kolconnect-dashboard-layout-v2", JSON.stringify({
+      version: 2,
+      order: separatedLegacyOrder,
+      visible: { creator_overview: platformVisible, geography: geographyVisible, mail_follow_up: false },
+    }));
+    const migrated = preferences.get();
+    assert.deepEqual(
+      Array.from(migrated.order),
+      ["today", "campaigns", "creator_profile_overview", "mail_follow_up", "missing_info", "roi"],
+      "composite uses the earliest legacy position without reordering unrelated widgets",
+    );
+    assert.equal(migrated.visible.creator_profile_overview, expectedVisible);
+    assert.equal(migrated.visible.mail_follow_up, false, "unrelated visibility survives legacy migration");
+  }
+  preferences.reset();
 
   const customizeButton = elements.get("dashboard-v2-customize");
   await sections[0].dispatch("click", { target: customizeButton });
@@ -522,6 +569,13 @@ async function run() {
   assert.equal(customizationModules.children.length, v2Modules.length, "modal renders every V2 module");
   const todayInput = customizationModules.children[0].children[0].children[0];
   assert.equal(todayInput.disabled, true, "Today Actions remains fixed first and visible");
+  const creatorProfileInput = customizationModules.children.find(row => row.children[0].children[0].dataset.dashboardVisible === "creator_profile_overview").children[0].children[0];
+  creatorProfileInput.checked = false;
+  await customizationModules.dispatch("change", { target: creatorProfileInput });
+  assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "creator_profile_overview").hidden, true, "one customization toggle hides the full creator profile composite");
+  creatorProfileInput.checked = true;
+  await customizationModules.dispatch("change", { target: creatorProfileInput });
+  assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "creator_profile_overview").hidden, false, "one customization toggle restores the full creator profile composite");
   const missingInfoInput = customizationModules.children.find(row => row.children[0].children[0].dataset.dashboardVisible === "missing_info").children[0].children[0];
   missingInfoInput.checked = false;
   await customizationModules.dispatch("change", { target: missingInfoInput });
@@ -537,14 +591,14 @@ async function run() {
   assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true);
   assert.equal(v2ModuleContainer.children[0].dataset.dashboardV2Module, "today", "today remains first");
   preferences.move("campaigns", -1);
-  assert.deepEqual(Array.from(preferences.get().order).slice(0, 4), ["today", "campaigns", "mail_follow_up", "creator_overview"]);
+  assert.deepEqual(Array.from(preferences.get().order).slice(0, 4), ["today", "campaigns", "mail_follow_up", "creator_profile_overview"]);
   await window.KOLConnectPages.navigate("products");
   responses.push(dashboardResponse(30));
   await window.KOLConnectPages.navigate("dashboard");
   assert.equal(v2ModuleContainer.children.find(node => node.dataset.dashboardV2Module === "missing_info").hidden, true, "hidden optional section stays absent after Settings -> Dashboard navigation");
   assert.deepEqual(
     Array.from(v2ModuleContainer.children).map(node => node.dataset.dashboardV2Module).slice(0, 4),
-    ["today", "campaigns", "mail_follow_up", "creator_overview"],
+    ["today", "campaigns", "mail_follow_up", "creator_profile_overview"],
     "Dashboard reapplies the persisted V2 order when it becomes active",
   );
   preferences.setVisible("missing_info", true);
@@ -567,16 +621,18 @@ async function run() {
   assert.deepEqual(Array.from(preferences.get().order), v2Modules, "malformed V2 settings must safely fall back");
 
   const creatorButton = elements.get("dashboard-rising-creators").children[0];
+  const navigationCountBeforeCreator = navigations.length;
   await sections[0].dispatch("click", { target: creatorButton });
-  assert.equal(navigations.length, 5);
-  assert.equal(navigations[4].pageName, "creator-library-detail");
-  assert.equal(navigations[4].params.creatorId, "creator_one");
+  assert.equal(navigations.length, navigationCountBeforeCreator + 1);
+  assert.equal(navigations.at(-1).pageName, "creator-library-detail");
+  assert.equal(navigations.at(-1).params.creatorId, "creator_one");
 
   const reviewButton = elements.get("dashboard-incomplete-cooperations").children[0];
+  const navigationCountBeforeReview = navigations.length;
   await sections[0].dispatch("click", { target: reviewButton });
-  assert.equal(navigations.length, 6);
-  assert.equal(navigations[5].pageName, "campaign-detail");
-  assert.equal(navigations[5].params.campaignId, "campaign_one");
+  assert.equal(navigations.length, navigationCountBeforeReview + 1);
+  assert.equal(navigations.at(-1).pageName, "campaign-detail");
+  assert.equal(navigations.at(-1).params.campaignId, "campaign_one");
 
   await window.KOLConnectPages.navigate("products");
   assert.equal(chartCalls.filter(chart => chart.destroyed).length, 15, "each Dashboard exit must clean up its own chart set");
@@ -651,8 +707,24 @@ async function run() {
   assert.match(html, /data-dashboard-v2-open="missing-email"/);
   assert.match(html, /data-dashboard-v2-module="mail_follow_up"/);
   assert.match(html, /data-dashboard-v2-module="today" aria-label="下一步"/);
+  assert.match(html, /data-dashboard-v2-module="creator_profile_overview" aria-label="达人画像概览"/);
+  assert.doesNotMatch(html, /data-dashboard-v2-module="(?:creator_overview|geography)"/, "legacy profile widgets are not rendered beside the composite");
+  assert.match(html, /data-i18n="dashboardPlatformDistribution">平台分布</);
+  assert.match(html, /class="dashboard-v2-profile-country"><h3 data-i18n="dashboardCountryRegion">国家\/地区</);
+  assert.match(html, /class="dashboard-v2-profile-language"><h3 data-i18n="dashboardLanguage">语言</);
+  assert.equal((html.match(/class="dashboard-v2-summary-item"/g) || []).length, 4, "Dashboard summary contains exactly four cards");
+  assert.doesNotMatch(html, /id="dashboard-v2-roi"/, "global ROI is not presented as a Dashboard summary card");
+  for (const action of ["creators", "accounts", "campaigns", "spend"]) {
+    assert.match(html, new RegExp(`<button[^>]+class="dashboard-v2-summary-item"[^>]+data-dashboard-v2-open="${action}"`), `${action} summary is a semantic button`);
+  }
   assert.match(html, /data-i18n="dashboardModuleToday">下一步</);
   assert.match(html, /data-dashboard-v2-open="mail-follow-up"/);
+  assert.doesNotMatch(html, /data-dashboard-v2-module="data_freshness"/, "data health is not presented on the current Dashboard");
+  assert.doesNotMatch(html, /id="dashboard-v2-health-(?:score|healthy|warning|critical)"/);
+  assert.doesNotMatch(read("webapp/pages/dashboard.js"), /renderV2Health|dashboard-v2-health-/);
+  for (const action of ["mail-follow-up", "campaigns", "accounts"]) {
+    assert.match(html, new RegExp(`dashboard-v2-module-heading[^<]*(?:<[^>]+>[^<]*)*<button[^>]+class="text-btn"[^>]+data-dashboard-v2-open="${action}"`), `${action} action remains in its own module heading`);
+  }
   assert.doesNotMatch(read("webapp/pages/dashboard.js"), /account_uid/);
   const styles = read("webapp/styles.css");
   assert.match(styles, /\.dashboard-v2-grid \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: 16px; align-items: start; width: 100%; max-width: 1160px; margin: 0 auto;/);
@@ -662,7 +734,17 @@ async function run() {
   assert.match(styles, /\.dashboard-v2-mail-list \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 260px\), 460px\)\); justify-content: start;/);
   assert.match(styles, /\.dashboard-v2-mail-metrics \{ display: grid; grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
   assert.match(styles, /\.dashboard-v2-missing-grid \{ display: grid; grid-template-columns: repeat\(4, minmax\(0, 1fr\)\);/);
+  assert.match(styles, /\.dashboard-v2-summary \{ display: grid; grid-template-columns: repeat\(4, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.dashboard-v2-summary-item \{[^}]*cursor: pointer/);
+  assert.match(styles, /\.dashboard-v2-summary-item:focus-visible/);
+  assert.match(styles, /\.dashboard-v2-creator-profile-layout \{ display: grid; grid-template-columns: minmax\(0, \.86fr\) minmax\(0, 1fr\) minmax\(0, 1fr\); gap: 28px; min-width: 0; align-items: start; \}/);
+  assert.match(styles, /\.dashboard-v2-platform-list \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: 0; min-width: 0; \}/);
+  assert.match(styles, /\.dashboard-v2-platform-row \{ display: flex; align-items: baseline; justify-content: flex-start; gap: 12px; min-width: 0; padding: 8px 0; border-bottom: 1px solid var\(--border\); \}/);
+  assert.doesNotMatch(styles, /\.dashboard-v2-platform-row \{[^}]*justify-content: space-between/, "platform label and count are not stretched to opposite edges");
+  assert.doesNotMatch(styles, /\.dashboard-v2-platform-row:first-child/, "no platform receives a platform-specific vertical offset");
   assert.match(styles, /\.dashboard-v2-insight-columns \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 260px\), 380px\)\); justify-content: start;/);
+  assert.match(styles, /@media \(max-width: 960px\)[\s\S]*\.dashboard-v2-creator-profile-layout \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); gap: 18px; \}/);
+  assert.match(read("webapp/pages/creator-library.js"), /context\.params\.viewMode[\s\S]*global\.localStorage\.setItem\(VIEW_MODE_STORAGE_KEY, requestedMode\)/, "Dashboard view target is consumed by Creator Library");
   assert.match(styles, /\.dashboard-v2-module\[data-dashboard-v2-module="roi"\] \{ max-width: 700px; \}/);
   assert.match(styles, /\.dashboard-v2-grid \{ grid-template-columns: 1fr; \}/);
   assert.match(html, />活跃 Campaign</);

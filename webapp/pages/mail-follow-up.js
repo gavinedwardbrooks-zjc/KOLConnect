@@ -5,7 +5,9 @@
   let groups = [];
   let queuedGroups = [];
   let filter = "actionable";
+  let currentPage = 1;
   let actionPending = false;
+  const PAGE_SIZE = 20;
 
   const element = id => document.getElementById(id);
   const app = () => global.KOLConnectApp;
@@ -144,12 +146,26 @@
 
   function render() {
     const rows = visibleGroups();
+    const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+    currentPage = Math.min(Math.max(1, currentPage), totalPages);
+    const rangeStart = rows.length ? (currentPage - 1) * PAGE_SIZE : 0;
+    const pageRows = rows.slice(rangeStart, rangeStart + PAGE_SIZE);
     const body = element("mail-followup-list");
     const empty = element("mail-followup-empty");
     body.replaceChildren();
-    rows.forEach(group => appendGroupRow(body, group));
+    pageRows.forEach(group => appendGroupRow(body, group));
     empty.hidden = rows.length !== 0;
     element("mail-followup-summary").textContent = t("mailFollowupSummary", { visible: rows.length, total: groups.length });
+    const pagination = element("mail-followup-pagination");
+    pagination.hidden = rows.length === 0;
+    element("mail-followup-range").textContent = t("mailFollowupRange", {
+      start: rows.length ? rangeStart + 1 : 0,
+      end: rangeStart + pageRows.length,
+      total: rows.length,
+    });
+    element("mail-followup-page").textContent = t("mailFollowupPage", { page: currentPage, total: totalPages });
+    element("mail-followup-previous").disabled = currentPage <= 1;
+    element("mail-followup-next").disabled = currentPage >= totalPages;
     document.querySelectorAll("[data-followup-filter]").forEach(button => {
       button.classList.toggle("active", button.dataset.followupFilter === filter);
     });
@@ -281,7 +297,19 @@
       resources.listen(element("mail-followup-export-csv"), "click", () => downloadExport("csv"));
       resources.listen(element("mail-followup-export-xlsx"), "click", () => downloadExport("xlsx"));
       document.querySelectorAll("[data-followup-filter]").forEach(button => {
-        resources.listen(button, "click", () => { filter = button.dataset.followupFilter || "actionable"; render(); });
+        resources.listen(button, "click", () => {
+          filter = button.dataset.followupFilter || "actionable";
+          currentPage = 1;
+          render();
+        });
+      });
+      resources.listen(element("mail-followup-previous"), "click", () => {
+        currentPage = Math.max(1, currentPage - 1);
+        render();
+      });
+      resources.listen(element("mail-followup-next"), "click", () => {
+        currentPage += 1;
+        render();
       });
     },
     unbind() {
@@ -289,6 +317,7 @@
       resources = null;
       groups = [];
       queuedGroups = [];
+      currentPage = 1;
     },
   };
 

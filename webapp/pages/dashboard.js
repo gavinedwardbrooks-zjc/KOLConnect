@@ -13,19 +13,45 @@
   const charts = new Map();
   const CHART_COLORS = ["#e56b46", "#2f7d6d", "#e9a23b", "#5574b9", "#b65d7a", "#717171"];
   const DASHBOARD_LAYOUT_KEY = "kolconnect-dashboard-layout-v2";
+  const CREATOR_PROFILE_MODULE_ID = "creator_profile_overview";
+  const LEGACY_CREATOR_PROFILE_MODULE_IDS = new Set(["creator_overview", "geography"]);
   const MODULES = [
     { id: "today", labelKey: "dashboardModuleToday", descriptionKey: "dashboardModuleTodayDescription", essential: true },
     { id: "mail_follow_up", labelKey: "dashboardModuleMailFollowUp", descriptionKey: "dashboardModuleMailFollowUpDescription" },
     { id: "campaigns", labelKey: "dashboardModuleCampaigns", descriptionKey: "dashboardModuleCampaignsDescription" },
-    { id: "creator_overview", labelKey: "dashboardModuleCreatorOverview", descriptionKey: "dashboardModuleCreatorOverviewDescription" },
+    { id: CREATOR_PROFILE_MODULE_ID, labelKey: "dashboardModuleCreatorProfileOverview", descriptionKey: "dashboardModuleCreatorProfileOverviewDescription" },
     { id: "missing_info", labelKey: "dashboardModuleMissingInfo", descriptionKey: "dashboardModuleMissingInfoDescription" },
-    { id: "data_freshness", labelKey: "dashboardModuleDataFreshness", descriptionKey: "dashboardModuleDataFreshnessDescription" },
-    { id: "geography", labelKey: "dashboardModuleGeography", descriptionKey: "dashboardModuleGeographyDescription" },
     { id: "roi", labelKey: "dashboardModuleRoi", descriptionKey: "dashboardModuleRoiDescription" },
   ];
 
   function defaultLayout() {
-    return { version: 2, order: MODULES.map(module => module.id), visible: Object.fromEntries(MODULES.map(module => [module.id, true])) };
+    return { version: 3, order: MODULES.map(module => module.id), visible: Object.fromEntries(MODULES.map(module => [module.id, true])) };
+  }
+
+  function normalizeLayout(saved) {
+    const known = new Set(MODULES.map(module => module.id));
+    const legacyIdsPresent = saved.order.some(id => LEGACY_CREATOR_PROFILE_MODULE_IDS.has(id));
+    const order = [];
+    saved.order.forEach(id => {
+      const normalizedId = LEGACY_CREATOR_PROFILE_MODULE_IDS.has(id) ? CREATOR_PROFILE_MODULE_ID : id;
+      if (normalizedId !== "today" && known.has(normalizedId) && !order.includes(normalizedId)) order.push(normalizedId);
+    });
+    order.unshift("today");
+    MODULES.forEach(module => { if (!order.includes(module.id)) order.push(module.id); });
+
+    const legacyVisibilityPresent = [...LEGACY_CREATOR_PROFILE_MODULE_IDS]
+      .some(id => Object.prototype.hasOwnProperty.call(saved.visible, id));
+    const compositeVisible = legacyIdsPresent || legacyVisibilityPresent
+      ? [...LEGACY_CREATOR_PROFILE_MODULE_IDS].some(id => saved.visible[id] !== false)
+      : saved.visible[CREATOR_PROFILE_MODULE_ID] !== false;
+    const visible = Object.fromEntries(MODULES.map(module => [
+      module.id,
+      module.essential || (module.id === CREATOR_PROFILE_MODULE_ID ? compositeVisible : saved.visible[module.id] !== false),
+    ]));
+    return {
+      layout: { version: 3, order, visible },
+      migrated: legacyIdsPresent || legacyVisibilityPresent || saved.version !== 3,
+    };
   }
 
   function readLayout() {
@@ -33,12 +59,9 @@
     try {
       const saved = JSON.parse(global.localStorage?.getItem(DASHBOARD_LAYOUT_KEY) || "null");
       if (!saved || !Array.isArray(saved.order) || typeof saved.visible !== "object") return fallback;
-      const known = new Set(MODULES.map(module => module.id));
-      const order = [...new Set(saved.order.filter(id => known.has(id) && id !== "today"))];
-      order.unshift("today");
-      MODULES.forEach(module => { if (!order.includes(module.id)) order.push(module.id); });
-      const visible = Object.fromEntries(MODULES.map(module => [module.id, module.essential || saved.visible[module.id] !== false]));
-      return { version: 2, order, visible };
+      const normalized = normalizeLayout(saved);
+      if (normalized.migrated) global.localStorage?.setItem(DASHBOARD_LAYOUT_KEY, JSON.stringify(normalized.layout));
+      return normalized.layout;
     } catch (_) { return fallback; }
   }
 
@@ -305,7 +328,6 @@
     setText("dashboard-total-views", formatNumber(cooperation.total_views));
     setText("dashboard-cooperation-roi", formatNumber(cooperation.average_roi));
     renderHealthSummary(data?.health_summary);
-    renderV2Health(data?.health_summary);
     renderV2Dashboard(data);
 
     renderCreatorList("dashboard-rising-creators", health.rising_creators, t("dashboardNoRisingCreators"), record => formatChange(record.change));
@@ -473,7 +495,6 @@
     setText("dashboard-v2-account-count", formatNumber(snapshot.account_count));
     setText("dashboard-v2-campaign-count", formatNumber((snapshot.campaigns || []).length));
     setText("dashboard-v2-spend", formatMoneyTotal(overview.cooperation_spend, overview.cooperation_spend_by_currency, overview.cooperation_spend_unknown_currency));
-    setText("dashboard-v2-roi", formatPercent(overview.average_roi));
     setText("dashboard-v2-missing-email", formatNumber((missing.email_accounts || []).length));
     setText("dashboard-v2-missing-country", formatNumber((missing.country_creators || []).length));
     setText("dashboard-v2-missing-language", formatNumber((missing.language_creators || []).length));
@@ -481,15 +502,6 @@
     renderV2Today(data?.action_center);
     renderV2Campaigns(snapshot.campaigns);
     renderV2PlatformAccounts(snapshot.platform_accounts);
-  }
-
-  function renderV2Health(summary) {
-    const total = Number(summary?.total);
-    const score = Number(summary?.score);
-    setText("dashboard-v2-health-score", Number.isFinite(total) && total > 0 && Number.isFinite(score) ? t("dashboardHealthScore", { score: formatNumber(score) }) : t("dashboardNoData"));
-    setText("dashboard-v2-health-healthy", formatNumber(summary?.healthy || 0));
-    setText("dashboard-v2-health-warning", formatNumber(summary?.warning || 0));
-    setText("dashboard-v2-health-critical", formatNumber(summary?.critical || 0));
   }
 
   function renderDrawerRows() {
@@ -860,12 +872,16 @@
       openDrawer(open);
       return;
     }
-    if (open === "campaigns") {
+    if (open === "campaigns" || open === "spend") {
       getApp().navigate("campaigns").catch(getApp().showError);
       return;
     }
+    if (open === "creators") {
+      getApp().navigate("creator-library", { viewMode: "card" }).catch(getApp().showError);
+      return;
+    }
     if (open === "accounts") {
-      getApp().navigate("creator-library").catch(getApp().showError);
+      getApp().navigate("creator-library", { viewMode: "table" }).catch(getApp().showError);
       return;
     }
     if (open === "mail-follow-up") {

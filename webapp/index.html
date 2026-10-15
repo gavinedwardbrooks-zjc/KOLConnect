@@ -56,19 +56,16 @@
 
         <section id="dashboard-v2" class="dashboard-v2" aria-label="KOL 运营工作台" data-i18n-aria-label="dashboardAriaLabel">
           <div class="dashboard-v2-summary" aria-label="核心业务摘要" data-i18n-aria-label="dashboardCoreSummary">
-            <div class="dashboard-v2-summary-item">
+            <button type="button" class="dashboard-v2-summary-item" data-dashboard-v2-open="creators">
               <span data-i18n="dashboardCreators">达人</span><strong id="dashboard-v2-creator-count">--</strong><small data-i18n="dashboardCreatorUnitLabel">位 Creator</small>
-            </div>
-            <div class="dashboard-v2-summary-item">
+            </button>
+            <button type="button" class="dashboard-v2-summary-item" data-dashboard-v2-open="accounts">
               <span data-i18n="dashboardPlatformAccounts">平台账号</span><strong id="dashboard-v2-account-count">--</strong><small data-i18n="dashboardCreatorAccountUnitLabel">个 CreatorAccount</small>
-            </div>
-            <div class="dashboard-v2-summary-item"><span data-i18n="dashboardCampaignLabelShort">Campaign</span><strong id="dashboard-v2-campaign-count">--</strong><small data-i18n="dashboardSavedCampaigns">个已保存项目</small></div>
-            <div class="dashboard-v2-summary-item is-static">
+            </button>
+            <button type="button" class="dashboard-v2-summary-item" data-dashboard-v2-open="campaigns"><span data-i18n="dashboardCampaignLabelShort">Campaign</span><strong id="dashboard-v2-campaign-count">--</strong><small data-i18n="dashboardSavedCampaigns">个已保存项目</small></button>
+            <button type="button" class="dashboard-v2-summary-item" data-dashboard-v2-open="spend">
               <span data-i18n="dashboardCooperationSpend">合作花费</span><strong id="dashboard-v2-spend">--</strong><small data-i18n="dashboardGroupedByCurrency">按币种分组</small>
-            </div>
-            <div class="dashboard-v2-summary-item is-static">
-              <span data-i18n="dashboardRecordedRoi">已录入 ROI</span><strong id="dashboard-v2-roi">--</strong><small data-i18n="dashboardNoAutomaticConversion">不自动换算</small>
-            </div>
+            </button>
           </div>
 
           <div id="dashboard-v2-modules" class="dashboard-v2-grid">
@@ -99,20 +96,13 @@
               <div id="dashboard-v2-campaign-list" class="dashboard-v2-campaign-list"></div>
             </section>
 
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="creator_overview" aria-label="达人数据概览" data-i18n-aria-label="dashboardModuleCreatorOverview">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardCreatorLibraryEyebrow">CREATOR LIBRARY</p><h2 data-i18n="dashboardModuleCreatorOverview">达人数据概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="accounts" data-i18n="dashboardViewAccounts">查看账号</button></div>
-              <div id="dashboard-v2-platform-list" class="dashboard-v2-platform-list"></div>
-            </section>
-
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="data_freshness" aria-label="数据更新状态" data-i18n-aria-label="dashboardModuleDataFreshness">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardDataHealthEyebrow">DATA HEALTH</p><h2 data-i18n="dashboardModuleDataFreshness">数据更新状态</h2></div><span id="dashboard-v2-health-score" class="dashboard-v2-health-score">--</span></div>
-              <div class="dashboard-v2-health-grid"><div><span data-i18n="dashboardHealthy">正常</span><strong id="dashboard-v2-health-healthy">--</strong></div><div><span data-i18n="dashboardTrendDeclining">趋势下滑</span><strong id="dashboard-v2-health-warning">--</strong></div><div><span data-i18n="dashboardDataExpired">数据过期</span><strong id="dashboard-v2-health-critical">--</strong></div></div>
-              <p class="hint" data-i18n="dashboardHealthHint">基于达人快照新鲜度与现有趋势数据，不代表合作履约评价。</p>
-            </section>
-
-            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="geography" aria-label="地区与语言" data-i18n-aria-label="dashboardModuleGeography">
-              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardGeographyEyebrow">GEOGRAPHY</p><h2 data-i18n="dashboardModuleGeography">地区与语言</h2></div></div>
-              <div class="dashboard-v2-insight-columns"><div><h3 data-i18n="dashboardCountryRegion">国家/地区</h3><div id="dashboard-v2-country-list" class="dashboard-ranking-list"></div></div><div><h3 data-i18n="dashboardLanguage">语言</h3><div id="dashboard-v2-language-list" class="dashboard-ranking-list"></div></div></div>
+            <section class="section-card dashboard-v2-module" data-dashboard-v2-module="creator_profile_overview" aria-label="达人画像概览" data-i18n-aria-label="dashboardModuleCreatorProfileOverview">
+              <div class="dashboard-v2-module-heading"><div><p class="eyebrow" data-i18n="dashboardCreatorLibraryEyebrow">CREATOR LIBRARY</p><h2 data-i18n="dashboardModuleCreatorProfileOverview">达人画像概览</h2></div><button type="button" class="text-btn" data-dashboard-v2-open="accounts" data-i18n="dashboardViewAccounts">查看账号</button></div>
+              <div class="dashboard-v2-creator-profile-layout">
+                <div class="dashboard-v2-profile-platform"><h3 data-i18n="dashboardPlatformDistribution">平台分布</h3><div id="dashboard-v2-platform-list" class="dashboard-v2-platform-list"></div></div>
+                <div class="dashboard-v2-profile-country"><h3 data-i18n="dashboardCountryRegion">国家/地区</h3><div id="dashboard-v2-country-list" class="dashboard-ranking-list"></div></div>
+                <div class="dashboard-v2-profile-language"><h3 data-i18n="dashboardLanguage">语言</h3><div id="dashboard-v2-language-list" class="dashboard-ranking-list"></div></div>
+              </div>
             </section>
 
             <section class="section-card dashboard-v2-module dashboard-v2-wide" data-dashboard-v2-module="roi" aria-label="ROI 与表现" data-i18n-aria-label="dashboardModuleRoi">
@@ -393,18 +383,17 @@
           <div class="section-title" data-i18n="emailEnrichmentTitle">联系邮箱补全</div>
           <p class="hint" data-i18n="emailEnrichmentHint">优先使用 KOLConnect 中已有账号；新结果通过现有服务安全写回 SQLite。</p>
           <fieldset class="email-source-selector">
-            <legend data-i18n="emailSourceQuestion">你想给哪些达人补邮箱？</legend>
-            <label class="email-source-option"><input type="radio" name="email-source" value="task" checked><span><strong data-i18n="emailSourceTask">最近抓取的达人</strong><small data-i18n="emailSourceTaskHint">从历史抓取任务中选择一批账号</small></span></label>
-            <label class="email-source-option"><input type="radio" name="email-source" value="review_results"><span><strong data-i18n="emailSourceReview">待处理的达人</strong><small data-i18n="emailSourceReviewHint">从审核结果中选择需要补邮箱的账号</small></span></label>
-            <label class="email-source-option"><input type="radio" name="email-source" value="creator_library"><span><strong data-i18n="emailSourceLibrary">达人库</strong><small data-i18n="emailSourceLibraryHint">给已经入库的达人补邮箱</small></span></label>
-            <label class="email-source-option"><input type="radio" name="email-source" value="manual"><span><strong data-i18n="emailSourceManual">临时补邮箱</strong><small data-i18n="emailSourceManualHint">粘贴一批达人链接，仅查找并补充邮箱，不创建新的达人抓取任务</small></span></label>
+            <legend data-i18n="emailSourceQuestion">你想从哪里选择需要补邮箱的达人？</legend>
+            <label class="email-source-option"><input type="radio" name="email-source" value="creator_library" checked><span><strong data-i18n="emailSourceLibrary">从达人库选择</strong><small data-i18n="emailSourceLibraryHint">从现有达人库中按任务、平台和邮箱状态筛选账号。</small></span></label>
+            <label class="email-source-option"><input type="radio" name="email-source" value="url_add"><span><strong data-i18n="emailSourceUrlAdd">通过链接添加达人并补邮箱</strong><small data-i18n="emailSourceUrlAddHint">粘贴达人主页或视频链接，查找并补充邮箱；新识别的达人会自动加入达人库。</small></span></label>
           </fieldset>
-          <div class="form-grid two" id="email-existing-source-fields">
+          <p class="hint" id="email-source-help" data-i18n="emailSourceLibraryHint">从现有达人库中按任务、平台和邮箱状态筛选账号。</p>
+          <div class="form-grid two" id="email-source-fields">
             <label class="field" id="email-source-task-field">
-              <span data-i18n="reviewTask">任务</span>
+              <span data-i18n="emailTaskFilter">抓取任务</span>
               <select id="email-source-task"></select>
             </label>
-            <fieldset class="field email-platform-filter">
+            <fieldset class="field email-platform-filter" id="email-platform-field">
               <legend data-i18n="reviewPlatform">平台</legend>
               <label><input class="email-platform-option" type="checkbox" value="tiktok" checked> TikTok</label>
               <label><input class="email-platform-option" type="checkbox" value="instagram" checked> Instagram</label>
@@ -1957,6 +1946,10 @@
             </table>
           </div>
           <div class="empty-note" id="mail-followup-empty" hidden data-i18n="mailFollowupEmpty">暂无待跟进邮件。同步邮件后，这里会根据收发记录显示待跟进状态。</div>
+          <div class="mail-pagination" id="mail-followup-pagination" hidden>
+            <span id="mail-followup-range">显示 0–0，共 0 条</span>
+            <div class="mail-page-actions"><button class="soft-btn compact-btn" id="mail-followup-previous" type="button" data-i18n="mailPrevious">上一页</button><span id="mail-followup-page">第 1 / 1 页</span><button class="soft-btn compact-btn" id="mail-followup-next" type="button" data-i18n="mailNext">下一页</button></div>
+          </div>
         </section>
 
         <section class="section-card" id="mail-followup-export-panel" hidden>
