@@ -253,7 +253,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("source_sha:", manual)
         self.assertIn("fromJSON(inputs.arm64_test_only", manual)
         self.assertIn("KOLConnect_v2.0.0_macOS_arm64_TEST.dmg", manual)
-        self.assertIn("inputs.arm64_test_only && inputs.source_sha", manual)
+        self.assertIn("inputs.source_sha || github.sha", manual)
         self.assertIn("pyi-archive_viewer -r -b", manual)
         self.assertIn("FEISHU_FIELD_FETCH_FAILED", manual)
         self.assertIn("name: ${{ env.ARTIFACT_NAME }}", manual)
@@ -495,12 +495,12 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(2, len(checkout_steps))
         root_checkout, frozen_checkout = checkout_steps
         self.assertEqual(
-            "${{ inputs.arm64_test_only && inputs.source_sha || 'main' }}",
+            "${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || 'main' }}",
             root_checkout["with"]["ref"],
         )
         self.assertNotIn("path", root_checkout["with"])
         self.assertEqual(
-            "${{ inputs.arm64_test_only && inputs.source_sha || '"
+            "${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || '"
             + frozen_sha
             + "' }}",
             frozen_checkout["with"]["ref"],
@@ -598,6 +598,13 @@ class PackagingConfigurationTests(unittest.TestCase):
             "codesign --force --deep --sign -",
             "codesign --verify --deep --strict",
             'pyi-archive_viewer -r -b "${binary}"',
+            'cmp -s "${source_settings}" "${packaged_settings}"',
+            'cmp -s "${source_i18n}" "${packaged_i18n}"',
+            "PACKAGED_SETTINGS_PATH=",
+            "PACKAGED_I18N_PATH=",
+            "SETTINGS_MARKER_FOUND=YES",
+            "I18N_MARKER_FOUND=YES",
+            "certifi/cacert.pem",
         ):
             self.assertIn(contract, verification)
         self.assertNotIn('pyi-archive_viewer -l "${binary}"', verification)
@@ -609,6 +616,10 @@ class PackagingConfigurationTests(unittest.TestCase):
             "packaged_webapp_app_js",
             "packaged_webapp_styles",
             "packaged_webapp_i18n",
+            "packaged_settings_file",
+            "packaged_i18n_file",
+            "packaged_settings_source_mismatch",
+            "packaged_i18n_source_mismatch",
             "packaged_settings_feishu_error",
             "packaged_i18n_feishu_error",
             "source_feishu_client_marker",
@@ -617,6 +628,9 @@ class PackagingConfigurationTests(unittest.TestCase):
             "pyinstaller_archive_open",
             "packaged_feishu_client_module",
             "packaged_feishu_sync_service_module",
+            "packaged_requests_module",
+            "packaged_certifi_module",
+            "packaged_certifi_ca_bundle",
             "packaged_app_icon",
             "packaged_extension_manifest",
             "packaged_extension_tests_removed",
@@ -646,6 +660,9 @@ class PackagingConfigurationTests(unittest.TestCase):
         dmg_build = steps_by_name["Create final macOS DMG"]["run"]
         self.assertIn("hdiutil create", dmg_build)
         self.assertIn('product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"', dmg_build)
+        self.assertIn("KOLConnect_v2.0.0_macOS_arm64_TEST.dmg", dmg_build)
+        self.assertIn("fail_gate dmg_output_filename", dmg_build)
+        self.assertIn("fail_gate dmg_create", dmg_build)
         dmg_validation = steps_by_name["Validate DMG and calculate SHA-256"]["run"]
         self.assertIn("hdiutil attach -readonly -nobrowse", dmg_validation)
         self.assertIn('test -d "${mount_dir}/KOLConnect.app"', dmg_validation)
@@ -653,6 +670,19 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("ARTIFACT_SIZE_BYTES=", dmg_validation)
         self.assertIn("ARTIFACT_SHA256=", dmg_validation)
         self.assertIn("DMG_VALIDATION=PASS", dmg_validation)
+        for failed_gate in (
+            "dmg_nonempty",
+            "dmg_freshness",
+            "dmg_mount",
+            "dmg_app_present",
+            "dmg_applications_link",
+            "dmg_app_architecture",
+            "dmg_app_version",
+            "dmg_app_codesign",
+            "dmg_detach",
+            "dmg_size",
+        ):
+            self.assertIn(f"fail_gate {failed_gate}", dmg_validation)
 
         summary = steps_by_name["Write build summary"]["run"]
         for metadata in (
