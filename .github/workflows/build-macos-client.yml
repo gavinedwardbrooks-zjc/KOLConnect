@@ -243,29 +243,33 @@ jobs:
           inspect_macos_binary PYEXPAT "${pyexpat}" "${TARGET_ARCH}"
           sqlite_module="$(find "${app}/Contents" -name '_sqlite3.cpython-312-darwin.so' -print -quit)"
           test -n "${sqlite_module}"; inspect_macos_binary SQLITE_MODULE "${sqlite_module}" "${TARGET_ARCH}"
-          ! otool -L "${sqlite_module}" | grep -Fq "${RUNNER_TEMP}"
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" == "${PRODUCT_VERSION}" ]]
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" == "${PRODUCT_VERSION}" ]]
+          fail_gate() { echo "FAILED_GATE=$1" >&2; exit 1; }
+          if otool -L "${sqlite_module}" | grep -Fq "${RUNNER_TEMP}"; then fail_gate sqlite_runtime_relocatability; fi
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" == "${PRODUCT_VERSION}" ]] || fail_gate bundle_short_version
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" == "${PRODUCT_VERSION}" ]] || fail_gate bundle_version
           webapp_index="$(find "${app}/Contents" -path '*/webapp/index.html' -print -quit)"
+          test -n "${webapp_index}" || fail_gate packaged_webapp_index
           webapp_root="$(dirname "${webapp_index}")"
-          test -n "${webapp_index}"; test -f "${webapp_root}/app.js"; test -f "${webapp_root}/styles.css"; test -f "${webapp_root}/i18n.js"
-          grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${webapp_root}/pages/settings.js"
-          grep -Fq 'settingsFeishuFieldFetchFailed' "${webapp_root}/i18n.js"
-          grep -Fq 'class FieldFetchResult' "${FROZEN_PRODUCT_ROOT}/app/feishu_client.py"
-          grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${FROZEN_PRODUCT_ROOT}/app/services/feishu_sync_service.py"
-          grep -Fq '"requests", "certifi"' "${FROZEN_PRODUCT_ROOT}/packaging/spec/KOLConnect_mac.spec"
-          archive_listing="$(pyi-archive_viewer -l "${binary}")"
-          grep -Fq 'feishu_client' <<<"${archive_listing}"
-          grep -Fq 'services.feishu_sync_service' <<<"${archive_listing}"
-          find "${app}/Contents" -path '*/assets/KOLConnect.png' -print -quit | grep -q .
-          find "${app}/Contents" -path '*/chrome_extension/manifest.json' -print -quit | grep -q .
+          test -f "${webapp_root}/app.js" || fail_gate packaged_webapp_app_js
+          test -f "${webapp_root}/styles.css" || fail_gate packaged_webapp_styles
+          test -f "${webapp_root}/i18n.js" || fail_gate packaged_webapp_i18n
+          grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${webapp_root}/pages/settings.js" || fail_gate packaged_settings_feishu_error
+          grep -Fq 'settingsFeishuFieldFetchFailed' "${webapp_root}/i18n.js" || fail_gate packaged_i18n_feishu_error
+          grep -Fq 'class FieldFetchResult' "${FROZEN_PRODUCT_ROOT}/app/feishu_client.py" || fail_gate source_feishu_client_marker
+          grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${FROZEN_PRODUCT_ROOT}/app/services/feishu_sync_service.py" || fail_gate source_feishu_service_marker
+          grep -Fq '"requests", "certifi"' "${FROZEN_PRODUCT_ROOT}/packaging/spec/KOLConnect_mac.spec" || fail_gate macos_tls_ca_spec
+          archive_listing="$(pyi-archive_viewer -r -b "${binary}")" || fail_gate pyinstaller_archive_open
+          grep -Fq 'feishu_client' <<<"${archive_listing}" || fail_gate packaged_feishu_client_module
+          grep -Fq 'services.feishu_sync_service' <<<"${archive_listing}" || fail_gate packaged_feishu_sync_service_module
+          test -n "$(find "${app}/Contents" -path '*/assets/KOLConnect.png' -print -quit)" || fail_gate packaged_app_icon
+          test -n "$(find "${app}/Contents" -path '*/chrome_extension/manifest.json' -print -quit)" || fail_gate packaged_extension_manifest
           find "${app}/Contents" -path '*/chrome_extension/tests' -exec rm -rf {} +
           find "${app}/Contents" -path '*/chrome_extension/README.md' -delete
-          ! find "${app}/Contents" -path '*/chrome_extension/tests' -print -quit | grep -q .
-          ! find "${app}/Contents" -path '*/chrome_extension/README.md' -print -quit | grep -q .
-          "${binary}" --sqlite-runtime-check
-          codesign --force --deep --sign - "${app}"
-          codesign --verify --deep --strict --verbose=2 "${app}"
+          test -z "$(find "${app}/Contents" -path '*/chrome_extension/tests' -print -quit)" || fail_gate packaged_extension_tests_removed
+          test -z "$(find "${app}/Contents" -path '*/chrome_extension/README.md' -print -quit)" || fail_gate packaged_extension_readme_removed
+          "${binary}" --sqlite-runtime-check || fail_gate packaged_sqlite_runtime
+          codesign --force --deep --sign - "${app}" || fail_gate codesign_apply
+          codesign --verify --deep --strict --verbose=2 "${app}" || fail_gate codesign_verify
 
       - name: Smoke test packaged imports and app with isolated HOME
         shell: bash

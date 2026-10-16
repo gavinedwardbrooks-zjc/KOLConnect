@@ -254,7 +254,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("fromJSON(inputs.arm64_test_only", manual)
         self.assertIn("KOLConnect_v2.0.0_macOS_arm64_TEST.dmg", manual)
         self.assertIn("inputs.arm64_test_only && inputs.source_sha", manual)
-        self.assertIn("pyi-archive_viewer -l", manual)
+        self.assertIn("pyi-archive_viewer -r -b", manual)
         self.assertIn("FEISHU_FIELD_FETCH_FAILED", manual)
         self.assertIn("name: ${{ env.ARTIFACT_NAME }}", manual)
         self.assertIn("path: frozen-src/${{ env.TARGET_DMG }}", manual)
@@ -597,8 +597,35 @@ class PackagingConfigurationTests(unittest.TestCase):
             '"${binary}" --sqlite-runtime-check',
             "codesign --force --deep --sign -",
             "codesign --verify --deep --strict",
+            'pyi-archive_viewer -r -b "${binary}"',
         ):
             self.assertIn(contract, verification)
+        self.assertNotIn('pyi-archive_viewer -l "${binary}"', verification)
+        for failed_gate in (
+            "sqlite_runtime_relocatability",
+            "bundle_short_version",
+            "bundle_version",
+            "packaged_webapp_index",
+            "packaged_webapp_app_js",
+            "packaged_webapp_styles",
+            "packaged_webapp_i18n",
+            "packaged_settings_feishu_error",
+            "packaged_i18n_feishu_error",
+            "source_feishu_client_marker",
+            "source_feishu_service_marker",
+            "macos_tls_ca_spec",
+            "pyinstaller_archive_open",
+            "packaged_feishu_client_module",
+            "packaged_feishu_sync_service_module",
+            "packaged_app_icon",
+            "packaged_extension_manifest",
+            "packaged_extension_tests_removed",
+            "packaged_extension_readme_removed",
+            "packaged_sqlite_runtime",
+            "codesign_apply",
+            "codesign_verify",
+        ):
+            self.assertIn(f"fail_gate {failed_gate}", verification)
 
         smoke = steps_by_name["Smoke test packaged imports and app with isolated HOME"]["run"]
         for contract in (
