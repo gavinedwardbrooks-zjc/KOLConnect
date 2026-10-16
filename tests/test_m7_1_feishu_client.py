@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 import unittest
+import gzip
+import json
 from pathlib import Path
 
 
@@ -27,6 +29,8 @@ class Response:
         self.headers = headers or {}
 
     def json(self):
+        if isinstance(self._payload, BaseException):
+            raise self._payload
         return self._payload
 
 
@@ -37,6 +41,39 @@ class QueueTransport:
 
     def request(self, method, url, **kwargs):
         self.calls.append((method, url, kwargs))
+        response = self.responses.pop(0)
+        if isinstance(response, BaseException):
+            raise response
+        return response
+
+
+class UrlResponse:
+    def __init__(self, payload, *, status=200, headers=None, raw=None):
+        self.payload = payload
+        self.status = status
+        self.headers = headers or {}
+        self.raw = raw
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def getcode(self):
+        return self.status
+
+    def read(self):
+        return self.raw if self.raw is not None else json.dumps(self.payload).encode("utf-8")
+
+
+class QueueUrlOpen:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def __call__(self, request, timeout):
+        self.calls.append((request, timeout))
         response = self.responses.pop(0)
         if isinstance(response, BaseException):
             raise response
@@ -117,6 +154,194 @@ class FeishuClientTests(unittest.TestCase):
         self.assertIn("/creator-table/records/batch_delete", transport.calls[1][1])
         self.assertEqual({"records": ["legacy-1"]}, transport.calls[1][2]["json"])
         self.assertFalse(hasattr(FeishuClient(CONFIG, transport=transport), "delete"))
+
+    def test_field_fetch_primary_success_does_not_use_fallback(self):
+        transport = QueueTransport([
+            Response({"code": 0, "tenant_access_token": "token"}),
+            Response({"code": 0, "data": {"items": [], "has_more": False}}),
+        ])
+        fallback = QueueUrlOpen([])
+        result = FeishuClient(
+            CONFIG, transport=transport, fallback_urlopen=fallback
+        ).fetch_fields("creator-table")
+        self.assertTrue(result.ok)
+        self.assertFalse(result.used_fallback)
+        self.assertEqual((), result.fields)
+        self.assertEqual([], fallback.calls)
+
+    def test_invalid_primary_uses_read_only_paginated_fallback(self):
+        transport = QueueTransport([
+            Response({"code": 0, "tenant_access_token": "token"}),
+            Response({}, status=400),
+        ])
+        fallback = QueueUrlOpen([
+            UrlResponse({
+                "code": 0,
+                "data": {
+                    "items": [{
+                        "field_name": "社媒账号",
+                        "type": 21,
+                        "property": {"table_id": "accounts", "multiple": True},
+                    }],
+                    "has_more": True,
+                    "page_token": "next-page",
+                },
+            }),
+            UrlResponse({
+                "code": 0,
+                "data": {
+                    "items": [{"field_name": "达人名称", "type": 1}],
+                    "has_more": False,
+                },
+            }),
+        ])
+        result = FeishuClient(
+            CONFIG, transport=transport, fallback_urlopen=fallback
+        ).fetch_fields("creator-table")
+        self.assertTrue(result.ok)
+        self.assertTrue(result.used_fallback)
+        self.assertEqual("INVALID_REQUEST", result.primary_error.code)
+        self.assertEqual(["社媒账号", "达人名称"], [item["field_name"] for item in result.fields])
+        relation = result.fields[0]
+        self.assertEqual(21, relation["type"])
+        self.assertEqual("accounts", relation["property"]["table_id"])
+        self.assertTrue(relation["property"]["multiple"])
+        self.assertEqual(2, result.pagination_pages)
+        self.assertEqual("GET", fallback.calls[0][0].method)
+        self.assertIn("page_token=next-page", fallback.calls[1][0].full_url)
+        self.assertEqual("KOLConnect/2.0.0", fallback.calls[0][0].get_header("User-agent"))
+
+    def test_malformed_primary_and_fallback_return_explicit_failure(self):
+        transport = QueueTransport([
+            Response({"code": 0, "tenant_access_token": "token"}),
+            Response({"code": 0, "data": {"has_more": False}}),
+        ])
+        fallback = QueueUrlOpen([
+            UrlResponse({"code": 0, "data": {"has_more": False}}),
+        ])
+        result = FeishuClient(
+            CONFIG, transport=transport, fallback_urlopen=fallback
+        ).fetch_fields("creator-table")
+        self.assertFalse(result.ok)
+        self.assertTrue(result.used_fallback)
+        self.assertEqual("REMOTE_ERROR", result.primary_error.code)
+        self.assertEqual("REMOTE_ERROR", result.fallback_error.code)
+        diagnostic = repr(result)
+        self.assertNotIn(CONFIG["app_secret"], diagnostic)
+        self.assertNotIn(CONFIG["app_token"], diagnostic)
+
+    def test_primary_transport_json_shape_and_api_failures_use_fallback(self):
+        primary_failures = (
+            OSError("transport secret-value"),
+            Response(ValueError("invalid json secret-value")),
+            Response({"code": 0, "data": {"has_more": False}}),
+            Response({"code": 999, "msg": "request rejected secret-value"}),
+        )
+        expected_stages = ("transport", "json", "shape", "api")
+        for failure, expected_stage in zip(primary_failures, expected_stages):
+            with self.subTest(stage=expected_stage):
+                responses = [Response({"code": 0, "tenant_access_token": "token"})]
+                if isinstance(failure, Response):
+                    responses.append(failure)
+                else:
+                    responses.append(failure)
+                fallback = QueueUrlOpen([
+                    UrlResponse({
+                        "code": 0,
+                        "data": {
+                            "items": [{"field_name": "达人名称", "type": 1}],
+                            "has_more": False,
+                        },
+                    }),
+                ])
+                result = FeishuClient(
+                    CONFIG,
+                    transport=QueueTransport(responses),
+                    fallback_urlopen=fallback,
+                ).fetch_fields("creator-table")
+                self.assertTrue(result.ok)
+                self.assertTrue(result.used_fallback)
+                self.assertEqual(expected_stage, result.primary_error.failure_stage)
+                self.assertEqual("达人名称", result.fields[0]["field_name"])
+
+    def test_fallback_decodes_gzip_and_preserves_chinese_relation_metadata(self):
+        payload = {
+            "code": 0,
+            "data": {
+                "items": [{
+                    "field_name": "社媒账号",
+                    "type": 21,
+                    "property": {"table_id": "accounts", "multiple": True},
+                }],
+                "has_more": False,
+            },
+        }
+        compressed = gzip.compress(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+        transport = QueueTransport([
+            Response({"code": 0, "tenant_access_token": "token"}),
+            OSError("primary unavailable"),
+        ])
+        result = FeishuClient(
+            CONFIG,
+            transport=transport,
+            fallback_urlopen=QueueUrlOpen([
+                UrlResponse(None, headers={"Content-Encoding": "gzip"}, raw=compressed),
+            ]),
+        ).fetch_fields("creator-table")
+        self.assertTrue(result.ok)
+        self.assertEqual("社媒账号", result.fields[0]["field_name"])
+        self.assertEqual(21, result.fields[0]["type"])
+        self.assertTrue(result.fields[0]["property"]["multiple"])
+
+    def test_repeated_page_token_fails_boundedly_then_uses_fallback(self):
+        transport = QueueTransport([
+            Response({"code": 0, "tenant_access_token": "token"}),
+            Response({
+                "code": 0,
+                "data": {"items": [], "has_more": True, "page_token": "repeat"},
+            }),
+            Response({
+                "code": 0,
+                "data": {"items": [], "has_more": True, "page_token": "repeat"},
+            }),
+        ])
+        fallback = QueueUrlOpen([
+            UrlResponse({
+                "code": 0,
+                "data": {"items": [], "has_more": False},
+            }),
+        ])
+        result = FeishuClient(
+            CONFIG, transport=transport, fallback_urlopen=fallback
+        ).fetch_fields("creator-table")
+        self.assertTrue(result.ok)
+        self.assertTrue(result.used_fallback)
+        self.assertEqual("pagination", result.primary_error.failure_stage)
+        self.assertEqual(2, result.primary_error.pagination_pages)
+        self.assertEqual(1, result.pagination_pages)
+
+    def test_repeated_fallback_page_token_fails_boundedly(self):
+        transport = QueueTransport([
+            Response({"code": 0, "tenant_access_token": "token"}),
+            OSError("primary unavailable"),
+        ])
+        fallback = QueueUrlOpen([
+            UrlResponse({
+                "code": 0,
+                "data": {"items": [], "has_more": True, "page_token": "repeat"},
+            }),
+            UrlResponse({
+                "code": 0,
+                "data": {"items": [], "has_more": True, "page_token": "repeat"},
+            }),
+        ])
+        result = FeishuClient(
+            CONFIG, transport=transport, fallback_urlopen=fallback
+        ).fetch_fields("creator-table")
+        self.assertFalse(result.ok)
+        self.assertEqual("pagination", result.fallback_error.failure_stage)
+        self.assertEqual(2, result.fallback_error.pagination_pages)
+        self.assertEqual(2, len(fallback.calls))
 
 
 if __name__ == "__main__":

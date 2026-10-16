@@ -70,6 +70,11 @@ async function run() {
         { table: "account", field: "粉丝数", actual_type: 15 },
       ],
     },
+    {
+      status: "blocked", blocked_reason: "FEISHU_FIELD_FETCH_FAILED",
+      missing_fields: [], incompatible_fields: [],
+      error_codes: ["FEISHU_FIELD_FETCH_FAILED"],
+    },
     { status: "failed" },
   ];
   const window = {
@@ -103,6 +108,7 @@ async function run() {
         settingsFeishuMissingFields: `${values.table || ""} 表缺少：`,
         settingsFeishuIncompatibleFields: `${values.table || ""} 表字段类型不兼容:`,
         settingsFeishuCurrentType: `${values.field || ""}（当前类型：${values.type || ""}）`,
+        settingsFeishuFieldFetchFailed: "飞书连接成功，但 KOLConnect 无法读取目标表的字段结构。系统已自动重试且未修改任何飞书数据。请稍后重试；如果问题持续存在，请查看诊断日志。",
         settingsOperationNotRun: `操作未执行：${values.reason || "--"}`,
         settingsAvailable: "可用",
         settingsUnavailable: "不可用",
@@ -131,6 +137,9 @@ async function run() {
   assert.doesNotMatch(missingMessage, /secret|token/i);
   await elements.get("feishu-sync-validate").click();
   assert.match(elements.get("feishu-sync-result").textContent, /Creator Account 表字段类型不兼容:[\s\S]*粉丝数/);
+  await elements.get("feishu-sync-validate").click();
+  assert.match(elements.get("feishu-sync-result").textContent, /无法读取目标表的字段结构/);
+  assert.doesNotMatch(elements.get("feishu-sync-result").textContent, /表缺少/);
   await elements.get("feishu-sync-validate").click();
   assert.equal(elements.get("feishu-sync-result").textContent, "操作未执行：FEISHU_SYNC_FAILED");
   await elements.get("feishu-sync-dry-run").click();

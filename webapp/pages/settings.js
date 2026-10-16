@@ -275,7 +275,9 @@
       const hasSchemaDetails = (data?.missing_fields?.length || 0) + (data?.incompatible_fields?.length || 0) > 0;
       message.textContent = reason === "FEISHU_SCHEMA_INVALID" && hasSchemaDetails
         ? renderSchemaValidationDetails(data)
-        : t("settingsOperationNotRun", { reason });
+        : reason === "FEISHU_FIELD_FETCH_FAILED"
+          ? t("settingsFeishuFieldFetchFailed")
+          : t("settingsOperationNotRun", { reason });
     }
   }
 

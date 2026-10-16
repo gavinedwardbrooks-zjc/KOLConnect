@@ -3,13 +3,20 @@ from __future__ import annotations
 """Small Feishu Bitable transport boundary for the M7 read-only replica."""
 
 from dataclasses import dataclass
+import gzip
+import json
 from typing import Any, Iterable
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
+import zlib
 
 import requests
 
 
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_PAGE_SIZE = 500
+FEISHU_USER_AGENT = "KOLConnect/2.0.0"
 
 
 @dataclass(frozen=True)
@@ -17,6 +24,12 @@ class FeishuClientError(RuntimeError):
     code: str
     message: str
     retry_after: str = ""
+    http_status: int = 0
+    api_code: int = 0
+    failure_stage: str = "unknown"
+    exception_class: str = ""
+    response_shape: str = "unknown"
+    pagination_pages: int = 0
 
     def __str__(self) -> str:
         return self.message
@@ -26,6 +39,17 @@ class FeishuClientError(RuntimeError):
         if self.retry_after:
             result["retry_after"] = self.retry_after
         return result
+
+
+@dataclass(frozen=True)
+class FieldFetchResult:
+    ok: bool
+    fields: tuple[dict[str, Any], ...] = ()
+    used_fallback: bool = False
+    primary_error: FeishuClientError | None = None
+    fallback_error: FeishuClientError | None = None
+    pagination_pages: int = 0
+    parser_result_shape: str = "data.items"
 
 
 class FeishuClient:
@@ -40,12 +64,14 @@ class FeishuClient:
         transport: Any = requests,
         batch_size: int = DEFAULT_BATCH_SIZE,
         page_size: int = DEFAULT_PAGE_SIZE,
+        fallback_urlopen: Any = urllib_request.urlopen,
     ) -> None:
         self._config = {key: str(value or "").strip() for key, value in config.items()}
         self._transport = transport
         self.batch_size = max(1, int(batch_size))
         self.page_size = max(1, int(page_size))
         self._access_token = ""
+        self._fallback_urlopen = fallback_urlopen
 
     def validate_configuration(self) -> None:
         required = (
@@ -76,10 +102,41 @@ class FeishuClient:
         self._access_token = token
 
     def list_fields(self, table_id: str) -> list[dict[str, Any]]:
-        return self._list_paginated(
+        fields, _pages = self._list_paginated_with_pages(
             f"{self._table_url(table_id)}/fields",
             item_key="items",
+            require_items=True,
         )
+        return fields
+
+    def fetch_fields(self, table_id: str) -> FieldFetchResult:
+        """Fetch field metadata with one bounded, read-only compatibility fallback."""
+        try:
+            fields, pages = self._list_paginated_with_pages(
+                f"{self._table_url(table_id)}/fields",
+                item_key="items",
+                require_items=True,
+            )
+            return FieldFetchResult(
+                True, tuple(fields), pagination_pages=pages
+            )
+        except FeishuClientError as primary_error:
+            try:
+                fields, pages = self._list_fields_with_stdlib(table_id)
+            except FeishuClientError as fallback_error:
+                return FieldFetchResult(
+                    False,
+                    used_fallback=True,
+                    primary_error=primary_error,
+                    fallback_error=fallback_error,
+                )
+            return FieldFetchResult(
+                True,
+                tuple(fields),
+                used_fallback=True,
+                primary_error=primary_error,
+                pagination_pages=pages,
+            )
 
     def list_records(self, table_id: str) -> list[dict[str, Any]]:
         return self._list_paginated(
@@ -138,21 +195,145 @@ class FeishuClient:
         )
         return list((data.get("data") or {}).get("records") or [])
 
-    def _list_paginated(self, url: str, *, item_key: str) -> list[dict[str, Any]]:
+    def _list_paginated(
+        self, url: str, *, item_key: str, require_items: bool = False
+    ) -> list[dict[str, Any]]:
+        items, _pages = self._list_paginated_with_pages(
+            url, item_key=item_key, require_items=require_items
+        )
+        return items
+
+    def _list_paginated_with_pages(
+        self, url: str, *, item_key: str, require_items: bool = False
+    ) -> tuple[list[dict[str, Any]], int]:
         items: list[dict[str, Any]] = []
         page_token = ""
+        seen_page_tokens: set[str] = set()
+        pages = 0
         while True:
             params: dict[str, Any] = {"page_size": self.page_size}
             if page_token:
                 params["page_token"] = page_token
-            response = self._request_json("GET", url, params=params, timeout=15)
-            data = response.get("data") or {}
-            items.extend(item for item in data.get(item_key) or [] if isinstance(item, dict))
+            try:
+                response = self._request_json(
+                    "GET", url, params=params, timeout=15, allow_redirects=True
+                )
+            except FeishuClientError as exc:
+                raise self._with_field_context(
+                    exc, exc.failure_stage, None, pages
+                ) from exc
+            pages += 1
+            data = response.get("data")
+            if not isinstance(data, dict):
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书返回了无效响应。", "shape",
+                    response_shape=self._shape_of(data), pagination_pages=pages,
+                )
+            page_items = data.get(item_key)
+            if require_items and not isinstance(page_items, list):
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书返回了无效字段响应。", "shape",
+                    response_shape=self._shape_of(page_items), pagination_pages=pages,
+                )
+            if require_items and any(not isinstance(item, dict) for item in page_items):
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书返回了无效字段响应。", "shape",
+                    response_shape="data.items.non_object", pagination_pages=pages,
+                )
+            items.extend(item for item in page_items or [] if isinstance(item, dict))
             if not data.get("has_more"):
-                return items
-            page_token = str(data.get("page_token") or "").strip()
-            if not page_token:
-                raise FeishuClientError("REMOTE_ERROR", "飞书分页响应无效。")
+                return items, pages
+            next_page_token = str(data.get("page_token") or "").strip()
+            if not next_page_token or next_page_token in seen_page_tokens:
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书分页响应无效。", "pagination",
+                    response_shape="data.items", pagination_pages=pages,
+                )
+            seen_page_tokens.add(next_page_token)
+            page_token = next_page_token
+
+    def _list_fields_with_stdlib(
+        self, table_id: str
+    ) -> tuple[list[dict[str, Any]], int]:
+        if not self._access_token:
+            self.authenticate()
+        url = f"{self._table_url(table_id)}/fields"
+        items: list[dict[str, Any]] = []
+        page_token = ""
+        seen_page_tokens: set[str] = set()
+        pages = 0
+        while True:
+            params: dict[str, Any] = {"page_size": self.page_size}
+            if page_token:
+                params["page_token"] = page_token
+            query_url = f"{url}?{urllib_parse.urlencode(params)}"
+            request = urllib_request.Request(
+                query_url,
+                headers={
+                    "Authorization": f"Bearer {self._access_token}",
+                    "Content-Type": "application/json",
+                    "Accept": "application/json",
+                    "Accept-Encoding": "gzip, deflate",
+                    "User-Agent": FEISHU_USER_AGENT,
+                },
+                method="GET",
+            )
+            try:
+                with self._fallback_urlopen(request, timeout=15) as response:
+                    status = int(getattr(response, "status", 0) or response.getcode() or 0)
+                    raw = response.read()
+                    headers = getattr(response, "headers", {}) or {}
+            except urllib_error.HTTPError as exc:
+                error = self._http_error(
+                    int(exc.code or 0),
+                    str((exc.headers or {}).get("Retry-After") or ""),
+                )
+                raise self._with_field_context(error, "http", exc, pages) from exc
+            except (urllib_error.URLError, OSError, TimeoutError) as exc:
+                raise self._field_error(
+                    "TRANSIENT_NETWORK_ERROR", "无法连接飞书服务。", "transport",
+                    exception_class=type(exc).__name__, pagination_pages=pages,
+                ) from exc
+            if status >= 400:
+                raise self._with_field_context(
+                    self._http_error(status, str(headers.get("Retry-After") or "")),
+                    "http", None, pages,
+                )
+            pages += 1
+            try:
+                payload = self._decode_response_body(raw, headers)
+            except (UnicodeDecodeError, ValueError, OSError, zlib.error) as exc:
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书返回了无效响应。", "json",
+                    exception_class=type(exc).__name__, response_shape="invalid_json",
+                    pagination_pages=pages,
+                ) from exc
+            try:
+                data = self._validated_api_payload(payload, http_status=status)
+            except FeishuClientError as exc:
+                raise self._with_field_context(exc, "api", None, pages) from exc
+            page_data = data.get("data")
+            if not isinstance(page_data, dict) or not isinstance(page_data.get("items"), list):
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书返回了无效字段响应。", "shape",
+                    response_shape=self._shape_of(page_data), pagination_pages=pages,
+                )
+            if any(not isinstance(item, dict) for item in page_data["items"]):
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书返回了无效字段响应。", "shape",
+                    response_shape="data.items.non_object", pagination_pages=pages,
+                )
+            items.extend(item for item in page_data["items"] if isinstance(item, dict))
+            if not page_data.get("has_more"):
+                return items, pages
+            next_page_token = str(page_data.get("page_token") or "").strip()
+            if not next_page_token or next_page_token in seen_page_tokens:
+                raise self._field_error(
+                    "REMOTE_ERROR", "飞书分页响应无效。", "pagination",
+                    response_shape="data.items", pagination_pages=pages,
+                )
+            seen_page_tokens.add(next_page_token)
+            page_token = next_page_token
 
     def _request_json(
         self,
@@ -168,37 +349,49 @@ class FeishuClient:
         if authenticated:
             headers["Authorization"] = f"Bearer {self._access_token}"
         headers.setdefault("Content-Type", "application/json")
+        headers.setdefault("Accept", "application/json")
+        headers.setdefault("User-Agent", FEISHU_USER_AGENT)
         try:
             response = self._transport.request(method, url, headers=headers, **kwargs)
         except (requests.RequestException, OSError) as exc:
-            raise FeishuClientError(
-                "TRANSIENT_NETWORK_ERROR", "无法连接飞书服务。"
+            raise self._field_error(
+                "TRANSIENT_NETWORK_ERROR", "无法连接飞书服务。", "transport",
+                exception_class=type(exc).__name__,
             ) from exc
 
         status = int(getattr(response, "status_code", 0) or 0)
         retry_after = str((getattr(response, "headers", {}) or {}).get("Retry-After") or "")
-        if status == 401:
-            raise FeishuClientError("AUTHENTICATION_FAILED", "飞书身份验证失败。")
-        if status == 403:
-            raise FeishuClientError("PERMISSION_DENIED", "飞书应用权限不足。")
-        if status == 429:
-            raise FeishuClientError("RATE_LIMITED", "飞书请求频率受限。", retry_after)
-        if status == 409:
-            raise FeishuClientError("REMOTE_CONFLICT", "飞书记录发生冲突。")
-        if status == 404:
-            raise FeishuClientError("NOT_FOUND", "飞书记录不存在。")
-        if status >= 500:
-            raise FeishuClientError("TRANSIENT_REMOTE_ERROR", "飞书服务暂时不可用。")
         if status >= 400:
-            raise FeishuClientError("INVALID_REQUEST", "飞书拒绝了同步请求。")
+            raise self._with_field_context(
+                self._http_error(status, retry_after), "http"
+            )
 
         try:
             data = response.json()
         except (TypeError, ValueError) as exc:
-            raise FeishuClientError("REMOTE_ERROR", "飞书返回了无效响应。") from exc
+            raise self._field_error(
+                "REMOTE_ERROR", "飞书返回了无效响应。", "json",
+                exception_class=type(exc).__name__, response_shape="invalid_json",
+            ) from exc
+        try:
+            return self._validated_api_payload(
+                data, http_status=status, retry_after=retry_after
+            )
+        except FeishuClientError as exc:
+            raise self._with_field_context(exc, "api") from exc
+
+    @staticmethod
+    def _validated_api_payload(
+        data: Any, *, http_status: int = 0, retry_after: str = ""
+    ) -> dict[str, Any]:
         if not isinstance(data, dict):
-            raise FeishuClientError("REMOTE_ERROR", "飞书返回了无效响应。")
-        if int(data.get("code") or 0) != 0:
+            raise FeishuClientError(
+                "REMOTE_ERROR", "飞书返回了无效响应。",
+                http_status=http_status, failure_stage="shape",
+                response_shape=FeishuClient._shape_of(data),
+            )
+        api_code = int(data.get("code") or 0)
+        if api_code != 0:
             message = str(data.get("msg") or "").casefold()
             if "permission" in message or "forbidden" in message:
                 code = "PERMISSION_DENIED"
@@ -214,8 +407,88 @@ class FeishuClient:
                 "RATE_LIMITED": "飞书请求频率受限。",
                 "REMOTE_ERROR": "飞书请求失败。",
             }[code]
-            raise FeishuClientError(code, safe_message, retry_after)
+            raise FeishuClientError(
+                code, safe_message, retry_after, http_status=http_status,
+                api_code=api_code, failure_stage="api", response_shape="object",
+            )
         return data
+
+    @staticmethod
+    def _decode_response_body(raw: bytes, headers: Any) -> Any:
+        encoding = str(headers.get("Content-Encoding") or "").casefold()
+        if "gzip" in encoding:
+            raw = gzip.decompress(raw)
+        elif "deflate" in encoding:
+            raw = zlib.decompress(raw)
+        return json.loads(raw.decode("utf-8"))
+
+    @staticmethod
+    def _shape_of(value: Any) -> str:
+        if value is None:
+            return "missing"
+        if isinstance(value, dict):
+            return "object"
+        if isinstance(value, list):
+            return "array"
+        return type(value).__name__
+
+    @staticmethod
+    def _field_error(
+        code: str,
+        message: str,
+        failure_stage: str,
+        *,
+        exception_class: str = "",
+        response_shape: str = "unknown",
+        pagination_pages: int = 0,
+        http_status: int = 0,
+        api_code: int = 0,
+    ) -> FeishuClientError:
+        return FeishuClientError(
+            code,
+            message,
+            http_status=http_status,
+            api_code=api_code,
+            failure_stage=failure_stage,
+            exception_class=exception_class,
+            response_shape=response_shape,
+            pagination_pages=pagination_pages,
+        )
+
+    @staticmethod
+    def _with_field_context(
+        error: FeishuClientError,
+        failure_stage: str,
+        exception: BaseException | None = None,
+        pagination_pages: int | None = None,
+    ) -> FeishuClientError:
+        return FeishuClientError(
+            error.code,
+            error.message,
+            error.retry_after,
+            error.http_status,
+            error.api_code,
+            error.failure_stage if error.failure_stage != "unknown" else failure_stage,
+            error.exception_class or (type(exception).__name__ if exception else ""),
+            error.response_shape,
+            error.pagination_pages if pagination_pages is None else pagination_pages,
+        )
+
+    @staticmethod
+    def _http_error(status: int, retry_after: str = "") -> FeishuClientError:
+        if status == 401:
+            return FeishuClientError("AUTHENTICATION_FAILED", "飞书身份验证失败。", http_status=status)
+        if status == 403:
+            return FeishuClientError("PERMISSION_DENIED", "飞书应用权限不足。", http_status=status)
+        if status == 429:
+            return FeishuClientError("RATE_LIMITED", "飞书请求频率受限。", retry_after, status)
+        if status == 409:
+            return FeishuClientError("REMOTE_CONFLICT", "飞书记录发生冲突。", http_status=status)
+        if status == 404:
+            return FeishuClientError("NOT_FOUND", "飞书记录不存在。", http_status=status)
+        if status >= 500:
+            return FeishuClientError("TRANSIENT_REMOTE_ERROR", "飞书服务暂时不可用。", http_status=status)
+        return FeishuClientError("INVALID_REQUEST", "飞书拒绝了同步请求。", http_status=status)
 
     def _table_url(self, table_id: str) -> str:
         table_id = str(table_id or "").strip()

@@ -2,6 +2,17 @@ name: Build macOS Clients
 
 on:
   workflow_dispatch:
+    inputs:
+      arm64_test_only:
+        description: Build only the temporary Apple Silicon validation artifact
+        required: true
+        default: false
+        type: boolean
+      source_sha:
+        description: Exact committed source SHA to build
+        required: true
+        default: 4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2
+        type: string
 
 permissions:
   contents: read
@@ -22,6 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        arch: ${{ fromJSON(inputs.arm64_test_only && '["arm64"]' || '["arm64","x86_64"]') }}
         include:
           # macos-14 is the native Apple Silicon runner. Never substitute macos-15:
           # the deployment-target gate below prevents relabeling an incompatible build.
@@ -49,32 +61,35 @@ jobs:
       TARGET_ARCH: ${{ matrix.arch }}
       BUILD_ARGUMENT: ${{ matrix.build_argument }}
       SOURCE_DMG: ${{ matrix.source_dmg }}
-      TARGET_DMG: ${{ matrix.target_dmg }}
-      ARTIFACT_NAME: ${{ matrix.artifact_name }}
+      TARGET_DMG: ${{ inputs.arm64_test_only && 'release/KOLConnect_v2.0.0_macOS_arm64_TEST.dmg' || matrix.target_dmg }}
+      ARTIFACT_NAME: ${{ inputs.arm64_test_only && 'KOLConnect-v2.0.0-macOS-arm64-TEST' || matrix.artifact_name }}
       APP_PATH: ${{ matrix.app_path }}
       TARGET_MIN_MACOS: ${{ matrix.target_min_macos }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.arm64_test_only && inputs.source_sha || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
+      TEST_BUILD: ${{ inputs.arm64_test_only && 'true' || 'false' }}
     steps:
       - name: Check out workflow infrastructure from latest main
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ inputs.arm64_test_only && inputs.source_sha || 'main' }}
           fetch-depth: 1
 
       - name: Check out frozen application source separately
         uses: actions/checkout@v4
         with:
-          ref: 4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2
+          ref: ${{ inputs.arm64_test_only && inputs.source_sha || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
           path: frozen-src
           fetch-depth: 1
 
-      - name: Enforce frozen release revision
+      - name: Enforce selected source revision
         shell: bash
         run: |
           set -euo pipefail
           actual_sha="$(git -C "${FROZEN_PRODUCT_ROOT}" rev-parse HEAD)"
-          echo "FROZEN_RELEASE_SHA=${FROZEN_RELEASE_SHA}"
+          [[ "${EXPECTED_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha must be a full commit SHA." >&2; exit 1; }
+          echo "EXPECTED_SOURCE_SHA=${EXPECTED_SOURCE_SHA}"
           echo "ACTUAL_BUILD_SHA=${actual_sha}"
-          [[ "${actual_sha}" == "${FROZEN_RELEASE_SHA}" ]] || { echo "Frozen release revision mismatch." >&2; exit 1; }
+          [[ "${actual_sha}" == "${EXPECTED_SOURCE_SHA}" ]] || { echo "Selected source revision mismatch." >&2; exit 1; }
           echo "ACTUAL_BUILD_SHA=${actual_sha}" >> "${GITHUB_ENV}"
 
       - name: Build job-local SQLite 3.51.3 and Python 3.12
@@ -230,6 +245,14 @@ jobs:
           webapp_index="$(find "${app}/Contents" -path '*/webapp/index.html' -print -quit)"
           webapp_root="$(dirname "${webapp_index}")"
           test -n "${webapp_index}"; test -f "${webapp_root}/app.js"; test -f "${webapp_root}/styles.css"; test -f "${webapp_root}/i18n.js"
+          grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${webapp_root}/pages/settings.js"
+          grep -Fq 'settingsFeishuFieldFetchFailed' "${webapp_root}/i18n.js"
+          grep -Fq 'class FieldFetchResult' "${FROZEN_PRODUCT_ROOT}/app/feishu_client.py"
+          grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${FROZEN_PRODUCT_ROOT}/app/services/feishu_sync_service.py"
+          grep -Fq '"requests", "certifi"' "${FROZEN_PRODUCT_ROOT}/packaging/spec/KOLConnect_mac.spec"
+          archive_listing="$(pyi-archive_viewer -l "${binary}")"
+          grep -Fq 'feishu_client' <<<"${archive_listing}"
+          grep -Fq 'services.feishu_sync_service' <<<"${archive_listing}"
           find "${app}/Contents" -path '*/assets/KOLConnect.png' -print -quit | grep -q .
           find "${app}/Contents" -path '*/chrome_extension/manifest.json' -print -quit | grep -q .
           find "${app}/Contents" -path '*/chrome_extension/tests' -exec rm -rf {} +
@@ -295,6 +318,8 @@ jobs:
           hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${product_dmg}" >/dev/null
           test -d "${mount_dir}/KOLConnect.app"; test -L "${mount_dir}/Applications"
           [[ "$(lipo -archs "${mount_dir}/KOLConnect.app/Contents/MacOS/KOLConnect")" == "${TARGET_ARCH}" ]]
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${mount_dir}/KOLConnect.app/Contents/Info.plist")" == "${PRODUCT_VERSION}" ]]
+          codesign --verify --deep --strict --verbose=2 "${mount_dir}/KOLConnect.app"
           hdiutil detach "${mount_dir}" >/dev/null
           artifact_size="$(stat -f '%z' "${product_dmg}")"; artifact_sha256="$(shasum -a 256 "${product_dmg}" | awk '{print $1}')"
           [[ "${artifact_size}" -gt 0 ]]
@@ -306,8 +331,8 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## KOLConnect v2.0.0 macOS ${TARGET_MIN_MACOS}+ ${TARGET_ARCH} release candidate"
-            echo "- Frozen source: ${ACTUAL_BUILD_SHA}"
+            echo "## KOLConnect v2.0.0 macOS ${TARGET_MIN_MACOS}+ ${TARGET_ARCH} $([[ "${TEST_BUILD}" == "true" ]] && echo 'test build' || echo 'release candidate')"
+            echo "- Source: ${ACTUAL_BUILD_SHA}"
             echo "- Runner: ${{ matrix.runner }}"
             echo "- Architecture: ${TARGET_ARCH}"
             echo "- Python: ${PYTHON_VERSION}"
@@ -319,10 +344,10 @@ jobs:
             echo "- Signing: ad-hoc; notarization: none; Gatekeeper warning expected"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Upload macOS release candidate
+      - name: Upload macOS build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: frozen-src/${{ matrix.target_dmg }}
+          name: ${{ env.ARTIFACT_NAME }}
+          path: frozen-src/${{ env.TARGET_DMG }}
           if-no-files-found: error
           retention-days: 30

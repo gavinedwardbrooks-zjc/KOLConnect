@@ -137,6 +137,16 @@ class RuntimePathTests(unittest.TestCase):
 
 
 class PackagingConfigurationTests(unittest.TestCase):
+    def test_macos_specs_explicitly_collect_feishu_http_tls_dependencies(self):
+        for relative in (
+            "packaging/spec/KOLConnect_mac.spec",
+            "packaging/spec/KOLConnect_mac_intel.spec",
+        ):
+            with self.subTest(spec=relative):
+                spec = (ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn('"requests", "certifi"', spec)
+                self.assertIn("collect_all(package_name)", spec)
+
     def test_macos_deployment_target_parser_supports_build_version_and_legacy_commands(self):
         build_version = """
             Load command 9
@@ -237,6 +247,17 @@ class PackagingConfigurationTests(unittest.TestCase):
         manual_path = workflow_dir / "build-macos-client.yml"
         self.assertTrue(manual_path.is_file())
         manual = manual_path.read_text(encoding="utf-8")
+
+        self.assertIn("arm64_test_only:", manual)
+        self.assertIn("source_sha:", manual)
+        self.assertIn("fromJSON(inputs.arm64_test_only", manual)
+        self.assertIn("KOLConnect_v2.0.0_macOS_arm64_TEST.dmg", manual)
+        self.assertIn("inputs.arm64_test_only && inputs.source_sha", manual)
+        self.assertIn("pyi-archive_viewer -l", manual)
+        self.assertIn("FEISHU_FIELD_FETCH_FAILED", manual)
+        self.assertIn("name: ${{ env.ARTIFACT_NAME }}", manual)
+        self.assertIn("path: frozen-src/${{ env.TARGET_DMG }}", manual)
+        self.assertNotIn("softprops/action-gh-release", manual)
 
         self.assertIn("workflow_dispatch:", ci)
         self.assertIn("push:\n    branches:\n      - main", ci)
@@ -463,9 +484,17 @@ class PackagingConfigurationTests(unittest.TestCase):
         ]
         self.assertEqual(2, len(checkout_steps))
         root_checkout, frozen_checkout = checkout_steps
-        self.assertEqual("main", root_checkout["with"]["ref"])
+        self.assertEqual(
+            "${{ inputs.arm64_test_only && inputs.source_sha || 'main' }}",
+            root_checkout["with"]["ref"],
+        )
         self.assertNotIn("path", root_checkout["with"])
-        self.assertEqual(frozen_sha, frozen_checkout["with"]["ref"])
+        self.assertEqual(
+            "${{ inputs.arm64_test_only && inputs.source_sha || '"
+            + frozen_sha
+            + "' }}",
+            frozen_checkout["with"]["ref"],
+        )
         self.assertEqual("frozen-src", frozen_checkout["with"]["path"])
         self.assertEqual(1, frozen_checkout["with"]["fetch-depth"])
 
@@ -474,9 +503,9 @@ class PackagingConfigurationTests(unittest.TestCase):
             for step in manual_job["steps"]
             if "name" in step
         }
-        revision_check = steps_by_name["Enforce frozen release revision"]["run"]
+        revision_check = steps_by_name["Enforce selected source revision"]["run"]
         self.assertIn('git -C "${FROZEN_PRODUCT_ROOT}" rev-parse HEAD', revision_check)
-        self.assertIn('"${actual_sha}" == "${FROZEN_RELEASE_SHA}"', revision_check)
+        self.assertIn('"${actual_sha}" == "${EXPECTED_SOURCE_SHA}"', revision_check)
         self.assertIn("exit 1", revision_check)
 
         self.assertIn("Build job-local SQLite 3.51.3 and Python 3.12", manual)
@@ -597,8 +626,8 @@ class PackagingConfigurationTests(unittest.TestCase):
         upload_step = next(
             step for step in manual_job["steps"] if step.get("uses") == "actions/upload-artifact@v4"
         )
-        self.assertEqual("${{ matrix.artifact_name }}", upload_step["with"]["name"])
-        self.assertEqual("frozen-src/${{ matrix.target_dmg }}", upload_step["with"]["path"])
+        self.assertEqual("${{ env.ARTIFACT_NAME }}", upload_step["with"]["name"])
+        self.assertEqual("frozen-src/${{ env.TARGET_DMG }}", upload_step["with"]["path"])
         self.assertEqual("error", upload_step["with"]["if-no-files-found"])
         self.assertEqual(30, upload_step["with"]["retention-days"])
 

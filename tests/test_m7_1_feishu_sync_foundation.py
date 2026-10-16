@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
 
-from feishu_client import FeishuClientError  # noqa: E402
+from feishu_client import FieldFetchResult, FeishuClientError  # noqa: E402
 from services.feishu_sync_service import (  # noqa: E402
     ACCOUNT_CREATOR_RELATION_FIELD,
     ACCOUNT_FIELDS,
@@ -179,7 +179,114 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         )
         inaccessible = self.service.validate_connection()
         self.assertFalse(inaccessible["account_table_ok"])
-        self.assertIn("PERMISSION_DENIED", inaccessible["error_codes"])
+        self.assertEqual("FEISHU_FIELD_FETCH_FAILED", inaccessible["blocked_reason"])
+        self.assertEqual(["FEISHU_FIELD_FETCH_FAILED"], inaccessible["error_codes"])
+        self.assertEqual([], inaccessible["missing_fields"])
+        self.assertEqual([], inaccessible["incompatible_fields"])
+
+    def test_fallback_success_validates_normally_and_logs_only_safe_metadata(self):
+        events = []
+        creator_fields = copy.deepcopy(self.client.schemas["creators"])
+        account_fields = copy.deepcopy(self.client.schemas["accounts"])
+        creator_relation = next(
+            item for item in creator_fields
+            if item["field_name"] == CREATOR_ACCOUNT_RELATION_FIELD
+        )
+        creator_relation.update({
+            "type": 21,
+            "property": {"table_id": "accounts", "multiple": True},
+        })
+        account_relation = next(
+            item for item in account_fields
+            if item["field_name"] == ACCOUNT_CREATOR_RELATION_FIELD
+        )
+        account_relation.update({
+            "type": 21,
+            "property": {"table_id": "creators", "multiple": False},
+        })
+        creator_fields.extend(
+            {"field_name": f"Creator Extra {index}", "type": 1}
+            for index in range(22 - len(creator_fields))
+        )
+        account_fields.extend(
+            {"field_name": f"Account Extra {index}", "type": 1}
+            for index in range(16 - len(account_fields))
+        )
+
+        def fetch_fields(table_id):
+            fields = creator_fields if table_id == "creators" else account_fields
+            return FieldFetchResult(
+                True,
+                tuple(fields),
+                used_fallback=True,
+                primary_error=FeishuClientError(
+                    "INVALID_REQUEST", "secret-value", http_status=400, api_code=999
+                ),
+            )
+
+        self.client.fetch_fields = fetch_fields
+        service = FeishuSyncService(
+            self.source,
+            lambda: self.client,
+            event_logger=events.append,
+        )
+        result = service.validate_connection()
+        self.assertEqual("success", result["status"])
+        self.assertIn("FEISHU_FIELD_FETCH_FALLBACK_USED:creator", result["warnings"])
+        self.assertIn("FEISHU_FIELD_FETCH_FALLBACK_USED:account", result["warnings"])
+        self.assertTrue(any("primary_code=INVALID_REQUEST" in item for item in events))
+        self.assertTrue(any("table_role=creator" in item and "remote_field_count=22" in item for item in events))
+        self.assertTrue(any("table_role=account" in item and "remote_field_count=16" in item for item in events))
+        self.assertTrue(all("primary_fetch_ok=false" in item for item in events))
+        self.assertTrue(all("fallback_used=true" in item for item in events))
+        self.assertTrue(all("fallback_ok=true" in item for item in events))
+        combined = "\n".join(events)
+        self.assertNotIn("secret-value", combined)
+        self.assertNotIn("base-token", combined)
+
+    def test_double_field_fetch_failure_never_becomes_missing_schema(self):
+        self.client.fetch_fields = lambda _table_id: FieldFetchResult(
+            False,
+            used_fallback=True,
+            primary_error=FeishuClientError("INVALID_REQUEST", "rejected"),
+            fallback_error=FeishuClientError("REMOTE_ERROR", "malformed"),
+        )
+        result = self.service.validate_connection()
+        self.assertEqual("blocked", result["status"])
+        self.assertEqual("FEISHU_FIELD_FETCH_FAILED", result["blocked_reason"])
+        self.assertEqual([], result["missing_fields"])
+        self.assertEqual([], result["incompatible_fields"])
+
+    def test_successful_empty_schema_is_explicit_schema_invalid_not_fetch_failure(self):
+        events = []
+        self.client.fetch_fields = lambda _table_id: FieldFetchResult(
+            True, (), pagination_pages=1
+        )
+        result = FeishuSyncService(
+            self.source, lambda: self.client, event_logger=events.append
+        ).validate_connection()
+        self.assertEqual("FEISHU_SCHEMA_INVALID", result["blocked_reason"])
+        self.assertNotIn("FEISHU_FIELD_FETCH_FAILED", result["error_codes"])
+        self.assertGreater(len(result["missing_fields"]), 0)
+        self.assertTrue(all("remote_field_count=0" in item for item in events))
+        self.assertTrue(all("primary_fetch_ok=true" in item for item in events))
+
+    def test_auth_failure_is_logged_safely_before_field_fetch(self):
+        events = []
+        self.client.authenticate = lambda: (_ for _ in ()).throw(
+            FeishuClientError(
+                "AUTHENTICATION_FAILED", "secret-value", api_code=999,
+                failure_stage="api", exception_class="HTTPError",
+            )
+        )
+        result = FeishuSyncService(
+            self.source, lambda: self.client, event_logger=events.append
+        ).validate_connection()
+        self.assertEqual("failed", result["status"])
+        self.assertEqual(["AUTHENTICATION_FAILED"], result["error_codes"])
+        self.assertEqual(1, len(events))
+        self.assertIn("failure_stage=auth", events[0])
+        self.assertNotIn("secret-value", events[0])
 
     def test_missing_local_identities_are_counted_and_blocked(self):
         self.source.data["creators"].append(creator(identity=""))
