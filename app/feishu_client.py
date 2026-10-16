@@ -5,18 +5,135 @@ from __future__ import annotations
 from dataclasses import dataclass
 import gzip
 import json
+from pathlib import Path
+import socket
+import ssl
+import sys
 from typing import Any, Iterable
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
 import zlib
 
+import certifi
 import requests
 
 
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_PAGE_SIZE = 500
 FEISHU_USER_AGENT = "KOLConnect/2.0.0"
+
+
+def is_packaged_macos() -> bool:
+    return sys.platform == "darwin" and bool(getattr(sys, "frozen", False))
+
+
+def resolve_ca_bundle() -> str:
+    """Resolve the verified CA file bundled with a frozen macOS app."""
+    candidates: list[Path] = []
+    meipass = str(getattr(sys, "_MEIPASS", "") or "").strip()
+    if meipass:
+        bundle_root = Path(meipass)
+        candidates.extend((
+            bundle_root / "certifi" / "cacert.pem",
+            bundle_root.parent / "Resources" / "certifi" / "cacert.pem",
+        ))
+    executable = str(getattr(sys, "executable", "") or "").strip()
+    if executable:
+        executable_path = Path(executable)
+        if len(executable_path.parents) >= 2:
+            candidates.append(
+                executable_path.parents[1] / "Resources" / "certifi" / "cacert.pem"
+            )
+    candidates.append(Path(certifi.where()))
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = str(candidate.expanduser().resolve(strict=False))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if candidate.is_file():
+            return str(candidate)
+    raise FeishuClientError(
+        "TLS_CONFIGURATION_ERROR",
+        "KOLConnect 无法加载安全证书资源。",
+        failure_stage="tls_configuration",
+        exception_class="FileNotFoundError",
+        transport_reason_type="FileNotFoundError",
+        transport_reason_category="CA_BUNDLE_MISSING",
+        transport_reason_message="bundled CA certificate file is unavailable",
+    )
+
+
+def build_verified_ssl_context(ca_bundle: str) -> ssl.SSLContext:
+    ca_path = Path(str(ca_bundle or "").strip())
+    if not ca_path.is_file():
+        raise FeishuClientError(
+            "TLS_CONFIGURATION_ERROR",
+            "KOLConnect 无法加载安全证书资源。",
+            failure_stage="tls_configuration",
+            exception_class="FileNotFoundError",
+            transport_reason_type="FileNotFoundError",
+            transport_reason_category="CA_BUNDLE_MISSING",
+            transport_reason_message="bundled CA certificate file is unavailable",
+        )
+    try:
+        return ssl.create_default_context(cafile=str(ca_path))
+    except (OSError, ssl.SSLError) as exc:
+        details = _safe_transport_reason(exc)
+        raise FeishuClientError(
+            "TLS_CONFIGURATION_ERROR",
+            "KOLConnect 无法加载安全证书资源。",
+            failure_stage="tls_configuration",
+            exception_class=type(exc).__name__,
+            **details,
+        ) from exc
+
+
+def _safe_transport_reason(exc: BaseException) -> dict[str, str | int]:
+    reason: BaseException = exc
+    nested = getattr(exc, "reason", None)
+    if isinstance(nested, BaseException):
+        reason = nested
+    chain: list[BaseException] = []
+    current: BaseException | None = reason
+    while current is not None and current not in chain:
+        chain.append(current)
+        cause = current.__cause__ or current.__context__
+        current = cause if isinstance(cause, BaseException) else None
+
+    names = {type(item).__name__ for item in chain}
+    diagnostic_text = " ".join(str(item).casefold() for item in chain)
+    if any(isinstance(item, ssl.SSLCertVerificationError) for item in chain) or "certificate verify failed" in diagnostic_text:
+        category, message = "CERTIFICATE_VERIFY_FAILED", "certificate verification failed"
+    elif any(isinstance(item, socket.gaierror) for item in chain) or "NameResolutionError" in names or "name resolution" in diagnostic_text:
+        category, message = "DNS_FAILURE", "host name resolution failed"
+    elif any(isinstance(item, ConnectionRefusedError) for item in chain):
+        category, message = "CONNECTION_REFUSED", "remote connection was refused"
+    elif any(isinstance(item, (TimeoutError, socket.timeout)) for item in chain) or "ReadTimeout" in names or "ConnectTimeout" in names or "timed out" in diagnostic_text:
+        category, message = "TIMEOUT", "network operation timed out"
+    elif "ProxyError" in names or "proxy" in diagnostic_text:
+        category, message = "PROXY_FAILURE", "proxy connection failed"
+    elif any(isinstance(item, ssl.SSLError) for item in chain) or "SSLError" in names:
+        category, message = "SSL_ERROR", "secure connection failed"
+    elif "InvalidURL" in names or "URLRequired" in names or isinstance(reason, ValueError) or "invalid url" in diagnostic_text:
+        category, message = "MALFORMED_URL", "request URL is invalid"
+    elif any(isinstance(item, ConnectionError) for item in chain) or "ConnectionError" in names:
+        category, message = "CONNECTION_FAILURE", "network connection failed"
+    else:
+        category, message = "NETWORK_ERROR", "network transport failed"
+
+    errno = next(
+        (getattr(item, "errno", None) for item in chain if getattr(item, "errno", None) is not None),
+        0,
+    )
+    return {
+        "transport_reason_type": type(reason).__name__,
+        "transport_reason_category": category,
+        "transport_reason_message": message,
+        "transport_errno": int(errno) if isinstance(errno, int) else 0,
+    }
 
 
 @dataclass(frozen=True)
@@ -30,6 +147,10 @@ class FeishuClientError(RuntimeError):
     exception_class: str = ""
     response_shape: str = "unknown"
     pagination_pages: int = 0
+    transport_reason_type: str = ""
+    transport_reason_category: str = ""
+    transport_reason_message: str = ""
+    transport_errno: int = 0
 
     def __str__(self) -> str:
         return self.message
@@ -65,6 +186,9 @@ class FeishuClient:
         batch_size: int = DEFAULT_BATCH_SIZE,
         page_size: int = DEFAULT_PAGE_SIZE,
         fallback_urlopen: Any = urllib_request.urlopen,
+        packaged_macos: bool | None = None,
+        ca_bundle_resolver: Any = resolve_ca_bundle,
+        ssl_context_builder: Any = build_verified_ssl_context,
     ) -> None:
         self._config = {key: str(value or "").strip() for key, value in config.items()}
         self._transport = transport
@@ -72,6 +196,12 @@ class FeishuClient:
         self.page_size = max(1, int(page_size))
         self._access_token = ""
         self._fallback_urlopen = fallback_urlopen
+        self._packaged_macos = is_packaged_macos() if packaged_macos is None else packaged_macos
+        self._ca_bundle = ""
+        self._fallback_ssl_context: ssl.SSLContext | None = None
+        if self._packaged_macos:
+            self._ca_bundle = str(ca_bundle_resolver())
+            self._fallback_ssl_context = ssl_context_builder(self._ca_bundle)
 
     def validate_configuration(self) -> None:
         required = (
@@ -279,7 +409,13 @@ class FeishuClient:
                 method="GET",
             )
             try:
-                with self._fallback_urlopen(request, timeout=15) as response:
+                if self._packaged_macos:
+                    response_context = self._fallback_urlopen(
+                        request, timeout=15, context=self._fallback_ssl_context
+                    )
+                else:
+                    response_context = self._fallback_urlopen(request, timeout=15)
+                with response_context as response:
                     status = int(getattr(response, "status", 0) or response.getcode() or 0)
                     raw = response.read()
                     headers = getattr(response, "headers", {}) or {}
@@ -290,9 +426,11 @@ class FeishuClient:
                 )
                 raise self._with_field_context(error, "http", exc, pages) from exc
             except (urllib_error.URLError, OSError, TimeoutError) as exc:
+                details = _safe_transport_reason(exc)
                 raise self._field_error(
                     "TRANSIENT_NETWORK_ERROR", "无法连接飞书服务。", "transport",
                     exception_class=type(exc).__name__, pagination_pages=pages,
+                    **details,
                 ) from exc
             if status >= 400:
                 raise self._with_field_context(
@@ -351,12 +489,16 @@ class FeishuClient:
         headers.setdefault("Content-Type", "application/json")
         headers.setdefault("Accept", "application/json")
         headers.setdefault("User-Agent", FEISHU_USER_AGENT)
+        if self._packaged_macos:
+            kwargs.setdefault("verify", self._ca_bundle)
         try:
             response = self._transport.request(method, url, headers=headers, **kwargs)
         except (requests.RequestException, OSError) as exc:
+            details = _safe_transport_reason(exc)
             raise self._field_error(
                 "TRANSIENT_NETWORK_ERROR", "无法连接飞书服务。", "transport",
                 exception_class=type(exc).__name__,
+                **details,
             ) from exc
 
         status = int(getattr(response, "status_code", 0) or 0)
@@ -443,6 +585,10 @@ class FeishuClient:
         pagination_pages: int = 0,
         http_status: int = 0,
         api_code: int = 0,
+        transport_reason_type: str = "",
+        transport_reason_category: str = "",
+        transport_reason_message: str = "",
+        transport_errno: int = 0,
     ) -> FeishuClientError:
         return FeishuClientError(
             code,
@@ -453,6 +599,10 @@ class FeishuClient:
             exception_class=exception_class,
             response_shape=response_shape,
             pagination_pages=pagination_pages,
+            transport_reason_type=transport_reason_type,
+            transport_reason_category=transport_reason_category,
+            transport_reason_message=transport_reason_message,
+            transport_errno=transport_errno,
         )
 
     @staticmethod
@@ -472,6 +622,10 @@ class FeishuClient:
             error.exception_class or (type(exception).__name__ if exception else ""),
             error.response_shape,
             error.pagination_pages if pagination_pages is None else pagination_pages,
+            error.transport_reason_type,
+            error.transport_reason_category,
+            error.transport_reason_message,
+            error.transport_errno,
         )
 
     @staticmethod
@@ -492,12 +646,24 @@ class FeishuClient:
 
     def _table_url(self, table_id: str) -> str:
         table_id = str(table_id or "").strip()
-        if not table_id:
+        app_token = self._config.get("app_token", "")
+        if not table_id or not app_token:
             raise FeishuClientError("CONFIGURATION_ERROR", "飞书 Table ID 缺失。")
-        return (
+        url = (
             "https://open.feishu.cn/open-apis/bitable/v1/apps/"
-            f"{self._config['app_token']}/tables/{table_id}"
+            f"{urllib_parse.quote(app_token, safe='')}/tables/"
+            f"{urllib_parse.quote(table_id, safe='')}"
         )
+        parsed = urllib_parse.urlsplit(url)
+        if parsed.scheme != "https" or parsed.netloc != "open.feishu.cn":
+            raise FeishuClientError(
+                "CONFIGURATION_ERROR", "飞书请求地址无效。",
+                failure_stage="url", exception_class="ValueError",
+                transport_reason_type="ValueError",
+                transport_reason_category="MALFORMED_URL",
+                transport_reason_message="request URL is invalid",
+            )
+        return url
 
     @property
     def creator_table_id(self) -> str:

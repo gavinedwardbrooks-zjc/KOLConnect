@@ -245,17 +245,33 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         self.assertNotIn("base-token", combined)
 
     def test_double_field_fetch_failure_never_becomes_missing_schema(self):
+        events = []
         self.client.fetch_fields = lambda _table_id: FieldFetchResult(
             False,
             used_fallback=True,
             primary_error=FeishuClientError("INVALID_REQUEST", "rejected"),
-            fallback_error=FeishuClientError("REMOTE_ERROR", "malformed"),
+            fallback_error=FeishuClientError(
+                "TRANSIENT_NETWORK_ERROR",
+                "safe failure",
+                failure_stage="transport",
+                exception_class="URLError",
+                transport_reason_type="SSLCertVerificationError",
+                transport_reason_category="CERTIFICATE_VERIFY_FAILED",
+                transport_reason_message="certificate verification failed",
+                transport_errno=1,
+            ),
         )
-        result = self.service.validate_connection()
+        result = FeishuSyncService(
+            self.source, lambda: self.client, event_logger=events.append
+        ).validate_connection()
         self.assertEqual("blocked", result["status"])
         self.assertEqual("FEISHU_FIELD_FETCH_FAILED", result["blocked_reason"])
         self.assertEqual([], result["missing_fields"])
         self.assertEqual([], result["incompatible_fields"])
+        self.assertTrue(all("reason_type=SSLCertVerificationError" in item for item in events))
+        self.assertTrue(all("reason_category=CERTIFICATE_VERIFY_FAILED" in item for item in events))
+        self.assertTrue(all("reason_message=certificate verification failed" in item for item in events))
+        self.assertTrue(all("reason_errno=1" in item for item in events))
 
     def test_successful_empty_schema_is_explicit_schema_invalid_not_fetch_failure(self):
         events = []
