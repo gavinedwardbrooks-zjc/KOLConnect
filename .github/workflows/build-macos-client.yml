@@ -33,29 +33,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: ${{ fromJSON(inputs.arm64_test_only && '["arm64"]' || '["arm64","x86_64"]') }}
-        include:
-          # macos-14 is the native Apple Silicon runner. Never substitute macos-15:
-          # the deployment-target gate below prevents relabeling an incompatible build.
-          - arch: arm64
-            runner: macos-14
-            target_min_macos: "14"
-            build_argument: ""
-            source_dmg: release/KOLConnect_v2.0.0_mac_arm64.dmg
-            target_dmg: release/KOLConnect_v2.0.0_macOS_arm64.dmg
-            artifact_name: KOLConnect-v2.0.0-macOS-arm64
-            app_path: packaging/.pyinstaller-dist-macos/KOLConnect.app
-          # GitHub's hosted Intel image is macos-15-intel. The artifact is only
-          # accepted when each checked native binary proves a macOS 14-or-earlier
-          # deployment target; the runner label is not compatibility evidence.
-          - arch: x86_64
-            runner: macos-15-intel
-            target_min_macos: "14"
-            build_argument: x86_64
-            source_dmg: release/KOLConnect_v2.0.0_mac_intel.dmg
-            target_dmg: release/KOLConnect_v2.0.0_macOS_x64.dmg
-            artifact_name: KOLConnect-v2.0.0-macOS-x64
-            app_path: dist/pyinstaller-macos-intel/KOLConnect.app
+        # A static include entry creates an extra job even when the base axis omits
+        # that architecture. Select the complete include list instead.
+        include: ${{ fromJSON(inputs.arm64_test_only && '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.0_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.0_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.0-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"}]' || '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.0_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.0_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.0-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"},{"arch":"x86_64","runner":"macos-15-intel","target_min_macos":"14","build_argument":"x86_64","source_dmg":"release/KOLConnect_v2.0.0_mac_intel.dmg","target_dmg":"release/KOLConnect_v2.0.0_macOS_x64.dmg","artifact_name":"KOLConnect-v2.0.0-macOS-x64","app_path":"dist/pyinstaller-macos-intel/KOLConnect.app"}]') }}
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       TARGET_ARCH: ${{ matrix.arch }}
@@ -135,13 +115,33 @@ jobs:
           file "${shared_python}"; lipo -info "${shared_python}"; otool -L "${shared_python}"
           [[ "$(lipo -archs "${shared_python}")" == "${TARGET_ARCH}" ]]
           shared_minos="$(otool -l "${shared_python}" | awk '$1 == "cmd" { command = $2; next } command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit } command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }')"
-          [[ -n "${shared_minos}" ]] && [[ "${shared_minos%%.*}" -le 14 ]]
+          [[ "${shared_minos}" == "${MACOSX_DEPLOYMENT_TARGET}" ]]
           python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"
           echo "PYTHON_VERSION=$(python3 --version 2>&1)" >> "${GITHUB_ENV}"
 
       - name: Install packaging dependencies
         working-directory: frozen-src
-        run: python3 -m pip install -r packaging/requirements-build.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r packaging/requirements-build.txt
+          pyinstaller_version="$(python3 -c 'import PyInstaller; print(PyInstaller.__version__)')"
+          python3 -m pip uninstall --yes PyInstaller
+          PYINSTALLER_COMPILE_BOOTLOADER=1 \
+          MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" \
+            python3 -m pip install --verbose --no-cache-dir --no-binary=PyInstaller --no-deps "PyInstaller==${pyinstaller_version}"
+          bootloader="$(python3 - <<'PY'
+          from pathlib import Path
+          from PyInstaller import HOMEPATH, PLATFORM
+          print(Path(HOMEPATH) / "PyInstaller" / "bootloader" / PLATFORM / "runw")
+          PY
+          )"
+          test -x "${bootloader}"
+          [[ "$(lipo -archs "${bootloader}")" == "${TARGET_ARCH}" ]]
+          bootloader_minos="$(otool -l "${bootloader}" | awk '$1 == "cmd" { command = $2; next } command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit } command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }')"
+          echo "PYINSTALLER_BOOTLOADER=${bootloader}"
+          echo "PYINSTALLER_BOOTLOADER_MIN_MACOS=${bootloader_minos}"
+          [[ "${bootloader_minos}" == "${MACOSX_DEPLOYMENT_TARGET}" ]]
 
       - name: Assert v2.0.0 version metadata
         working-directory: frozen-src
@@ -232,6 +232,10 @@ jobs:
             [[ "${arches}" == "${expected_arch}" ]]
             [[ -n "${minos}" ]] || { echo "No supported macOS deployment load command found." >&2; return 1; }
             is_macos_target_compatible "${minos}"
+            [[ "${minos}" == "${MACOSX_DEPLOYMENT_TARGET}" ]] || {
+              echo "${label} deployment target ${minos} does not match ${MACOSX_DEPLOYMENT_TARGET}." >&2
+              return 1
+            }
           }
           inspect_macos_binary APP "${binary}" "${TARGET_ARCH}"
           pyexpat="$(find "${app}/Contents" -name 'pyexpat.cpython-312-darwin.so' -print -quit)"

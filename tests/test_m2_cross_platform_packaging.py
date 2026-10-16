@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import importlib.metadata
+import json
 import os
 import re
 import sys
@@ -448,35 +449,44 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
         self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
         self.assertEqual("frozen-src", workflow_env["FROZEN_PRODUCT_ROOT"])
-        matrix = manual_job["strategy"]["matrix"]["include"]
+        matrix_expression = manual_job["strategy"]["matrix"]["include"]
         self.assertFalse(manual_job["strategy"]["fail-fast"])
+        matrix_match = re.fullmatch(
+            r"\$\{\{ fromJSON\(inputs\.arm64_test_only && '(.+)' \|\| '(.+)'\) \}\}",
+            matrix_expression,
+        )
+        self.assertIsNotNone(matrix_match)
+        arm_only_matrix = json.loads(matrix_match.group(1))
+        dual_arch_matrix = json.loads(matrix_match.group(2))
+        expected_matrix = {
+            "arm64": {
+                "arch": "arm64",
+                "runner": "macos-14",
+                "target_min_macos": "14",
+                "build_argument": "",
+                "source_dmg": "release/KOLConnect_v2.0.0_mac_arm64.dmg",
+                "target_dmg": "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
+                "artifact_name": "KOLConnect-v2.0.0-macOS-arm64",
+                "app_path": "packaging/.pyinstaller-dist-macos/KOLConnect.app",
+            },
+            "x86_64": {
+                "arch": "x86_64",
+                "runner": "macos-15-intel",
+                "target_min_macos": "14",
+                "build_argument": "x86_64",
+                "source_dmg": "release/KOLConnect_v2.0.0_mac_intel.dmg",
+                "target_dmg": "release/KOLConnect_v2.0.0_macOS_x64.dmg",
+                "artifact_name": "KOLConnect-v2.0.0-macOS-x64",
+                "app_path": "dist/pyinstaller-macos-intel/KOLConnect.app",
+            },
+        }
         self.assertEqual(
-            {
-                entry["arch"]: entry
-                for entry in matrix
-            },
-            {
-                "arm64": {
-                    "arch": "arm64",
-                    "runner": "macos-14",
-                    "target_min_macos": "14",
-                    "build_argument": "",
-                    "source_dmg": "release/KOLConnect_v2.0.0_mac_arm64.dmg",
-                    "target_dmg": "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
-                    "artifact_name": "KOLConnect-v2.0.0-macOS-arm64",
-                    "app_path": "packaging/.pyinstaller-dist-macos/KOLConnect.app",
-                },
-                "x86_64": {
-                    "arch": "x86_64",
-                    "runner": "macos-15-intel",
-                    "target_min_macos": "14",
-                    "build_argument": "x86_64",
-                    "source_dmg": "release/KOLConnect_v2.0.0_mac_intel.dmg",
-                    "target_dmg": "release/KOLConnect_v2.0.0_macOS_x64.dmg",
-                    "artifact_name": "KOLConnect-v2.0.0-macOS-x64",
-                    "app_path": "dist/pyinstaller-macos-intel/KOLConnect.app",
-                },
-            },
+            [expected_matrix["arm64"]],
+            arm_only_matrix,
+        )
+        self.assertEqual(
+            expected_matrix,
+            {entry["arch"]: entry for entry in dual_arch_matrix},
         )
 
         checkout_steps = [
@@ -550,6 +560,14 @@ class PackagingConfigurationTests(unittest.TestCase):
             "frozen-src",
             steps_by_name["Install packaging dependencies"]["working-directory"],
         )
+        packaging_install = steps_by_name["Install packaging dependencies"]["run"]
+        self.assertIn("PYINSTALLER_COMPILE_BOOTLOADER=1", packaging_install)
+        self.assertIn("--no-binary=PyInstaller", packaging_install)
+        self.assertIn('bootloader_minos=', packaging_install)
+        self.assertIn(
+            '"${bootloader_minos}" == "${MACOSX_DEPLOYMENT_TARGET}"',
+            packaging_install,
+        )
         self.assertEqual(
             "frozen-src",
             steps_by_name["Assert v2.0.0 version metadata"]["working-directory"],
@@ -568,6 +586,7 @@ class PackagingConfigurationTests(unittest.TestCase):
             "PYEXPAT",
             "pyexpat.cpython-312-darwin.so",
             "TARGET_MIN_MACOS",
+            '"${minos}" == "${MACOSX_DEPLOYMENT_TARGET}"',
             "FROZEN_PRODUCT_ROOT",
             "CFBundleShortVersionString",
             "CFBundleVersion",
@@ -716,9 +735,17 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("KOLConnect_${VERSION}_mac_arm64.dmg", script)
         self.assertIn("KOLConnect_${VERSION}_mac_intel.dmg", script)
         self.assertIn('WORK_DIR="${PROJECT_ROOT}/build/pyinstaller-macos-intel"', script)
-        self.assertIn("export MACOSX_DEPLOYMENT_TARGET=12.0", script)
+        self.assertIn(
+            'export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"',
+            script,
+        )
+        self.assertIn(
+            'if [[ "${MACOSX_DEPLOYMENT_TARGET}" != "14.0" ]]',
+            script,
+        )
+        self.assertNotIn("MACOSX_DEPLOYMENT_TARGET=12.0", script)
         self.assertLess(
-            script.index("export MACOSX_DEPLOYMENT_TARGET=12.0"),
+            script.index('export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"'),
             script.index("python -m PyInstaller"),
         )
         self.assertIn('lipo -archs "${APP_BINARY}"', script)

@@ -38,7 +38,11 @@ esac
 
 APP_PATH="${DIST_DIR}/KOLConnect.app"
 APP_BINARY="${APP_PATH}/Contents/MacOS/KOLConnect"
-export MACOSX_DEPLOYMENT_TARGET=12.0
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+if [[ "${MACOSX_DEPLOYMENT_TARGET}" != "14.0" ]]; then
+  echo "KOLConnect 2.0 macOS builds require MACOSX_DEPLOYMENT_TARGET=14.0." >&2
+  exit 1
+fi
 
 cleanup() {
   rm -rf "${ICONSET_DIR}" "${DMG_STAGE}"
