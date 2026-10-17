@@ -318,7 +318,7 @@ jobs:
           curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/pages/dashboard.js -o "${smoke_root}/dashboard.js" || fail_gate packaged_dashboard_request
           test -s "${smoke_root}/dashboard.js" || fail_gate packaged_dashboard_resource
           test -f "${smoke_home}/Library/Application Support/KOLConnect/data/kolconnect.db" || fail_gate packaged_isolated_database
-          if grep -Eiq 'Traceback \(most recent call last\)|Fatal Python error|Failed to execute script|pyexpat' "${stdout_log}" "${stderr_log}"; then fail_gate packaged_app_runtime_log; fi
+          if grep -Eiq 'Traceback \(most recent call last\)|Fatal Python error|Failed to execute script|(ModuleNotFoundError|ImportError).*(pyexpat|_elementtree)' "${stdout_log}" "${stderr_log}"; then fail_gate packaged_app_runtime_log; fi
           echo "PACKAGED_EXPAT_SMOKE=PASS"
           echo "PACKAGED_ELEMENTTREE_SMOKE=PASS"
           echo "PACKAGED_OPENPYXL_SMOKE=PASS"

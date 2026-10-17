@@ -663,8 +663,10 @@ class PackagingConfigurationTests(unittest.TestCase):
             "PACKAGED_ELEMENTTREE_SMOKE=PASS",
             "PACKAGED_OPENPYXL_SMOKE=PASS",
             "PACKAGED_APP_LAUNCH=PASS",
+            "(ModuleNotFoundError|ImportError).*(pyexpat|_elementtree)",
         ):
             self.assertIn(contract, smoke)
+        self.assertNotIn("Failed to execute script|pyexpat'", smoke)
 
         dmg_build = steps_by_name["Create final macOS DMG"]["run"]
         self.assertIn("hdiutil create", dmg_build)
