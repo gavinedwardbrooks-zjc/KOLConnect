@@ -253,7 +253,10 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("source_sha:", manual)
         self.assertIn("fromJSON(inputs.arm64_test_only", manual)
         self.assertIn("KOLConnect_v2.0.0_macOS_arm64_TEST.dmg", manual)
-        self.assertIn("inputs.source_sha || github.sha", manual)
+        self.assertIn(
+            "inputs.source_sha || (inputs.arm64_test_only && github.sha)",
+            manual,
+        )
         self.assertIn("pyi-archive_viewer -r -b", manual)
         self.assertIn("FEISHU_FIELD_FETCH_FAILED", manual)
         self.assertIn("name: ${{ env.ARTIFACT_NAME }}", manual)
@@ -495,12 +498,12 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(2, len(checkout_steps))
         root_checkout, frozen_checkout = checkout_steps
         self.assertEqual(
-            "${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || 'main' }}",
+            "${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || 'main' }}",
             root_checkout["with"]["ref"],
         )
         self.assertNotIn("path", root_checkout["with"])
         self.assertEqual(
-            "${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || '"
+            "${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || '"
             + frozen_sha
             + "' }}",
             frozen_checkout["with"]["ref"],
@@ -517,6 +520,12 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('git -C "${FROZEN_PRODUCT_ROOT}" rev-parse HEAD', revision_check)
         self.assertIn('"${actual_sha}" == "${EXPECTED_SOURCE_SHA}"', revision_check)
         self.assertIn("exit 1", revision_check)
+        self.assertEqual(
+            "${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || '"
+            + frozen_sha
+            + "' }}",
+            manual_job["env"]["EXPECTED_SOURCE_SHA"],
+        )
 
         self.assertIn("Build job-local SQLite 3.51.3 and Python 3.12", manual)
         self.assertIn("sqlite-autoconf-3510300.tar.gz", manual)

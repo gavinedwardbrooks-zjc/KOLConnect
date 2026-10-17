@@ -9,7 +9,7 @@ on:
         default: false
         type: boolean
       source_sha:
-        description: Optional exact committed source SHA; blank uses this workflow run's commit for TEST builds
+        description: Optional exact committed product source SHA; blank keeps the frozen v2.0.0 release source
         required: false
         default: ""
         type: string
@@ -45,19 +45,19 @@ jobs:
       ARTIFACT_NAME: ${{ inputs.arm64_test_only && 'KOLConnect-v2.0.0-macOS-arm64-TEST' || matrix.artifact_name }}
       APP_PATH: ${{ matrix.app_path }}
       TARGET_MIN_MACOS: ${{ matrix.target_min_macos }}
-      EXPECTED_SOURCE_SHA: ${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
       TEST_BUILD: ${{ inputs.arm64_test_only && 'true' || 'false' }}
     steps:
       - name: Check out workflow infrastructure from latest main
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || 'main' }}
+          ref: ${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || 'main' }}
           fetch-depth: 1
 
       - name: Check out frozen application source separately
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
+          ref: ${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
           path: frozen-src
           fetch-depth: 1
 
