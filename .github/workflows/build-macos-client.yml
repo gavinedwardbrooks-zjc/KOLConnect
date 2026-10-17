@@ -2,6 +2,17 @@ name: Build macOS Clients
 
 on:
   workflow_dispatch:
+    inputs:
+      arm64_test_only:
+        description: Build only the temporary Apple Silicon validation artifact
+        required: true
+        default: false
+        type: boolean
+      source_sha:
+        description: Optional exact committed source SHA; blank uses this workflow run's commit for TEST builds
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -22,59 +33,43 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # macos-14 is the native Apple Silicon runner. Never substitute macos-15:
-          # the deployment-target gate below prevents relabeling an incompatible build.
-          - arch: arm64
-            runner: macos-14
-            target_min_macos: "14"
-            build_argument: ""
-            source_dmg: release/KOLConnect_v2.0.0_mac_arm64.dmg
-            target_dmg: release/KOLConnect_v2.0.0_macOS_arm64.dmg
-            artifact_name: KOLConnect-v2.0.0-macOS-arm64
-            app_path: packaging/.pyinstaller-dist-macos/KOLConnect.app
-          # GitHub's hosted Intel image is macos-15-intel. The artifact is only
-          # accepted when each checked native binary proves a macOS 14-or-earlier
-          # deployment target; the runner label is not compatibility evidence.
-          - arch: x86_64
-            runner: macos-15-intel
-            target_min_macos: "14"
-            build_argument: x86_64
-            source_dmg: release/KOLConnect_v2.0.0_mac_intel.dmg
-            target_dmg: release/KOLConnect_v2.0.0_macOS_x64.dmg
-            artifact_name: KOLConnect-v2.0.0-macOS-x64
-            app_path: dist/pyinstaller-macos-intel/KOLConnect.app
+        # A static include entry creates an extra job even when the base axis omits
+        # that architecture. Select the complete include list instead.
+        include: ${{ fromJSON(inputs.arm64_test_only && '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.0_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.0_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.0-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"}]' || '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.0_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.0_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.0-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"},{"arch":"x86_64","runner":"macos-15-intel","target_min_macos":"14","build_argument":"x86_64","source_dmg":"release/KOLConnect_v2.0.0_mac_intel.dmg","target_dmg":"release/KOLConnect_v2.0.0_macOS_x64.dmg","artifact_name":"KOLConnect-v2.0.0-macOS-x64","app_path":"dist/pyinstaller-macos-intel/KOLConnect.app"}]') }}
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       TARGET_ARCH: ${{ matrix.arch }}
       BUILD_ARGUMENT: ${{ matrix.build_argument }}
       SOURCE_DMG: ${{ matrix.source_dmg }}
-      TARGET_DMG: ${{ matrix.target_dmg }}
-      ARTIFACT_NAME: ${{ matrix.artifact_name }}
+      TARGET_DMG: ${{ inputs.arm64_test_only && 'release/KOLConnect_v2.0.0_macOS_arm64_TEST.dmg' || matrix.target_dmg }}
+      ARTIFACT_NAME: ${{ inputs.arm64_test_only && 'KOLConnect-v2.0.0-macOS-arm64-TEST' || matrix.artifact_name }}
       APP_PATH: ${{ matrix.app_path }}
       TARGET_MIN_MACOS: ${{ matrix.target_min_macos }}
+      EXPECTED_SOURCE_SHA: ${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
+      TEST_BUILD: ${{ inputs.arm64_test_only && 'true' || 'false' }}
     steps:
       - name: Check out workflow infrastructure from latest main
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || 'main' }}
           fetch-depth: 1
 
       - name: Check out frozen application source separately
         uses: actions/checkout@v4
         with:
-          ref: 4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2
+          ref: ${{ inputs.arm64_test_only && (inputs.source_sha || github.sha) || '4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2' }}
           path: frozen-src
           fetch-depth: 1
 
-      - name: Enforce frozen release revision
+      - name: Enforce selected source revision
         shell: bash
         run: |
           set -euo pipefail
           actual_sha="$(git -C "${FROZEN_PRODUCT_ROOT}" rev-parse HEAD)"
-          echo "FROZEN_RELEASE_SHA=${FROZEN_RELEASE_SHA}"
+          [[ "${EXPECTED_SOURCE_SHA}" =~ ^[0-9a-f]{40}$ ]] || { echo "source_sha must be a full commit SHA." >&2; exit 1; }
+          echo "EXPECTED_SOURCE_SHA=${EXPECTED_SOURCE_SHA}"
           echo "ACTUAL_BUILD_SHA=${actual_sha}"
-          [[ "${actual_sha}" == "${FROZEN_RELEASE_SHA}" ]] || { echo "Frozen release revision mismatch." >&2; exit 1; }
+          [[ "${actual_sha}" == "${EXPECTED_SOURCE_SHA}" ]] || { echo "Selected source revision mismatch." >&2; exit 1; }
           echo "ACTUAL_BUILD_SHA=${actual_sha}" >> "${GITHUB_ENV}"
 
       - name: Build job-local SQLite 3.51.3 and Python 3.12
@@ -120,13 +115,33 @@ jobs:
           file "${shared_python}"; lipo -info "${shared_python}"; otool -L "${shared_python}"
           [[ "$(lipo -archs "${shared_python}")" == "${TARGET_ARCH}" ]]
           shared_minos="$(otool -l "${shared_python}" | awk '$1 == "cmd" { command = $2; next } command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit } command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }')"
-          [[ -n "${shared_minos}" ]] && [[ "${shared_minos%%.*}" -le 14 ]]
+          [[ "${shared_minos}" == "${MACOSX_DEPLOYMENT_TARGET}" ]]
           python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"
           echo "PYTHON_VERSION=$(python3 --version 2>&1)" >> "${GITHUB_ENV}"
 
       - name: Install packaging dependencies
         working-directory: frozen-src
-        run: python3 -m pip install -r packaging/requirements-build.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install -r packaging/requirements-build.txt
+          pyinstaller_version="$(python3 -c 'import PyInstaller; print(PyInstaller.__version__)')"
+          python3 -m pip uninstall --yes PyInstaller
+          PYINSTALLER_COMPILE_BOOTLOADER=1 \
+          MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" \
+            python3 -m pip install --verbose --no-cache-dir --no-binary=PyInstaller --no-deps "PyInstaller==${pyinstaller_version}"
+          bootloader="$(python3 - <<'PY'
+          from pathlib import Path
+          from PyInstaller import HOMEPATH, PLATFORM
+          print(Path(HOMEPATH) / "PyInstaller" / "bootloader" / PLATFORM / "runw")
+          PY
+          )"
+          test -x "${bootloader}"
+          [[ "$(lipo -archs "${bootloader}")" == "${TARGET_ARCH}" ]]
+          bootloader_minos="$(otool -l "${bootloader}" | awk '$1 == "cmd" { command = $2; next } command == "LC_BUILD_VERSION" && $1 == "minos" { print $2; exit } command == "LC_VERSION_MIN_MACOSX" && $1 == "version" { print $2; exit }')"
+          echo "PYINSTALLER_BOOTLOADER=${bootloader}"
+          echo "PYINSTALLER_BOOTLOADER_MIN_MACOS=${bootloader_minos}"
+          [[ "${bootloader_minos}" == "${MACOSX_DEPLOYMENT_TARGET}" ]]
 
       - name: Assert v2.0.0 version metadata
         working-directory: frozen-src
@@ -217,6 +232,10 @@ jobs:
             [[ "${arches}" == "${expected_arch}" ]]
             [[ -n "${minos}" ]] || { echo "No supported macOS deployment load command found." >&2; return 1; }
             is_macos_target_compatible "${minos}"
+            [[ "${minos}" == "${MACOSX_DEPLOYMENT_TARGET}" ]] || {
+              echo "${label} deployment target ${minos} does not match ${MACOSX_DEPLOYMENT_TARGET}." >&2
+              return 1
+            }
           }
           inspect_macos_binary APP "${binary}" "${TARGET_ARCH}"
           pyexpat="$(find "${app}/Contents" -name 'pyexpat.cpython-312-darwin.so' -print -quit)"
@@ -224,26 +243,60 @@ jobs:
           inspect_macos_binary PYEXPAT "${pyexpat}" "${TARGET_ARCH}"
           sqlite_module="$(find "${app}/Contents" -name '_sqlite3.cpython-312-darwin.so' -print -quit)"
           test -n "${sqlite_module}"; inspect_macos_binary SQLITE_MODULE "${sqlite_module}" "${TARGET_ARCH}"
-          ! otool -L "${sqlite_module}" | grep -Fq "${RUNNER_TEMP}"
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" == "${PRODUCT_VERSION}" ]]
-          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" == "${PRODUCT_VERSION}" ]]
+          fail_gate() { echo "FAILED_GATE=$1" >&2; exit 1; }
+          if otool -L "${sqlite_module}" | grep -Fq "${RUNNER_TEMP}"; then fail_gate sqlite_runtime_relocatability; fi
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${plist}")" == "${PRODUCT_VERSION}" ]] || fail_gate bundle_short_version
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "${plist}")" == "${PRODUCT_VERSION}" ]] || fail_gate bundle_version
           webapp_index="$(find "${app}/Contents" -path '*/webapp/index.html' -print -quit)"
+          test -n "${webapp_index}" || fail_gate packaged_webapp_index
           webapp_root="$(dirname "${webapp_index}")"
-          test -n "${webapp_index}"; test -f "${webapp_root}/app.js"; test -f "${webapp_root}/styles.css"; test -f "${webapp_root}/i18n.js"
-          find "${app}/Contents" -path '*/assets/KOLConnect.png' -print -quit | grep -q .
-          find "${app}/Contents" -path '*/chrome_extension/manifest.json' -print -quit | grep -q .
+          test -f "${webapp_root}/app.js" || fail_gate packaged_webapp_app_js
+          test -f "${webapp_root}/styles.css" || fail_gate packaged_webapp_styles
+          test -f "${webapp_root}/i18n.js" || fail_gate packaged_webapp_i18n
+          packaged_settings="${webapp_root}/pages/settings.js"
+          packaged_i18n="${webapp_root}/i18n.js"
+          source_settings="${FROZEN_PRODUCT_ROOT}/webapp/pages/settings.js"
+          source_i18n="${FROZEN_PRODUCT_ROOT}/webapp/i18n.js"
+          test -f "${packaged_settings}" || fail_gate packaged_settings_file
+          test -f "${packaged_i18n}" || fail_gate packaged_i18n_file
+          echo "PACKAGED_SETTINGS_PATH=${packaged_settings}"
+          echo "PACKAGED_I18N_PATH=${packaged_i18n}"
+          echo "SOURCE_SETTINGS_SHA256=$(shasum -a 256 "${source_settings}" | awk '{print $1}')"
+          echo "PACKAGED_SETTINGS_SHA256=$(shasum -a 256 "${packaged_settings}" | awk '{print $1}')"
+          echo "SOURCE_I18N_SHA256=$(shasum -a 256 "${source_i18n}" | awk '{print $1}')"
+          echo "PACKAGED_I18N_SHA256=$(shasum -a 256 "${packaged_i18n}" | awk '{print $1}')"
+          cmp -s "${source_settings}" "${packaged_settings}" || fail_gate packaged_settings_source_mismatch
+          cmp -s "${source_i18n}" "${packaged_i18n}" || fail_gate packaged_i18n_source_mismatch
+          grep -Fq 'reason === "FEISHU_FIELD_FETCH_FAILED"' "${packaged_settings}" || fail_gate packaged_settings_feishu_error
+          echo "SETTINGS_MARKER_FOUND=YES"
+          grep -Fq 'settingsFeishuFieldFetchFailed' "${packaged_i18n}" || fail_gate packaged_i18n_feishu_error
+          echo "I18N_MARKER_FOUND=YES"
+          grep -Fq 'class FieldFetchResult' "${FROZEN_PRODUCT_ROOT}/app/feishu_client.py" || fail_gate source_feishu_client_marker
+          grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${FROZEN_PRODUCT_ROOT}/app/services/feishu_sync_service.py" || fail_gate source_feishu_service_marker
+          grep -Fq '"requests", "certifi"' "${FROZEN_PRODUCT_ROOT}/packaging/spec/KOLConnect_mac.spec" || fail_gate macos_tls_ca_spec
+          archive_listing="$(pyi-archive_viewer -r -b "${binary}")" || fail_gate pyinstaller_archive_open
+          grep -Fq 'feishu_client' <<<"${archive_listing}" || fail_gate packaged_feishu_client_module
+          grep -Fq 'services.feishu_sync_service' <<<"${archive_listing}" || fail_gate packaged_feishu_sync_service_module
+          grep -Fq 'requests' <<<"${archive_listing}" || fail_gate packaged_requests_module
+          grep -Fq 'certifi' <<<"${archive_listing}" || fail_gate packaged_certifi_module
+          ca_bundle="$(find "${app}/Contents" -path '*/certifi/cacert.pem' -print -quit)"
+          test -s "${ca_bundle}" || fail_gate packaged_certifi_ca_bundle
+          echo "PACKAGED_CA_BUNDLE_PATH=${ca_bundle}"
+          test -n "$(find "${app}/Contents" -path '*/assets/KOLConnect.png' -print -quit)" || fail_gate packaged_app_icon
+          test -n "$(find "${app}/Contents" -path '*/chrome_extension/manifest.json' -print -quit)" || fail_gate packaged_extension_manifest
           find "${app}/Contents" -path '*/chrome_extension/tests' -exec rm -rf {} +
           find "${app}/Contents" -path '*/chrome_extension/README.md' -delete
-          ! find "${app}/Contents" -path '*/chrome_extension/tests' -print -quit | grep -q .
-          ! find "${app}/Contents" -path '*/chrome_extension/README.md' -print -quit | grep -q .
-          "${binary}" --sqlite-runtime-check
-          codesign --force --deep --sign - "${app}"
-          codesign --verify --deep --strict --verbose=2 "${app}"
+          test -z "$(find "${app}/Contents" -path '*/chrome_extension/tests' -print -quit)" || fail_gate packaged_extension_tests_removed
+          test -z "$(find "${app}/Contents" -path '*/chrome_extension/README.md' -print -quit)" || fail_gate packaged_extension_readme_removed
+          "${binary}" --sqlite-runtime-check || fail_gate packaged_sqlite_runtime
+          codesign --force --deep --sign - "${app}" || fail_gate codesign_apply
+          codesign --verify --deep --strict --verbose=2 "${app}" || fail_gate codesign_verify
 
       - name: Smoke test packaged imports and app with isolated HOME
         shell: bash
         run: |
           set -euo pipefail
+          fail_gate() { echo "FAILED_GATE=$1" >&2; exit 1; }
           app="${FROZEN_PRODUCT_ROOT}/${APP_PATH}"; binary="${app}/Contents/MacOS/KOLConnect"
           smoke_root="$(mktemp -d "${RUNNER_TEMP}/kolconnect-smoke.XXXXXX")"
           smoke_home="${smoke_root}/home"; smoke_tmp="${smoke_root}/tmp"; stdout_log="${smoke_root}/stdout.log"; stderr_log="${smoke_root}/stderr.log"
@@ -251,21 +304,21 @@ jobs:
           app_pid=""
           cleanup_smoke() { if [[ -n "${app_pid}" ]] && kill -0 "${app_pid}" 2>/dev/null; then osascript -e 'tell application id "com.kolconnect.app" to quit' >/dev/null 2>&1 || true; kill -TERM "${app_pid}" 2>/dev/null || true; wait "${app_pid}" 2>/dev/null || true; fi; }
           trap cleanup_smoke EXIT
-          ! curl --silent --max-time 2 http://127.0.0.1:8765/ >/dev/null 2>&1
+          if curl --silent --max-time 2 http://127.0.0.1:8765/ >/dev/null 2>&1; then fail_gate smoke_port_already_in_use; fi
           HOME="${smoke_home}" TMPDIR="${smoke_tmp}" "${binary}" >"${stdout_log}" 2>"${stderr_log}" & app_pid=$!
           server_ready=0
           for _ in $(seq 1 90); do
-            kill -0 "${app_pid}" 2>/dev/null || { cat "${stdout_log}" "${stderr_log}" >&2; exit 1; }
+            kill -0 "${app_pid}" 2>/dev/null || { cat "${stdout_log}" "${stderr_log}" >&2; fail_gate packaged_app_early_exit; }
             if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:8765/ -o "${smoke_root}/index.html"; then server_ready=1; break; fi
             sleep 1
           done
-          [[ "${server_ready}" == "1" ]]
+          [[ "${server_ready}" == "1" ]] || fail_gate packaged_app_server_start
           # Server startup imports openpyxl, which loads ElementTree and pyexpat.
-          grep -Fq "KOLConnect" "${smoke_root}/index.html"
-          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/pages/dashboard.js -o "${smoke_root}/dashboard.js"
-          test -s "${smoke_root}/dashboard.js"
-          test -f "${smoke_home}/Library/Application Support/KOLConnect/data/kolconnect.db"
-          ! grep -Eiq 'Traceback \(most recent call last\)|Fatal Python error|Failed to execute script|pyexpat' "${stdout_log}" "${stderr_log}"
+          grep -Fq "KOLConnect" "${smoke_root}/index.html" || fail_gate packaged_app_index
+          curl --fail --silent --show-error --max-time 5 http://127.0.0.1:8765/pages/dashboard.js -o "${smoke_root}/dashboard.js" || fail_gate packaged_dashboard_request
+          test -s "${smoke_root}/dashboard.js" || fail_gate packaged_dashboard_resource
+          test -f "${smoke_home}/Library/Application Support/KOLConnect/data/kolconnect.db" || fail_gate packaged_isolated_database
+          if grep -Eiq 'Traceback \(most recent call last\)|Fatal Python error|Failed to execute script|pyexpat' "${stdout_log}" "${stderr_log}"; then fail_gate packaged_app_runtime_log; fi
           echo "PACKAGED_EXPAT_SMOKE=PASS"
           echo "PACKAGED_ELEMENTTREE_SMOKE=PASS"
           echo "PACKAGED_OPENPYXL_SMOKE=PASS"
@@ -275,29 +328,36 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          fail_gate() { echo "FAILED_GATE=$1" >&2; exit 1; }
           dmg_stage="$(mktemp -d "${RUNNER_TEMP}/kolconnect-dmg-stage.XXXXXX")"
           trap 'rm -rf "${dmg_stage}"' EXIT
-          ditto "${FROZEN_PRODUCT_ROOT}/${APP_PATH}" "${dmg_stage}/KOLConnect.app"
-          ln -s /Applications "${dmg_stage}/Applications"
+          ditto "${FROZEN_PRODUCT_ROOT}/${APP_PATH}" "${dmg_stage}/KOLConnect.app" || fail_gate dmg_stage_app
+          ln -s /Applications "${dmg_stage}/Applications" || fail_gate dmg_stage_applications_link
           product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"
+          expected_dmg="$([[ "${TEST_BUILD}" == "true" ]] && echo 'KOLConnect_v2.0.0_macOS_arm64_TEST.dmg' || basename "${TARGET_DMG}")"
+          [[ "$(basename "${product_dmg}")" == "${expected_dmg}" ]] || fail_gate dmg_output_filename
           rm -f "${product_dmg}"
-          hdiutil create -volname "KOLConnect v2.0.0" -srcfolder "${dmg_stage}" -ov -format UDZO "${product_dmg}"
+          hdiutil create -volname "KOLConnect v2.0.0" -srcfolder "${dmg_stage}" -ov -format UDZO "${product_dmg}" || fail_gate dmg_create
 
       - name: Validate DMG and calculate SHA-256
         shell: bash
         run: |
           set -euo pipefail
+          fail_gate() { echo "FAILED_GATE=$1" >&2; exit 1; }
           product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"
-          test -s "${product_dmg}"
-          test "${product_dmg}" -nt "${RUNNER_TEMP}/kolconnect-macos-build-started"
+          test -s "${product_dmg}" || fail_gate dmg_nonempty
+          test "${product_dmg}" -nt "${RUNNER_TEMP}/kolconnect-macos-build-started" || fail_gate dmg_freshness
           mount_dir="$(mktemp -d "${RUNNER_TEMP}/kolconnect-dmg.XXXXXX")"
           trap 'hdiutil detach "${mount_dir}" >/dev/null 2>&1 || true; rmdir "${mount_dir}" >/dev/null 2>&1 || true' EXIT
-          hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${product_dmg}" >/dev/null
-          test -d "${mount_dir}/KOLConnect.app"; test -L "${mount_dir}/Applications"
-          [[ "$(lipo -archs "${mount_dir}/KOLConnect.app/Contents/MacOS/KOLConnect")" == "${TARGET_ARCH}" ]]
-          hdiutil detach "${mount_dir}" >/dev/null
+          hdiutil attach -readonly -nobrowse -mountpoint "${mount_dir}" "${product_dmg}" >/dev/null || fail_gate dmg_mount
+          test -d "${mount_dir}/KOLConnect.app" || fail_gate dmg_app_present
+          test -L "${mount_dir}/Applications" || fail_gate dmg_applications_link
+          [[ "$(lipo -archs "${mount_dir}/KOLConnect.app/Contents/MacOS/KOLConnect")" == "${TARGET_ARCH}" ]] || fail_gate dmg_app_architecture
+          [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "${mount_dir}/KOLConnect.app/Contents/Info.plist")" == "${PRODUCT_VERSION}" ]] || fail_gate dmg_app_version
+          codesign --verify --deep --strict --verbose=2 "${mount_dir}/KOLConnect.app" || fail_gate dmg_app_codesign
+          hdiutil detach "${mount_dir}" >/dev/null || fail_gate dmg_detach
           artifact_size="$(stat -f '%z' "${product_dmg}")"; artifact_sha256="$(shasum -a 256 "${product_dmg}" | awk '{print $1}')"
-          [[ "${artifact_size}" -gt 0 ]]
+          [[ "${artifact_size}" -gt 0 ]] || fail_gate dmg_size
           echo "ARTIFACT_SIZE_BYTES=${artifact_size}" >> "${GITHUB_ENV}"
           echo "ARTIFACT_SHA256=${artifact_sha256}" >> "${GITHUB_ENV}"
           echo "DMG_VALIDATION=PASS"
@@ -306,8 +366,8 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## KOLConnect v2.0.0 macOS ${TARGET_MIN_MACOS}+ ${TARGET_ARCH} release candidate"
-            echo "- Frozen source: ${ACTUAL_BUILD_SHA}"
+            echo "## KOLConnect v2.0.0 macOS ${TARGET_MIN_MACOS}+ ${TARGET_ARCH} $([[ "${TEST_BUILD}" == "true" ]] && echo 'test build' || echo 'release candidate')"
+            echo "- Source: ${ACTUAL_BUILD_SHA}"
             echo "- Runner: ${{ matrix.runner }}"
             echo "- Architecture: ${TARGET_ARCH}"
             echo "- Python: ${PYTHON_VERSION}"
@@ -319,10 +379,10 @@ jobs:
             echo "- Signing: ad-hoc; notarization: none; Gatekeeper warning expected"
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Upload macOS release candidate
+      - name: Upload macOS build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_name }}
-          path: frozen-src/${{ matrix.target_dmg }}
+          name: ${{ env.ARTIFACT_NAME }}
+          path: frozen-src/${{ env.TARGET_DMG }}
           if-no-files-found: error
           retention-days: 30

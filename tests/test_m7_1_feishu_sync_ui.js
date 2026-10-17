@@ -51,7 +51,7 @@ async function run() {
   const elements = new Map(ids.map(id => [id, new Element(id)]));
   const document = { getElementById: id => elements.get(id) || null };
   const calls = [];
-  const confirmations = [false, true];
+  const confirmations = [false, true, true];
   const validationResults = [
     { status: "success", connection_ok: true },
     {
@@ -70,8 +70,18 @@ async function run() {
         { table: "account", field: "粉丝数", actual_type: 15 },
       ],
     },
+    {
+      status: "blocked", blocked_reason: "FEISHU_FIELD_FETCH_FAILED",
+      missing_fields: [], incompatible_fields: [],
+      error_codes: ["FEISHU_FIELD_FETCH_FAILED"],
+    },
+    {
+      status: "failed", blocked_reason: "PERMISSION_DENIED",
+      error_codes: ["PERMISSION_DENIED"],
+    },
     { status: "failed" },
   ];
+  let fullSyncCalls = 0;
   const window = {
     confirm: () => confirmations.shift(),
     KOLConnectAPI: {
@@ -83,6 +93,10 @@ async function run() {
           creator_create_count: 2, creator_update_count: 1,
           creator_conflict_count: 0, remote_unmanaged_count: 3,
         };
+        fullSyncCalls += 1;
+        if (fullSyncCalls === 2) {
+          return { status: "failed", blocked_reason: "PERMISSION_DENIED", error_codes: ["PERMISSION_DENIED"] };
+        }
         return {
           status: "partial", creator_created: 2, creator_updated: 1,
           account_created: 2, account_updated: 0, creator_failed: 0, account_failed: 1,
@@ -103,6 +117,9 @@ async function run() {
         settingsFeishuMissingFields: `${values.table || ""} 表缺少：`,
         settingsFeishuIncompatibleFields: `${values.table || ""} 表字段类型不兼容:`,
         settingsFeishuCurrentType: `${values.field || ""}（当前类型：${values.type || ""}）`,
+        settingsFeishuFieldFetchFailed: "飞书连接成功，但 KOLConnect 无法读取目标表的字段结构。系统已自动重试且未修改任何飞书数据。请稍后重试；如果问题持续存在，请查看诊断日志。",
+        settingsFeishuReadPermissionDenied: "飞书拒绝了读取操作。请检查 bitable:app、版本发布和目标 Base/表读取权限。",
+        settingsFeishuWritePermissionDenied: "飞书拒绝了写入操作。请检查 bitable:app、版本发布和目标 Base/表读写权限。",
         settingsOperationNotRun: `操作未执行：${values.reason || "--"}`,
         settingsAvailable: "可用",
         settingsUnavailable: "不可用",
@@ -132,6 +149,13 @@ async function run() {
   await elements.get("feishu-sync-validate").click();
   assert.match(elements.get("feishu-sync-result").textContent, /Creator Account 表字段类型不兼容:[\s\S]*粉丝数/);
   await elements.get("feishu-sync-validate").click();
+  assert.match(elements.get("feishu-sync-result").textContent, /无法读取目标表的字段结构/);
+  assert.doesNotMatch(elements.get("feishu-sync-result").textContent, /表缺少/);
+  await elements.get("feishu-sync-validate").click();
+  assert.match(elements.get("feishu-sync-result").textContent, /拒绝了读取操作/);
+  assert.match(elements.get("feishu-sync-result").textContent, /bitable:app/);
+  assert.doesNotMatch(elements.get("feishu-sync-result").textContent, /secret|token/i);
+  await elements.get("feishu-sync-validate").click();
   assert.equal(elements.get("feishu-sync-result").textContent, "操作未执行：FEISHU_SYNC_FAILED");
   await elements.get("feishu-sync-dry-run").click();
   assert.equal(elements.get("feishu-sync-local-creators").textContent, 10);
@@ -147,6 +171,9 @@ async function run() {
   assert.match(elements.get("feishu-sync-result").textContent, /同步部分完成/);
   assert.match(elements.get("feishu-sync-result").textContent, /后续批次已停止/);
   assert.doesNotMatch(elements.get("feishu-sync-result").textContent, /secret|token/i);
+  await elements.get("feishu-sync-full").click();
+  assert.match(elements.get("feishu-sync-result").textContent, /拒绝了写入操作/);
+  assert.match(elements.get("feishu-sync-result").textContent, /读写权限/);
   console.log("M7.1 Feishu sync settings UI: OK");
 }
 

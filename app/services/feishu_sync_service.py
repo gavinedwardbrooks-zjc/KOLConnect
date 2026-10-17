@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import math
+import platform
+import sys
 from typing import Any, Callable, Protocol
 
-from feishu_client import FeishuClient, FeishuClientError
+from feishu_client import FieldFetchResult, FeishuClient, FeishuClientError
 
 
 CREATOR_ID_FIELD = "KOLConnect Creator ID"
@@ -71,10 +73,12 @@ class FeishuSyncService:
         client_provider: Callable[[], FeishuClient],
         *,
         now_provider: Callable[[], datetime] | None = None,
+        event_logger: Callable[[str], None] | None = None,
     ) -> None:
         self._repository = repository
         self._client_provider = client_provider
         self._now_provider = now_provider or (lambda: datetime.now(timezone.utc))
+        self._event_logger = event_logger or (lambda _message: None)
 
     def validate_connection(self) -> dict[str, Any]:
         started_at = self._now()
@@ -89,6 +93,19 @@ class FeishuSyncService:
         try:
             client.authenticate()
         except FeishuClientError as exc:
+            self._log_operation_failure("tenant_access_token", "authentication", exc)
+            self._event_logger(
+                "feishu_field_fetch "
+                f"platform={platform.system() or 'unknown'} "
+                f"python={sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} "
+                f"packaged_runtime={str(bool(getattr(sys, 'frozen', False))).lower()} "
+                "table_role=authentication primary_fetch_ok=false "
+                "fallback_used=false fallback_ok=false remote_field_count=0 "
+                "pagination_pages=0 parser_result_shape=unknown failure_stage=auth "
+                f"exception_class={exc.exception_class or 'NONE'} "
+                f"http_status={exc.http_status} response_api_code={exc.api_code} "
+                f"primary_code={exc.code} fallback_code=NONE final_ok=false"
+            )
             return {
                 "status": "failed",
                 "started_at": started_at,
@@ -102,17 +119,45 @@ class FeishuSyncService:
                 "error_codes": [exc.code],
             }
 
-        creator_fields, creator_error = self._safe_fields(client, client.creator_table_id)
-        account_fields, account_error = self._safe_fields(client, client.account_table_id)
+        creator_fetch = self._safe_fields(client, client.creator_table_id)
+        account_fetch = self._safe_fields(client, client.account_table_id)
+        self._log_field_fetch("creator", creator_fetch)
+        self._log_field_fetch("account", account_fetch)
+        fetch_failed = not creator_fetch.ok or not account_fetch.ok
+        warnings = []
+        if creator_fetch.used_fallback and creator_fetch.ok:
+            warnings.append("FEISHU_FIELD_FETCH_FALLBACK_USED:creator")
+        if account_fetch.used_fallback and account_fetch.ok:
+            warnings.append("FEISHU_FIELD_FETCH_FALLBACK_USED:account")
+        if fetch_failed:
+            return {
+                "status": "blocked",
+                "blocked_reason": "FEISHU_FIELD_FETCH_FAILED",
+                "started_at": started_at,
+                "completed_at": self._now(),
+                "connection_ok": True,
+                "creator_table_ok": creator_fetch.ok,
+                "account_table_ok": account_fetch.ok,
+                "missing_fields": [],
+                "incompatible_fields": [],
+                "warnings": sorted(set(warnings)),
+                "error_codes": ["FEISHU_FIELD_FETCH_FAILED"],
+                "_creator_schema": {},
+                "_account_schema": {},
+            }
+        creator_fields = self._field_index(list(creator_fetch.fields))
+        account_fields = self._field_index(list(account_fetch.fields))
         missing, incompatible, warnings = self._validate_schema(
-            creator_fields or {},
-            account_fields or {},
+            creator_fields,
+            account_fields,
             creator_table_id=client.creator_table_id,
             account_table_id=client.account_table_id,
         )
-        error_codes = [
-            error.code for error in (creator_error, account_error) if error is not None
-        ]
+        if creator_fetch.used_fallback:
+            warnings.append("FEISHU_FIELD_FETCH_FALLBACK_USED:creator")
+        if account_fetch.used_fallback:
+            warnings.append("FEISHU_FIELD_FETCH_FALLBACK_USED:account")
+        error_codes: list[str] = []
         if not error_codes:
             warnings.append("WRITE_PERMISSION_NOT_TESTED_WITHOUT_MUTATION")
         ready = not error_codes and not missing and not incompatible
@@ -123,14 +168,14 @@ class FeishuSyncService:
             "started_at": started_at,
             "completed_at": self._now(),
             "connection_ok": True,
-            "creator_table_ok": creator_error is None,
-            "account_table_ok": account_error is None,
+            "creator_table_ok": True,
+            "account_table_ok": True,
             "missing_fields": missing,
             "incompatible_fields": incompatible,
             "warnings": sorted(set(warnings)),
             "error_codes": sorted(set(error_codes)),
-            "_creator_schema": creator_fields or {},
-            "_account_schema": account_fields or {},
+            "_creator_schema": creator_fields,
+            "_account_schema": account_fields,
         }
 
     def dry_run(self) -> dict[str, Any]:
@@ -547,8 +592,16 @@ class FeishuSyncService:
         }
 
     def _remote_inventory(self, client: FeishuClient) -> dict[str, Any]:
-        creator_records = client.list_records(client.creator_table_id)
-        account_records = client.list_records(client.account_table_id)
+        try:
+            creator_records = client.list_records(client.creator_table_id)
+        except FeishuClientError as exc:
+            self._log_operation_failure("bitable_record_list", "creator", exc)
+            raise
+        try:
+            account_records = client.list_records(client.account_table_id)
+        except FeishuClientError as exc:
+            self._log_operation_failure("bitable_record_list", "account", exc)
+            raise
         creator_index, creator_duplicates, unmanaged_creators = self._remote_index(
             creator_records, CREATOR_ID_FIELD, "creator"
         )
@@ -744,6 +797,7 @@ class FeishuSyncService:
                     for item, remote in zip(batch, created):
                         record_id_index[item["identity"]] = remote
             except FeishuClientError as exc:
+                self._log_operation_failure("bitable_record_batch_create", entity, exc)
                 self._record_batch_failure(result, entity, batch, exc)
                 return {
                     "phase": f"{entity}_create",
@@ -782,6 +836,7 @@ class FeishuSyncService:
                 result["succeeded"] += len(batch)
                 result["remaining"] -= len(batch)
             except FeishuClientError as exc:
+                self._log_operation_failure("bitable_record_batch_update", entity, exc)
                 self._record_batch_failure(result, entity, batch, exc)
                 return {
                     "phase": f"{entity}_update",
@@ -898,6 +953,9 @@ class FeishuSyncService:
                     if len(updated) != len(batch):
                         raise FeishuClientError("REMOTE_ERROR", "飞书关系更新结果数量不一致。")
                 except FeishuClientError as exc:
+                    self._log_operation_failure(
+                        "bitable_record_batch_update", "relation", exc
+                    )
                     result["relation_failed"] += len(batch)
                     result["failed"] += len(batch)
                     result["error_codes"].append(exc.code)
@@ -1167,13 +1225,57 @@ class FeishuSyncService:
         return indexed, conflicts, unmanaged
 
     @staticmethod
-    def _safe_fields(
-        client: FeishuClient, table_id: str
-    ) -> tuple[dict[str, dict[str, Any]] | None, FeishuClientError | None]:
+    def _safe_fields(client: FeishuClient, table_id: str) -> FieldFetchResult:
         try:
-            return FeishuSyncService._field_index(client.list_fields(table_id)), None
+            fetch = getattr(client, "fetch_fields", None)
+            if callable(fetch):
+                return fetch(table_id)
+            return FieldFetchResult(True, tuple(client.list_fields(table_id)))
         except FeishuClientError as exc:
-            return None, exc
+            return FieldFetchResult(False, primary_error=exc)
+
+    def _log_field_fetch(self, role: str, result: FieldFetchResult) -> None:
+        primary = result.primary_error
+        fallback = result.fallback_error
+        final_error = fallback or primary
+        self._event_logger(
+            "feishu_field_fetch "
+            f"platform={platform.system() or 'unknown'} "
+            f"python={sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} "
+            f"packaged_runtime={str(bool(getattr(sys, 'frozen', False))).lower()} "
+            f"table_role={role} primary_fetch_ok={str(primary is None).lower()} "
+            "endpoint_category=bitable_field_list "
+            f"fallback_used={str(result.used_fallback).lower()} "
+            f"fallback_ok={str(result.used_fallback and result.ok).lower()} "
+            f"remote_field_count={len(result.fields)} "
+            f"pagination_pages={result.pagination_pages or (final_error.pagination_pages if final_error else 0)} "
+            f"parser_result_shape={result.parser_result_shape if result.ok else (final_error.response_shape if final_error else 'unknown')} "
+            f"failure_stage={final_error.failure_stage if final_error else 'NONE'} "
+            f"exception_class={final_error.exception_class if final_error and final_error.exception_class else 'NONE'} "
+            f"reason_type={final_error.transport_reason_type if final_error and final_error.transport_reason_type else 'NONE'} "
+            f"reason_category={final_error.transport_reason_category if final_error and final_error.transport_reason_category else 'NONE'} "
+            f"reason_message={final_error.transport_reason_message if final_error and final_error.transport_reason_message else 'NONE'} "
+            f"reason_errno={final_error.transport_errno if final_error else 0} "
+            f"http_status={final_error.http_status if final_error else 0} "
+            f"response_api_code={final_error.api_code if final_error else 0} "
+            f"primary_code={primary.code if primary else 'NONE'} "
+            f"fallback_code={fallback.code if fallback else 'NONE'} "
+            f"final_ok={str(result.ok).lower()}"
+        )
+
+    def _log_operation_failure(
+        self, endpoint_category: str, table_role: str, error: FeishuClientError
+    ) -> None:
+        """Log only stable permission diagnostics, never request URLs or payloads."""
+        self._event_logger(
+            "feishu_operation_failure "
+            f"endpoint_category={endpoint_category} "
+            f"table_role={table_role} "
+            f"error_code={error.code} "
+            f"feishu_api_code={error.api_code} "
+            f"failure_stage={error.failure_stage} "
+            f"http_status={error.http_status}"
+        )
 
     @staticmethod
     def _relation_ids(value: Any) -> list[str]:

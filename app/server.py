@@ -1944,6 +1944,7 @@ def get_feishu_sync_service() -> FeishuSyncService:
     return FeishuSyncService(
         get_creator_repository(),
         lambda: FeishuClient(get_four_table_feishu_config()),
+        event_logger=lambda message: log_event("FeishuSync", message),
     )
 
 

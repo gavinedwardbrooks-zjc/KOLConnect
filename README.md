@@ -53,6 +53,12 @@ Feishu 使用 **Settings** 中的一套本地配置。Bitable 同步是明确的
 
 当前 Chat 事件通道不需要 public callback 或 webhook URL。OpenClaw 不是当前运行时依赖，运行 KOLConnect 不需要它。关于配置、事件、权限与安全细节，请参阅 [Feishu setup](docs/feishu_setup.md)。
 
+### 飞书最小权限要求
+
+常规 Creator/CreatorAccount 同步推荐只为应用身份开通 `bitable:app`。KOLConnect 使用 `tenant_access_token`，不要求用户 OAuth；Validate/Dry Run 也可使用 `bitable:app:readonly`，但 Full Sync 必须具备写权限。权限范围变更后必须创建并发布新的应用版本，并在租户要求时完成管理员审批。
+
+API 权限之外，还必须把应用加入目标 Base，并让应用身份能够访问 Creator 与 CreatorAccount 两张表；启用高级权限时，Full Sync 需要两张表的读写权限。当前同步不会删除远端记录，也不会创建、删除或修改表和字段，因此不要求通讯录、日历、云文档、云盘、IM、Wiki、搜索、记录删除、建表或字段管理权限。飞书 Chat/AI Assistant 的机器人与消息权限是独立功能，不属于数据同步权限。
+
 ## 邮箱
 
 当前支持的邮箱认证合同为：服务商允许时，通过密码或 app-password 使用标准 IMAP/SMTP。`Microsoft Outlook / Microsoft 365 OAuth2` 不属于官方支持范围。未来 Microsoft OAuth2 集成属于新功能，不是当前的兼容性承诺。
