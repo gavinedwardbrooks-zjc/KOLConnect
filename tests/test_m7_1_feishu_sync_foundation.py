@@ -99,6 +99,9 @@ class FakeClient:
         self.update_calls.append((table_id, copy.deepcopy(updates)))
         return copy.deepcopy(updates)
 
+    def batch_delete(self, _table_id, _record_ids):
+        raise AssertionError("Feishu Full Sync must never delete remote records")
+
 
 def creator(identity="creator-1", **changes):
     row = {
@@ -300,9 +303,38 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         ).validate_connection()
         self.assertEqual("failed", result["status"])
         self.assertEqual(["AUTHENTICATION_FAILED"], result["error_codes"])
-        self.assertEqual(1, len(events))
-        self.assertIn("failure_stage=auth", events[0])
-        self.assertNotIn("secret-value", events[0])
+        field_event = next(item for item in events if item.startswith("feishu_field_fetch "))
+        operation_event = next(
+            item for item in events if item.startswith("feishu_operation_failure ")
+        )
+        self.assertIn("failure_stage=auth", field_event)
+        self.assertIn("endpoint_category=tenant_access_token", operation_event)
+        self.assertNotIn("secret-value", "\n".join(events))
+
+    def test_record_permission_failure_logs_safe_endpoint_context(self):
+        events = []
+        self.client.list_records = lambda _table_id: (_ for _ in ()).throw(
+            FeishuClientError(
+                "PERMISSION_DENIED",
+                "secret-response-message",
+                http_status=403,
+                api_code=1254302,
+                failure_stage="api",
+            )
+        )
+        result = FeishuSyncService(
+            self.source, lambda: self.client, event_logger=events.append
+        ).dry_run()
+
+        self.assertEqual("PERMISSION_DENIED", result["blocked_reason"])
+        diagnostic = next(
+            item for item in events if item.startswith("feishu_operation_failure ")
+        )
+        self.assertIn("endpoint_category=bitable_record_list", diagnostic)
+        self.assertIn("table_role=creator", diagnostic)
+        self.assertIn("feishu_api_code=1254302", diagnostic)
+        self.assertIn("failure_stage=api", diagnostic)
+        self.assertNotIn("secret-response-message", diagnostic)
 
     def test_missing_local_identities_are_counted_and_blocked(self):
         self.source.data["creators"].append(creator(identity=""))
@@ -430,7 +462,9 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         self.client.records["creators"].append({"record_id": "legacy", "fields": {"达人ID": "random"}})
         result = self.service.dry_run()
         self.assertEqual(1, result["remote_unmanaged_count"])
-        self.assertFalse(hasattr(self.client, "delete"))
+        synced = self.service.full_sync(confirm=True)
+        self.assertEqual("success", synced["status"])
+        self.assertEqual("legacy", self.client.records["creators"][0]["record_id"])
 
     def test_full_sync_is_idempotent_and_last_synced_does_not_loop(self):
         first = self.service.full_sync(confirm=True)

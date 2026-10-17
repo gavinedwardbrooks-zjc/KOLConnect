@@ -93,6 +93,7 @@ class FeishuSyncService:
         try:
             client.authenticate()
         except FeishuClientError as exc:
+            self._log_operation_failure("tenant_access_token", "authentication", exc)
             self._event_logger(
                 "feishu_field_fetch "
                 f"platform={platform.system() or 'unknown'} "
@@ -591,8 +592,16 @@ class FeishuSyncService:
         }
 
     def _remote_inventory(self, client: FeishuClient) -> dict[str, Any]:
-        creator_records = client.list_records(client.creator_table_id)
-        account_records = client.list_records(client.account_table_id)
+        try:
+            creator_records = client.list_records(client.creator_table_id)
+        except FeishuClientError as exc:
+            self._log_operation_failure("bitable_record_list", "creator", exc)
+            raise
+        try:
+            account_records = client.list_records(client.account_table_id)
+        except FeishuClientError as exc:
+            self._log_operation_failure("bitable_record_list", "account", exc)
+            raise
         creator_index, creator_duplicates, unmanaged_creators = self._remote_index(
             creator_records, CREATOR_ID_FIELD, "creator"
         )
@@ -788,6 +797,7 @@ class FeishuSyncService:
                     for item, remote in zip(batch, created):
                         record_id_index[item["identity"]] = remote
             except FeishuClientError as exc:
+                self._log_operation_failure("bitable_record_batch_create", entity, exc)
                 self._record_batch_failure(result, entity, batch, exc)
                 return {
                     "phase": f"{entity}_create",
@@ -826,6 +836,7 @@ class FeishuSyncService:
                 result["succeeded"] += len(batch)
                 result["remaining"] -= len(batch)
             except FeishuClientError as exc:
+                self._log_operation_failure("bitable_record_batch_update", entity, exc)
                 self._record_batch_failure(result, entity, batch, exc)
                 return {
                     "phase": f"{entity}_update",
@@ -942,6 +953,9 @@ class FeishuSyncService:
                     if len(updated) != len(batch):
                         raise FeishuClientError("REMOTE_ERROR", "飞书关系更新结果数量不一致。")
                 except FeishuClientError as exc:
+                    self._log_operation_failure(
+                        "bitable_record_batch_update", "relation", exc
+                    )
                     result["relation_failed"] += len(batch)
                     result["failed"] += len(batch)
                     result["error_codes"].append(exc.code)
@@ -1230,6 +1244,7 @@ class FeishuSyncService:
             f"python={sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro} "
             f"packaged_runtime={str(bool(getattr(sys, 'frozen', False))).lower()} "
             f"table_role={role} primary_fetch_ok={str(primary is None).lower()} "
+            "endpoint_category=bitable_field_list "
             f"fallback_used={str(result.used_fallback).lower()} "
             f"fallback_ok={str(result.used_fallback and result.ok).lower()} "
             f"remote_field_count={len(result.fields)} "
@@ -1246,6 +1261,20 @@ class FeishuSyncService:
             f"primary_code={primary.code if primary else 'NONE'} "
             f"fallback_code={fallback.code if fallback else 'NONE'} "
             f"final_ok={str(result.ok).lower()}"
+        )
+
+    def _log_operation_failure(
+        self, endpoint_category: str, table_role: str, error: FeishuClientError
+    ) -> None:
+        """Log only stable permission diagnostics, never request URLs or payloads."""
+        self._event_logger(
+            "feishu_operation_failure "
+            f"endpoint_category={endpoint_category} "
+            f"table_role={table_role} "
+            f"error_code={error.code} "
+            f"feishu_api_code={error.api_code} "
+            f"failure_stage={error.failure_stage} "
+            f"http_status={error.http_status}"
         )
 
     @staticmethod

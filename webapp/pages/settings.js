@@ -277,6 +277,10 @@
         ? renderSchemaValidationDetails(data)
         : reason === "FEISHU_FIELD_FETCH_FAILED"
           ? t("settingsFeishuFieldFetchFailed")
+          : reason === "PERMISSION_DENIED"
+            ? t(operation === "full"
+              ? "settingsFeishuWritePermissionDenied"
+              : "settingsFeishuReadPermissionDenied")
           : t("settingsOperationNotRun", { reason });
     }
   }
