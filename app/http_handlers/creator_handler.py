@@ -8,6 +8,7 @@ from api_contract import error_payload
 from creator_repository import ExtensionMutationError
 from storage.errors import StorageError
 from services.creator_hard_delete_service import CreatorHardDeleteError
+from services.creator_delete_impact_service import CreatorDeleteImpactError
 from services.creator_merge_service import CreatorMergeError
 
 
@@ -218,6 +219,8 @@ def handle(handler, request: dict, context: dict) -> bool:
             )
         except ValueError as exc:
             handler._error(str(exc), status=404)
+        except CreatorDeleteImpactError as exc:
+            handler._json(exc.to_response(), status=500)
         except RuntimeError as exc:
             handler._error(str(exc), status=500)
         return True

@@ -17,18 +17,60 @@ PUBLIC_POLICY_SOURCES = frozenset({
     "embedded_analysis_references",
 })
 
+
+class CreatorDeleteImpactError(RuntimeError):
+    code = "CREATOR_DELETE_IMPACT_FAILED"
+    operation = "permanent_delete_impact"
+
+    def __init__(self, exception_class: str) -> None:
+        super().__init__("永久删除影响检查未完成，未执行任何删除。")
+        self.exception_class = str(exception_class or "RuntimeError")
+
+    def to_response(self) -> dict[str, Any]:
+        return {
+            "ok": False,
+            "error": {
+                "code": self.code,
+                "message": str(self),
+                "details": {
+                    "operation": self.operation,
+                    "exception_class": self.exception_class,
+                },
+            },
+        }
+
+
 class CreatorDeleteImpactService:
     def __init__(
         self,
         impact_port_provider: Callable[[], CreatorDeleteImpactPort],
+        *,
+        error_logger: Callable[[str, BaseException], None] | None = None,
     ) -> None:
         self._impact_port_provider = impact_port_provider
+        self._error_logger = error_logger or (lambda _message, _exc: None)
 
     def get_delete_impact(self, creator_id: str) -> dict[str, Any]:
         return self.inspect_delete_impact(creator_id)["preview"]
 
     def inspect_delete_impact(self, creator_id: str) -> dict[str, Any]:
         """Return the public preview and its scanner-owned internal delete plan."""
+        try:
+            return self._inspect_delete_impact(creator_id)
+        except ValueError:
+            raise
+        except CreatorDeleteImpactError:
+            raise
+        except Exception as exc:
+            self._error_logger(
+                "operation=permanent_delete_impact "
+                f"exception_class={type(exc).__name__} "
+                "safe_error_code=CREATOR_DELETE_IMPACT_FAILED",
+                exc,
+            )
+            raise CreatorDeleteImpactError(type(exc).__name__) from exc
+
+    def _inspect_delete_impact(self, creator_id: str) -> dict[str, Any]:
         snapshot = self._impact_port_provider().scan_creator_delete_impact(creator_id)
         impact = snapshot["impact"]
         retained = snapshot["retained"]

@@ -509,7 +509,13 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                 continue
             metadata_path = root / "task.json"
             if not metadata_path.is_file():
-                raise RuntimeError("任务元数据缺失。")
+                unmapped.add(root.name)
+                blocks.append({
+                    "source": "task_artifacts",
+                    "code": "TASK_METADATA_MISSING",
+                    "stable_id": root.name,
+                })
+                continue
             if metadata_path.is_symlink():
                 unmapped.add(root.name)
                 blocks.append({
@@ -520,10 +526,22 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                 continue
             try:
                 task = json.loads(metadata_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise RuntimeError("任务元数据无法读取。") from exc
+            except (OSError, json.JSONDecodeError):
+                unmapped.add(root.name)
+                blocks.append({
+                    "source": "task_artifacts",
+                    "code": "TASK_METADATA_UNREADABLE",
+                    "stable_id": root.name,
+                })
+                continue
             if not isinstance(task, dict) or str(task.get("id") or "") != root.name:
-                raise RuntimeError("任务元数据格式无效。")
+                unmapped.add(root.name)
+                blocks.append({
+                    "source": "task_artifacts",
+                    "code": "TASK_METADATA_INVALID",
+                    "stable_id": root.name,
+                })
+                continue
             creator_ids = task.get("creator_library_creator_ids")
             linked_creators = {
                 str(value) for value in creator_ids if str(value)

@@ -272,6 +272,7 @@ class FeishuClientTests(unittest.TestCase):
     def test_nonzero_api_errors_preserve_code_and_use_conservative_categories(self):
         cases = (
             (1254302, "request denied", "PERMISSION_DENIED"),
+            (1254061, "NumberFieldConvFail", "INVALID_FIELD_VALUE"),
             (9001, "table not found", "TABLE_NOT_FOUND"),
             (9002, "field value invalid", "INVALID_FIELD_VALUE"),
             (9003, "relation value invalid", "INVALID_RELATION_VALUE"),

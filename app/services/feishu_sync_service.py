@@ -834,7 +834,12 @@ class FeishuSyncService:
                     endpoint_category="bitable_record_batch_create",
                     table_role=entity,
                 )
-                self._log_operation_failure("bitable_record_batch_create", entity, exc)
+                self._log_operation_failure(
+                    "bitable_record_batch_create",
+                    entity,
+                    exc,
+                    field_names=self._payload_field_names(payloads),
+                )
                 self._record_batch_failure(result, entity, batch, exc)
                 return {
                     "phase": f"{entity}_create",
@@ -1175,8 +1180,9 @@ class FeishuSyncService:
             if for_update and not self._update_value_available(value, spec):
                 continue
             if not for_update and spec.kind == "number" and self._number(value) == "":
-                if self._text(value):
-                    continue
+                # Missing and invalid numeric values must never be sent as text.
+                # Full Sync remains conservative: the remote field stays missing.
+                continue
             payload[spec.remote_name] = self._encode_value(value, spec, field)
         return payload
 
@@ -1315,9 +1321,15 @@ class FeishuSyncService:
         )
 
     def _log_operation_failure(
-        self, endpoint_category: str, table_role: str, error: FeishuClientError
+        self,
+        endpoint_category: str,
+        table_role: str,
+        error: FeishuClientError,
+        *,
+        field_names: tuple[str, ...] = (),
     ) -> None:
         """Log only stable permission diagnostics, never request URLs or payloads."""
+        safe_fields = ",".join(field_names) if field_names else "NONE"
         self._event_logger(
             "feishu_operation_failure "
             f"endpoint_category={endpoint_category} "
@@ -1325,8 +1337,13 @@ class FeishuSyncService:
             f"error_code={error.code} "
             f"feishu_api_code={error.api_code} "
             f"failure_stage={error.failure_stage} "
-            f"http_status={error.http_status}"
+            f"http_status={error.http_status} "
+            f"field_names={safe_fields}"
         )
+
+    @staticmethod
+    def _payload_field_names(payloads: list[dict[str, Any]]) -> tuple[str, ...]:
+        return tuple(sorted({str(name) for payload in payloads for name in payload}))
 
     @staticmethod
     def _relation_ids(value: Any) -> list[str]:

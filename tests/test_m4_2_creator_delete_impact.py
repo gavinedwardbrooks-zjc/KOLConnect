@@ -21,6 +21,7 @@ if str(APP_DIR) not in sys.path:
 
 import server
 from repository_factory import RepositoryFactory
+from services.creator_delete_impact_service import CreatorDeleteImpactError
 
 
 def append_row(workbook, sheet_name: str, values: dict) -> None:
@@ -153,9 +154,67 @@ class CreatorDeleteImpactHttpTests(unittest.TestCase):
         task_root.mkdir(parents=True)
         (task_root / "task.json").write_text("{invalid", encoding="utf-8")
         status, body = self.request("GET", "creator_archived")
-        self.assertEqual(500, status)
-        self.assertEqual("删除影响扫描未完成。", body["error"])
-        self.assertNotIn("can_delete", body)
+        self.assertEqual(200, status)
+        self.assertFalse(body["can_delete"])
+        self.assertEqual(1, body["impact"]["unmapped_task_artifacts"])
+        self.assertIn(
+            "TASK_METADATA_UNREADABLE",
+            {item["code"] for item in body["blockers"]},
+        )
+
+    def test_missing_and_invalid_task_metadata_fail_closed_without_500(self) -> None:
+        cases = (
+            ("task_20260814T000000Z_aabbccdd", None, "TASK_METADATA_MISSING"),
+            (
+                "task_20260814T000000Z_eeff0011",
+                {"id": "different-task"},
+                "TASK_METADATA_INVALID",
+            ),
+        )
+        for task_id, metadata, expected_code in cases:
+            with self.subTest(expected_code=expected_code):
+                task_root = self.tasks_dir / task_id
+                task_root.mkdir(parents=True)
+                if metadata is not None:
+                    (task_root / "task.json").write_text(
+                        json.dumps(metadata), encoding="utf-8"
+                    )
+
+                status, body = self.request("GET", "creator_archived")
+
+                self.assertEqual(200, status)
+                self.assertFalse(body["can_delete"])
+                self.assertIn(
+                    expected_code,
+                    {item["code"] for item in body["blockers"]},
+                )
+
+    def test_unexpected_impact_error_returns_safe_diagnostic_contract(self) -> None:
+        events = []
+
+        class FailingPort:
+            def scan_creator_delete_impact(self, _creator_id):
+                raise KeyError("private creator data")
+
+        service = server.CreatorDeleteImpactService(
+            lambda: FailingPort(),
+            error_logger=lambda message, exc: events.append(
+                (message, type(exc).__name__)
+            ),
+        )
+
+        with self.assertRaises(CreatorDeleteImpactError) as caught:
+            service.get_delete_impact("creator_archived")
+
+        response = caught.exception.to_response()
+        self.assertEqual("CREATOR_DELETE_IMPACT_FAILED", response["error"]["code"])
+        self.assertEqual(
+            "permanent_delete_impact",
+            response["error"]["details"]["operation"],
+        )
+        self.assertEqual("KeyError", response["error"]["details"]["exception_class"])
+        self.assertIn("safe_error_code=CREATOR_DELETE_IMPACT_FAILED", events[0][0])
+        self.assertNotIn("private creator data", json.dumps(response, ensure_ascii=False))
 
     def test_active_campaign_remains_an_http_blocker(self) -> None:
         workbook = load_workbook(self.workbook_path)

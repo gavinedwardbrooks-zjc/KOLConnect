@@ -1881,7 +1881,12 @@ def get_creator_delete_impact_port() -> CreatorDeleteImpactPort:
 
 
 def get_creator_delete_impact_service() -> CreatorDeleteImpactService:
-    return CreatorDeleteImpactService(get_creator_delete_impact_port)
+    return CreatorDeleteImpactService(
+        get_creator_delete_impact_port,
+        error_logger=lambda message, exc: log_sanitized_exception(
+            "CreatorDelete", message, exc
+        ),
+    )
 
 
 def get_creator_hard_delete_repository():

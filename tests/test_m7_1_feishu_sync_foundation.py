@@ -489,6 +489,67 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         self.assertEqual(1, result["account_updated"])
         self.assertEqual(1300, self.client.records["accounts"][0]["fields"]["粉丝数"])
 
+    def test_account_create_omits_missing_or_invalid_followers_and_preserves_zero(self):
+        for local_value, expected in (("", None), ("not-a-number", None), (0, 0)):
+            with self.subTest(local_value=local_value):
+                client = FakeClient()
+                service = FeishuSyncService(
+                    Source([creator()], [account(followers=local_value)]),
+                    lambda: client,
+                )
+
+                result = service.full_sync(confirm=True)
+
+                self.assertEqual("success", result["status"])
+                account_payload = next(
+                    payloads[0]
+                    for table_id, payloads in client.create_calls
+                    if table_id == "accounts"
+                )
+                self.assertEqual("account-1", account_payload["账号唯一ID"])
+                if expected is None:
+                    self.assertNotIn("粉丝数", account_payload)
+                else:
+                    self.assertEqual(expected, account_payload["粉丝数"])
+
+    def test_account_create_number_failure_logs_safe_field_names(self):
+        events = []
+
+        def fail_account_create(table_id, payloads):
+            if table_id == "accounts":
+                raise FeishuClientError(
+                    "INVALID_FIELD_VALUE",
+                    "private-provider-message secret-value",
+                    api_code=1254061,
+                    failure_stage="api",
+                    http_status=200,
+                )
+            return FakeClient.batch_create(self.client, table_id, payloads)
+
+        self.client.batch_create = fail_account_create
+        service = FeishuSyncService(
+            self.source,
+            lambda: self.client,
+            event_logger=events.append,
+        )
+
+        result = service.full_sync(confirm=True)
+
+        self.assertEqual("partial", result["status"])
+        self.assertEqual("INVALID_FIELD_VALUE", result["error_code"])
+        self.assertEqual(["INVALID_FIELD_VALUE"], result["error_codes"])
+        diagnostic = next(
+            item for item in events
+            if "endpoint_category=bitable_record_batch_create" in item
+            and "table_role=account" in item
+        )
+        self.assertIn("feishu_api_code=1254061", diagnostic)
+        self.assertIn("field_names=", diagnostic)
+        self.assertIn("粉丝数", diagnostic)
+        self.assertNotIn("1200", diagnostic)
+        self.assertNotIn("secret-value", diagnostic)
+        self.assertNotIn("private-provider-message", diagnostic)
+
     def test_blocked_plan_prevents_full_sync(self):
         self.client.schemas["creators"] = []
         result = self.service.full_sync(confirm=True)

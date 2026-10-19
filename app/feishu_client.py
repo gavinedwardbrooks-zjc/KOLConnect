@@ -589,6 +589,8 @@ class FeishuClient:
             message = str(data.get("msg") or "").casefold()
             if api_code == 1254302 or "permission" in message or "forbidden" in message:
                 code = "PERMISSION_DENIED"
+            elif api_code == 1254061:
+                code = "INVALID_FIELD_VALUE"
             elif "token" in message or "auth" in message:
                 code = "AUTHENTICATION_FAILED"
             elif "rate" in message or "frequency" in message or "too many" in message:
