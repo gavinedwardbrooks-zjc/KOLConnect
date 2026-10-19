@@ -5,7 +5,9 @@ import importlib.metadata
 import json
 import os
 import re
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -775,6 +777,43 @@ class PackagingConfigurationTests(unittest.TestCase):
             script.index("Move-Item -LiteralPath $stagingDirectory -Destination $releaseDirectory"),
             script.index("Remove-Item -LiteralPath $stagingRoot -Force"),
         )
+
+    @unittest.skipUnless(os.name == "nt", "Windows packaging entry point requires PowerShell")
+    def test_windows_release_paths_are_independent_of_calling_directory(self):
+        script = ROOT / "packaging" / "build_release.ps1"
+        with tempfile.TemporaryDirectory() as outside_cwd:
+            outside = Path(outside_cwd)
+            before = set(outside.iterdir())
+            result = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                    "-ResolvePathsOnly",
+                ],
+                cwd=outside,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            payload = json.loads(result.stdout.strip())
+
+            root = ROOT.resolve()
+            self.assertEqual(Path(payload["repository_root"]), root)
+            self.assertEqual(Path(payload["release_dir"]), root / "release")
+            self.assertEqual(
+                Path(payload["work_dir"]), root / "packaging" / ".pyinstaller-build"
+            )
+            self.assertEqual(
+                Path(payload["dist_dir"]), root / "packaging" / ".pyinstaller-dist"
+            )
+            self.assertEqual(
+                Path(payload["spec_file"]), root / "packaging" / "spec" / "KOLConnect.spec"
+            )
+            self.assertEqual(set(outside.iterdir()), before)
 
     def test_macos_intel_packaging_is_architecture_specific(self):
         build = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")

@@ -1,3 +1,7 @@
+param(
+  [switch]$ResolvePathsOnly
+)
+
 $ErrorActionPreference = "Stop"
 
 $packaging = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -11,6 +15,17 @@ $workPath = Join-Path $packaging ".pyinstaller-build"
 $distPath = Join-Path $packaging ".pyinstaller-dist"
 $specFile = Join-Path $packaging "spec\KOLConnect.spec"
 $iconPath = Join-Path $root "assets\KOLConnect.ico"
+
+if ($ResolvePathsOnly) {
+  [ordered]@{
+    repository_root = $root
+    release_dir = Join-Path $root "release"
+    work_dir = $workPath
+    dist_dir = $distPath
+    spec_file = $specFile
+  } | ConvertTo-Json -Compress
+  return
+}
 
 if (-not (Test-Path -LiteralPath $iconPath)) {
   throw "Application icon is missing: $iconPath"
