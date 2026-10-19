@@ -120,6 +120,9 @@ function assertVisibility(sourceValue, expected) {
   assert.match(html, /新识别的达人会自动加入达人库/);
   assert.doesNotMatch(html, /临时补邮箱/);
   assert.doesNotMatch(html, /value="task"|value="review_results"|value="manual"|value="temporary"/);
+  assert.match(source, /emailStatusLabel\(item\.status, item\.reason_code\)/);
+  assert.match(source, /reason_code:\s*data\.reason_code/);
+  assert.match(source, /BROWSER_START_FAILED:[\s\S]*PROFILE_AUTH_REQUIRED:[\s\S]*SCRAPE_TIMEOUT:/);
   assert.match(css, /#email-source-task-field\[hidden\][\s\S]*#email-manual-source-field\[hidden\][^{]*\{\s*display:\s*none;/);
   assertVisibility("library", { task: true, platform: true, scope: true, manual: false });
   assertVisibility("url_add", { task: false, platform: true, scope: false, manual: true });

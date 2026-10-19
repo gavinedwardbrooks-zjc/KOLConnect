@@ -196,6 +196,20 @@ class MailFollowupGate4Tests(unittest.TestCase):
         self._add_fact(email="ambiguous@example.com", status="ambiguous")
         self.assertEqual([], self._queue())
 
+    def test_reconciliation_makes_historical_mail_actionable_without_business_mutation(self):
+        self._add_fact(creator_id=None, email="later@example.com", status="unmatched", account_uid=None)
+        with self.factory.write_transaction() as connection:
+            connection.execute("INSERT INTO creator_accounts(account_uid,creator_id,account_email) VALUES ('later-account','a','later@example.com')")
+            connection.execute("INSERT INTO campaigns(campaign_id,name) VALUES ('campaign','Campaign')")
+            connection.execute("INSERT INTO campaign_creators(id,campaign_id,creator_id,stage) VALUES ('link','campaign','a','brief')")
+            creator_status = connection.execute("SELECT status FROM creators WHERE creator_id='a'").fetchone()[0]
+        mail_sync.reconcile_creator_matches(self.factory)
+        [row] = self._queue()
+        with self.factory.read_connection() as connection:
+            self.assertEqual(creator_status, connection.execute("SELECT status FROM creators WHERE creator_id='a'").fetchone()[0])
+            self.assertEqual("brief", connection.execute("SELECT stage FROM campaign_creators WHERE id='link'").fetchone()[0])
+        self.assertEqual(("a", "later@example.com"), (row["creator_id"], row["correspondent_email"]))
+
     def test_two_historical_correspondents_remain_separate_and_p1_snapshot_is_used(self):
         self._add_fact(email="first@example.com", direction="outbound", account_uid="a1")
         self._add_fact(email="second@example.com", direction="inbound", account_uid="a2")

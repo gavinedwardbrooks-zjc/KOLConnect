@@ -12,7 +12,7 @@ from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "app"))
-from services.mail_inbox_facts import mail_account_identity, sync_inbox  # noqa: E402
+from services.mail_inbox_facts import mail_account_identity, reconcile_creator_matches, sync_inbox  # noqa: E402
 import mail_sync  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import CURRENT_SCHEMA_VERSION, apply_schema_migrations, schema_version  # noqa: E402
@@ -184,6 +184,57 @@ class MailFollowupGate2Tests(unittest.TestCase):
             self.assertEqual(1, again["matched_messages"])
         self.assertEqual("c1", self.rows("mail_messages")[0]["matched_creator_id"])
         self.assertEqual([], self.rows("mail_follow_up_preferences"))
+
+    def test_historical_unmatched_mail_reconciles_after_exact_account_email_is_added(self):
+        result, _fake = self.sync({"1": make_message(sender="Later@Example.com")})
+        [before] = self.rows("mail_messages")
+        self.assertEqual("unmatched", before["match_status"])
+        with self.factory.write_transaction() as connection:
+            connection.execute("INSERT INTO creators(creator_id,name,status) VALUES ('later','Later','active')")
+            connection.execute(
+                "INSERT INTO creator_accounts(account_uid,creator_id,account_email) "
+                "VALUES ('later-account','later',' later@example.com ')"
+            )
+        result = reconcile_creator_matches(self.factory)
+        [after] = self.rows("mail_messages")
+        self.assertEqual(1, result["changed_messages"])
+        self.assertEqual(
+            ("matched", "later", "later-account"),
+            (after["match_status"], after["matched_creator_id"], after["matched_account_uid"]),
+        )
+        with patch.object(mail_sync, "MAIL_MESSAGES_FILE", self.root / "history-cache.json"):
+            mail_sync.save_mail_messages({
+                "messages": [{
+                    "id": before["mail_message_id"],
+                    "from_email": "later@example.com",
+                    "match_status": "unmatched",
+                    "reply_status": "unmatched",
+                }]
+            })
+            cache_result = mail_sync.reconcile_mail_cache(self.factory)
+            [cached] = mail_sync.load_mail_messages()["messages"]
+        self.assertEqual(1, cache_result["changed_cache_messages"])
+        self.assertEqual(
+            ("matched", "later", "later-account", "matched"),
+            tuple(cached[key] for key in (
+                "match_status", "matched_creator_id", "matched_account_uid", "reply_status"
+            )),
+        )
+
+    def test_historical_rematch_fails_closed_when_email_belongs_to_multiple_creators(self):
+        self.sync({"1": make_message(sender="shared@example.com")})
+        with self.factory.write_transaction() as connection:
+            connection.execute("INSERT INTO creators(creator_id,name) VALUES ('one','One'),('two','Two')")
+            connection.execute(
+                "INSERT INTO creator_accounts(account_uid,creator_id,account_email) VALUES "
+                "('one-account','one','shared@example.com'),"
+                "('two-account','two','SHARED@example.com')"
+            )
+        reconcile_creator_matches(self.factory)
+        [fact] = self.rows("mail_messages")
+        self.assertEqual(("ambiguous", None, None), (
+            fact["match_status"], fact["matched_creator_id"], fact["matched_account_uid"]
+        ))
 
     def test_duplicate_configured_mailbox_is_rejected_without_network(self):
         with patch.object(mail_sync, "MAIL_MESSAGES_FILE", self.root / "cache.json"):

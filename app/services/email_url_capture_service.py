@@ -13,6 +13,26 @@ from domain.creator_url_resolver import CreatorURLResolver
 _BLOCKING_CAPTURE_STATUSES = frozenset({"failed", "login_required", "platform_error"})
 
 
+def _resolution_failure_code(resolution: dict[str, Any]) -> str:
+    reason = str(resolution.get("reason_code") or "")
+    if reason in {"unsupported_platform", "unsupported_url_form"}:
+        return "UNSUPPORTED_PLATFORM"
+    return "INVALID_PROFILE_URL"
+
+
+def _capture_failure_code(status: str, status_reason: str) -> str:
+    evidence = f"{status} {status_reason}".casefold()
+    if "timeout" in evidence or "超时" in evidence:
+        return "SCRAPE_TIMEOUT"
+    if any(token in evidence for token in ("login", "logged_out", "auth", "challenge", "登录")):
+        return "PROFILE_AUTH_REQUIRED"
+    if any(token in evidence for token in ("not_found", "404", "不存在")):
+        return "PROFILE_NOT_FOUND"
+    if any(token in evidence for token in ("page_access", "fetch", "访问", "browser")):
+        return "PAGE_ACCESS_FAILED"
+    return "SCRAPE_RUNTIME_ERROR"
+
+
 class CreatorEmailCapturePort(Protocol):
     def get_creator_accounts(self) -> list[dict[str, Any]]: ...
 
@@ -58,20 +78,33 @@ class EmailURLCaptureService:
         canonical_profile_url = str(resolution.get("canonical_profile_url") or "").strip()
 
         if resolution_status != "resolved" or not canonical_profile_url:
-            return self._result("profile_identity_unresolved", resolution)
+            return self._result(
+                "profile_identity_unresolved", resolution,
+                reason_code=_resolution_failure_code(resolution),
+            )
         if match_status == "ambiguous":
-            return self._result("ambiguous_account", resolution)
+            return self._result("ambiguous_account", resolution, reason_code="AMBIGUOUS_ACCOUNT")
 
         platform = str(resolution.get("platform") or "")
         try:
             captured = self._profile_capture(platform, canonical_profile_url)
+        except scraper_module.BrowserStartError:
+            return self._result("browser_start_failed", resolution, reason_code="BROWSER_START_FAILED")
+        except TimeoutError:
+            return self._result("scrape_timeout", resolution, reason_code="SCRAPE_TIMEOUT")
         except Exception:
             # Fetch/capture failures are intentionally non-destructive and sanitized.
-            return self._result("capture_failed", resolution)
+            return self._result("capture_failed", resolution, reason_code="SCRAPE_RUNTIME_ERROR")
 
         scrape_status = str(captured.get("scrape_status") or "").strip().lower()
         if scrape_status in _BLOCKING_CAPTURE_STATUSES:
-            return self._result(scrape_status, resolution)
+            return self._result(
+                scrape_status,
+                resolution,
+                reason_code=_capture_failure_code(
+                    scrape_status, str(captured.get("status_reason") or "")
+                ),
+            )
 
         emails = scraper_module.clean_email_candidates(captured.get("emails") or [])
         if not emails:
@@ -136,7 +169,7 @@ class EmailURLCaptureService:
     def _result(status: str, resolution: dict[str, Any], **extra: Any) -> dict[str, Any]:
         return {
             "status": status,
-            "reason_code": resolution.get("reason_code"),
+            "reason_code": extra.pop("reason_code", resolution.get("reason_code")),
             "resolution": resolution,
             **extra,
         }

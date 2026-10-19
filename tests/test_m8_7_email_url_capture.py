@@ -139,7 +139,7 @@ class EmailURLCaptureServiceTests(unittest.TestCase):
         self.assertEqual("updated", resolved["status"])
         self.assertEqual("tiktok-alice", creator_service.saved[0]["record"]["account_uid"])
         self.assertEqual("profile_identity_unresolved", partial["status"])
-        self.assertEqual("profile_identity_unresolved", partial["reason_code"])
+        self.assertEqual("INVALID_PROFILE_URL", partial["reason_code"])
         self.assertEqual(1, len(creator_service.saved))
         self.assertEqual(1, len(self.calls))
 
@@ -176,6 +176,44 @@ class EmailURLCaptureServiceTests(unittest.TestCase):
                 response = service.capture("https://www.instagram.com/alice/")
                 self.assertEqual(expected, response["status"])
                 self.assertEqual([], creator_service.saved)
+
+    def test_capture_failures_expose_actionable_sanitized_reason_codes(self):
+        cases = (
+            (scraper.BrowserStartError("profile locked"), "browser_start_failed", "BROWSER_START_FAILED"),
+            (TimeoutError("slow"), "scrape_timeout", "SCRAPE_TIMEOUT"),
+            (RuntimeError("secret raw error"), "capture_failed", "SCRAPE_RUNTIME_ERROR"),
+        )
+        for error, status, reason in cases:
+            with self.subTest(reason=reason):
+                _creator_service, service = self.make_service(result=error)
+                response = service.capture("https://www.tiktok.com/@alice")
+                self.assertEqual((status, reason), (response["status"], response["reason_code"]))
+
+    def test_browser_capture_helper_uses_canonical_driver_session_and_cleans_up(self):
+        class Driver:
+            _potato_temp_user_data_dir = ""
+
+            def quit(self):
+                self.quit_called = True
+
+        driver = Driver()
+        session = object()
+        with (
+            patch.object(scraper, "make_chrome_driver", return_value=driver) as make_driver,
+            patch.object(scraper, "make_session", return_value=session),
+            patch.object(scraper, "capture_profile_email", return_value={"scrape_status": "success"}) as capture,
+        ):
+            result = scraper.capture_profile_email_with_browser(
+                "TikTok", "https://www.tiktok.com/@alice",
+                user_data_dir="profile-root", profile="Profile 2",
+            )
+
+        self.assertEqual("success", result["scrape_status"])
+        make_driver.assert_called_once_with(user_data_dir="profile-root", profile="Profile 2")
+        capture.assert_called_once_with(
+            "TikTok", "https://www.tiktok.com/@alice", driver=driver, session=session
+        )
+        self.assertTrue(driver.quit_called)
 
     def test_instagram_login_page_operator_email_never_reaches_writeback(self):
         existing = [{

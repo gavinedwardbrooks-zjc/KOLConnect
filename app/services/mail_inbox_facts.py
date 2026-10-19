@@ -199,6 +199,116 @@ def _match_sender(connection, address: str) -> tuple[str, str | None, str | None
     return status, creator_id, account_uid
 
 
+def reconcile_creator_matches(factory) -> dict[str, int]:
+    """Re-evaluate persisted Mail ownership against current exact account emails.
+
+    Mail observations remain immutable. Only their conservative Creator match
+    projection is refreshed; no Creator or Campaign business state is changed.
+    """
+    changed_messages = 0
+    changed_addresses = 0
+    with factory.write_transaction() as connection:
+        own_addresses_by_account: dict[str, set[str]] = {}
+        for row in connection.execute(
+            "SELECT mail_account_id,identity_key FROM mail_accounts"
+        ):
+            try:
+                identity = json.loads(str(row["identity_key"] or ""))
+            except (TypeError, ValueError, json.JSONDecodeError):
+                identity = []
+            values = identity[:2] if isinstance(identity, list) else []
+            own_addresses_by_account[str(row["mail_account_id"])] = {
+                normalize_address(value) for value in values if normalize_address(value)
+            }
+
+        address_rows: dict[str, list[dict]] = {}
+        for row in connection.execute(
+            "SELECT mail_message_id,role,position,normalized_address,match_status,"
+            "matched_creator_id,matched_account_uid FROM mail_message_addresses "
+            "ORDER BY mail_message_id,role,position"
+        ):
+            address_rows.setdefault(str(row["mail_message_id"]), []).append(dict(row))
+
+        messages = connection.execute(
+            "SELECT mail_message_id,mail_account_id,direction,correspondent_email,"
+            "match_status,matched_creator_id,matched_account_uid FROM mail_messages"
+        ).fetchall()
+        for message in messages:
+            message_id = str(message["mail_message_id"])
+            direction = str(message["direction"] or "")
+            own_addresses = own_addresses_by_account.get(
+                str(message["mail_account_id"]), set()
+            )
+            rows = address_rows.get(message_id, [])
+            from_addresses = [
+                str(row["normalized_address"] or "")
+                for row in rows if row["role"] == "from"
+            ]
+            to_addresses = [
+                str(row["normalized_address"] or "")
+                for row in rows if row["role"] == "to"
+            ]
+            cc_addresses = [
+                str(row["normalized_address"] or "")
+                for row in rows if row["role"] == "cc"
+            ]
+            preserve_message_snapshot = str(message["match_status"] or "") in {
+                "matched", "matched_multi_account",
+            }
+            if direction == "inbound":
+                sender = from_addresses[0] if len(from_addresses) == 1 else ""
+                match = _match_inbound(connection, sender, own_addresses)
+            elif direction == "outbound":
+                match = _match_outbound(connection, to_addresses, cc_addresses)
+            else:
+                match = ("unmatched", None, None, None)
+            match_status, creator_id, account_uid, correspondent = match
+            previous = (
+                str(message["match_status"] or "unmatched"),
+                message["matched_creator_id"],
+                message["matched_account_uid"],
+                message["correspondent_email"],
+            )
+            current = (match_status, creator_id, account_uid, correspondent)
+            if not preserve_message_snapshot and previous != current:
+                connection.execute(
+                    "UPDATE mail_messages SET match_status=?,matched_creator_id=?,"
+                    "matched_account_uid=?,correspondent_email=? WHERE mail_message_id=?",
+                    (*current, message_id),
+                )
+                changed_messages += 1
+
+            for row in rows:
+                if str(row["match_status"] or "") in {"matched", "matched_multi_account"}:
+                    continue
+                status, address_creator_id, address_account_uid = _address_snapshot(
+                    connection,
+                    direction,
+                    str(row["role"] or ""),
+                    str(row["normalized_address"] or ""),
+                    own_addresses,
+                )
+                previous_address = (
+                    str(row["match_status"] or "unmatched"),
+                    row["matched_creator_id"],
+                    row["matched_account_uid"],
+                )
+                current_address = (status, address_creator_id, address_account_uid)
+                if previous_address == current_address:
+                    continue
+                connection.execute(
+                    "UPDATE mail_message_addresses SET match_status=?,"
+                    "matched_creator_id=?,matched_account_uid=? "
+                    "WHERE mail_message_id=? AND role=? AND position=?",
+                    (*current_address, message_id, row["role"], row["position"]),
+                )
+                changed_addresses += 1
+    return {
+        "changed_messages": changed_messages,
+        "changed_addresses": changed_addresses,
+    }
+
+
 def _persist_observation(factory, account_id: str, mailbox_id: str, uidvalidity: str,
                          uid: str, raw: bytes, observed_at: str, own_addresses: set[str],
                          direction: str) -> tuple[bool, dict]:

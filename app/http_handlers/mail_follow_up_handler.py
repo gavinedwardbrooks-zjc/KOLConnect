@@ -7,6 +7,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from services import mail_follow_up_preferences as preferences
+from services.mail_inbox_facts import reconcile_creator_matches
 from services.mail_follow_up_google_sheets_replica_service import MailFollowUpGoogleSheetsReplicaService
 from google_sheets_client import GoogleSheetsError
 
@@ -78,6 +79,7 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     try:
         factory = _factory(context)
+        reconcile_creator_matches(factory)
         if method == "GET" and path == "/api/mail/follow-up":
             groups = preferences.follow_up_state(factory)
             actionable_groups = preferences.actionable_follow_up_queue(factory)

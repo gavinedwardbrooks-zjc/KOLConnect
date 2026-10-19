@@ -20,9 +20,16 @@ from runtime_paths import (
     load_json_with_backup,
 )
 from app_logging import log_sanitized_exception
+from feishu_client import FeishuClient, FeishuClientError
 from feishu_relation import relation_record_ids
 from services.mail_auth_service import classify_imap_error
-from services.mail_inbox_facts import inbox_fact_projection, mail_account_identity, sync_inbox, sync_sent
+from services.mail_inbox_facts import (
+    inbox_fact_projection,
+    mail_account_identity,
+    reconcile_creator_matches,
+    sync_inbox,
+    sync_sent,
+)
 from services.mail_secret_storage import unprotect_mail_secret
 
 DATA_DIR = get_app_data_dir()
@@ -434,16 +441,95 @@ def fetch_four_table_records(config: dict, table_id: str, headers: dict[str, str
     return records
 
 
-def fetch_four_table_match_records(config: dict) -> tuple[list[dict], list[dict]]:
+def fetch_four_table_match_records(
+    config: dict, client: FeishuClient | None = None
+) -> tuple[list[dict], list[dict]]:
     """Read account and creator tables for mailbox matching without writing Feishu."""
     required = ("app_id", "app_secret", "app_token", "creator_table_id", "account_table_id")
     missing = [key for key in required if not str(config.get(key) or "").strip()]
     if missing:
         raise RuntimeError(f"四表飞书配置不完整: {', '.join(missing)}")
-    headers = {"Authorization": f"Bearer {_four_table_access_token(config)}"}
-    account_records = fetch_four_table_records(config, config["account_table_id"], headers)
-    creator_records = fetch_four_table_records(config, config["creator_table_id"], headers)
+    client = client or FeishuClient(config)
+    try:
+        account_records = client.list_records(config["account_table_id"])
+    except FeishuClientError as exc:
+        raise exc.with_operation_context(
+            operation="reply_status_sync",
+            endpoint_category="bitable_record_list",
+            table_role="account",
+        ) from exc
+    try:
+        creator_records = client.list_records(config["creator_table_id"])
+    except FeishuClientError as exc:
+        raise exc.with_operation_context(
+            operation="reply_status_sync",
+            endpoint_category="bitable_record_list",
+            table_role="creator",
+        ) from exc
     return account_records, creator_records
+
+
+def reconcile_mail_cache(factory) -> dict[str, int]:
+    """Refresh historical exact-email ownership in SQLite and the legacy UI cache."""
+    changed = reconcile_creator_matches(factory)
+    store = load_mail_messages()
+    with factory.read_connection() as connection:
+        facts = {
+            str(row["mail_message_id"]): dict(row)
+            for row in connection.execute(
+                "SELECT m.mail_message_id,m.match_status,m.matched_creator_id,"
+                "m.matched_account_uid,c.name AS creator_name,a.platform "
+                "FROM mail_messages m "
+                "LEFT JOIN creators c ON c.creator_id=m.matched_creator_id "
+                "LEFT JOIN creator_accounts a ON a.account_uid=m.matched_account_uid"
+            )
+        }
+    cache_changed = 0
+    messages = []
+    for raw in store.get("messages", []):
+        item = normalize_mail_message(raw)
+        fact = facts.get(str(item.get("id") or ""))
+        if fact is None:
+            messages.append(item)
+            continue
+        before = (
+            item.get("match_status"), item.get("matched_creator_id"),
+            item.get("matched_account_uid"), item.get("reply_status"),
+        )
+        item["match_status"] = str(fact.get("match_status") or "unmatched")
+        item["matched_creator_id"] = str(fact.get("matched_creator_id") or "")
+        item["matched_account_uid"] = str(fact.get("matched_account_uid") or "")
+        item["matched_creator_name"] = str(fact.get("creator_name") or "")
+        item["matched_platform"] = str(fact.get("platform") or "")
+        item["matched_creator_email"] = (
+            str(item.get("from_email") or "")
+            if item["match_status"] in {"matched", "matched_multi_account"}
+            else ""
+        )
+        item["reply_status"] = (
+            "matched" if item["match_status"] in {"matched", "matched_multi_account"}
+            else "unmatched"
+        )
+        after = (
+            item.get("match_status"), item.get("matched_creator_id"),
+            item.get("matched_account_uid"), item.get("reply_status"),
+        )
+        if before != after:
+            for key in (
+                "matched_creator_record_id", "matched_account_record_id",
+                "crm_sync_record_id", "crm_sync_action", "sync_target",
+            ):
+                item[key] = ""
+            item["crm_synced"] = False
+            item["crm_synced_at"] = ""
+            item["crm_sync_status"] = ""
+            item["crm_sync_error"] = ""
+            cache_changed += 1
+        messages.append(item)
+    if cache_changed:
+        store["messages"] = messages
+        save_mail_messages(store)
+    return {**changed, "changed_cache_messages": cache_changed}
 
 
 def build_four_table_email_index(account_records: list[dict]) -> dict[str, list[dict]]:
@@ -782,14 +868,15 @@ def build_creator_reply_update_fields(current_stage: str, received_at: str) -> t
     return update_fields, "skipped"
 
 
-def sync_creator_replies(config: dict) -> dict:
+def sync_creator_replies(config: dict, *, client: FeishuClient | None = None) -> dict:
     """Manually sync cached four-table reply matches to their linked creator records."""
     store = load_mail_messages()
     messages = [normalize_mail_message(item) for item in store.get("messages", []) if isinstance(item, dict)]
     # The explicit Feishu action resolves remote record IDs at execution time.
     # Local Inbox facts never depend on this optional replica lookup.
+    client = client or FeishuClient(config)
     if messages:
-        account_records, creator_records = fetch_four_table_match_records(config)
+        account_records, creator_records = fetch_four_table_match_records(config, client)
         remote_matches = match_messages_to_four_tables(messages, account_records, creator_records)
         for original, remote in zip(messages, remote_matches):
             if remote.get("matched_creator_id") == original.get("matched_creator_id"):
@@ -824,18 +911,19 @@ def sync_creator_replies(config: dict) -> dict:
     missing = [key for key in required if not str(config.get(key) or "").strip()]
     if missing:
         raise RuntimeError(f"四表飞书配置不完整：缺少 {', '.join(missing)}")
-    access_token = _four_table_access_token(config)
-    headers = {"Authorization": f"Bearer {access_token}"}
-    creator_records = fetch_four_table_records(config, config["creator_table_id"], headers)
+    try:
+        creator_records = client.list_records(config["creator_table_id"])
+    except FeishuClientError as exc:
+        raise exc.with_operation_context(
+            operation="reply_status_sync",
+            endpoint_category="bitable_record_list",
+            table_role="creator",
+        ) from exc
     creators_by_record_id = {
         str(item.get("record_id") or "").strip(): item.get("fields") or {}
         for item in creator_records
         if str(item.get("record_id") or "").strip()
     }
-    update_url = (
-        f"https://open.feishu.cn/open-apis/bitable/v1/apps/{config['app_token']}"
-        f"/tables/{config['creator_table_id']}/records/batch_update"
-    )
     grouped: dict[str, list[dict]] = {}
     for item in pending_messages:
         grouped.setdefault(str(item["matched_creator_record_id"]).strip(), []).append(item)
@@ -882,29 +970,25 @@ def sync_creator_replies(config: dict) -> dict:
             mark_group(group, synced=True, status="synced", record_id=creator_record_id, action="skipped")
             continue
 
-        response = post_json(
-            update_url,
-            {"records": [{"record_id": creator_record_id, "fields": update_fields}]},
-            headers=headers,
-            timeout=15,
-        )
-        if response.get("code") == 0:
+        try:
+            client.batch_update(
+                config["creator_table_id"],
+                [{"record_id": creator_record_id, "fields": update_fields}],
+            )
             summary[action] += 1
             mark_group(group, synced=True, status="synced", record_id=creator_record_id, action=action)
             continue
-
-        error_text = json.dumps(
-            {
-                "code": response.get("code"),
-                "msg": response.get("msg"),
-                "error": response.get("error"),
-                "data": response.get("data"),
-                "record_id": creator_record_id,
-            },
-            ensure_ascii=False,
-        )
+        except FeishuClientError as exc:
+            contextual = exc.with_operation_context(
+                operation="reply_status_sync",
+                endpoint_category="bitable_record_batch_update",
+                table_role="creator",
+            )
+            safe = contextual.to_safe_dict()
+            error_text = str(safe["message"])
+            error_item = {**safe, "creator_record_id": creator_record_id}
         summary["failed"] += 1
-        summary["errors"].append({"creator_record_id": creator_record_id, "error": error_text})
+        summary["errors"].append(error_item)
         mark_group(group, synced=False, status="failed", error=error_text, record_id=creator_record_id)
 
     store["messages"] = sorted(

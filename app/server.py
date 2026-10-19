@@ -1981,7 +1981,21 @@ def get_similar_creator_search_service() -> SimilarCreatorSearchService:
 
 
 def get_email_url_capture_service() -> EmailURLCaptureService:
-    return EmailURLCaptureService(get_creator_service())
+    def capture_with_selected_profile(platform: str, profile_url: str) -> dict:
+        selected = str(
+            STATE.get("profiles", {}).get("selected") or AUTOMATION_PROFILE_NAME
+        )
+        user_data_dir, profile_directory = resolve_chrome_launch_config(selected)
+        return scraper_module.capture_profile_email_with_browser(
+            platform,
+            profile_url,
+            user_data_dir=str(user_data_dir),
+            profile=profile_directory,
+        )
+
+    return EmailURLCaptureService(
+        get_creator_service(), profile_capture=capture_with_selected_profile
+    )
 
 
 def get_creator_summary_service() -> CreatorIntelligenceSummaryFacade:

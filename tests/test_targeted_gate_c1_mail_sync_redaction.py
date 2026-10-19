@@ -18,6 +18,7 @@ if str(ROOT / "tests") not in sys.path:
 
 import app_logging  # noqa: E402
 import mail_sync  # noqa: E402
+from feishu_client import FeishuClientError  # noqa: E402
 from http_handlers import settings_handler  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
@@ -42,6 +43,35 @@ class _Handler:
     def _error(self, message: str, status: int = 400) -> None:
         self.payload = {"ok": False, "error": message}
         self.status = status
+
+    def _api_error(self, code, message, *, status=400, details=None, **_kwargs) -> None:
+        self.payload = {"ok": False, "error": {"code": code, "message": message}, "details": details}
+        self.status = status
+
+
+class _FeishuReplyClient:
+    def __init__(self, *, failure=None):
+        self.failure = failure
+        self.updates = []
+
+    def list_records(self, table_id):
+        if self.failure:
+            raise self.failure
+        if table_id == "accounts":
+            return [{"record_id": "account-record", "fields": {
+                "账号唯一ID": "account-local", "账号邮箱": "creator@example.com",
+                "平台": "TikTok", "达人": [{"record_id": "creator-record"}],
+                "归属状态": "已归属",
+            }}]
+        return [{"record_id": "creator-record", "fields": {
+            "达人ID": "creator-local", "达人名称": "Creator", "合作阶段": "未联系",
+        }}]
+
+    def batch_update(self, table_id, updates):
+        if self.failure:
+            raise self.failure
+        self.updates.append((table_id, updates))
+        return updates
 
 
 class MailSyncProviderErrorRedactionTests(unittest.TestCase):
@@ -171,6 +201,54 @@ class MailSyncProviderErrorRedactionTests(unittest.TestCase):
             }, context))
         self.assertEqual(200, handler.status)
         self.assertNotIn("SYNTHETIC-SECRET", json.dumps(handler.payload))
+
+    def test_reply_sync_uses_unified_feishu_client_for_read_and_update(self):
+        message = {
+            "id": "mail-1", "from_email": "creator@example.com",
+            "received_at": "2026-10-19T10:00:00Z", "reply_status": "matched",
+            "match_status": "matched", "matched_creator_id": "creator-local",
+        }
+        config = {
+            "app_id": "app", "app_secret": "secret", "app_token": "base",
+            "creator_table_id": "creators", "account_table_id": "accounts",
+        }
+        client = _FeishuReplyClient()
+        with patch.object(mail_sync, "MAIL_MESSAGES_FILE", self.cache_path):
+            mail_sync.save_mail_messages({"messages": [message]})
+            result = mail_sync.sync_creator_replies(config, client=client)
+
+        self.assertEqual(1, result["updated"])
+        self.assertEqual("creators", client.updates[0][0])
+        self.assertEqual("creator-record", client.updates[0][1][0]["record_id"])
+        self.assertEqual("跟进中", client.updates[0][1][0]["fields"]["合作阶段"])
+
+    def test_reply_sync_permission_error_is_structured_and_redacted(self):
+        error = FeishuClientError(
+            "PERMISSION_DENIED", "raw provider detail", http_status=403, api_code=99991672
+        )
+        handler = _Handler()
+        config = {
+            "app_id": "app", "app_secret": "secret", "app_token": "base",
+            "creator_table_id": "creators", "account_table_id": "accounts",
+        }
+        context = {
+            "state": {"get": lambda: {"mail": {"accounts": []}}},
+            "services": {"get_four_table_feishu_config": lambda: config},
+            "modules": {"mail_sync": type("Mail", (), {
+                "sync_creator_replies": staticmethod(
+                    lambda _config: (_ for _ in ()).throw(error)
+                )
+            })},
+        }
+        settings_handler.handle(handler, {
+            "method": "POST", "path": "/api/mail/inbox/sync-crm-replies",
+            "query": {}, "get_payload": lambda: {},
+        }, context)
+
+        self.assertEqual(400, handler.status)
+        self.assertEqual("PERMISSION_DENIED", handler.payload["error"]["code"])
+        self.assertEqual(99991672, handler.payload["details"]["feishu_api_code"])
+        self.assertNotIn("raw provider detail", str(handler.payload))
 
 
 if __name__ == "__main__":

@@ -1509,6 +1509,33 @@ def capture_profile_email(platform: str, profile_url: str, driver=None, session=
     )
 
 
+def capture_profile_email_with_browser(
+    platform: str,
+    profile_url: str,
+    *,
+    user_data_dir: str,
+    profile: str,
+) -> dict:
+    """Run narrow email capture through the canonical Selenium profile path."""
+    driver = None
+    try:
+        driver = make_chrome_driver(user_data_dir=user_data_dir, profile=profile)
+        return capture_profile_email(
+            platform,
+            profile_url,
+            driver=driver,
+            session=make_session(),
+        )
+    finally:
+        if driver is not None:
+            temp_user_data_dir = getattr(driver, "_potato_temp_user_data_dir", None)
+            try:
+                driver.quit()
+            finally:
+                if temp_user_data_dir:
+                    shutil.rmtree(temp_user_data_dir, ignore_errors=True)
+
+
 def normalize_follower_count(value: object) -> str:
     """Return a compact K/M display value, or an empty string for invalid input."""
     raw = str(value or "").strip().replace(",", "")

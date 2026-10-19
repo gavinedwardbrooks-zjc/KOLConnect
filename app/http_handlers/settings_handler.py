@@ -3,6 +3,7 @@
 import copy
 import sys
 
+from feishu_client import FeishuClientError
 from services.workbook_backup_service import (
     WorkbookBackupError,
     WorkbookBackupNotFoundError,
@@ -94,6 +95,13 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     # GET /api/mail/inbox/messages → 读取最近邮件；{"ok": true, "updated_at": "...", "summary": {...}, "messages": [...], "accounts": {...}}
     if method == "GET" and path == "/api/mail/inbox/messages":
+        try:
+            mail_factory = services["get_mail_connection_factory"]()
+        except RuntimeError:
+            # Legacy workbook-only compatibility starts without SQLite authority.
+            mail_factory = None
+        if mail_factory is not None:
+            modules["mail_sync"].reconcile_mail_cache(mail_factory)
         data = modules["mail_sync"].load_mail_messages()
         messages = data.get("messages") if isinstance(data.get("messages"), list) else []
         summary = {
@@ -376,7 +384,17 @@ def handle(handler, request: dict, context: dict) -> bool:
     if missing_keys:
         handler._error(f"达人表飞书配置不完整：缺少 {', '.join(missing_keys)}。")
         return True
-    result = modules["mail_sync"].sync_creator_replies(four_table_config)
+    try:
+        result = modules["mail_sync"].sync_creator_replies(four_table_config)
+    except FeishuClientError as exc:
+        safe = exc.to_safe_dict()
+        handler._api_error(
+            str(safe["code"]),
+            str(safe["message"]),
+            status=502 if int(safe.get("http_status") or 0) >= 500 else 400,
+            details=safe,
+        )
+        return True
     handler._ok(
         updated_at=str(result.get("updated_at") or ""),
         updated=int(result.get("updated") or 0),
