@@ -255,10 +255,16 @@ jobs:
           test -f "${webapp_root}/i18n.js" || fail_gate packaged_webapp_i18n
           packaged_settings="${webapp_root}/pages/settings.js"
           packaged_i18n="${webapp_root}/i18n.js"
+          packaged_creator_library="${webapp_root}/pages/creator-library.js"
+          packaged_api_client="${webapp_root}/services/api-client.js"
           source_settings="${FROZEN_PRODUCT_ROOT}/webapp/pages/settings.js"
           source_i18n="${FROZEN_PRODUCT_ROOT}/webapp/i18n.js"
+          source_creator_library="${FROZEN_PRODUCT_ROOT}/webapp/pages/creator-library.js"
+          source_api_client="${FROZEN_PRODUCT_ROOT}/webapp/services/api-client.js"
           test -f "${packaged_settings}" || fail_gate packaged_settings_file
           test -f "${packaged_i18n}" || fail_gate packaged_i18n_file
+          test -f "${packaged_creator_library}" || fail_gate packaged_creator_library_file
+          test -f "${packaged_api_client}" || fail_gate packaged_api_client_file
           echo "PACKAGED_SETTINGS_PATH=${packaged_settings}"
           echo "PACKAGED_I18N_PATH=${packaged_i18n}"
           echo "SOURCE_SETTINGS_SHA256=$(shasum -a 256 "${source_settings}" | awk '{print $1}')"
@@ -267,16 +273,25 @@ jobs:
           echo "PACKAGED_I18N_SHA256=$(shasum -a 256 "${packaged_i18n}" | awk '{print $1}')"
           cmp -s "${source_settings}" "${packaged_settings}" || fail_gate packaged_settings_source_mismatch
           cmp -s "${source_i18n}" "${packaged_i18n}" || fail_gate packaged_i18n_source_mismatch
-          grep -Fq 'reason === "FEISHU_FIELD_FETCH_FAILED"' "${packaged_settings}" || fail_gate packaged_settings_feishu_error
+          cmp -s "${source_creator_library}" "${packaged_creator_library}" || fail_gate packaged_creator_library_source_mismatch
+          cmp -s "${source_api_client}" "${packaged_api_client}" || fail_gate packaged_api_client_source_mismatch
+          grep -Fq 'FEISHU_FIELD_FETCH_FAILED: "settingsFeishuFieldFetchFailed"' "${packaged_settings}" || fail_gate packaged_settings_feishu_error
+          grep -Fq 'FEISHU_CHAT_CONNECT_TIMEOUT: "settingsFeishuConnectTimeout"' "${packaged_settings}" || fail_gate packaged_settings_feishu_chat_diagnostics
           echo "SETTINGS_MARKER_FOUND=YES"
           grep -Fq 'settingsFeishuFieldFetchFailed' "${packaged_i18n}" || fail_gate packaged_i18n_feishu_error
+          grep -Fq 'settingsFeishuConnectionStage' "${packaged_i18n}" || fail_gate packaged_i18n_feishu_chat_diagnostics
           echo "I18N_MARKER_FOUND=YES"
+          grep -Fq 'LOCAL_SERVICE_BACKEND_EXITED' "${packaged_api_client}" || fail_gate packaged_local_service_diagnostics
+          grep -Fq 'CHROME_LAUNCH_FAILED' "${packaged_api_client}" || fail_gate packaged_chrome_error_mapping
           grep -Fq 'class FieldFetchResult' "${FROZEN_PRODUCT_ROOT}/app/feishu_client.py" || fail_gate source_feishu_client_marker
           grep -Fq 'FEISHU_FIELD_FETCH_FAILED' "${FROZEN_PRODUCT_ROOT}/app/services/feishu_sync_service.py" || fail_gate source_feishu_service_marker
           grep -Fq '"requests", "certifi"' "${FROZEN_PRODUCT_ROOT}/packaging/spec/KOLConnect_mac.spec" || fail_gate macos_tls_ca_spec
           archive_listing="$(pyi-archive_viewer -r -b "${binary}")" || fail_gate pyinstaller_archive_open
           grep -Fq 'feishu_client' <<<"${archive_listing}" || fail_gate packaged_feishu_client_module
           grep -Fq 'services.feishu_sync_service' <<<"${archive_listing}" || fail_gate packaged_feishu_sync_service_module
+          grep -Fq 'services.feishu_chat_transport' <<<"${archive_listing}" || fail_gate packaged_feishu_chat_transport_module
+          grep -Fq 'desktop_file_bridge' <<<"${archive_listing}" || fail_gate packaged_desktop_file_bridge_module
+          grep -Fq 'server' <<<"${archive_listing}" || fail_gate packaged_server_module
           grep -Fq 'requests' <<<"${archive_listing}" || fail_gate packaged_requests_module
           grep -Fq 'certifi' <<<"${archive_listing}" || fail_gate packaged_certifi_module
           ca_bundle="$(find "${app}/Contents" -path '*/certifi/cacert.pem' -print -quit)"
