@@ -269,6 +269,45 @@ class FeishuClientTests(unittest.TestCase):
                 if expected == "RATE_LIMITED":
                     self.assertEqual("2", caught.exception.retry_after)
 
+    def test_nonzero_api_errors_preserve_code_and_use_conservative_categories(self):
+        cases = (
+            (1254302, "request denied", "PERMISSION_DENIED"),
+            (9001, "table not found", "TABLE_NOT_FOUND"),
+            (9002, "field value invalid", "INVALID_FIELD_VALUE"),
+            (9003, "relation value invalid", "INVALID_RELATION_VALUE"),
+            (9004, "record not exist", "RECORD_NOT_FOUND"),
+            (9005, "unexpected provider failure", "REMOTE_ERROR"),
+        )
+        for api_code, message, expected in cases:
+            with self.subTest(api_code=api_code):
+                transport = QueueTransport([
+                    Response({"code": 0, "tenant_access_token": "token"}),
+                    Response({"code": api_code, "msg": message}),
+                ])
+                with self.assertRaises(FeishuClientError) as caught:
+                    FeishuClient(CONFIG, transport=transport).list_records("creator-table")
+                self.assertEqual(expected, caught.exception.code)
+                self.assertEqual(api_code, caught.exception.api_code)
+                self.assertNotIn(message, caught.exception.to_safe_dict().values())
+
+    def test_safe_error_context_excludes_remote_payload_and_credentials(self):
+        error = FeishuClientError(
+            "REMOTE_ERROR", "飞书请求失败。", api_code=98765,
+            failure_stage="api", http_status=200,
+        ).with_operation_context(
+            operation="creator_record_list",
+            endpoint_category="bitable_record_list",
+            table_role="creator",
+        )
+        safe = error.to_safe_dict()
+        self.assertEqual(98765, safe["feishu_api_code"])
+        self.assertEqual("creator_record_list", safe["operation"])
+        self.assertEqual("bitable_record_list", safe["endpoint_category"])
+        self.assertEqual("creator", safe["table_role"])
+        serialized = json.dumps(safe, ensure_ascii=False)
+        self.assertNotIn(CONFIG["app_secret"], serialized)
+        self.assertNotIn(CONFIG["app_token"], serialized)
+
     def test_network_failure_is_transient_and_sanitized(self):
         transport = QueueTransport([OSError("network includes secret-value")])
         with self.assertRaises(FeishuClientError) as caught:

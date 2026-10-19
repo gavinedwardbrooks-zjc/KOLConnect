@@ -17,6 +17,7 @@ sys.path.insert(0, str(ROOT / "tests"))
 
 from desktop_file_bridge import (  # noqa: E402
     DesktopFileBridge,
+    _first_dialog_path,
     _is_inside_application_bundle,
     _resolve_save_target,
 )
@@ -25,6 +26,7 @@ from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
 
 class FakeWebView:
     class FileDialog:
+        OPEN = 10
         SAVE = 30
 
 
@@ -57,6 +59,19 @@ class DesktopFileBridgeTests(unittest.TestCase):
         self.assertEqual({"saved": True, "canceled": False, "path": str(target)}, result)
         self.assertEqual(b"xlsx-bytes", target.read_bytes())
         self.assertEqual(FakeWebView.FileDialog.SAVE, window.calls[0][0][0])
+
+    def test_macos_save_dialog_string_is_not_truncated_to_its_first_character(self) -> None:
+        target = self.root / "导出 文件.xlsx"
+        result = DesktopFileBridge(FakeWebView, FakeWindow(str(target))).save_xlsx(
+            "export.xlsx", self.payload()
+        )
+        self.assertEqual({"saved": True, "canceled": False, "path": str(target)}, result)
+        self.assertEqual(b"xlsx-bytes", target.read_bytes())
+
+    def test_dialog_selection_normalizes_string_path_and_sequence(self) -> None:
+        target = self.root / "selected.xlsx"
+        self.assertEqual(str(target), _first_dialog_path(str(target)))
+        self.assertEqual(str(target), _first_dialog_path((str(target),)))
 
     def test_cancel_returns_a_non_success_result(self) -> None:
         result = DesktopFileBridge(FakeWebView, FakeWindow(None)).save_xlsx("export.xlsx", self.payload())
@@ -111,6 +126,25 @@ class DesktopFileBridgeTests(unittest.TestCase):
         )
         self.assertEqual({"saved": True, "canceled": False, "path": str(target)}, result)
         self.assertEqual(b"xlsx-bytes", target.read_bytes())
+
+    def test_open_xlsx_returns_bytes_and_filename_without_local_path(self) -> None:
+        source = self.root / "达人 导入.xlsx"
+        source.write_bytes(b"workbook-bytes")
+        window = FakeWindow(str(source))
+        result = DesktopFileBridge(FakeWebView, window).open_xlsx()
+        self.assertEqual(True, result["selected"])
+        self.assertEqual("达人 导入.xlsx", result["filename"])
+        self.assertEqual(self.payload(b"workbook-bytes"), result["payload"])
+        self.assertNotIn("path", result)
+        self.assertEqual(FakeWebView.FileDialog.OPEN, window.calls[0][0][0])
+
+    def test_open_xlsx_rejects_non_xlsx_and_handles_cancel(self) -> None:
+        source = self.root / "not-workbook.txt"
+        source.write_text("data", encoding="utf-8")
+        invalid = DesktopFileBridge(FakeWebView, FakeWindow((str(source),))).open_xlsx()
+        self.assertEqual("INVALID_FILE", invalid["error_code"])
+        canceled = DesktopFileBridge(FakeWebView, FakeWindow(None)).open_xlsx()
+        self.assertEqual({"selected": False, "canceled": True}, canceled)
 
     def test_packaged_app_bundle_is_not_an_export_destination(self) -> None:
         bundle = self.root / "KOLConnect.app"

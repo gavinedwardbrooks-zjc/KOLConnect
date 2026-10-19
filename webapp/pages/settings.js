@@ -240,6 +240,57 @@
     return lines.join("\n");
   }
 
+  function feishuOperationLabel(context = {}) {
+    const labels = {
+      authenticate: "settingsFeishuOperationAuthenticate",
+      creator_field_list: "settingsFeishuOperationCreatorFieldList",
+      account_field_list: "settingsFeishuOperationAccountFieldList",
+      creator_record_list: "settingsFeishuOperationCreatorRecordList",
+      account_record_list: "settingsFeishuOperationAccountRecordList",
+      creator_create: "settingsFeishuOperationCreatorCreate",
+      creator_update: "settingsFeishuOperationCreatorUpdate",
+      account_create: "settingsFeishuOperationAccountCreate",
+      account_update: "settingsFeishuOperationAccountUpdate",
+      creator_relation_update: "settingsFeishuOperationCreatorRelationUpdate",
+      account_relation_update: "settingsFeishuOperationAccountRelationUpdate",
+    };
+    const key = labels[String(context.operation || "")];
+    return key ? t(key) : t("settingsFeishuOperationUnknown");
+  }
+
+  function renderFeishuFailure(data, operation) {
+    const reason = String(data?.blocked_reason || data?.error_codes?.[0] || "FEISHU_SYNC_FAILED");
+    const context = data?.error_context && typeof data.error_context === "object"
+      ? data.error_context
+      : {};
+    const lines = [t("settingsFeishuOperationFailed", { operation: feishuOperationLabel(context) })];
+    const apiCode = Number(context.feishu_api_code) || 0;
+    if (apiCode) lines.push(t("settingsFeishuApiCode", { code: apiCode }));
+    const diagnosticCode = String(context.code || reason);
+    const endpoint = String(context.endpoint_category || "");
+    const operationName = String(context.operation || "");
+    const isWriteOperation = /(?:create|update)/.test(`${endpoint} ${operationName}`);
+    const guidance = {
+      PERMISSION_DENIED: isWriteOperation
+        ? "settingsFeishuWritePermissionDenied"
+        : "settingsFeishuReadPermissionDenied",
+      AUTHENTICATION_FAILED: "settingsFeishuAuthenticationFailed",
+      RATE_LIMITED: "settingsFeishuRateLimited",
+      BASE_NOT_FOUND: "settingsFeishuBaseNotFound",
+      TABLE_NOT_FOUND: "settingsFeishuTableNotFound",
+      FIELD_NOT_FOUND: "settingsFeishuFieldNotFound",
+      RECORD_NOT_FOUND: "settingsFeishuRecordNotFound",
+      INVALID_FIELD_VALUE: "settingsFeishuInvalidFieldValue",
+      INVALID_RELATION_VALUE: "settingsFeishuInvalidRelationValue",
+      WRITE_CONFLICT: "settingsFeishuWriteConflict",
+      REMOTE_VALIDATION_ERROR: "settingsFeishuRemoteValidationError",
+      REMOTE_ERROR: "settingsFeishuRemoteUnknownError",
+      FEISHU_FIELD_FETCH_FAILED: "settingsFeishuFieldFetchFailed",
+    }[diagnosticCode];
+    lines.push(t(guidance || "settingsFeishuReviewDiagnostics"));
+    return lines.join("\n");
+  }
+
   function renderSyncResult(data, operation) {
     const status = String(data?.status || "failed");
     const connectionLabel = data?.connection_ok === false
@@ -275,13 +326,7 @@
       const hasSchemaDetails = (data?.missing_fields?.length || 0) + (data?.incompatible_fields?.length || 0) > 0;
       message.textContent = reason === "FEISHU_SCHEMA_INVALID" && hasSchemaDetails
         ? renderSchemaValidationDetails(data)
-        : reason === "FEISHU_FIELD_FETCH_FAILED"
-          ? t("settingsFeishuFieldFetchFailed")
-          : reason === "PERMISSION_DENIED"
-            ? t(operation === "full"
-              ? "settingsFeishuWritePermissionDenied"
-              : "settingsFeishuReadPermissionDenied")
-          : t("settingsOperationNotRun", { reason });
+        : renderFeishuFailure(data, operation);
     }
   }
 

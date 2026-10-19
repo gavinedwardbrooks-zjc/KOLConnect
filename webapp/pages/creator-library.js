@@ -933,13 +933,26 @@
     return global.pywebview?.api?.save_xlsx || null;
   }
 
+  function desktopOpenBridge() {
+    return global.pywebview?.api?.open_xlsx || null;
+  }
+
+  function base64ToArrayBuffer(payload) {
+    const binary = global.atob(String(payload || ""));
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+    return bytes.buffer;
+  }
+
   async function saveXlsxResponse(response, filename) {
     const saveXlsx = desktopFileBridge();
     if (saveXlsx) {
       const result = await saveXlsx(filename, arrayBufferToBase64(await response.arrayBuffer()));
       if (result?.saved === true) return { saved: true, desktop: true, path: result.path };
       if (result?.canceled === true) return { saved: false, canceled: true };
-      throw new Error(result?.error || t("creatorLibraryFileSaveFailed"));
+      const error = new Error(result?.error || t("creatorLibraryFileSaveFailed"));
+      error.code = result?.error_code || "EXPORT_DOWNLOAD_FAILED";
+      throw error;
     }
     const objectUrl = global.URL.createObjectURL(await response.blob());
     const anchor = document.createElement("a");
@@ -964,6 +977,38 @@
       if (result.desktop && result.saved) pageContext.ui.showSaved(t("creatorLibraryTemplateSaved", { path: result.path }));
     } catch (error) {
       showError(error);
+    }
+  }
+
+  async function submitCreatorWorkbookPayload(payload) {
+    const response = await pageContext.api.postRaw(
+      "/api/creator-library/import",
+      payload,
+      { headers: { "Content-Type": XLSX_CONTENT_TYPE }, signal: pageContext.resources.signal },
+    );
+    renderImportResult(response.data || {});
+    pageContext.ui.showSaved(t("creatorLibraryExcelImported"));
+    await loadRecords();
+  }
+
+  async function chooseCreatorWorkbook() {
+    const openXlsx = desktopOpenBridge();
+    if (!openXlsx) {
+      element("creator-library-import-input")?.click();
+      return;
+    }
+    try {
+      const result = await openXlsx();
+      if (result?.canceled === true) return;
+      if (result?.selected !== true || !result?.payload) {
+        const error = new Error(result?.error || t("creatorLibraryImportUploadFailed"));
+        error.code = result?.error_code || "IMPORT_UPLOAD_FAILED";
+        throw error;
+      }
+      await submitCreatorWorkbookPayload(base64ToArrayBuffer(result.payload));
+    } catch (error) {
+      if (error?.responseData) renderImportResult(error.responseData, true);
+      else showError(error);
     }
   }
 
@@ -1165,14 +1210,7 @@
         return;
       }
       const payload = await file.arrayBuffer();
-      const response = await pageContext.api.postRaw(
-        "/api/creator-library/import",
-        payload,
-        { headers: { "Content-Type": XLSX_CONTENT_TYPE }, signal: pageContext.resources.signal },
-      );
-      renderImportResult(response.data || {});
-      pageContext.ui.showSaved(t("creatorLibraryExcelImported"));
-      await loadRecords();
+      await submitCreatorWorkbookPayload(payload);
     } catch (error) {
       if (error?.responseData) renderImportResult(error.responseData, true);
       else showError(error);
@@ -1427,7 +1465,7 @@
       listen("creator-library-batch-campaign-cancel", "click", closeBatchCampaignModal);
       listen("creator-library-batch-campaign-form", "submit", event => submitBatchCampaign(event).catch(showError));
       listen("creator-library-select-all", "change", toggleCurrentPageSelection);
-      listen("creator-library-import-button", "click", () => element("creator-library-import-input")?.click());
+      listen("creator-library-import-button", "click", () => chooseCreatorWorkbook());
       listen("creator-library-import-input", "change", importCreatorWorkbook);
       listen("creator-library-cards", "click", handleAction);
       listen("creator-library-cards", "change", toggleCreatorSelection);

@@ -78,6 +78,10 @@ async function run() {
     {
       status: "failed", blocked_reason: "PERMISSION_DENIED",
       error_codes: ["PERMISSION_DENIED"],
+      error_context: {
+        operation: "creator_record_list", endpoint_category: "bitable_record_list",
+        table_role: "creator", feishu_api_code: 1254302, failure_stage: "api", http_status: 200,
+      },
     },
     { status: "failed" },
   ];
@@ -95,7 +99,13 @@ async function run() {
         };
         fullSyncCalls += 1;
         if (fullSyncCalls === 2) {
-          return { status: "failed", blocked_reason: "PERMISSION_DENIED", error_codes: ["PERMISSION_DENIED"] };
+          return {
+            status: "failed", blocked_reason: "PERMISSION_DENIED", error_codes: ["PERMISSION_DENIED"],
+            error_context: {
+              code: "PERMISSION_DENIED", operation: "creator_create",
+              endpoint_category: "bitable_record_batch_create", table_role: "creator",
+            },
+          };
         }
         return {
           status: "partial", creator_created: 2, creator_updated: 1,
@@ -120,6 +130,12 @@ async function run() {
         settingsFeishuFieldFetchFailed: "飞书连接成功，但 KOLConnect 无法读取目标表的字段结构。系统已自动重试且未修改任何飞书数据。请稍后重试；如果问题持续存在，请查看诊断日志。",
         settingsFeishuReadPermissionDenied: "飞书拒绝了读取操作。请检查 bitable:app、版本发布和目标 Base/表读取权限。",
         settingsFeishuWritePermissionDenied: "飞书拒绝了写入操作。请检查 bitable:app、版本发布和目标 Base/表读写权限。",
+        settingsFeishuOperationFailed: `操作未执行：${values.operation || "--"}`,
+        settingsFeishuApiCode: `飞书错误码：${values.code || "--"}`,
+        settingsFeishuOperationUnknown: "未识别的飞书操作",
+        settingsFeishuOperationCreatorRecordList: "读取 Creator 记录",
+        settingsFeishuOperationCreatorCreate: "创建 Creator 记录",
+        settingsFeishuReviewDiagnostics: "请查看运行日志中的安全诊断信息。",
         settingsOperationNotRun: `操作未执行：${values.reason || "--"}`,
         settingsAvailable: "可用",
         settingsUnavailable: "不可用",
@@ -154,9 +170,12 @@ async function run() {
   await elements.get("feishu-sync-validate").click();
   assert.match(elements.get("feishu-sync-result").textContent, /拒绝了读取操作/);
   assert.match(elements.get("feishu-sync-result").textContent, /bitable:app/);
+  assert.match(elements.get("feishu-sync-result").textContent, /读取 Creator 记录/);
+  assert.match(elements.get("feishu-sync-result").textContent, /1254302/);
   assert.doesNotMatch(elements.get("feishu-sync-result").textContent, /secret|token/i);
   await elements.get("feishu-sync-validate").click();
-  assert.equal(elements.get("feishu-sync-result").textContent, "操作未执行：FEISHU_SYNC_FAILED");
+  assert.match(elements.get("feishu-sync-result").textContent, /未识别的飞书操作/);
+  assert.match(elements.get("feishu-sync-result").textContent, /安全诊断信息/);
   await elements.get("feishu-sync-dry-run").click();
   assert.equal(elements.get("feishu-sync-local-creators").textContent, 10);
   assert.equal(elements.get("feishu-sync-create").textContent, 2);

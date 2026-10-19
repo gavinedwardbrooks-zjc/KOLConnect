@@ -130,6 +130,10 @@ async function run() {
       }
       throw new Error(`unexpected POST ${url}`);
     },
+    async postRaw(url, payload, options) {
+      requests.push({ url, payload, options });
+      return { data: { total_rows: 1, created: 1, skipped_existing: 0 } };
+    },
   };
   const window = {
     KOLConnectAPI: api,
@@ -151,6 +155,7 @@ async function run() {
       };
     },
     btoa: binary => Buffer.from(binary, "binary").toString("base64"),
+    atob: payload => Buffer.from(payload, "base64").toString("binary"),
     KOLConnectApp: {
       t(key, params = {}) {
         const labels = {
@@ -229,10 +234,15 @@ async function run() {
   assert.match(elements.get("creator-library-batch-campaign-message").textContent, /失败 1/);
   assert.match(elements.get("creator-library-export").textContent, /1/, "only failed creators remain selected");
 
-  window.pywebview = { api: { async save_xlsx(filename, payload) {
-    bridgeCalls.push({ filename, payload });
-    return bridgeResult || { saved: true, canceled: false, path: "C:\\Exports\\Creators.xlsx" };
-  } } };
+  window.pywebview = { api: {
+    async save_xlsx(filename, payload) {
+      bridgeCalls.push({ filename, payload });
+      return bridgeResult || { saved: true, canceled: false, path: "C:\\Exports\\Creators.xlsx" };
+    },
+    async open_xlsx() {
+      return { selected: true, canceled: false, filename: "达人 导入.xlsx", payload: "AQID" };
+    },
+  } };
   await elements.get("creator-library-export").dispatch("click");
   const exportRequest = requests.find(request => request.url === "/api/creator-library/export");
   assert.equal(exportRequest.options.method, "POST");
@@ -254,6 +264,12 @@ async function run() {
   await elements.get("creator-library-template-download").dispatch("click");
   assert.match(errors.pop().message, /保存失败/);
 
+  await elements.get("creator-library-import-button").dispatch("click");
+  const importRequest = requests.find(request => request.url === "/api/creator-library/import");
+  assert.deepEqual(Array.from(new Uint8Array(importRequest.payload)), [1, 2, 3]);
+  assert.equal(importRequest.options.headers["Content-Type"], "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  assert.match(savedMessages.pop(), /creatorLibraryExcelImported/);
+
   delete window.pywebview;
   await elements.get("creator-library-template-download").dispatch("click");
   assert.ok(downloads.some(item => item.href === "blob:template" && item.clicked));
@@ -261,6 +277,7 @@ async function run() {
   const source = fs.readFileSync(path.join(ROOT, "webapp/pages/creator-library.js"), "utf8");
   assert.match(source, /URL\.createObjectURL/);
   assert.match(source, /pywebview\?\.api\?\.save_xlsx/);
+  assert.match(source, /pywebview\?\.api\?\.open_xlsx/);
   assert.match(source, /creator-library-select-all/);
   assert.match(source, /creators\/batch/);
   const html = fs.readFileSync(path.join(ROOT, "webapp/index.html"), "utf8");

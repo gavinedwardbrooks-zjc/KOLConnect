@@ -151,15 +151,67 @@ class FeishuClientError(RuntimeError):
     transport_reason_category: str = ""
     transport_reason_message: str = ""
     transport_errno: int = 0
+    operation: str = ""
+    endpoint_category: str = ""
+    table_role: str = ""
 
     def __str__(self) -> str:
         return self.message
 
-    def to_safe_dict(self) -> dict[str, str]:
-        result = {"code": self.code, "message": self.message}
+    def to_safe_dict(self) -> dict[str, Any]:
+        safe_message = {
+            "PERMISSION_DENIED": "飞书应用权限不足。",
+            "AUTHENTICATION_FAILED": "飞书身份验证失败。",
+            "RATE_LIMITED": "飞书请求频率受限。",
+            "BASE_NOT_FOUND": "飞书 Base 不存在或应用无法访问。",
+            "TABLE_NOT_FOUND": "飞书数据表不存在或应用无法访问。",
+            "FIELD_NOT_FOUND": "飞书字段不存在。",
+            "RECORD_NOT_FOUND": "飞书记录不存在。",
+            "INVALID_RELATION_VALUE": "飞书关联字段值无效。",
+            "INVALID_FIELD_VALUE": "飞书字段值无效。",
+            "WRITE_CONFLICT": "飞书记录写入冲突。",
+            "REMOTE_VALIDATION_ERROR": "飞书拒绝了无效的数据。",
+            "TRANSIENT_NETWORK_ERROR": "无法连接飞书服务。",
+            "TRANSIENT_REMOTE_ERROR": "飞书服务暂时不可用。",
+        }.get(self.code, "飞书请求失败。")
+        result: dict[str, Any] = {
+            "code": self.code,
+            "message": safe_message,
+            "feishu_api_code": self.api_code,
+            "failure_stage": self.failure_stage,
+            "http_status": self.http_status,
+        }
         if self.retry_after:
             result["retry_after"] = self.retry_after
+        if self.operation:
+            result["operation"] = self.operation
+        if self.endpoint_category:
+            result["endpoint_category"] = self.endpoint_category
+        if self.table_role:
+            result["table_role"] = self.table_role
         return result
+
+    def with_operation_context(
+        self, *, operation: str, endpoint_category: str, table_role: str
+    ) -> "FeishuClientError":
+        return FeishuClientError(
+            self.code,
+            self.message,
+            self.retry_after,
+            self.http_status,
+            self.api_code,
+            self.failure_stage,
+            self.exception_class,
+            self.response_shape,
+            self.pagination_pages,
+            self.transport_reason_type,
+            self.transport_reason_category,
+            self.transport_reason_message,
+            self.transport_errno,
+            operation,
+            endpoint_category,
+            table_role,
+        )
 
 
 @dataclass(frozen=True)
@@ -535,18 +587,44 @@ class FeishuClient:
         api_code = int(data.get("code") or 0)
         if api_code != 0:
             message = str(data.get("msg") or "").casefold()
-            if "permission" in message or "forbidden" in message:
+            if api_code == 1254302 or "permission" in message or "forbidden" in message:
                 code = "PERMISSION_DENIED"
             elif "token" in message or "auth" in message:
                 code = "AUTHENTICATION_FAILED"
-            elif "rate" in message or "frequency" in message:
+            elif "rate" in message or "frequency" in message or "too many" in message:
                 code = "RATE_LIMITED"
+            elif ("base" in message or "app_token" in message) and (
+                "not found" in message or "not exist" in message
+            ):
+                code = "BASE_NOT_FOUND"
+            elif "table" in message and ("not found" in message or "not exist" in message):
+                code = "TABLE_NOT_FOUND"
+            elif "field" in message and ("not found" in message or "not exist" in message):
+                code = "FIELD_NOT_FOUND"
+            elif "record" in message and ("not found" in message or "not exist" in message):
+                code = "RECORD_NOT_FOUND"
+            elif "relation" in message and ("invalid" in message or "illegal" in message):
+                code = "INVALID_RELATION_VALUE"
+            elif "field" in message and ("invalid" in message or "illegal" in message):
+                code = "INVALID_FIELD_VALUE"
+            elif "conflict" in message:
+                code = "WRITE_CONFLICT"
+            elif any(token in message for token in ("invalid", "illegal", "parameter", "validation")):
+                code = "REMOTE_VALIDATION_ERROR"
             else:
                 code = "REMOTE_ERROR"
             safe_message = {
                 "PERMISSION_DENIED": "飞书应用权限不足。",
                 "AUTHENTICATION_FAILED": "飞书身份验证失败。",
                 "RATE_LIMITED": "飞书请求频率受限。",
+                "BASE_NOT_FOUND": "飞书 Base 不存在或应用无法访问。",
+                "TABLE_NOT_FOUND": "飞书数据表不存在或应用无法访问。",
+                "FIELD_NOT_FOUND": "飞书字段不存在。",
+                "RECORD_NOT_FOUND": "飞书记录不存在。",
+                "INVALID_RELATION_VALUE": "飞书关联字段值无效。",
+                "INVALID_FIELD_VALUE": "飞书字段值无效。",
+                "WRITE_CONFLICT": "飞书记录写入冲突。",
+                "REMOTE_VALIDATION_ERROR": "飞书拒绝了无效的数据。",
                 "REMOTE_ERROR": "飞书请求失败。",
             }[code]
             raise FeishuClientError(
@@ -626,6 +704,9 @@ class FeishuClient:
             error.transport_reason_category,
             error.transport_reason_message,
             error.transport_errno,
+            error.operation,
+            error.endpoint_category,
+            error.table_role,
         )
 
     @staticmethod

@@ -327,6 +327,10 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         ).dry_run()
 
         self.assertEqual("PERMISSION_DENIED", result["blocked_reason"])
+        self.assertEqual("creator_record_list", result["error_context"]["operation"])
+        self.assertEqual("bitable_record_list", result["error_context"]["endpoint_category"])
+        self.assertEqual("creator", result["error_context"]["table_role"])
+        self.assertEqual(1254302, result["error_context"]["feishu_api_code"])
         diagnostic = next(
             item for item in events if item.startswith("feishu_operation_failure ")
         )
@@ -335,6 +339,7 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         self.assertIn("feishu_api_code=1254302", diagnostic)
         self.assertIn("failure_stage=api", diagnostic)
         self.assertNotIn("secret-response-message", diagnostic)
+        self.assertNotIn("secret-response-message", str(result["error_context"]))
 
     def test_missing_local_identities_are_counted_and_blocked(self):
         self.source.data["creators"].append(creator(identity=""))

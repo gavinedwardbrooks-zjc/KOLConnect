@@ -6,6 +6,7 @@ import base64
 import binascii
 import re
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -40,26 +41,119 @@ class DesktopFileBridge:
                 file_types=("Excel files (*.xlsx)",),
             )
         except (AttributeError, OSError, RuntimeError):
-            return {"saved": False, "canceled": False, "error": "无法打开保存对话框。"}
+            return {
+                "saved": False,
+                "canceled": False,
+                "error_code": "FILE_DIALOG_UNAVAILABLE",
+                "error": "无法打开保存对话框。",
+            }
         if not selected:
             return {"saved": False, "canceled": True, "path": None}
 
         try:
-            target = _resolve_save_target(selected[0], filename)
+            target = _resolve_save_target(_first_dialog_path(selected), filename)
         except (TypeError, ValueError):
-            return {"saved": False, "canceled": False, "error": "请选择有效的 XLSX 保存位置。"}
+            return {
+                "saved": False,
+                "canceled": False,
+                "error_code": "FILE_SELECTION_INVALID",
+                "error": "请选择有效的 XLSX 保存位置。",
+            }
         if _is_inside_application_bundle(target):
-            return {"saved": False, "canceled": False, "error": "请选择应用程序外的保存位置。"}
+            return {
+                "saved": False,
+                "canceled": False,
+                "error_code": "FILE_DESTINATION_READ_ONLY",
+                "error": "请选择应用程序外的保存位置。",
+            }
         if not target.parent.is_dir():
-            return {"saved": False, "canceled": False, "error": "保存位置不可用。"}
+            return {
+                "saved": False,
+                "canceled": False,
+                "error_code": "FILE_DESTINATION_UNAVAILABLE",
+                "error": "保存位置不可用。",
+            }
         if target.exists():
-            return {"saved": False, "canceled": False, "error": "目标文件已存在，请选择其他文件名。"}
+            return {
+                "saved": False,
+                "canceled": False,
+                "error_code": "FILE_ALREADY_EXISTS",
+                "error": "目标文件已存在，请选择其他文件名。",
+            }
         try:
             with open(target, "wb") as handle:
                 handle.write(payload)
         except OSError:
-            return {"saved": False, "canceled": False, "error": "文件保存失败。"}
+            return {
+                "saved": False,
+                "canceled": False,
+                "error_code": "FILE_WRITE_FAILED",
+                "error": "文件保存失败。",
+            }
         return {"saved": True, "canceled": False, "path": str(target)}
+
+    def open_xlsx(self) -> dict[str, object]:
+        """Read one user-selected XLSX without exposing its local path to JavaScript."""
+        if self._window is None:
+            return {
+                "selected": False,
+                "canceled": False,
+                "error_code": "FILE_DIALOG_UNAVAILABLE",
+                "error": "桌面文件选择窗口不可用。",
+            }
+        try:
+            selected = self._window.create_file_dialog(
+                self._webview.FileDialog.OPEN,
+                allow_multiple=False,
+                file_types=("Excel files (*.xlsx)",),
+            )
+        except (AttributeError, OSError, RuntimeError):
+            return {
+                "selected": False,
+                "canceled": False,
+                "error_code": "FILE_DIALOG_UNAVAILABLE",
+                "error": "无法打开文件选择窗口。",
+            }
+        if not selected:
+            return {"selected": False, "canceled": True}
+        try:
+            source = Path(_first_dialog_path(selected)).expanduser()
+        except (TypeError, ValueError):
+            return {
+                "selected": False,
+                "canceled": False,
+                "error_code": "FILE_SELECTION_INVALID",
+                "error": "请选择有效的 XLSX 文件。",
+            }
+        if source.suffix.lower() != ".xlsx" or not source.is_file():
+            return {
+                "selected": False,
+                "canceled": False,
+                "error_code": "INVALID_FILE",
+                "error": "请选择有效的 XLSX 文件。",
+            }
+        try:
+            payload = source.read_bytes()
+        except OSError:
+            return {
+                "selected": False,
+                "canceled": False,
+                "error_code": "IMPORT_UPLOAD_FAILED",
+                "error": "无法读取所选 XLSX 文件。",
+            }
+        if not payload:
+            return {
+                "selected": False,
+                "canceled": False,
+                "error_code": "INVALID_FILE",
+                "error": "所选 XLSX 文件为空。",
+            }
+        return {
+            "selected": True,
+            "canceled": False,
+            "filename": source.name,
+            "payload": base64.b64encode(payload).decode("ascii"),
+        }
 
 
 def _safe_xlsx_filename(value: object) -> str:
@@ -78,6 +172,19 @@ def _resolve_save_target(selected_path: object, suggested_filename: str) -> Path
     if selected.is_dir() or not selected.name:
         return selected / suggested_filename
     return selected if selected.suffix.lower() == ".xlsx" else selected.with_suffix(".xlsx")
+
+
+def _first_dialog_path(selection: object) -> str:
+    """Normalize pywebview's platform-specific dialog return shape."""
+    if isinstance(selection, (str, Path)):
+        value = str(selection).strip()
+    elif isinstance(selection, Sequence) and selection:
+        value = str(selection[0] or "").strip()
+    else:
+        value = ""
+    if not value:
+        raise ValueError("missing selection")
+    return value
 
 
 def _is_inside_application_bundle(target: Path) -> bool:

@@ -93,6 +93,11 @@ class FeishuSyncService:
         try:
             client.authenticate()
         except FeishuClientError as exc:
+            exc = exc.with_operation_context(
+                operation="authenticate",
+                endpoint_category="tenant_access_token",
+                table_role="authentication",
+            )
             self._log_operation_failure("tenant_access_token", "authentication", exc)
             self._event_logger(
                 "feishu_field_fetch "
@@ -117,6 +122,8 @@ class FeishuSyncService:
                 "incompatible_fields": [],
                 "warnings": [],
                 "error_codes": [exc.code],
+                "error_context": exc.to_safe_dict(),
+                "error_contexts": [exc.to_safe_dict()],
             }
 
         creator_fetch = self._safe_fields(client, client.creator_table_id)
@@ -130,6 +137,15 @@ class FeishuSyncService:
         if account_fetch.used_fallback and account_fetch.ok:
             warnings.append("FEISHU_FIELD_FETCH_FALLBACK_USED:account")
         if fetch_failed:
+            contexts = []
+            for role, fetch in (("creator", creator_fetch), ("account", account_fetch)):
+                error = fetch.fallback_error or fetch.primary_error
+                if error and not fetch.ok:
+                    contexts.append(error.with_operation_context(
+                        operation=f"{role}_field_list",
+                        endpoint_category="bitable_field_list",
+                        table_role=role,
+                    ).to_safe_dict())
             return {
                 "status": "blocked",
                 "blocked_reason": "FEISHU_FIELD_FETCH_FAILED",
@@ -142,6 +158,8 @@ class FeishuSyncService:
                 "incompatible_fields": [],
                 "warnings": sorted(set(warnings)),
                 "error_codes": ["FEISHU_FIELD_FETCH_FAILED"],
+                "error_context": contexts[0] if contexts else {},
+                "error_contexts": contexts,
                 "_creator_schema": {},
                 "_account_schema": {},
             }
@@ -343,6 +361,8 @@ class FeishuSyncService:
             "error_codes": list(validation.get("error_codes") or []),
             "missing_fields": list(validation.get("missing_fields") or []),
             "incompatible_fields": list(validation.get("incompatible_fields") or []),
+            "error_context": dict(validation.get("error_context") or {}),
+            "error_contexts": list(validation.get("error_contexts") or []),
         }
         if validation["status"] != "success":
             base["blocked_reason"] = (
@@ -360,6 +380,8 @@ class FeishuSyncService:
         except FeishuClientError as exc:
             base["blocked_reason"] = exc.code
             base["error_codes"].append(exc.code)
+            base["error_context"] = exc.to_safe_dict()
+            base["error_contexts"] = [exc.to_safe_dict()]
             base["completed_at"] = self._now()
             return base
 
@@ -595,13 +617,23 @@ class FeishuSyncService:
         try:
             creator_records = client.list_records(client.creator_table_id)
         except FeishuClientError as exc:
+            exc = exc.with_operation_context(
+                operation="creator_record_list",
+                endpoint_category="bitable_record_list",
+                table_role="creator",
+            )
             self._log_operation_failure("bitable_record_list", "creator", exc)
-            raise
+            raise exc
         try:
             account_records = client.list_records(client.account_table_id)
         except FeishuClientError as exc:
+            exc = exc.with_operation_context(
+                operation="account_record_list",
+                endpoint_category="bitable_record_list",
+                table_role="account",
+            )
             self._log_operation_failure("bitable_record_list", "account", exc)
-            raise
+            raise exc
         creator_index, creator_duplicates, unmanaged_creators = self._remote_index(
             creator_records, CREATOR_ID_FIELD, "creator"
         )
@@ -797,6 +829,11 @@ class FeishuSyncService:
                     for item, remote in zip(batch, created):
                         record_id_index[item["identity"]] = remote
             except FeishuClientError as exc:
+                exc = exc.with_operation_context(
+                    operation=f"{entity}_create",
+                    endpoint_category="bitable_record_batch_create",
+                    table_role=entity,
+                )
                 self._log_operation_failure("bitable_record_batch_create", entity, exc)
                 self._record_batch_failure(result, entity, batch, exc)
                 return {
@@ -836,6 +873,11 @@ class FeishuSyncService:
                 result["succeeded"] += len(batch)
                 result["remaining"] -= len(batch)
             except FeishuClientError as exc:
+                exc = exc.with_operation_context(
+                    operation=f"{entity}_update",
+                    endpoint_category="bitable_record_batch_update",
+                    table_role=entity,
+                )
                 self._log_operation_failure("bitable_record_batch_update", entity, exc)
                 self._record_batch_failure(result, entity, batch, exc)
                 return {
@@ -942,9 +984,9 @@ class FeishuSyncService:
                     "fields": {ACCOUNT_CREATOR_RELATION_FIELD: desired},
                 })
 
-        for table_id, updates in (
-            (client.creator_table_id, creator_updates),
-            (client.account_table_id, account_updates),
+        for table_role, table_id, updates in (
+            ("creator", client.creator_table_id, creator_updates),
+            ("account", client.account_table_id, account_updates),
         ):
             for batch in self._chunks(updates, client.batch_size):
                 result["attempted"] += len(batch)
@@ -953,12 +995,19 @@ class FeishuSyncService:
                     if len(updated) != len(batch):
                         raise FeishuClientError("REMOTE_ERROR", "飞书关系更新结果数量不一致。")
                 except FeishuClientError as exc:
+                    exc = exc.with_operation_context(
+                        operation=f"{table_role}_relation_update",
+                        endpoint_category="bitable_record_batch_update",
+                        table_role=table_role,
+                    )
                     self._log_operation_failure(
-                        "bitable_record_batch_update", "relation", exc
+                        "bitable_record_batch_update", table_role, exc
                     )
                     result["relation_failed"] += len(batch)
                     result["failed"] += len(batch)
                     result["error_codes"].append(exc.code)
+                    result["error_context"] = exc.to_safe_dict()
+                    result.setdefault("error_contexts", []).append(exc.to_safe_dict())
                     return {
                         "phase": "relation_update",
                         "error_code": exc.code,
@@ -993,6 +1042,8 @@ class FeishuSyncService:
         result[f"{entity}_failed"] += len(batch)
         result["failed"] += len(batch)
         result["error_codes"].append(exc.code)
+        result["error_context"] = exc.to_safe_dict()
+        result.setdefault("error_contexts", []).append(exc.to_safe_dict())
         remaining = max(0, FeishuSyncService.DETAIL_LIMIT - len(result["failed_entities"]))
         result["failed_entities"].extend(
             {"entity_type": entity, "identity": item["identity"], "error_code": exc.code}
@@ -1367,6 +1418,7 @@ class FeishuSyncService:
             "relation_unchanged_count", "relation_conflict_count",
             "duplicate_identity_count", "blocked_reason", "warnings", "conflicts",
             "error_codes", "missing_fields", "incompatible_fields",
+            "error_context", "error_contexts",
             "payload_safety",
         )
         return {key: plan.get(key) for key in public_keys}
