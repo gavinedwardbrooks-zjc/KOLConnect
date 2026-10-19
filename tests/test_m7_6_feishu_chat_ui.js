@@ -76,6 +76,8 @@ const window = {
         settingsFeishuSdkUnavailable: "请安装官方 SDK 后重试。",
         settingsFeishuChatFailed: `操作未完成：${values.code || "--"}。${values.guidance || ""}`,
         settingsFeishuConnectTimeout: "飞书长连接建立超时，请检查网络、应用凭据与事件订阅后重试。",
+        settingsFeishuConnectionStage: `连接阶段：${values.stage || "--"}`,
+        settingsFeishuTimeoutStage: `超时阶段：${values.stage || "--"}`,
         settingsFeishuReviewLogs: "请查看运行日志。",
         settingsUnknown: "未知",
       }[key] || key;
@@ -138,12 +140,14 @@ vm.runInNewContext(source, context, { filename: "settings.js" });
   nextStatus = {
     state: "error", transport: "long_connection", bot_enabled: false,
     last_connected_at: "", last_error_code: "FEISHU_CHAT_CONNECT_TIMEOUT",
+    connection_stage: "websocket_open", timeout_stage: "websocket_open",
     app_secret: "must-not-render",
   };
   await scheduled.shift()();
   assert.strictEqual(elements["feishu-chat-status"].textContent, "连接失败");
   assert.strictEqual(elements["feishu-chat-last-error"].textContent, "FEISHU_CHAT_CONNECT_TIMEOUT");
   assert(elements["feishu-chat-result"].textContent.includes("飞书长连接建立超时"));
+  assert(elements["feishu-chat-result"].textContent.includes("websocket_open"));
   assert(!elements["feishu-chat-result"].textContent.includes("must-not-render"));
   assert.strictEqual(elements["feishu-chat-enable"].disabled, false);
 

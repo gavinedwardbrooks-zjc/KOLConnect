@@ -434,7 +434,7 @@ class FeishuChatTransportTests(unittest.TestCase):
     def test_synchronous_factory_and_asynchronous_network_errors_are_classified(self):
         cases = (
             (lambda _id, _secret: (_ for _ in ()).throw(RuntimeError("invalid credentials")),
-             "FEISHU_CHAT_INVALID_CREDENTIALS"),
+             "FEISHU_CHAT_AUTH_FAILED"),
             (lambda _id, _secret: ControlledConnection(failure=OSError("network unreachable")),
              "FEISHU_CHAT_NETWORK_ERROR"),
         )
@@ -584,9 +584,45 @@ class FeishuChatHandlerAndPackagingTests(unittest.TestCase):
         self.assertEqual("FEISHU_CHAT_EVENT_CONFIGURATION_ERROR", classify(RuntimeError("bot capability disabled")))
         self.assertEqual("FEISHU_CHAT_EVENT_CONFIGURATION_ERROR", classify(RuntimeError("event permission denied")))
         self.assertEqual("FEISHU_CHAT_PERMISSION_DENIED", classify(PermissionError("forbidden")))
-        self.assertEqual("FEISHU_CHAT_INVALID_CREDENTIALS", classify(RuntimeError("invalid credentials")))
+        self.assertEqual("FEISHU_CHAT_AUTH_FAILED", classify(RuntimeError("invalid credentials")))
+        self.assertEqual("FEISHU_CHAT_LONG_CONNECTION_NOT_ENABLED", classify(RuntimeError("long connection not enabled")))
+        self.assertEqual("FEISHU_CHAT_TLS_ERROR", classify(RuntimeError("TLS certificate verify failed")))
+        self.assertEqual("FEISHU_CHAT_DNS_ERROR", classify(OSError("getaddrinfo failed")))
+        self.assertEqual("FEISHU_CHAT_PROXY_ERROR", classify(OSError("proxy connection failed")))
         self.assertEqual("FEISHU_CHAT_NETWORK_ERROR", classify(OSError("websocket connection failed")))
-        self.assertEqual("FEISHU_CHAT_SDK_ERROR", classify(RuntimeError("unexpected sdk state")))
+        self.assertEqual("FEISHU_CHAT_RUNTIME_ERROR", classify(RuntimeError("unexpected sdk state")))
+
+    def test_timeout_reports_safe_connection_stage_without_credentials(self):
+        class DiagnosticConnection(ControlledConnection):
+            def diagnostics(self):
+                return {
+                    "connection_stage": "websocket_open",
+                    "auth_ok": True,
+                    "websocket_open_started": True,
+                    "websocket_open_ok": False,
+                }
+
+        connection = DiagnosticConnection()
+        transport = FeishuChatTransport(
+            lambda: {"app_id": "id", "app_secret": "must-not-leak"},
+            lambda: StubAssistant(),
+            trace_id_provider=lambda: "trace",
+            connection_factory=lambda _id, _secret: connection,
+            connect_timeout_seconds=0.05,
+        )
+        try:
+            transport.start()
+            deadline = time.monotonic() + 1
+            while transport.status()["state"] != "error" and time.monotonic() < deadline:
+                time.sleep(0.01)
+            status = transport.status()
+            self.assertEqual("websocket_open", status["timeout_stage"])
+            self.assertTrue(status["auth_ok"])
+            self.assertTrue(status["websocket_open_started"])
+            self.assertFalse(status["websocket_open_ok"])
+            self.assertNotIn("must-not-leak", str(status))
+        finally:
+            transport.close()
 
     def test_connection_start_message_reply_and_clean_stop(self):
         raw = {

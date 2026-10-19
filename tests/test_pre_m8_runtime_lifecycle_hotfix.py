@@ -83,7 +83,7 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         shutdown = mock.Mock(return_value=True)
         thread = _Thread()
         runtime = launcher.LocalRuntime(
-            SimpleNamespace(request_runtime_shutdown=shutdown), thread
+            SimpleNamespace(request_runtime_shutdown=shutdown), thread, {"shutdown_requested": False}
         )
         window = SimpleNamespace(
             width=1200,
@@ -98,6 +98,15 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         self.assertTrue(runtime.shutdown())
         shutdown.assert_called_once_with()
         self.assertEqual(2, thread.join_calls)
+        self.assertTrue(runtime.startup_state["shutdown_requested"])
+
+    def test_expected_server_shutdown_is_not_reported_as_startup_failure(self) -> None:
+        startup_state = {"last_error": None, "shutdown_requested": True}
+        server_module = SimpleNamespace(run=lambda: None, _record_last_error=mock.Mock())
+        with mock.patch.object(launcher, "_record_startup_error") as record_error:
+            launcher._run_server(server_module, startup_state)
+        record_error.assert_not_called()
+        self.assertIsNone(startup_state["last_error"])
 
     def test_desktop_window_enables_native_text_selection(self) -> None:
         source = (APP / "launcher.py").read_text(encoding="utf-8")

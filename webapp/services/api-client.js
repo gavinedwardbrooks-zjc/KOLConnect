@@ -27,8 +27,28 @@
       GMAIL_AUTH_REJECTED: "mailGmailAuthRejected",
       GMAIL_APP_PASSWORD_MAY_BE_REQUIRED: "mailGmailAppPasswordMayBeRequired",
       GMAIL_WEB_LOGIN_REQUIRED: "mailGmailWebLoginRequired",
+      CHROME_BINARY_NOT_FOUND: "chromeBinaryNotFound",
+      CHROME_PROFILE_NOT_FOUND: "chromeProfileNotFound",
+      CHROME_PROFILE_LOCKED: "chromeProfileLocked",
+      CHROME_LAUNCH_FAILED: "chromeLaunchFailed",
+      CHROME_CONFIG_INVALID: "chromeConfigInvalid",
     };
     return keys[code] ? message(keys[code], fallback) : fallback;
+  }
+
+  async function localServiceDiagnosis() {
+    const diagnose = global.pywebview?.api?.local_service_status;
+    if (typeof diagnose !== "function") return null;
+    try {
+      return await diagnose(global.location?.href || "");
+    } catch (_error) {
+      return { reachable: false, code: "DESKTOP_BRIDGE_FAILED" };
+    }
+  }
+
+  function waitForRetry(milliseconds) {
+    const scheduler = global.setTimeout || (typeof setTimeout === "function" ? setTimeout : null);
+    return scheduler ? new Promise(resolve => scheduler(resolve, milliseconds)) : Promise.resolve();
   }
 
   async function request(method, url, options = {}) {
@@ -48,13 +68,36 @@
     }
 
     let response;
-    try {
-      response = await global.fetch(url, init);
-    } catch (error) {
-      if (error && error.name === "AbortError") throw error;
-      const requestError = new Error(connectionError());
-      requestError.code = "SERVER_UNREACHABLE";
+    let networkError;
+    const attempts = method === "GET" ? 2 : 1;
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        response = await global.fetch(url, init);
+        networkError = null;
+        break;
+      } catch (error) {
+        if (error && error.name === "AbortError") throw error;
+        networkError = error;
+        if (attempt + 1 < attempts) await waitForRetry(150);
+      }
+    }
+    if (!response) {
+      const diagnosis = await localServiceDiagnosis();
+      const code = String(diagnosis?.code || "SERVER_UNREACHABLE");
+      const diagnosticKey = {
+        LOCAL_SERVICE_NOT_READY: "localServiceNotReady",
+        LOCAL_SERVICE_PORT_CONFLICT: "localServicePortConflict",
+        LOCAL_SERVICE_CONNECTION_REFUSED: "localServiceConnectionRefused",
+        LOCAL_SERVICE_TIMEOUT: "localServiceTimeout",
+        LOCAL_SERVICE_BACKEND_EXITED: "localServiceBackendExited",
+        LOCAL_SERVICE_URL_MISMATCH: "localServiceUrlMismatch",
+        DESKTOP_BRIDGE_FAILED: "desktopBridgeFailed",
+      }[code];
+      const requestError = new Error(diagnosticKey ? message(diagnosticKey, connectionError()) : connectionError());
+      requestError.code = code;
       requestError.kind = "connection";
+      requestError.cause = networkError;
+      requestError.diagnostics = diagnosis;
       throw requestError;
     }
 
@@ -72,7 +115,7 @@
       const structuredMessage = typeof data?.error === "object" ? data.error?.message : "";
       const legacyMessage = typeof data?.error === "string" ? data.error : "";
       const code = typeof data?.error === "object" ? data.error?.code : "";
-      const isServerError = response.status >= 500 || code === "INTERNAL_SERVER_ERROR";
+      const isServerError = code === "INTERNAL_SERVER_ERROR" || (response.status >= 500 && !code);
       const baseMessage = isServerError
         ? serverError()
         : domainErrorMessage(code, structuredMessage || legacyMessage || `${method} ${url} failed`);

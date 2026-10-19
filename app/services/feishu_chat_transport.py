@@ -6,6 +6,9 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
+import socket
+import ssl
+import sys
 import threading
 from typing import Any, Callable, Protocol
 
@@ -44,6 +47,18 @@ class FeishuChatStatus:
     last_connected_at: str = ""
     last_error_code: str = ""
     connecting_started_at: str = ""
+    connection_stage: str = "idle"
+    platform: str = sys.platform
+    packaged_runtime: bool = bool(getattr(sys, "frozen", False))
+    auth_ok: bool | None = None
+    websocket_open_started: bool = False
+    websocket_open_ok: bool = False
+    close_error_category: str = ""
+    timeout_stage: str = ""
+    http_status: int | None = None
+    feishu_api_code: int | str | None = None
+    exception_class: str = ""
+    network_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -68,6 +83,22 @@ class OfficialLarkConnection:
             policy=PolicyConfig(require_mention=True),
         )
         self._loop: asyncio.AbstractEventLoop | None = None
+
+    def diagnostics(self) -> dict[str, Any]:
+        ws_client = getattr(self._channel, "_ws_client", None)
+        connection = getattr(ws_client, "_conn", None) if ws_client is not None else None
+        if connection is not None:
+            stage = "websocket_ready"
+        elif ws_client is not None:
+            stage = "websocket_open"
+        else:
+            stage = "sdk_preflight"
+        return {
+            "connection_stage": stage,
+            "auth_ok": True if ws_client is not None else None,
+            "websocket_open_started": ws_client is not None,
+            "websocket_open_ok": connection is not None,
+        }
 
     def run(self, on_message, stop_event, on_state) -> None:
         asyncio.run(self._run(on_message, stop_event, on_state))
@@ -178,6 +209,7 @@ class FeishuChatTransport:
                 state="connecting",
                 bot_enabled=True,
                 connecting_started_at=self._utc_now(),
+                connection_stage="sdk_initializing",
             )
             timer = threading.Timer(
                 self._connect_timeout_seconds,
@@ -272,6 +304,7 @@ class FeishuChatTransport:
                     return
                 self._connection = connection
                 self._chat_service = chat_service
+                self._apply_diagnostics(self._connection_diagnostics(connection))
             connection.run(
                 lambda message: self._queue_receive(generation, stop_event, message),
                 stop_event,
@@ -281,11 +314,13 @@ class FeishuChatTransport:
                 self._set_error("FEISHU_CHAT_SDK_ERROR", generation=generation)
         except FeishuChatTransportError as exc:
             code = self._normalize_error_code(exc.code)
-            self._set_error(code, generation=generation)
+            self._set_error(code, generation=generation, diagnostics=self._exception_diagnostics(exc))
             self._log_safe_error("Feishu Chat connection failed", code)
         except Exception as exc:
             code = self._classify_error(exc)
-            self._set_error(code, generation=generation)
+            diagnostics = self._exception_diagnostics(exc)
+            diagnostics.update(self._connection_diagnostics(self._connection))
+            self._set_error(code, generation=generation, diagnostics=diagnostics)
             self._log_safe_error("Feishu Chat connection failed", code)
         finally:
             self._event_logger("feishu_chat lifecycle=DISCONNECTED transport=long_connection")
@@ -378,6 +413,10 @@ class FeishuChatTransport:
                 self._status.last_connected_at = self._utc_now()
                 self._status.last_error_code = ""
                 self._status.connecting_started_at = ""
+                self._status.connection_stage = "connected"
+                self._status.auth_ok = True
+                self._status.websocket_open_started = True
+                self._status.websocket_open_ok = True
                 if self._connect_timer is not None:
                     self._connect_timer.cancel()
                     self._connect_timer = None
@@ -394,7 +433,13 @@ class FeishuChatTransport:
         lifecycle = "CONNECTED" if state == "connected" else "RECONNECTING"
         self._event_logger(f"feishu_chat lifecycle={lifecycle} transport=long_connection")
 
-    def _set_error(self, code: str, *, generation: int | None = None) -> dict[str, Any]:
+    def _set_error(
+        self,
+        code: str,
+        *,
+        generation: int | None = None,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
             if generation is not None and generation != self._attempt_generation:
                 return asdict(self._status)
@@ -402,6 +447,7 @@ class FeishuChatTransport:
             self._status.bot_enabled = False
             self._status.last_error_code = code
             self._status.connecting_started_at = ""
+            self._apply_diagnostics(diagnostics or {})
             if self._connect_timer is not None:
                 self._connect_timer.cancel()
                 self._connect_timer = None
@@ -424,8 +470,14 @@ class FeishuChatTransport:
                 return
             connection = self._connection
             stop_event.set()
-        self._set_error("FEISHU_CHAT_CONNECT_TIMEOUT", generation=generation)
-        self._event_logger("feishu_chat lifecycle=CONNECT_TIMEOUT transport=long_connection")
+        diagnostics = self._connection_diagnostics(connection)
+        diagnostics["timeout_stage"] = str(diagnostics.get("connection_stage") or "unknown")
+        diagnostics["exception_class"] = "TimeoutError"
+        self._set_error("FEISHU_CHAT_CONNECT_TIMEOUT", generation=generation, diagnostics=diagnostics)
+        self._event_logger(
+            "feishu_chat lifecycle=CONNECT_TIMEOUT transport=long_connection "
+            f"stage={diagnostics['timeout_stage']} platform={sys.platform} packaged={bool(getattr(sys, 'frozen', False))}"
+        )
         self._request_connection_stop(connection)
 
     def _stop_attempt(self, thread: threading.Thread, *, timeout: float) -> None:
@@ -477,15 +529,26 @@ class FeishuChatTransport:
     def _normalize_error_code(code: str) -> str:
         aliases = {
             "INVALID_APP_CREDENTIALS": "FEISHU_CHAT_INVALID_CREDENTIALS",
+            "AUTH_FAILED": "FEISHU_CHAT_AUTH_FAILED",
             "BOT_PERMISSION_MISSING": "FEISHU_CHAT_PERMISSION_DENIED",
             "EVENT_PERMISSION_MISSING": "FEISHU_CHAT_EVENT_CONFIGURATION_ERROR",
+            "LONG_CONNECTION_NOT_ENABLED": "FEISHU_CHAT_LONG_CONNECTION_NOT_ENABLED",
             "LONG_CONNECTION_FAILED": "FEISHU_CHAT_SDK_ERROR",
         }
         return aliases.get(code, code if code.startswith("FEISHU_CHAT_") else "FEISHU_CHAT_SDK_ERROR")
 
     @staticmethod
     def _classify_error(exc: BaseException) -> str:
-        message = str(exc).casefold()
+        chain = FeishuChatTransport._exception_chain(exc)
+        message = " ".join(str(item) for item in chain).casefold()
+        if any(isinstance(item, ssl.SSLError) for item in chain) or any(term in message for term in ("certificate verify", "ssl", "tls")):
+            return "FEISHU_CHAT_TLS_ERROR"
+        if any(isinstance(item, socket.gaierror) for item in chain) or any(term in message for term in ("name or service not known", "nodename nor servname", "getaddrinfo", "dns")):
+            return "FEISHU_CHAT_DNS_ERROR"
+        if "proxy" in message:
+            return "FEISHU_CHAT_PROXY_ERROR"
+        if "long connection" in message and any(term in message for term in ("not enabled", "disabled", "not configured")):
+            return "FEISHU_CHAT_LONG_CONNECTION_NOT_ENABLED"
         if "bot capability" in message or "bot not enabled" in message:
             return "FEISHU_CHAT_EVENT_CONFIGURATION_ERROR"
         if "event" in message or "subscription" in message:
@@ -493,9 +556,65 @@ class FeishuChatTransport:
         if "forbidden" in message or "permission" in message:
             return "FEISHU_CHAT_PERMISSION_DENIED"
         if "credential" in message or "auth" in message or "secret" in message:
-            return "FEISHU_CHAT_INVALID_CREDENTIALS"
+            return "FEISHU_CHAT_AUTH_FAILED"
         if any(term in message for term in (
             "network", "dns", "socket", "websocket", "connection", "ssl", "timed out", "timeout",
         )):
             return "FEISHU_CHAT_NETWORK_ERROR"
-        return "FEISHU_CHAT_SDK_ERROR"
+        return "FEISHU_CHAT_RUNTIME_ERROR"
+
+    @staticmethod
+    def _exception_chain(exc: BaseException) -> list[BaseException]:
+        chain: list[BaseException] = []
+        current: BaseException | None = exc
+        while current is not None and current not in chain and len(chain) < 6:
+            chain.append(current)
+            current = current.__cause__ or current.__context__
+        return chain
+
+    @staticmethod
+    def _exception_diagnostics(exc: BaseException) -> dict[str, Any]:
+        chain = FeishuChatTransport._exception_chain(exc)
+        leaf = chain[-1]
+        message = " ".join(str(item) for item in chain).casefold()
+        if any(isinstance(item, ssl.SSLError) for item in chain):
+            reason = "tls"
+        elif any(isinstance(item, socket.gaierror) for item in chain):
+            reason = "dns"
+        elif "proxy" in message:
+            reason = "proxy"
+        elif "timed out" in message or "timeout" in message:
+            reason = "timeout"
+        elif any(term in message for term in ("refused", "unreachable", "connection")):
+            reason = "connection"
+        else:
+            reason = ""
+        http_status = next((getattr(item, "status_code", None) or getattr(item, "status", None) for item in chain if getattr(item, "status_code", None) or getattr(item, "status", None)), None)
+        api_code = next((getattr(item, "code", None) for item in chain if isinstance(getattr(item, "code", None), (int, str))), None)
+        return {
+            "exception_class": type(leaf).__name__,
+            "network_reason": reason,
+            "http_status": http_status if isinstance(http_status, int) else None,
+            "feishu_api_code": api_code,
+        }
+
+    @staticmethod
+    def _connection_diagnostics(connection: Connection | None) -> dict[str, Any]:
+        diagnostics = getattr(connection, "diagnostics", None)
+        if not callable(diagnostics):
+            return {}
+        try:
+            result = diagnostics()
+        except Exception:
+            return {"connection_stage": "diagnostics_unavailable"}
+        return result if isinstance(result, dict) else {}
+
+    def _apply_diagnostics(self, diagnostics: dict[str, Any]) -> None:
+        allowed = {
+            "connection_stage", "auth_ok", "websocket_open_started", "websocket_open_ok",
+            "close_error_category", "timeout_stage", "http_status", "feishu_api_code",
+            "exception_class", "network_reason",
+        }
+        for key in allowed:
+            if key in diagnostics:
+                setattr(self._status, key, diagnostics[key])

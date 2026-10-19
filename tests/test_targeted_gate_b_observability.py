@@ -82,6 +82,42 @@ class ApiExceptionBoundaryTests(unittest.TestCase):
         self.assertEqual("KNOWN_DOMAIN_ERROR", payload["error"]["code"])
         self.assertEqual("Specific safe domain error.", payload["error"]["message"])
 
+    def test_client_disconnect_while_writing_response_is_not_promoted_to_500(self) -> None:
+        handler = object.__new__(server.Handler)
+        handler.command = "GET"
+        handler.path = "/api/dashboard"
+        handler.send_response = lambda _status: (_ for _ in ()).throw(ConnectionAbortedError())
+        with patch.object(server, "log_event") as log_event:
+            handler._json({"ok": True})
+        self.assertIn("client_disconnected=true", log_event.call_args.args[1])
+
+    def test_chrome_launch_errors_are_specific_and_safe(self) -> None:
+        with patch.object(server, "find_chrome_exe", return_value=None):
+            with self.assertRaises(server.ChromeProfileError) as missing:
+                server.open_chrome_profile(server.AUTOMATION_PROFILE_NAME)
+        self.assertEqual("CHROME_BINARY_NOT_FOUND", missing.exception.code)
+
+        with patch.object(server, "find_chrome_exe", return_value=Path("chrome.exe")), patch.object(
+            server, "resolve_chrome_launch_config", return_value=(Path("missing-root"), "Profile 9")
+        ):
+            with self.assertRaises(server.ChromeProfileError) as profile:
+                server.open_chrome_profile("Profile 9")
+        self.assertEqual("CHROME_PROFILE_NOT_FOUND", profile.exception.code)
+
+        with patch.object(server, "find_chrome_exe", return_value=Path("chrome.exe")), patch.object(
+            server, "resolve_chrome_launch_config", return_value=(server.KOLCONNECT_CHROME_USER_DATA, "Default")
+        ), patch.object(server.subprocess, "Popen", side_effect=PermissionError("sensitive path")):
+            with self.assertRaises(server.ChromeProfileError) as locked:
+                server.open_chrome_profile(server.AUTOMATION_PROFILE_NAME)
+        self.assertEqual("CHROME_PROFILE_LOCKED", locked.exception.code)
+
+        with patch.object(server, "find_chrome_exe", return_value=Path("chrome.exe")), patch.object(
+            server, "resolve_chrome_launch_config", return_value=(server.KOLCONNECT_CHROME_USER_DATA, "Default")
+        ), patch.object(server.subprocess, "Popen", side_effect=OSError("sensitive path")):
+            with self.assertRaises(server.ChromeProfileError) as launch:
+                server.open_chrome_profile(server.AUTOMATION_PROFILE_NAME)
+        self.assertEqual("CHROME_LAUNCH_FAILED", launch.exception.code)
+
     def test_sanitized_exception_log_keeps_traceback_without_secret(self) -> None:
         set_trace_id("trace_test_sanitized")
         try:

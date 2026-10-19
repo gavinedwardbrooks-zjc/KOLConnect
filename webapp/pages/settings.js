@@ -185,14 +185,27 @@
         BOT_CAPABILITY_NOT_ENABLED: "settingsFeishuBotCapabilityMissing",
         BOT_PERMISSION_MISSING: "settingsFeishuBotPermissionMissing",
         FEISHU_CHAT_PERMISSION_DENIED: "settingsFeishuBotPermissionMissing",
+        FEISHU_CHAT_AUTH_FAILED: "settingsFeishuCredentialsInvalid",
+        FEISHU_CHAT_LONG_CONNECTION_NOT_ENABLED: "settingsFeishuEventConfigurationError",
         EVENT_PERMISSION_MISSING: "settingsFeishuEventPermissionMissing",
         FEISHU_CHAT_EVENT_CONFIGURATION_ERROR: "settingsFeishuEventConfigurationError",
         FEISHU_CHAT_NETWORK_ERROR: "settingsFeishuNetworkError",
+        FEISHU_CHAT_TLS_ERROR: "settingsFeishuTlsError",
+        FEISHU_CHAT_DNS_ERROR: "settingsFeishuDnsError",
+        FEISHU_CHAT_PROXY_ERROR: "settingsFeishuProxyError",
         FEISHU_CHAT_CONNECT_TIMEOUT: "settingsFeishuConnectTimeout",
         FEISHU_CHAT_SDK_ERROR: "settingsFeishuSdkError",
+        FEISHU_CHAT_RUNTIME_ERROR: "settingsFeishuSdkError",
         LONG_CONNECTION_FAILED: "settingsFeishuLongConnectionFailed",
       };
-      message.textContent = t("settingsFeishuChatFailed", { code, guidance: t(guidance[code] || "settingsFeishuReviewLogs") });
+      const diagnosticParts = [];
+      if (data?.connection_stage) diagnosticParts.push(t("settingsFeishuConnectionStage", { stage: data.connection_stage }));
+      if (data?.timeout_stage) diagnosticParts.push(t("settingsFeishuTimeoutStage", { stage: data.timeout_stage }));
+      if (data?.feishu_api_code !== null && data?.feishu_api_code !== undefined && data?.feishu_api_code !== "") {
+        diagnosticParts.push(t("settingsFeishuApiCode", { code: data.feishu_api_code }));
+      }
+      const diagnostics = diagnosticParts.length ? `\n${diagnosticParts.join(" · ")}` : "";
+      message.textContent = `${t("settingsFeishuChatFailed", { code, guidance: t(guidance[code] || "settingsFeishuReviewLogs") })}${diagnostics}`;
     }
   }
 

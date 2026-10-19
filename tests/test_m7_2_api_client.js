@@ -10,6 +10,7 @@ const source = fs.readFileSync(
 
 async function main() {
   const window = {
+    setTimeout(callback) { callback(); },
     KOLConnectI18n: {
       t(key, params) {
         const messages = {
@@ -67,7 +68,9 @@ async function main() {
     },
   );
 
+  let networkAttempts = 0;
   window.fetch = async () => {
+    networkAttempts += 1;
     throw new TypeError("network down");
   };
   await assert.rejects(
@@ -79,6 +82,31 @@ async function main() {
       return true;
     },
   );
+  assert.equal(networkAttempts, 2, "GET receives one bounded retry");
+
+  networkAttempts = 0;
+  await assert.rejects(
+    async () => window.KOLConnectAPI.post("/api/no-mutation-retry", {}),
+    error => error.code === "SERVER_UNREACHABLE",
+  );
+  assert.equal(networkAttempts, 1, "mutations are never retried automatically");
+
+  window.pywebview = {
+    api: {
+      async local_service_status() {
+        return { reachable: false, code: "LOCAL_SERVICE_BACKEND_EXITED" };
+      },
+    },
+  };
+  await assert.rejects(
+    async () => window.KOLConnectAPI.get("/api/backend-exited"),
+    error => {
+      assert.equal(error.code, "LOCAL_SERVICE_BACKEND_EXITED");
+      assert.equal(error.kind, "connection");
+      return true;
+    },
+  );
+  delete window.pywebview;
 
   window.fetch = async () => ({
     ok: false,
@@ -99,6 +127,23 @@ async function main() {
       assert.match(error.message, /The service could not process/);
       assert.match(error.message, /Error reference: trace_aaaaaaaa/);
       assert.doesNotMatch(error.message, /internal details/);
+      return true;
+    },
+  );
+
+  window.fetch = async () => ({
+    ok: false,
+    status: 500,
+    async json() {
+      return { ok: false, error: { code: "CHROME_LAUNCH_FAILED", message: "safe launch failure" } };
+    },
+  });
+  await assert.rejects(
+    async () => window.KOLConnectAPI.post("/api/account/open", {}),
+    error => {
+      assert.equal(error.code, "CHROME_LAUNCH_FAILED");
+      assert.equal(error.kind, "domain");
+      assert.equal(error.message, "safe launch failure");
       return true;
     },
   );

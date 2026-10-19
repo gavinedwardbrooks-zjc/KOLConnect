@@ -1,6 +1,7 @@
 """Settings, health, account, and mail HTTP endpoints."""
 
 import copy
+import sys
 
 from services.workbook_backup_service import (
     WorkbookBackupError,
@@ -43,12 +44,28 @@ def handle(handler, request: dict, context: dict) -> bool:
         four_table_config = services["get_four_table_feishu_config"]()
         client_state = services["state_for_client"](state)
         client_feishu = client_state["feishu"]
+        try:
+            profiles = services["get_profiles"]()
+            accounts = services["build_accounts_payload"]()
+        except Exception as exc:
+            code = str(getattr(exc, "code", "CHROME_CONFIG_INVALID"))
+            handler._api_error(
+                code,
+                str(exc) if code.startswith("CHROME_") else "无法读取 Chrome 账号配置。",
+                status=int(getattr(exc, "status", 500)),
+                details={
+                    "operation": "list_chrome_profiles",
+                    "platform": sys.platform,
+                    "exception_type": type(exc).__name__,
+                },
+            )
+            return True
         handler._json(
             {
                 "ui": client_state["ui"],
-                "profiles": services["get_profiles"](),
+                "profiles": profiles,
                 "selectedProfile": client_state["profiles"].get("selected", "Default"),
-                "accounts": services["build_accounts_payload"](),
+                "accounts": accounts,
                 "feishu": {
                     "app_id": client_feishu.get("app_id", ""),
                     "app_secret": client_feishu.get("app_secret", ""),
@@ -148,6 +165,22 @@ def handle(handler, request: dict, context: dict) -> bool:
     # POST /api/settings/accounts → 保存账号列表；{"ok": true}
     if path == "/api/settings/accounts":
         entries = payload.get("entries") if isinstance(payload.get("entries"), list) else []
+        profiles = set(services["get_profiles"]())
+        invalid_profiles = sorted({
+            str(item.get("profile") or "").strip()
+            for item in entries
+            if isinstance(item, dict)
+            and str(item.get("profile") or "").strip()
+            and str(item.get("profile") or "").strip() not in profiles
+        })
+        if invalid_profiles:
+            handler._api_error(
+                "CHROME_CONFIG_INVALID",
+                "账号配置包含不存在的 Chrome Profile。",
+                status=400,
+                details={"operation": "save_accounts", "invalid_count": len(invalid_profiles)},
+            )
+            return True
         state["accounts"]["entries"] = [
             {
                 "profile": str(item.get("profile") or "").strip(),
@@ -168,7 +201,22 @@ def handle(handler, request: dict, context: dict) -> bool:
         if not profile:
             handler._error("缺少 profile。")
             return True
-        services["open_chrome_profile"](profile)
+        try:
+            services["open_chrome_profile"](profile)
+        except Exception as exc:
+            code = str(getattr(exc, "code", "CHROME_LAUNCH_FAILED"))
+            status = int(getattr(exc, "status", 500))
+            handler._api_error(
+                code,
+                str(exc) if code.startswith("CHROME_") else "无法启动 Google Chrome。",
+                status=status,
+                details={
+                    "operation": "open_chrome_profile",
+                    "platform": sys.platform,
+                    "exception_type": type(exc).__name__,
+                },
+            )
+            return True
         handler._ok()
         return True
 

@@ -15,6 +15,7 @@ import imaplib
 import mail_sync as mail_sync_module
 import os
 import re
+import shutil
 import smtplib
 import socketserver
 import subprocess
@@ -204,15 +205,41 @@ INSTAGRAM_ERROR_STATUSES = {"failed", "login_required", "platform_error"}
 AGENCY_CONTACT_FIELD_NAME = "联系人姓名"
 AGENCY_CONTACT_FIELD_WHATSAPP = "WhatsApp"
 AGENCY_CONTACT_FIELD_AGENCY = "所属 Agency"
-CHROME_USER_DATA = Path.home() / "AppData" / "Local" / "Google" / "Chrome" / "User Data"
+def _chrome_user_data_dir() -> Path:
+    if sys.platform == "win32":
+        return Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local")) / "Google" / "Chrome" / "User Data"
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Google" / "Chrome"
+    return Path.home() / ".config" / "google-chrome"
+
+
+CHROME_USER_DATA = _chrome_user_data_dir()
 KOLCONNECT_CHROME_USER_DATA = DATA_DIR / "ChromeProfile"
 AUTOMATION_PROFILE_NAME = "KOLConnect Automation"
 AUTOMATION_PROFILE_DIRECTORY = "Default"
-CHROME_EXE_CANDIDATES = [
-    Path(os.environ.get("PROGRAMFILES", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-    Path(os.environ.get("PROGRAMFILES(X86)", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-    Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "Application" / "chrome.exe",
-]
+
+
+class ChromeProfileError(RuntimeError):
+    def __init__(self, code: str, message: str, *, status: int = 400) -> None:
+        super().__init__(message)
+        self.code = code
+        self.status = status
+
+
+def _chrome_exe_candidates() -> list[Path]:
+    if sys.platform == "win32":
+        roots = (
+            os.environ.get("PROGRAMFILES"),
+            os.environ.get("PROGRAMFILES(X86)"),
+            os.environ.get("LOCALAPPDATA"),
+        )
+        return [Path(root) / "Google" / "Chrome" / "Application" / "chrome.exe" for root in roots if root]
+    if sys.platform == "darwin":
+        return [
+            Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+            Path.home() / "Applications" / "Google Chrome.app" / "Contents" / "MacOS" / "Google Chrome",
+        ]
+    return [Path(path) for name in ("google-chrome", "google-chrome-stable", "chromium") if (path := shutil.which(name))]
 
 DEFAULT_STATE = {
     "ui": {"language": "zh", "debug_mode": False},
@@ -477,9 +504,16 @@ def get_profiles() -> list[str]:
     if not CHROME_USER_DATA.exists():
         return profiles + ["Default"]
 
-    for child in CHROME_USER_DATA.iterdir():
-        if child.is_dir() and (child.name == "Default" or child.name.startswith("Profile ")):
-            profiles.append(child.name)
+    try:
+        for child in CHROME_USER_DATA.iterdir():
+            if child.is_dir() and (child.name == "Default" or child.name.startswith("Profile ")):
+                profiles.append(child.name)
+    except OSError as exc:
+        raise ChromeProfileError(
+            "CHROME_CONFIG_INVALID",
+            "无法读取 Chrome Profile 列表。",
+            status=500,
+        ) from exc
     chrome_profiles = sorted({name for name in profiles if name != AUTOMATION_PROFILE_NAME}, key=lambda name: (name != "Default", name))
     return [AUTOMATION_PROFILE_NAME, *chrome_profiles] or [AUTOMATION_PROFILE_NAME, "Default"]
 
@@ -800,25 +834,37 @@ def get_system_health() -> dict:
 
 
 def find_chrome_exe() -> Path | None:
-    for candidate in CHROME_EXE_CANDIDATES:
+    for candidate in _chrome_exe_candidates():
         if candidate.exists():
             return candidate
     return None
 
 
 def open_chrome_profile(profile: str) -> None:
+    selected = str(profile or "").strip()
+    if not selected:
+        raise ChromeProfileError("CHROME_CONFIG_INVALID", "请选择有效的 Chrome Profile。")
     chrome_exe = find_chrome_exe()
     if not chrome_exe:
-        raise RuntimeError("未找到 Chrome，请先安装 Google Chrome。")
-    user_data_dir, profile_directory = resolve_chrome_launch_config(profile)
-    subprocess.Popen(
-        [
-            str(chrome_exe),
-            f"--user-data-dir={user_data_dir}",
-            f"--profile-directory={profile_directory}",
-        ],
-        cwd=str(DATA_DIR),
-    )
+        raise ChromeProfileError("CHROME_BINARY_NOT_FOUND", "未找到 Google Chrome。", status=404)
+    user_data_dir, profile_directory = resolve_chrome_launch_config(selected)
+    if selected != AUTOMATION_PROFILE_NAME and not (user_data_dir / profile_directory).is_dir():
+        raise ChromeProfileError("CHROME_PROFILE_NOT_FOUND", "所选 Chrome Profile 不存在。", status=404)
+    try:
+        subprocess.Popen(
+            [
+                str(chrome_exe),
+                f"--user-data-dir={user_data_dir}",
+                f"--profile-directory={profile_directory}",
+            ],
+            cwd=str(DATA_DIR),
+        )
+    except PermissionError as exc:
+        raise ChromeProfileError("CHROME_PROFILE_LOCKED", "Chrome Profile 当前不可用，请关闭占用它的 Chrome 后重试。", status=409) from exc
+    except OSError as exc:
+        if getattr(exc, "winerror", None) in {32, 33}:
+            raise ChromeProfileError("CHROME_PROFILE_LOCKED", "Chrome Profile 当前不可用，请关闭占用它的 Chrome 后重试。", status=409) from exc
+        raise ChromeProfileError("CHROME_LAUNCH_FAILED", "无法启动 Google Chrome。", status=500) from exc
 
 
 def get_four_table_feishu_config() -> dict:
@@ -2664,13 +2710,20 @@ class Handler(BaseHTTPRequestHandler):
         payload = dict(data)
         payload.setdefault("trace_id", self._request_trace_id())
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Trace-ID", payload["trace_id"])
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Trace-ID", payload["trace_id"])
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as exc:
+            log_event(
+                "API",
+                f"client_disconnected=true | method={self.command} | path={urlparse(self.path).path} | exception_type={type(exc).__name__}",
+            )
+            return
         if self.path.startswith("/api/"):
             outcome = "success" if status < 400 else "failed"
             error = payload.get("error")
@@ -2678,14 +2731,17 @@ class Handler(BaseHTTPRequestHandler):
             log_event("API", f"{self.command} {urlparse(self.path).path} | {outcome} | status={status}{f' | {detail}' if detail else ''}")
 
     def _binary(self, data: bytes, content_type: str, filename: str) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Trace-ID", self._request_trace_id())
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"')
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Trace-ID", self._request_trace_id())
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as exc:
+            log_event("API", f"client_disconnected=true | method={self.command} | path={urlparse(self.path).path} | exception_type={type(exc).__name__}")
 
     def _ok(self, **extra) -> None:
         data = {"ok": True}
@@ -2947,12 +3003,15 @@ class Handler(BaseHTTPRequestHandler):
             ".ico": "image/x-icon",
         }.get(suffix, "application/octet-stream")
         data = resolved_path.read_bytes()
-        self.send_response(200)
-        self.send_header("Content-Type", mime)
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("Content-Length", str(len(data)))
-        self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", mime)
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError) as exc:
+            log_event("HTTP", f"client_disconnected=true | path={urlparse(self.path).path} | exception_type={type(exc).__name__}")
 
     def do_GET(self) -> None:
         if not self._allow_local_request():

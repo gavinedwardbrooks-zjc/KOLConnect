@@ -5,10 +5,14 @@ from __future__ import annotations
 import base64
 import binascii
 import re
+import socket
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+from urllib.error import URLError
+from urllib.parse import urlparse
+from urllib.request import ProxyHandler, build_opener
 
 
 _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
@@ -17,12 +21,48 @@ _INVALID_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 class DesktopFileBridge:
     """Expose a single Save As operation to the desktop WebView."""
 
-    def __init__(self, webview_module: Any, window: Any | None = None) -> None:
+    def __init__(
+        self,
+        webview_module: Any,
+        window: Any | None = None,
+        *,
+        service_url: str = "",
+        backend_alive=None,
+    ) -> None:
         self._webview = webview_module
         self._window = window
+        self._service_url = str(service_url or "").rstrip("/") + "/" if service_url else ""
+        self._backend_alive = backend_alive
 
     def bind_window(self, window: Any) -> None:
         self._window = window
+
+    def local_service_status(self, page_url: object = "") -> dict[str, object]:
+        """Return safe desktop-local service diagnostics without exposing user data."""
+        if callable(self._backend_alive) and not self._backend_alive():
+            return {"reachable": False, "code": "LOCAL_SERVICE_BACKEND_EXITED"}
+        if not self._service_url:
+            return {"reachable": False, "code": "DESKTOP_BRIDGE_FAILED"}
+        page_origin = _safe_origin(page_url)
+        expected_origin = _safe_origin(self._service_url)
+        if page_origin and page_origin != expected_origin:
+            return {
+                "reachable": False,
+                "code": "LOCAL_SERVICE_URL_MISMATCH",
+                "expected_origin": expected_origin,
+            }
+        try:
+            response = build_opener(ProxyHandler({})).open(self._service_url, timeout=1.0)
+            response.close()
+        except (TimeoutError, socket.timeout):
+            return {"reachable": False, "code": "LOCAL_SERVICE_TIMEOUT"}
+        except URLError as exc:
+            reason = getattr(exc, "reason", None)
+            code = "LOCAL_SERVICE_TIMEOUT" if isinstance(reason, (TimeoutError, socket.timeout)) else "LOCAL_SERVICE_CONNECTION_REFUSED"
+            return {"reachable": False, "code": code}
+        except OSError:
+            return {"reachable": False, "code": "LOCAL_SERVICE_CONNECTION_REFUSED"}
+        return {"reachable": True, "code": "LOCAL_SERVICE_READY", "origin": expected_origin}
 
     def save_xlsx(self, suggested_filename: object, base64_payload: object) -> dict[str, object]:
         """Save a validated XLSX payload only after a native Save As choice."""
@@ -162,6 +202,14 @@ def _safe_xlsx_filename(value: object) -> str:
     if not candidate:
         candidate = "KOLConnect_Export"
     return f"{Path(candidate).stem or 'KOLConnect_Export'}.xlsx"
+
+
+def _safe_origin(value: object) -> str:
+    parsed = urlparse(str(value or ""))
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return ""
+    port = f":{parsed.port}" if parsed.port is not None else ""
+    return f"{parsed.scheme}://{parsed.hostname}{port}"
 
 
 def _resolve_save_target(selected_path: object, suggested_filename: str) -> Path:

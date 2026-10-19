@@ -46,12 +46,15 @@ _LOCALHOST_OPENER = build_opener(ProxyHandler({}))
 class LocalRuntime:
     server_module: ModuleType
     server_thread: threading.Thread
+    startup_state: dict[str, Any] | None = None
     _shutdown_requested: bool = False
 
     def shutdown(self, timeout: float = 10.0) -> bool:
         """Request the shared server cleanup path and wait for port ownership to end."""
         if not self._shutdown_requested:
             self._shutdown_requested = True
+            if self.startup_state is not None:
+                self.startup_state["shutdown_requested"] = True
             request_shutdown = getattr(self.server_module, "request_runtime_shutdown", None)
             if callable(request_shutdown):
                 request_shutdown()
@@ -212,6 +215,8 @@ def _run_server(server_module: ModuleType, startup_state: dict[str, Any]) -> Non
         message = _startup_error_message(exc)
         _record_startup_error(server_module, message, exc)
     else:
+        if startup_state.get("shutdown_requested"):
+            return
         exc = RuntimeError("本地服务线程在启动期间意外退出。")
         startup_state["last_error"] = exc
         _record_startup_error(server_module, str(exc), exc)
@@ -280,7 +285,7 @@ def start_local_runtime(
         _record_startup_error(server_module, message, exc)
         raise RuntimeError(message)
 
-    startup_state: dict[str, Any] = {"last_error": None}
+    startup_state: dict[str, Any] = {"last_error": None, "shutdown_requested": False}
     thread = threading.Thread(
         target=_run_server,
         args=(server_module, startup_state),
@@ -309,7 +314,7 @@ def start_local_runtime(
         backup_creator_library(workbook_path)
     else:
         log_event("Launcher", "SQLite authority active; skipped legacy Excel startup backup.")
-    return LocalRuntime(server_module=server_module, server_thread=thread)
+    return LocalRuntime(server_module=server_module, server_thread=thread, startup_state=startup_state)
 
 
 def run_desktop() -> None:
@@ -319,7 +324,11 @@ def run_desktop() -> None:
     from desktop_file_bridge import DesktopFileBridge
 
     width, height = load_window_size()
-    desktop_file_bridge = DesktopFileBridge(webview)
+    desktop_file_bridge = DesktopFileBridge(
+        webview,
+        service_url=APP_URL,
+        backend_alive=runtime.server_thread.is_alive,
+    )
     window = webview.create_window(
         APP_DISPLAY_VERSION,
         APP_URL,

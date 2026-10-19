@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import builtins
 import shutil
+import socket
 import sys
 import unittest
 import uuid
@@ -161,6 +162,47 @@ class DesktopFileBridgeTests(unittest.TestCase):
             )
         self.assertEqual(False, result["saved"])
         self.assertIn("应用程序外", str(result["error"]))
+
+    def test_local_service_diagnostics_use_launcher_url_and_backend_lifecycle(self) -> None:
+        bridge = DesktopFileBridge(
+            FakeWebView,
+            service_url="http://127.0.0.1:8765/",
+            backend_alive=lambda: False,
+        )
+        self.assertEqual(
+            "LOCAL_SERVICE_BACKEND_EXITED",
+            bridge.local_service_status("http://127.0.0.1:8765/settings")["code"],
+        )
+
+        bridge = DesktopFileBridge(
+            FakeWebView,
+            service_url="http://127.0.0.1:8765/",
+            backend_alive=lambda: True,
+        )
+        self.assertEqual(
+            "LOCAL_SERVICE_URL_MISMATCH",
+            bridge.local_service_status("http://localhost:8765/settings")["code"],
+        )
+        with mock.patch("desktop_file_bridge.build_opener") as build_opener:
+            build_opener.return_value.open.side_effect = OSError("refused")
+            self.assertEqual(
+                "LOCAL_SERVICE_CONNECTION_REFUSED",
+                bridge.local_service_status("http://127.0.0.1:8765/settings")["code"],
+            )
+
+        with mock.patch("desktop_file_bridge.build_opener") as build_opener:
+            build_opener.return_value.open.side_effect = socket.timeout()
+            self.assertEqual(
+                "LOCAL_SERVICE_TIMEOUT",
+                bridge.local_service_status("http://127.0.0.1:8765/settings")["code"],
+            )
+
+        response = mock.Mock()
+        with mock.patch("desktop_file_bridge.build_opener") as build_opener:
+            build_opener.return_value.open.return_value = response
+            status = bridge.local_service_status("http://127.0.0.1:8765/settings")
+        self.assertEqual({"reachable": True, "code": "LOCAL_SERVICE_READY", "origin": "http://127.0.0.1:8765"}, status)
+        response.close.assert_called_once_with()
 
 
 if __name__ == "__main__":
