@@ -84,7 +84,7 @@ function createEnvironment() {
     "agency-create-open", "agency-list-refresh", "agency-list-count", "agency-list-loading", "agency-list-error",
     "agency-list-error-message", "agency-list-retry", "agency-list-empty", "agency-list-table-wrap",
     "agency-list-body", "agency-overview-total", "agency-overview-creators", "agency-overview-contacts",
-    "agency-detail-title", "agency-detail-subtitle", "agency-detail-back", "agency-detail-loading",
+    "agency-detail-eyebrow", "agency-detail-title", "agency-detail-subtitle", "agency-detail-back", "agency-detail-loading",
     "agency-detail-error", "agency-detail-error-message", "agency-detail-retry", "agency-detail-content",
     "agency-profile-card", "agency-profile-actions", "agency-profile-readonly", "agency-edit-form", "agency-edit-form-home", "agency-edit-mode", "agency-edit-form-host",
     "agency-detail-edit", "agency-edit-cancel", "agency-edit-submit", "agency-edit-eyebrow", "agency-edit-title", "agency-edit-name", "agency-edit-country", "agency-edit-website", "agency-edit-email", "agency-edit-whatsapp", "agency-edit-stage", "agency-edit-tags", "agency-edit-owner", "agency-edit-note",
@@ -240,7 +240,7 @@ function createEnvironment() {
       showSaved(message) { notifications.saved.push(message); },
       showError(error) { notifications.errors.push(error.message); },
       t(key, values = {}) {
-        const templates = { agencyCount: "{count} 个 Agency", agencyContacts: "{count} 位联系人", agencyCreators: "{count} 位达人", agencyMore: "更多", agencyDelete: "删除 Agency", agencyListLoadFailed: "Agency 列表加载失败，请稍后重试。", agencyProfileSave: "保存 Agency", agencyProfileSaved: "Agency 资料已保存。", agencyCreateEyebrow: "CREATE AGENCY", agencyCreateTitle: "新增 Agency", agencyCreateSubtitle: "创建合作机构后，可继续添加联系人并关联达人。", agencyCreateSave: "创建 Agency", agencyNameRequired: "请输入 Agency 名称。", agencyCreateFailed: "Agency 创建失败，请稍后重试。", agencyCreated: "Agency 已创建。", agencyDeleteConfirm: "删除 Agency？\n删除后无法恢复。", agencyDeleted: "Agency 已删除。", agencyContactSaved: "联系人资料已保存。", agencyContactDeleted: "联系人已删除。", agencyUnlinked: "已解除达人与 Agency 的关联。" };
+        const templates = { agencyCount: "{count} 个 Agency", agencyContacts: "{count} 位联系人", agencyCreators: "{count} 位达人", agencyMore: "更多", agencyDelete: "删除 Agency", agencyListLoadFailed: "Agency 列表加载失败，请稍后重试。", agencyEyebrow: "合作机构", agencyProfileEyebrow: "AGENCY PROFILE", agencyProfileSave: "保存 Agency", agencyProfileSaved: "Agency 资料已保存。", agencyCreateEyebrow: "CREATE AGENCY", agencyCreateTitle: "新增 Agency", agencyCreateFormTitle: "创建 Agency", agencyCreateSubtitle: "创建合作机构后，可继续添加联系人并关联达人。", agencyCreateSave: "创建 Agency", agencyEditEyebrow: "EDIT AGENCY", agencyEditTitle: "编辑 Agency", agencyNameRequired: "请输入 Agency 名称。", agencyCreateFailed: "Agency 创建失败，请稍后重试。", agencyCreated: "Agency 已创建。", agencyDeleteConfirm: "删除 Agency？\n删除后无法恢复。", agencyDeleted: "Agency 已删除。", agencyContactSaved: "联系人资料已保存。", agencyContactDeleted: "联系人已删除。", agencyUnlinked: "已解除达人与 Agency 的关联。" };
         return String(templates[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
       },
     },
@@ -280,7 +280,13 @@ async function run() {
   assert.equal(elements.get("agency-edit-form").hidden, false);
   assert.equal(elements.get("agency-profile-card").hidden, true);
   assert.equal(elements.get("agency-contacts-card").hidden, true, "contacts are unavailable until the Agency exists");
-  assert.equal(elements.get("agency-edit-title").textContent, "新增 Agency");
+  assert.equal(elements.get("agency-detail-eyebrow").textContent, "合作机构");
+  assert.equal(elements.get("agency-detail-title").textContent, "新增 Agency");
+  assert.equal(elements.get("agency-edit-eyebrow").textContent, "CREATE AGENCY");
+  assert.equal(elements.get("agency-edit-title").textContent, "创建 Agency");
+  assert.equal(elements.get("agency-edit-submit").textContent, "创建 Agency");
+  assert.equal(elements.get("agency-edit-form").classList.contains("agency-create-form"), true);
+  assert.equal(elements.get("agency-edit-mode").classList.contains("agency-create-card"), true);
   assert.equal(elements.get("agency-edit-name").value, "");
   assert.equal(
     calls.filter(call => call.method === "GET" && call.url.startsWith("/api/local/agencies/")).length,
@@ -350,6 +356,12 @@ async function run() {
   assert.equal(elements.get("agency-contacts-card").hidden, true, "editing hides contact management");
   assert.equal(elements.get("agency-creators-card").hidden, true, "editing hides related creators");
   assert.equal(elements.get("agency-campaigns-card").hidden, true, "editing hides related campaigns");
+  assert.equal(elements.get("agency-detail-eyebrow").textContent, "AGENCY PROFILE");
+  assert.equal(elements.get("agency-edit-eyebrow").textContent, "EDIT AGENCY");
+  assert.equal(elements.get("agency-edit-title").textContent, "编辑 Agency");
+  assert.equal(elements.get("agency-edit-submit").textContent, "保存 Agency");
+  assert.equal(elements.get("agency-edit-form").classList.contains("agency-create-form"), false, "edit mode must not retain create layout state");
+  assert.equal(elements.get("agency-edit-mode").classList.contains("agency-create-card"), false);
   assert.equal(elements.get("agency-edit-form").parentNode, elements.get("agency-edit-form-host"));
   await elements.get("agency-edit-cancel").dispatch("click");
   assert.equal(elements.get("agency-edit-mode").hidden, true, "cancel returns to the read-only detail");
@@ -459,6 +471,9 @@ async function run() {
   assert.match(html, /data-page="agency-detail"/);
   assert.match(html, /id="agency-detail-edit"/);
   assert.match(html, /id="agency-edit-form"/);
+  assert.match(html, /class="agency-form-actions"/);
+  assert.match(html, /id="agency-detail-back"/);
+  assert.match(html, /class="field agency-profile-wide"><span>备注<\/span><textarea/);
   assert.match(html, /id="agency-edit-mode"/);
   assert.match(html, /id="agency-edit-form-host"/);
   assert.match(html, /id="agency-detail-delete"/);
@@ -468,6 +483,11 @@ async function run() {
   assert.match(html, /src="pages\/agencies\.js"/);
   assert.match(read("webapp/pages/creator-library.js"), /get\("\/api\/local\/agencies"/);
   assert.match(read("webapp/pages/creator-library-detail.js"), /get\("\/api\/local\/agencies"/);
+  const styles = read("webapp/styles.css");
+  assert.match(styles, /\.agency-create-heading,[\s\S]*?max-width: 900px;/);
+  assert.match(styles, /\.agency-edit-mode-card\.agency-create-card[\s\S]*?max-width: 860px;/);
+  assert.match(styles, /\.agency-edit-form \.agency-profile-wide \{ grid-column: 1 \/ -1; \}/);
+  assert.match(styles, /\.agency-form-actions[\s\S]*?grid-column: 1 \/ -1;[\s\S]*?justify-content: flex-end;/);
 
   console.log("M4.3 Agency list and detail UI: OK");
 }

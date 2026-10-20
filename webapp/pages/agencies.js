@@ -252,6 +252,7 @@
     activeAgency = agency;
     const creators = Array.isArray(detail.creators) ? detail.creators : [];
     activeCreators = creators;
+    element("agency-detail-eyebrow").textContent = t("agencyProfileEyebrow");
     element("agency-detail-title").textContent = text(agency.name, "Agency 详情");
     element("agency-detail-subtitle").textContent = agency.country
       ? `${agency.country} · 机构资料与合作关系`
@@ -283,6 +284,9 @@
     const editForm = element("agency-edit-form");
     const editFormHome = element("agency-edit-form-home");
     const editFormHost = element("agency-edit-form-host");
+    const detailHeading = element("agency-detail-eyebrow")?.parentElement?.parentElement;
+    const detailContent = element("agency-detail-content");
+    const editModeCard = element("agency-edit-mode");
 
     if (agencyEditing && editForm && editFormHost && editForm.parentNode !== editFormHost) {
       editFormHost.appendChild(editForm);
@@ -290,6 +294,12 @@
     if (!agencyEditing && editForm && editFormHome && editForm.parentNode !== editFormHome) {
       editFormHome.appendChild(editForm);
     }
+
+    detailHeading?.classList.toggle("agency-create-heading", agencyCreating);
+    detailContent?.classList.toggle("agency-create-content", agencyCreating);
+    editModeCard?.classList.toggle("agency-create-card", agencyCreating);
+    editForm?.classList.toggle("agency-create-form", agencyCreating);
+    element("agency-detail-eyebrow").textContent = t(agencyCreating ? "agencyEyebrow" : "agencyProfileEyebrow");
 
     setHidden("agency-profile-card", agencyEditing);
     setHidden("agency-edit-mode", !agencyEditing);
@@ -318,7 +328,7 @@
         if (target) target.value = String(formAgency[field] || "");
       });
       element("agency-edit-eyebrow").textContent = t(agencyCreating ? "agencyCreateEyebrow" : "agencyEditEyebrow");
-      element("agency-edit-title").textContent = t(agencyCreating ? "agencyCreateTitle" : "agencyEditTitle");
+      element("agency-edit-title").textContent = t(agencyCreating ? "agencyCreateFormTitle" : "agencyEditTitle");
       element("agency-edit-submit").textContent = t(agencyCreating ? "agencyCreateSave" : "agencyProfileSave");
     }
 

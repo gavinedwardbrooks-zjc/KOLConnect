@@ -287,6 +287,17 @@ async function run() {
   assert.equal(calls.filter(call => call.url === "/api/campaigns").length, 1);
   assert.equal(elements.get("campaign-list-body").children.length, 1);
   assert.equal(elements.get("campaign-list-count").textContent, "1 个 Campaign");
+  const initialRow = elements.get("campaign-list-body").children[0];
+  assert.equal(initialRow.children[3].className, "campaign-status-cell");
+  assert.equal(initialRow.children[3].children.length, 1, "status badge must remain one atomic element");
+  assert.equal(initialRow.children[3].children[0].className, "status-pill");
+  assert.equal(initialRow.children[4].className, "campaign-archive-cell");
+  assert.equal(initialRow.children[4].children.length, 1, "archive badge must remain one atomic element");
+  assert.equal(initialRow.children[5].className, "campaign-platform-cell");
+  assert.equal(initialRow.children[5].children.length, 1, "platform text must remain one atomic element");
+  assert.equal(initialRow.children[5].children[0].className, "campaign-platform-value");
+  assert.equal(initialRow.children[10].className, "campaign-actions-cell");
+  assert.equal(initialRow.children[10].children[0].className, "campaign-row-actions");
   assert.equal(elements.get("campaign-create-open").listenerCount("click"), 1);
   assert.equal(elements.get("campaign-date-filter-apply").listenerCount("click"), 1);
 
@@ -408,6 +419,13 @@ async function run() {
   assert.doesNotMatch(source, /\/api\/creator/);
   assert.doesNotMatch(source, /\bdelete\s*\(/i);
   assert.doesNotMatch(source, /\{\s*status:\s*["']draft["']\s*\}/);
+  const styles = read("webapp/styles.css");
+  assert.match(styles, /\.review-table\.campaign-table \{ min-width: 1450px; table-layout: fixed; \}/);
+  assert.match(styles, /#campaign-list-table-wrap \{ overflow-x: auto; \}/);
+  assert.match(styles, /\.campaign-table \.status-pill \{[\s\S]*?min-width: 64px;[\s\S]*?white-space: nowrap;/);
+  assert.match(styles, /\.campaign-platform-value \{[\s\S]*?display: inline-flex;[\s\S]*?white-space: nowrap;/);
+  assert.match(styles, /\.campaign-actions-cell \{ white-space: nowrap; \}/);
+  assert.match(html, /id="campaign-list-table-wrap"/);
   console.log("Phase 3.8 Campaign List UI: OK");
 }
 

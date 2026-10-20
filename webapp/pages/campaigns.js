@@ -91,10 +91,11 @@
       const row = document.createElement("tr");
       row.dataset.campaignId = String(campaign.campaign_id || "");
       row.appendChild(createCell(String(campaign.name || "--"), "campaign-name-cell"));
-      row.appendChild(createCell(String(campaign.product_name || "--")));
-      row.appendChild(createCell(String(Math.max(0, Number(campaign.creators_count) || 0))));
+      row.appendChild(createCell(String(campaign.product_name || "--"), "campaign-product-cell"));
+      row.appendChild(createCell(String(Math.max(0, Number(campaign.creators_count) || 0)), "campaign-count-cell"));
 
       const statusCell = document.createElement("td");
+      statusCell.className = "campaign-status-cell";
       const status = document.createElement("span");
       const statusValue = String(campaign.status || "draft");
       status.className = "status-pill";
@@ -104,6 +105,7 @@
       row.appendChild(statusCell);
 
       const archiveCell = document.createElement("td");
+      archiveCell.className = "campaign-archive-cell";
       const archiveStatus = document.createElement("span");
       archiveStatus.className = "status-pill";
       archiveStatus.dataset.status = archived ? "archived" : "active";
@@ -114,13 +116,20 @@
       const platformLabel = Array.isArray(campaign.platforms) && campaign.platforms.length
         ? campaign.platforms.join("、")
         : String(campaign.platform || t("campaignAnyPlatform"));
-      row.appendChild(createCell(platformLabel));
-      row.appendChild(createCell(formatBudget(campaign.budget)));
-      row.appendChild(createCell(String(campaign.start_date || "--")));
-      row.appendChild(createCell(String(campaign.end_date || "--")));
-      row.appendChild(createCell(String(campaign.owner || "--")));
+      const platformCell = document.createElement("td");
+      platformCell.className = "campaign-platform-cell";
+      const platformValue = document.createElement("span");
+      platformValue.className = "campaign-platform-value";
+      platformValue.textContent = platformLabel;
+      platformCell.appendChild(platformValue);
+      row.appendChild(platformCell);
+      row.appendChild(createCell(formatBudget(campaign.budget), "campaign-budget-cell"));
+      row.appendChild(createCell(String(campaign.start_date || "--"), "campaign-date-cell"));
+      row.appendChild(createCell(String(campaign.end_date || "--"), "campaign-date-cell"));
+      row.appendChild(createCell(String(campaign.owner || "--"), "campaign-owner-cell"));
 
       const actionsCell = document.createElement("td");
+      actionsCell.className = "campaign-actions-cell";
       const actions = document.createElement("div");
       actions.className = "campaign-row-actions";
       actions.appendChild(createAction("detail", campaign.campaign_id, t("campaignView")));
