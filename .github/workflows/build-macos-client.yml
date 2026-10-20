@@ -255,14 +255,22 @@ jobs:
           test -f "${webapp_root}/i18n.js" || fail_gate packaged_webapp_i18n
           packaged_settings="${webapp_root}/pages/settings.js"
           packaged_i18n="${webapp_root}/i18n.js"
+          packaged_agencies="${webapp_root}/pages/agencies.js"
+          packaged_campaigns="${webapp_root}/pages/campaigns.js"
           packaged_creator_library="${webapp_root}/pages/creator-library.js"
           packaged_api_client="${webapp_root}/services/api-client.js"
+          source_index="${FROZEN_PRODUCT_ROOT}/webapp/index.html"
+          source_styles="${FROZEN_PRODUCT_ROOT}/webapp/styles.css"
           source_settings="${FROZEN_PRODUCT_ROOT}/webapp/pages/settings.js"
           source_i18n="${FROZEN_PRODUCT_ROOT}/webapp/i18n.js"
+          source_agencies="${FROZEN_PRODUCT_ROOT}/webapp/pages/agencies.js"
+          source_campaigns="${FROZEN_PRODUCT_ROOT}/webapp/pages/campaigns.js"
           source_creator_library="${FROZEN_PRODUCT_ROOT}/webapp/pages/creator-library.js"
           source_api_client="${FROZEN_PRODUCT_ROOT}/webapp/services/api-client.js"
           test -f "${packaged_settings}" || fail_gate packaged_settings_file
           test -f "${packaged_i18n}" || fail_gate packaged_i18n_file
+          test -f "${packaged_agencies}" || fail_gate packaged_agencies_file
+          test -f "${packaged_campaigns}" || fail_gate packaged_campaigns_file
           test -f "${packaged_creator_library}" || fail_gate packaged_creator_library_file
           test -f "${packaged_api_client}" || fail_gate packaged_api_client_file
           echo "PACKAGED_SETTINGS_PATH=${packaged_settings}"
@@ -273,8 +281,18 @@ jobs:
           echo "PACKAGED_I18N_SHA256=$(shasum -a 256 "${packaged_i18n}" | awk '{print $1}')"
           cmp -s "${source_settings}" "${packaged_settings}" || fail_gate packaged_settings_source_mismatch
           cmp -s "${source_i18n}" "${packaged_i18n}" || fail_gate packaged_i18n_source_mismatch
+          cmp -s "${source_index}" "${webapp_index}" || fail_gate packaged_index_source_mismatch
+          cmp -s "${source_styles}" "${webapp_root}/styles.css" || fail_gate packaged_styles_source_mismatch
+          cmp -s "${source_agencies}" "${packaged_agencies}" || fail_gate packaged_agencies_source_mismatch
+          cmp -s "${source_campaigns}" "${packaged_campaigns}" || fail_gate packaged_campaigns_source_mismatch
           cmp -s "${source_creator_library}" "${packaged_creator_library}" || fail_gate packaged_creator_library_source_mismatch
           cmp -s "${source_api_client}" "${packaged_api_client}" || fail_gate packaged_api_client_source_mismatch
+          grep -Fq 'agencyCreateFormTitle' "${packaged_agencies}" || fail_gate packaged_agency_create_semantics
+          grep -Fq 'agency-form-actions' "${webapp_root}/styles.css" || fail_gate packaged_agency_create_layout
+          grep -Fq 'campaign-status-cell' "${packaged_campaigns}" || fail_gate packaged_campaign_status_layout
+          grep -Fq 'campaign-platform-value' "${packaged_campaigns}" || fail_gate packaged_campaign_platform_layout
+          grep -Fq '#campaign-list-table-wrap { overflow-x: auto; }' "${webapp_root}/styles.css" || fail_gate packaged_campaign_horizontal_scroll
+          grep -Fq '.review-table.campaign-table { min-width: 1450px; table-layout: fixed; }' "${webapp_root}/styles.css" || fail_gate packaged_campaign_table_layout
           grep -Fq 'FEISHU_FIELD_FETCH_FAILED: "settingsFeishuFieldFetchFailed"' "${packaged_settings}" || fail_gate packaged_settings_feishu_error
           grep -Fq 'FEISHU_CHAT_CONNECT_TIMEOUT: "settingsFeishuConnectTimeout"' "${packaged_settings}" || fail_gate packaged_settings_feishu_chat_diagnostics
           echo "SETTINGS_MARKER_FOUND=YES"
