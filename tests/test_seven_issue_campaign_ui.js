@@ -11,11 +11,23 @@ const styles = read("webapp/styles.css");
 const i18n = read("webapp/i18n.js");
 
 assert.match(styles, /\.campaign-platform-field\s*\{[^}]*grid-column:\s*1\s*\/\s*-1/s);
-assert.match(styles, /\.campaign-choice-list label\s*\{[^}]*min-width:\s*max-content[^}]*white-space:\s*nowrap/s);
+for (const platform of ["TikTok", "Instagram", "YouTube"]) {
+  assert.match(
+    html,
+    new RegExp(`<label class="campaign-platform-choice"><input[^>]*value="${platform}"><span>${platform}</span></label>`),
+  );
+}
+assert.match(styles, /\.campaign-platform-choice\s*\{[^}]*display:\s*inline-flex[^}]*white-space:\s*nowrap/s);
+assert.match(styles, /\.campaign-platform-choice\s*>\s*input\[type="checkbox"\][^{]*\{[^}]*width:\s*16px[^}]*height:\s*16px/s);
 
 assert.match(styles, /\.campaign-account-picker\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s);
 assert.match(styles, /\.campaign-account-options\s*\{[^}]*overflow-x:\s*hidden/s);
-assert.match(styles, /\.campaign-account-option span\s*\{[^}]*text-overflow:\s*ellipsis/s);
+assert.match(styles, /\.campaign-account-options\[hidden\]\s*\{\s*display:\s*none/s);
+assert.match(styles, /\.campaign-account-option\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*16px\s+minmax\(0,\s*1fr\)[^}]*min-height:\s*40px/s);
+assert.match(styles, /\.campaign-account-option span\s*\{[^}]*display:\s*block[^}]*text-overflow:\s*ellipsis[^}]*line-height:\s*1\.4/s);
+assert.match(html, /id="campaign-account-options" hidden/);
+assert.match(script, /optionsContainer\.hidden = eligible\.length === 0/);
+assert.match(script, /picker\.open = false;\s*optionsContainer\?\.replaceChildren\(\)/s);
 assert.match(html, /id="campaign-creator-account-id"[^>]*multiple[^>]*hidden/);
 
 const supportedCurrencies = [

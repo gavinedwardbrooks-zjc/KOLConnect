@@ -1412,10 +1412,10 @@
                 <legend data-i18n="campaignPlatformLabel">平台</legend>
                 <input id="campaign-platform" type="hidden" value="">
                 <div class="campaign-choice-list" id="campaign-platform-options">
-                  <label><input id="campaign-platform-any" type="checkbox" value="" checked><span data-i18n="campaignAnyPlatform">不限平台</span></label>
-                  <label><input type="checkbox" data-campaign-platform value="TikTok">TikTok</label>
-                  <label><input type="checkbox" data-campaign-platform value="Instagram">Instagram</label>
-                  <label><input type="checkbox" data-campaign-platform value="YouTube">YouTube</label>
+                  <label class="campaign-platform-choice"><input id="campaign-platform-any" type="checkbox" value="" checked><span data-i18n="campaignAnyPlatform">不限平台</span></label>
+                  <label class="campaign-platform-choice"><input type="checkbox" data-campaign-platform value="TikTok"><span>TikTok</span></label>
+                  <label class="campaign-platform-choice"><input type="checkbox" data-campaign-platform value="Instagram"><span>Instagram</span></label>
+                  <label class="campaign-platform-choice"><input type="checkbox" data-campaign-platform value="YouTube"><span>YouTube</span></label>
                 </div>
               </fieldset>
               <label class="field">
@@ -1644,8 +1644,8 @@
                   <div class="field">
                     <span data-i18n="campaignDetailPlannedAccountRequiredLabel">计划发布账号 *</span>
                     <details class="campaign-account-picker" id="campaign-account-picker">
-                      <summary id="campaign-account-summary" data-i18n="campaignDetailSelectCreatorFirst">请先选择达人</summary>
-                      <div class="campaign-account-options" id="campaign-account-options"></div>
+                      <summary><span id="campaign-account-summary" data-i18n="campaignDetailSelectCreatorFirst">请先选择达人</span></summary>
+                      <div class="campaign-account-options" id="campaign-account-options" hidden></div>
                     </details>
                     <select id="campaign-creator-account-id" multiple hidden aria-hidden="true" tabindex="-1"></select>
                     <small class="hint" data-i18n="campaignDetailAccountPickerHint">勾选后立即生效，可选择多个符合 Campaign 平台的账号。</small>

@@ -1099,23 +1099,41 @@ button:disabled {
   align-items: center;
 }
 
-.campaign-choice-list label,
+.campaign-platform-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 0;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .campaign-planned-date-row {
-  display: flex;
+  display: grid;
   align-items: center;
   gap: 7px;
 }
 
-.campaign-choice-list label {
+.campaign-platform-choice > input[type="checkbox"],
+.campaign-decision-control input,
+.campaign-account-option > input[type="checkbox"] {
   flex: 0 0 auto;
-  min-width: max-content;
-  white-space: nowrap;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border-radius: 3px;
+  -webkit-appearance: checkbox;
+  appearance: auto;
 }
 
-.campaign-choice-list input,
-.campaign-decision-control input,
-.campaign-account-option input {
-  flex: 0 0 auto;
+.campaign-platform-choice > span {
+  display: inline-block;
+  color: var(--text);
+  line-height: 1.4;
 }
 
 .campaign-decision-control {
@@ -1294,6 +1312,10 @@ button:disabled {
   cursor: pointer;
   list-style: none;
   min-width: 0;
+}
+
+.campaign-account-picker summary > span {
+  min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -1325,10 +1347,14 @@ button:disabled {
   box-shadow: var(--shadow-soft);
 }
 
+.campaign-account-options[hidden] { display: none; }
+
 .campaign-account-option {
-  display: flex;
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
   width: 100%;
   min-width: 0;
+  min-height: 40px;
   box-sizing: border-box;
   align-items: center;
   gap: 9px;
@@ -1338,10 +1364,13 @@ button:disabled {
 }
 
 .campaign-account-option span {
+  display: block;
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+  color: var(--text);
+  line-height: 1.4;
 }
 
 .campaign-account-option:hover { background: var(--surface-muted); }

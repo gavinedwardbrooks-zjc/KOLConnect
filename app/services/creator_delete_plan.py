@@ -35,6 +35,9 @@ def build_creator_delete_plan(snapshot: dict[str, Any]) -> dict[str, Any]:
         ("cooperations", impact["cooperations"], "BLOCK"),
         ("campaign_creators", impact["campaign_creators"]["total"], "DELETE"),
         ("follow_up_logs", impact["follow_up_logs"], "DELETE"),
+        ("mail_facts", impact.get("mail_facts", 0), "BLOCK"),
+        ("mail_follow_up_preferences", impact.get("mail_follow_up_preferences", 0), "BLOCK"),
+        ("mail_dependency_unknown", impact.get("mail_dependency_unknown", 0), "BLOCK"),
         ("data_protection", impact["data_protection"], "DELETE"),
         ("embedded_analysis_references", impact["embedded_analysis_references"], "BLOCK"),
     )

@@ -295,16 +295,35 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
 
         analysis_rows = self._matching(rows["_AnalysisData"], "creator_id", creator_id)
         embedded_analysis_references = 0
-        for row in rows["_AnalysisData"]:
+        for row_number, row in enumerate(rows["_AnalysisData"], start=2):
             raw = row.get("analysis_json")
-            if not isinstance(raw, str) or not raw.strip():
+            if raw is None or raw == "":
+                continue
+            if not isinstance(raw, str):
+                safety_blocks.append({
+                    "source": "analysis_data",
+                    "code": "ANALYSIS_DATA_JSON_SCHEMA_INVALID",
+                    "stable_id": f"row:{row_number}",
+                })
+                continue
+            if not raw.strip():
                 continue
             try:
                 analysis = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise RuntimeError("_AnalysisData 包含无法解析的结构化 JSON。") from exc
+            except (json.JSONDecodeError, TypeError):
+                safety_blocks.append({
+                    "source": "analysis_data",
+                    "code": "ANALYSIS_DATA_JSON_UNREADABLE",
+                    "stable_id": f"row:{row_number}",
+                })
+                continue
             if not isinstance(analysis, dict):
-                raise RuntimeError("_AnalysisData 的结构化 JSON 格式无效。")
+                safety_blocks.append({
+                    "source": "analysis_data",
+                    "code": "ANALYSIS_DATA_JSON_SCHEMA_INVALID",
+                    "stable_id": f"row:{row_number}",
+                })
+                continue
             if str(row.get("creator_id") or "") == creator_id:
                 continue
             if (
@@ -476,11 +495,26 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                 account_id_owners,
                 snapshot_id_owners,
             ),
+            lambda: (
+                [self._unresolved_locator(
+                    "task_artifacts", "scan-unavailable", "filesystem:task_directory"
+                )],
+                set(),
+                [self._unresolved_block("task_artifacts", "TASK_SCAN_UNAVAILABLE")],
+            ),
         )
         protection_locators, protection_blocks = self._scan_dependency(
             "data_protection",
             lambda: self._matching_protection_entries(
                 creator_id, account_uids, account_uid_owners
+            ),
+            lambda: (
+                [self._unresolved_locator(
+                    "data_protection", "scan-unavailable", "json:data_protection"
+                )],
+                [self._unresolved_block(
+                    "data_protection", "DATA_PROTECTION_SCAN_UNAVAILABLE"
+                )],
             ),
         )
         legacy_locators, legacy_blocks = self._scan_dependency(
@@ -488,7 +522,16 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
             lambda: self._matching_legacy_sources(
                 creator_id, account_uids, account_uid_owners, known_creator_ids
             ),
+            lambda: (
+                [self._unresolved_locator(
+                    "legacy_sources", "scan-unavailable", "filesystem:legacy_sources"
+                )],
+                [self._unresolved_block(
+                    "legacy_sources", "LEGACY_SOURCE_SCAN_UNAVAILABLE"
+                )],
+            ),
         )
+        mail_dependencies = self._scan_sqlite_mail_dependencies(creator_id, account_uids)
         task_ids = {str(item["stable_id"]) for item in task_locators}
         protection_uids = {str(item["stable_id"]) for item in protection_locators}
         legacy_ids = {str(item["stable_id"]) for item in legacy_locators}
@@ -498,6 +541,7 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                 "unmapped_task_artifacts": len(unmapped_task_ids),
                 "data_protection": len(protection_uids),
                 "legacy_sources": len(legacy_ids),
+                **mail_dependencies["impact"],
             },
             "structural_ids": {
                 "task_ids": sorted(task_ids),
@@ -510,19 +554,78 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                 "data_protection": protection_locators,
                 "legacy_sources": legacy_locators,
             },
-            "safety_blocks": [*task_blocks, *protection_blocks, *legacy_blocks],
+            "safety_blocks": [
+                *task_blocks,
+                *protection_blocks,
+                *legacy_blocks,
+                *mail_dependencies["safety_blocks"],
+            ],
         }
 
     @staticmethod
-    def _scan_dependency(dependency_stage: str, callback):
+    def _scan_dependency(dependency_stage: str, callback, fallback):
         try:
             return callback()
-        except CreatorDeleteImpactScanError:
-            raise
-        except Exception as exc:
-            raise CreatorDeleteImpactScanError(
-                dependency_stage, type(exc).__name__
-            ) from exc
+        except Exception:
+            return fallback()
+
+    def _scan_sqlite_mail_dependencies(
+        self, creator_id: str, account_uids: set[str]
+    ) -> dict[str, Any]:
+        factory = getattr(self.store, "factory", None)
+        if factory is None or not callable(getattr(factory, "read_connection", None)):
+            return {"impact": {}, "safety_blocks": []}
+
+        unknown = {
+            "impact": {"mail_facts": 0, "mail_follow_up_preferences": 0},
+            "safety_blocks": [],
+        }
+        try:
+            uid_values = sorted(account_uids)
+            uid_clause = ""
+            uid_parameters: list[str] = []
+            if uid_values:
+                placeholders = ",".join("?" for _ in uid_values)
+                uid_clause = f" OR matched_account_uid IN ({placeholders})"
+                uid_parameters = uid_values
+            with factory.read_connection() as connection:
+                message_count = int(connection.execute(
+                    f"SELECT COUNT(*) FROM mail_messages "
+                    f"WHERE matched_creator_id = ?{uid_clause}",
+                    [creator_id, *uid_parameters],
+                ).fetchone()[0])
+                address_count = int(connection.execute(
+                    f"SELECT COUNT(*) FROM mail_message_addresses "
+                    f"WHERE matched_creator_id = ?{uid_clause}",
+                    [creator_id, *uid_parameters],
+                ).fetchone()[0])
+                preference_count = int(connection.execute(
+                    "SELECT COUNT(*) FROM mail_follow_up_preferences WHERE creator_id = ?",
+                    (creator_id,),
+                ).fetchone()[0])
+        except Exception:
+            unknown["impact"]["mail_dependency_unknown"] = 1
+            unknown["safety_blocks"].append(self._unresolved_block(
+                "mail_dependencies", "MAIL_DEPENDENCY_SCAN_UNAVAILABLE"
+            ))
+            return unknown
+
+        mail_fact_count = message_count + address_count
+        unknown["impact"]["mail_facts"] = mail_fact_count
+        unknown["impact"]["mail_follow_up_preferences"] = preference_count
+        if mail_fact_count:
+            unknown["safety_blocks"].append({
+                "source": "mail_facts",
+                "code": "MAIL_FACTS_REQUIRE_RETENTION_POLICY",
+                "stable_id": "matched-history",
+            })
+        if preference_count:
+            unknown["safety_blocks"].append({
+                "source": "mail_follow_up_preferences",
+                "code": "MAIL_FOLLOW_UP_REQUIRES_RETENTION_POLICY",
+                "stable_id": "creator-preferences",
+            })
+        return unknown
 
     def _matching_task_artifacts(
         self,
@@ -855,6 +958,18 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
             "stable_id": stable_id,
             "storage_scope": storage_scope,
         }
+
+    @classmethod
+    def _unresolved_locator(
+        cls, resource_type: str, stable_id: str, storage_scope: str
+    ) -> dict[str, str]:
+        locator = cls._locator(resource_type, stable_id, storage_scope)
+        locator["ownership"] = "unresolved"
+        return locator
+
+    @staticmethod
+    def _unresolved_block(source: str, code: str) -> dict[str, str]:
+        return {"source": source, "code": code, "stable_id": "scan-unavailable"}
 
     @staticmethod
     def _matching(

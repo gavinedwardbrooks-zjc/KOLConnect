@@ -517,6 +517,50 @@ class SQLiteRuntimeCutoverTests(unittest.TestCase):
         self.assertEqual(1, len(intents))
         self.assertEqual("pending_remote", intents[0]["status"])
 
+    def test_delete_impact_blocks_retained_mail_dependencies(self) -> None:
+        factory = self.factory()
+        with factory.store.factory.write_transaction() as connection:
+            connection.execute(
+                "INSERT INTO mail_accounts "
+                "(mail_account_id, identity_key, created_at) VALUES (?, ?, ?)",
+                ("mail_account_delete_guard", "guard@example.test", "2026-10-20T00:00:00Z"),
+            )
+            connection.execute(
+                "INSERT INTO mail_messages "
+                "(mail_message_id, mail_account_id, direction, observed_at, "
+                "match_status, matched_creator_id) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    "mail_message_delete_guard",
+                    "mail_account_delete_guard",
+                    "inbound",
+                    "2026-10-20T00:00:00Z",
+                    "matched",
+                    "creator_0003",
+                ),
+            )
+            connection.execute(
+                "INSERT INTO mail_follow_up_preferences "
+                "(creator_id, correspondent_email_normalized, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?)",
+                (
+                    "creator_0003",
+                    "creator@example.test",
+                    "2026-10-20T00:00:00Z",
+                    "2026-10-20T00:00:00Z",
+                ),
+            )
+
+        result = CreatorDeleteImpactService(
+            factory.creator_delete_impact
+        ).get_delete_impact("creator_0003")
+        codes = {item["code"] for item in result["blockers"]}
+
+        self.assertEqual(1, result["impact"]["mail_facts"])
+        self.assertEqual(1, result["impact"]["mail_follow_up_preferences"])
+        self.assertIn("MAIL_FACTS_REQUIRE_RETENTION_POLICY", codes)
+        self.assertIn("MAIL_FOLLOW_UP_REQUIRES_RETENTION_POLICY", codes)
+        self.assertFalse(result["can_delete"])
+
     def test_thread_affine_concurrent_reads_and_bounded_write(self) -> None:
         def read_creator(_index: int) -> int:
             return len(self.factory().creator().getCreators(include_archived=True))

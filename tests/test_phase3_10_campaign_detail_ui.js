@@ -16,6 +16,19 @@ class FakeElement {
     this.textContent = "";
     this.value = "";
     this.parentElement = null;
+    this.open = false;
+    this.attributes = new Map();
+    const classes = new Set();
+    this.classList = {
+      add: value => classes.add(value),
+      remove: value => classes.delete(value),
+      contains: value => classes.has(value),
+      toggle: (value, force) => {
+        const enabled = force === undefined ? !classes.has(value) : Boolean(force);
+        if (enabled) classes.add(value); else classes.delete(value);
+        return enabled;
+      },
+    };
   }
 
   addEventListener(type, listener) {
@@ -45,6 +58,18 @@ class FakeElement {
   replaceChildren(...children) {
     this.children = [];
     this.append(...children);
+  }
+
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
+  }
+
+  contains(node) {
+    return node === this || this.children.some(child => child.contains?.(node));
   }
 
   closest(selector) {
@@ -96,7 +121,8 @@ async function run() {
     "campaign-detail-overview", "campaign-detail-goal", "campaign-detail-readonly",
     "campaign-creator-count", "campaign-creator-add-open", "campaign-creator-list-header", "campaign-creator-list-content", "campaign-creator-form-card",
     "campaign-creator-form-title", "campaign-creator-form", "campaign-creator-id",
-    "campaign-creator-account-id", "campaign-creator-stage", "campaign-creator-quote-currency",
+    "campaign-creator-account-id", "campaign-account-picker", "campaign-account-summary",
+    "campaign-account-options", "campaign-creator-stage", "campaign-creator-quote-currency",
     "campaign-creator-quote-unit-amount", "campaign-creator-quote-quantity",
     "campaign-creator-quote-unit", "campaign-creator-quote", "campaign-creator-cost",
     "campaign-creator-cost-currency", "campaign-creator-publish-links", "campaign-creator-publish-date",
@@ -181,10 +207,11 @@ async function run() {
   const creators = [
     { creator_id: "creator_one", creator_name: "Ana", platform: "TikTok" },
     { creator_id: "creator_two", creator_name: "Bella", platform: "Instagram" },
+    { creator_id: "creator_three", creator_name: "No Account", platform: "Instagram" },
   ];
   const accounts = {
     creator_one: [{ account_id: "account_one", platform: "TikTok", profile_url: "https://www.tiktok.com/@ana" }],
-    creator_two: [{ account_id: "account_two", platform: "Instagram", profile_url: "https://www.instagram.com/bella" }],
+    creator_two: [{ account_id: "account_two", platform: "TikTok", profile_url: "https://www.tiktok.com/@bella" }],
   };
   const calls = [];
   let executionFailure = false;
@@ -305,6 +332,9 @@ async function run() {
     campaignDetailSaveRelation: "保存合作记录", campaignSaving: "正在保存...", campaignDetailCreatorRequired: "请选择要加入 Campaign 的达人。",
     campaignDetailRateInvalid: "请输入大于 0 的汇率。",
     campaignDetailExecutionAccountRequired: "请选择本次合作使用的执行账号。", campaignDetailRelationUpdated: "达人合作记录已更新。",
+    campaignDetailLoadingAccounts: "正在加载账号...", campaignDetailNoEligibleAccounts: "该达人暂无符合平台的账号",
+    campaignDetailSelectPlannedAccount: "请选择计划发布账号", campaignDetailSelectedAccount: "已选择：{account}",
+    campaignDetailSelectedAccounts: "已选择 {count} 个账号",
     campaignDetailCreatorAdded: "达人已加入 Campaign。", campaignDetailRelationSaveFailed: "合作记录保存失败。",
     campaignDetailExecutionPartialSave: "合作记录已保存，但下一步信息未保存：{reason}。请重试。",
     campaignDetailNotFound: "Campaign 不存在或已删除。", campaignDetailLoadFailed: "Campaign 详情加载失败，请稍后重试。",
@@ -460,6 +490,24 @@ async function run() {
   elements.get("campaign-creator-id").value = "creator_two";
   await elements.get("campaign-creator-id").dispatch("change");
   assert.equal(calls.splice(0)[0].url, "/api/creator-library/creator_two");
+  const picker = elements.get("campaign-account-picker");
+  const optionList = elements.get("campaign-account-options");
+  assert.equal(optionList.hidden, false, "eligible accounts must expose the menu content");
+  assert.equal(optionList.children.length, 1);
+  assert.equal(optionList.children[0].children[0].type, "checkbox");
+  assert.match(optionList.children[0].children[1].textContent, /TikTok/);
+  picker.open = true;
+  elements.get("campaign-creator-id").value = "creator_three";
+  await elements.get("campaign-creator-id").dispatch("change");
+  assert.equal(calls.splice(0)[0].url, "/api/creator-library/creator_three");
+  assert.equal(picker.open, false, "no-account transition must close the menu");
+  assert.equal(optionList.hidden, true, "no-account transition must remove the menu from layout");
+  assert.equal(optionList.children.length, 0, "stale options must be cleared");
+  assert.equal(picker.getAttribute("aria-disabled"), "true");
+  elements.get("campaign-creator-id").value = "creator_two";
+  await elements.get("campaign-creator-id").dispatch("change");
+  assert.equal(optionList.hidden, false, "switching back must restore only the current creator options");
+  assert.equal(optionList.children.length, 1);
   elements.get("campaign-creator-account-id").value = "account_two";
   elements.get("campaign-creator-stage").value = "quoted";
   elements.get("campaign-creator-quote-currency").value = "USD";

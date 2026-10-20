@@ -368,6 +368,52 @@ class DeletePlanClassificationTests(WorkspaceTestCase):
         self.assertIn("UNKNOWN_FOLLOWUP_OBJECT_TYPE", codes)
         self.assertFalse(result["can_delete"])
 
+    def test_malformed_embedded_analysis_becomes_visible_blocker(self) -> None:
+        self.seed_creator("creator_target", "account_target", "uid_target")
+        self.append("_AnalysisData", {
+            "creator_id": "creator_target",
+            "analysis_json": "[not-a-valid-analysis-object]",
+        })
+        self.append("_AnalysisData", {
+            "creator_id": "creator_target",
+            "analysis_json": "[]",
+        })
+
+        result = CreatorDeleteImpactService(
+            self.factory.creator_delete_impact
+        ).get_delete_impact("creator_target")
+
+        blocker = next(
+            item for item in result["blockers"]
+            if item["code"] == "ANALYSIS_DATA_JSON_UNREADABLE"
+        )
+        self.assertEqual("发现无法验证的历史数据，已阻止删除。", blocker["message"])
+        self.assertIn(
+            "ANALYSIS_DATA_JSON_SCHEMA_INVALID",
+            {item["code"] for item in result["blockers"]},
+        )
+        self.assertFalse(result["can_delete"])
+
+    def test_auxiliary_scan_exception_becomes_visible_blocker(self) -> None:
+        self.seed_creator("creator_target", "account_target", "uid_target")
+        repository = self.factory.creator_delete_impact()
+
+        with mock.patch.object(
+            repository,
+            "_matching_task_artifacts",
+            side_effect=PermissionError("protected path"),
+        ):
+            result = CreatorDeleteImpactService(
+                lambda: repository
+            ).get_delete_impact("creator_target")
+
+        blocker = next(
+            item for item in result["blockers"]
+            if item["code"] == "TASK_SCAN_UNAVAILABLE"
+        )
+        self.assertEqual("发现无法验证的历史数据，已阻止删除。", blocker["message"])
+        self.assertFalse(result["can_delete"])
+
     def test_policy_version_participates_in_deterministic_fingerprint(self) -> None:
         self.seed_creator("creator_target", "account_target", "uid_target")
         service = CreatorDeleteImpactService(self.factory.creator_delete_impact)

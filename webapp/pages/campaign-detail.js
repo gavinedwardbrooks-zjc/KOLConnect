@@ -948,9 +948,14 @@
     });
     if (!Array.isArray(selectedIds) && selectedIds) select.value = String(selectedIds);
     select.disabled = eligible.length === 0;
+    if (optionsContainer) optionsContainer.hidden = eligible.length === 0;
     if (picker) {
       picker.classList.toggle("is-disabled", eligible.length === 0);
-      if (!eligible.length) picker.open = false;
+      picker.setAttribute("aria-disabled", eligible.length === 0 ? "true" : "false");
+      if (!eligible.length) {
+        picker.open = false;
+        optionsContainer?.replaceChildren();
+      }
     }
     updateAccountSelectionSummary(eligible.length);
   }
@@ -975,6 +980,13 @@
     if (picker?.open && !picker.contains(event.target)) picker.open = false;
   }
 
+  function keepDisabledAccountPickerClosed(event) {
+    const picker = element("campaign-account-picker");
+    if (!picker?.classList.contains("is-disabled")) return;
+    event?.preventDefault?.();
+    picker.open = false;
+  }
+
   async function loadAccounts(creatorId, selectedId = "") {
     const normalizedId = String(creatorId || "");
     if (!normalizedId) {
@@ -990,8 +1002,9 @@
     accountsController?.abort();
     accountsController = resources.createAbortController();
     const select = element("campaign-creator-account-id");
-    select.disabled = true;
-    select.replaceChildren();
+    renderAccountOptions([]);
+    const summary = element("campaign-account-summary");
+    if (summary) summary.textContent = t("campaignDetailLoadingAccounts");
     appendOption(select, "", t("campaignDetailLoadingAccounts"));
     try {
       const data = await global.KOLConnectAPI.get(
@@ -1579,6 +1592,8 @@
       listen("campaign-creator-form-cancel", "click", closeCreatorForm);
       listen("campaign-creator-form", "submit", saveRelation);
       listen("campaign-creator-id", "change", handleCreatorChange);
+      listen("campaign-account-picker", "toggle", keepDisabledAccountPickerClosed);
+      listen("campaign-account-picker", "click", keepDisabledAccountPickerClosed);
       listen("campaign-creator-quote-unit-amount", "input", updateStructuredQuoteTotal);
       listen("campaign-creator-quote-quantity", "input", updateStructuredQuoteTotal);
       ["campaign-creator-quote-currency", "campaign-creator-cost-currency", "campaign-creator-cost"].forEach(id => {

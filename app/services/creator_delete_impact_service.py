@@ -185,6 +185,9 @@ class CreatorDeleteImpactService:
             "cooperations": "COOPERATION_RETENTION_ANONYMIZATION_GAP",
             "campaign_creators": "CAMPAIGN_RELATION_DELETE_BLOCKED",
             "follow_up_logs": "FOLLOWUP_DELETE_BLOCKED",
+            "mail_facts": "MAIL_FACTS_REQUIRE_RETENTION_POLICY",
+            "mail_follow_up_preferences": "MAIL_FOLLOW_UP_REQUIRES_RETENTION_POLICY",
+            "mail_dependency_unknown": "MAIL_DEPENDENCY_SCAN_UNAVAILABLE",
             "task_artifacts": "UNSAFE_TASK_ARTIFACT",
             "unmapped_task_artifacts": "UNRESOLVED_TASK_OWNERSHIP",
             "data_protection": "SHARED_DATA_PROTECTION_UID",
@@ -202,7 +205,11 @@ class CreatorDeleteImpactService:
         for item in snapshot.get("safety_blocks", []):
             code = str(item.get("code") or "DELETE_SAFETY_BLOCK")
             if code not in seen_codes:
-                add(code, f"{item.get('source') or 'resource'} 的定位或所有权不安全。")
+                if any(token in code for token in ("UNREADABLE", "INVALID", "UNAVAILABLE")):
+                    message = "发现无法验证的历史数据，已阻止删除。"
+                else:
+                    message = f"{item.get('source') or 'resource'} 的定位或所有权不安全。"
+                add(code, message)
                 seen_codes.add(code)
         unknown_followups = snapshot["unknown_followup_reference_count"]
         if unknown_followups:
