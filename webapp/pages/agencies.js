@@ -260,7 +260,9 @@
     setField("agency-detail-country", agency.country);
     setField("agency-detail-website", agency.website);
     setField("agency-detail-email", agency.public_email);
+    setField("agency-detail-whatsapp", agency.whatsapp);
     setField("agency-detail-stage", agency.cooperation_stage);
+    setField("agency-detail-tags", agency.tags);
     setField("agency-detail-owner", agency.owner);
     setField("agency-detail-note", agency.note);
     renderContacts(contacts);
@@ -270,8 +272,9 @@
   }
 
   function setDetailMode(mode, contact = null) {
-    detailMode = ["view", "agency-edit", "contact-edit"].includes(mode) ? mode : "view";
-    const agencyEditing = detailMode === "agency-edit";
+    detailMode = ["view", "agency-edit", "agency-create", "contact-edit"].includes(mode) ? mode : "view";
+    const agencyCreating = detailMode === "agency-create";
+    const agencyEditing = detailMode === "agency-edit" || agencyCreating;
     const contactEditing = detailMode === "contact-edit";
     const setHidden = (id, hidden) => {
       const target = element(id);
@@ -301,16 +304,22 @@
     setHidden("agency-creators-card", agencyEditing || contactEditing);
     setHidden("agency-campaigns-card", agencyEditing || contactEditing);
 
-    if (agencyEditing && activeAgency) {
+    if (agencyEditing) {
+      const formAgency = agencyCreating ? {} : (activeAgency || {});
       [
         ["agency-edit-name", "name"], ["agency-edit-country", "country"],
         ["agency-edit-website", "website"], ["agency-edit-email", "public_email"],
+        ["agency-edit-whatsapp", "whatsapp"],
         ["agency-edit-stage", "cooperation_stage"], ["agency-edit-owner", "owner"],
+        ["agency-edit-tags", "tags"],
         ["agency-edit-note", "note"],
       ].forEach(([id, field]) => {
         const target = element(id);
-        if (target) target.value = String(activeAgency[field] || "");
+        if (target) target.value = String(formAgency[field] || "");
       });
+      element("agency-edit-eyebrow").textContent = t(agencyCreating ? "agencyCreateEyebrow" : "agencyEditEyebrow");
+      element("agency-edit-title").textContent = t(agencyCreating ? "agencyCreateTitle" : "agencyEditTitle");
+      element("agency-edit-submit").textContent = t(agencyCreating ? "agencyCreateSave" : "agencyProfileSave");
     }
 
     if (contactEditing) {
@@ -343,24 +352,43 @@
 
   async function saveAgencyEdit(event) {
     event.preventDefault();
-    if (!activeAgencyId) return;
+    const creating = detailMode === "agency-create";
+    if (!creating && !activeAgencyId) return;
+    const name = element("agency-edit-name").value.trim();
+    if (!name) {
+      app().showError(new Error(t("agencyNameRequired")));
+      return;
+    }
     const payload = {
-      agency_id: activeAgencyId,
-      name: element("agency-edit-name").value.trim(),
+      name,
       country: element("agency-edit-country").value.trim(),
       website: element("agency-edit-website").value.trim(),
       public_email: element("agency-edit-email").value.trim(),
+      whatsapp: element("agency-edit-whatsapp").value.trim(),
       cooperation_stage: element("agency-edit-stage").value.trim(),
+      tags: element("agency-edit-tags").value.trim(),
       owner: element("agency-edit-owner").value.trim(),
       note: element("agency-edit-note").value.trim(),
     };
+    if (!creating) payload.agency_id = activeAgencyId;
     try {
-      await global.KOLConnectAPI.post("/api/local/agencies", payload, { signal: detailResources?.signal });
+      const result = await global.KOLConnectAPI.post("/api/local/agencies", payload, { signal: detailResources?.signal });
+      if (creating) {
+        const createdAgencyId = String(result?.agency?.agency_id || "").trim();
+        if (!createdAgencyId) throw new Error(t("agencyCreateFailed"));
+        app().showSaved(t("agencyCreated"));
+        await app().navigate("agency-detail", { agencyId: createdAgencyId, mode: "view" });
+        return;
+      }
       resetDetailMode();
       await loadAgencyDetail();
       app().showSaved(t("agencyProfileSaved"));
     } catch (error) {
-      app().showError(agencyDeleteBlockerError(error));
+      if (creating && error?.code === "INTERNAL_SERVER_ERROR") {
+        app().showError(new Error(t("agencyCreateFailed")));
+      } else {
+        app().showError(agencyDeleteBlockerError(error));
+      }
     }
   }
 
@@ -494,6 +522,7 @@
       await loadAgencies();
     },
     bind() {
+      listen(listResources, "agency-create-open", "click", () => app().navigate("agency-detail", { mode: "create" }));
       listen(listResources, "agency-list-refresh", "click", loadAgencies);
       listen(listResources, "agency-list-retry", "click", loadAgencies);
       listen(listResources, "agency-list-body", "click", event => {
@@ -521,7 +550,19 @@
       detailResources = global.KOLConnectPageResources.create();
       detailLifecycle += 1;
       activeAgencyId = String(context?.agencyId || "").trim();
-      requestedDetailMode = context?.mode === "edit" ? "agency-edit" : "view";
+      requestedDetailMode = context?.mode === "create"
+        ? "agency-create"
+        : (context?.mode === "edit" ? "agency-edit" : "view");
+      if (requestedDetailMode === "agency-create") {
+        activeAgency = null;
+        activeContacts = [];
+        activeCreators = [];
+        element("agency-detail-title").textContent = t("agencyCreateTitle");
+        element("agency-detail-subtitle").textContent = t("agencyCreateSubtitle");
+        setDetailState("loaded");
+        setDetailMode("agency-create");
+        return;
+      }
       if (!activeAgencyId) {
         setDetailState("error", "缺少 Agency ID，请返回列表重新进入。");
         return;
@@ -532,7 +573,10 @@
       listen(detailResources, "agency-detail-back", "click", () => app().navigate("agencies"));
       listen(detailResources, "agency-detail-retry", "click", loadAgencyDetail);
       listen(detailResources, "agency-detail-edit", "click", () => setEditFormVisible(true));
-      listen(detailResources, "agency-edit-cancel", "click", () => setEditFormVisible(false));
+      listen(detailResources, "agency-edit-cancel", "click", () => {
+        if (detailMode === "agency-create") return app().navigate("agencies");
+        setEditFormVisible(false);
+      });
       listen(detailResources, "agency-edit-form", "submit", saveAgencyEdit);
       listen(detailResources, "agency-detail-delete", "click", deleteAgency);
       listen(detailResources, "agency-contact-add-open", "click", () => setContactEditFormVisible(true));

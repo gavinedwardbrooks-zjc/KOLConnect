@@ -81,15 +81,15 @@ function findByDataset(root, key, value) {
 
 function createEnvironment() {
   const ids = [
-    "agency-list-refresh", "agency-list-count", "agency-list-loading", "agency-list-error",
+    "agency-create-open", "agency-list-refresh", "agency-list-count", "agency-list-loading", "agency-list-error",
     "agency-list-error-message", "agency-list-retry", "agency-list-empty", "agency-list-table-wrap",
     "agency-list-body", "agency-overview-total", "agency-overview-creators", "agency-overview-contacts",
     "agency-detail-title", "agency-detail-subtitle", "agency-detail-back", "agency-detail-loading",
     "agency-detail-error", "agency-detail-error-message", "agency-detail-retry", "agency-detail-content",
     "agency-profile-card", "agency-profile-actions", "agency-profile-readonly", "agency-edit-form", "agency-edit-form-home", "agency-edit-mode", "agency-edit-form-host",
-    "agency-detail-edit", "agency-edit-cancel", "agency-edit-name", "agency-edit-country", "agency-edit-website", "agency-edit-email", "agency-edit-stage", "agency-edit-owner", "agency-edit-note",
+    "agency-detail-edit", "agency-edit-cancel", "agency-edit-submit", "agency-edit-eyebrow", "agency-edit-title", "agency-edit-name", "agency-edit-country", "agency-edit-website", "agency-edit-email", "agency-edit-whatsapp", "agency-edit-stage", "agency-edit-tags", "agency-edit-owner", "agency-edit-note",
     "agency-detail-name", "agency-detail-country", "agency-detail-website", "agency-detail-email",
-    "agency-detail-stage", "agency-detail-owner", "agency-detail-note", "agency-contact-count",
+    "agency-detail-whatsapp", "agency-detail-stage", "agency-detail-tags", "agency-detail-owner", "agency-detail-note", "agency-contact-count",
     "agency-contacts-card", "agency-contacts-heading", "agency-contact-add-open", "agency-contacts-empty", "agency-contacts-table-wrap", "agency-contacts-body", "agency-creator-count",
     "agency-creators-empty", "agency-creators-table-wrap", "agency-creators-body", "agency-campaign-count",
     "agency-creators-card", "agency-campaigns-card",
@@ -196,6 +196,18 @@ function createEnvironment() {
     async post(url, payload, options = {}) {
       calls.push({ method: "POST", url, payload, signal: options.signal });
       if (url === "/api/local/agencies") {
+        if (!payload.agency_id) {
+          const agency = {
+            ...payload,
+            agency_id: "agency_created",
+            created_at: "2026-10-20T00:00:00Z",
+            updated_at: "2026-10-20T00:00:00Z",
+            contact_count: 0,
+            creator_count: 0,
+          };
+          state.agencies.push(agency);
+          return { agency: structuredClone(agency) };
+        }
         state.detail.agency = { ...state.detail.agency, ...payload };
         state.agencies = state.agencies.map(agency => agency.agency_id === payload.agency_id ? { ...agency, ...payload } : agency);
         return { agency: structuredClone(state.detail.agency) };
@@ -228,7 +240,7 @@ function createEnvironment() {
       showSaved(message) { notifications.saved.push(message); },
       showError(error) { notifications.errors.push(error.message); },
       t(key, values = {}) {
-        const templates = { agencyCount: "{count} 个 Agency", agencyContacts: "{count} 位联系人", agencyCreators: "{count} 位达人", agencyMore: "更多", agencyDelete: "删除 Agency", agencyListLoadFailed: "Agency 列表加载失败，请稍后重试。", agencyProfileSaved: "Agency 资料已保存。", agencyDeleteConfirm: "删除 Agency？\n删除后无法恢复。", agencyDeleted: "Agency 已删除。", agencyContactSaved: "联系人资料已保存。", agencyContactDeleted: "联系人已删除。", agencyUnlinked: "已解除达人与 Agency 的关联。" };
+        const templates = { agencyCount: "{count} 个 Agency", agencyContacts: "{count} 位联系人", agencyCreators: "{count} 位达人", agencyMore: "更多", agencyDelete: "删除 Agency", agencyListLoadFailed: "Agency 列表加载失败，请稍后重试。", agencyProfileSave: "保存 Agency", agencyProfileSaved: "Agency 资料已保存。", agencyCreateEyebrow: "CREATE AGENCY", agencyCreateTitle: "新增 Agency", agencyCreateSubtitle: "创建合作机构后，可继续添加联系人并关联达人。", agencyCreateSave: "创建 Agency", agencyNameRequired: "请输入 Agency 名称。", agencyCreateFailed: "Agency 创建失败，请稍后重试。", agencyCreated: "Agency 已创建。", agencyDeleteConfirm: "删除 Agency？\n删除后无法恢复。", agencyDeleted: "Agency 已删除。", agencyContactSaved: "联系人资料已保存。", agencyContactDeleted: "联系人已删除。", agencyUnlinked: "已解除达人与 Agency 的关联。" };
         return String(templates[key] || key).replace(/\{(\w+)\}/g, (_, name) => String(values[name] ?? ""));
       },
     },
@@ -255,6 +267,58 @@ async function run() {
   assert.equal(elements.get("agency-overview-creators").textContent, "2");
   assert.equal(elements.get("agency-overview-contacts").textContent, "1");
   assert.equal(calls.filter(call => call.url === "/api/local/agencies").length, 1);
+
+  await elements.get("agency-create-open").dispatch("click");
+  assert.equal(navigation.at(-1).page, "agency-detail");
+  assert.equal(navigation.at(-1).params.mode, "create");
+
+  const detailGetsBeforeCreate = calls.filter(
+    call => call.method === "GET" && call.url.startsWith("/api/local/agencies/")
+  ).length;
+  await window.KOLConnectPages.navigate("agency-detail", { mode: "create" });
+  assert.equal(elements.get("agency-edit-mode").hidden, false, "create mode reuses the focused Agency editor");
+  assert.equal(elements.get("agency-edit-form").hidden, false);
+  assert.equal(elements.get("agency-profile-card").hidden, true);
+  assert.equal(elements.get("agency-contacts-card").hidden, true, "contacts are unavailable until the Agency exists");
+  assert.equal(elements.get("agency-edit-title").textContent, "新增 Agency");
+  assert.equal(elements.get("agency-edit-name").value, "");
+  assert.equal(
+    calls.filter(call => call.method === "GET" && call.url.startsWith("/api/local/agencies/")).length,
+    detailGetsBeforeCreate,
+    "create mode must not fetch or create a placeholder Agency",
+  );
+
+  await elements.get("agency-edit-form").dispatch("submit");
+  assert.match(notifications.errors.at(-1), /Agency 名称/);
+  assert.equal(
+    calls.filter(call => call.method === "POST" && call.url === "/api/local/agencies").length,
+    0,
+    "blank create must fail before persistence",
+  );
+
+  elements.get("agency-edit-name").value = "Created Studio";
+  elements.get("agency-edit-country").value = "BR";
+  elements.get("agency-edit-website").value = "https://created.example";
+  elements.get("agency-edit-email").value = "hello@created.example";
+  elements.get("agency-edit-whatsapp").value = "+55 11 5555";
+  elements.get("agency-edit-stage").value = "prospect";
+  elements.get("agency-edit-tags").value = "gaming";
+  elements.get("agency-edit-owner").value = "Owner";
+  elements.get("agency-edit-note").value = "New partner";
+  await elements.get("agency-edit-form").dispatch("submit");
+  const createCall = calls.filter(
+    call => call.method === "POST" && call.url === "/api/local/agencies"
+  ).at(-1);
+  assert.equal(Object.hasOwn(createCall.payload, "agency_id"), false, "server owns generated Agency IDs");
+  assert.equal(createCall.payload.whatsapp, "+55 11 5555");
+  assert.equal(createCall.payload.tags, "gaming");
+  assert.equal(navigation.at(-1).params.agencyId, "agency_created");
+  assert.equal(navigation.at(-1).params.mode, "view");
+  assert.match(notifications.saved.at(-1), /Agency 已创建/);
+
+  await window.KOLConnectPages.navigate("agencies");
+  assert.equal(elements.get("agency-list-body").children.length, 2, "the created Agency appears without restarting the app");
+  assert.equal(elements.get("agency-overview-total").textContent, "2");
 
   const detailButton = findByDataset(elements.get("agency-list-body"), "agencyDetailId", "agency_one");
   assert.ok(detailButton, "Agency list must provide a detail action");
@@ -367,12 +431,12 @@ async function run() {
   state.deleteError = true;
   await elements.get("agency-list-body").dispatch("click", { target: deleteButton });
   assert.match(notifications.errors.at(-1), /暂时无法删除 Agency/, "delete conflicts must explain the next action");
-  assert.equal(elements.get("agency-list-body").children.length, 1, "failed deletion must retain the row");
+  assert.equal(elements.get("agency-list-body").children.length, 2, "failed deletion must retain the row");
 
   state.deleteError = false;
   await elements.get("agency-list-body").dispatch("click", { target: deleteButton });
   assert.equal(calls.filter(call => call.method === "DELETE" && call.url === "/api/local/agencies/agency_one").length, 2);
-  assert.equal(elements.get("agency-list-body").children.length, 0, "successful deletion must refresh the list");
+  assert.equal(elements.get("agency-list-body").children.length, 1, "successful deletion must refresh the list");
   assert.match(notifications.saved.at(-1), /Agency 已删除/);
 
   const source = read("webapp/pages/agencies.js");
@@ -390,6 +454,8 @@ async function run() {
   assert.match(source, /contact\.agency_id/);
   assert.match(source, /\/api\/campaigns\?creator_id=/);
   assert.match(html, /data-page="agencies"/);
+  assert.match(html, /id="agency-create-open"/);
+  assert.match(html, /data-i18n="agencyEmpty"[^>]*>暂无 Agency。点击“新增 Agency”/);
   assert.match(html, /data-page="agency-detail"/);
   assert.match(html, /id="agency-detail-edit"/);
   assert.match(html, /id="agency-edit-form"/);
@@ -400,6 +466,8 @@ async function run() {
   assert.match(html, /id="agency-contact-add-open"/);
   assert.match(html, /<th>操作<\/th>/);
   assert.match(html, /src="pages\/agencies\.js"/);
+  assert.match(read("webapp/pages/creator-library.js"), /get\("\/api\/local\/agencies"/);
+  assert.match(read("webapp/pages/creator-library-detail.js"), /get\("\/api\/local\/agencies"/);
 
   console.log("M4.3 Agency list and detail UI: OK");
 }

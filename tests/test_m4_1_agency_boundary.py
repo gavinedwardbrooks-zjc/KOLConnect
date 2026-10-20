@@ -236,7 +236,8 @@ class AgencyBoundaryHttpTests(unittest.TestCase):
             "POST", "/api/local/agencies", {"name": ""}
         )
         self.assertEqual(400, status)
-        self.assertEqual("Agency 名称不能为空。", error["error"])
+        self.assertEqual("AGENCY_NAME_REQUIRED", error["error"]["code"])
+        self.assertEqual("Agency 名称不能为空。", error["error"]["message"])
         status, error = self.request(
             "POST",
             "/api/local/agency-contacts",
@@ -247,6 +248,85 @@ class AgencyBoundaryHttpTests(unittest.TestCase):
         status, error = self.request("GET", "/api/local/agencies/missing")
         self.assertEqual(404, status)
         self.assertEqual("未找到 Agency。", error["error"])
+
+    def test_agency_create_without_id_persists_supported_fields_and_timestamps(self) -> None:
+        payload = {
+            "name": "  Duplicate Name  ",
+            "country": "Brazil",
+            "website": "https://agency.example",
+            "public_email": "hello@agency.example",
+            "whatsapp": "+55 11 5555",
+            "cooperation_stage": "prospect",
+            "tags": "gaming, mobile",
+            "owner": "Alex",
+            "note": "Optional fields remain optional.",
+        }
+        status, first = self.request("POST", "/api/local/agencies", payload)
+        self.assertEqual(200, status)
+        first_agency = first["agency"]
+        self.assertRegex(first_agency["agency_id"], r"^agency_[0-9a-f]{16}$")
+        self.assertEqual("Duplicate Name", first_agency["name"])
+        self.assertEqual("+55 11 5555", first_agency["whatsapp"])
+        self.assertEqual("gaming, mobile", first_agency["tags"])
+        self.assertTrue(first_agency["created_at"])
+        self.assertEqual(first_agency["created_at"], first_agency["updated_at"])
+
+        status, second = self.request(
+            "POST", "/api/local/agencies", {"name": "Duplicate Name"}
+        )
+        self.assertEqual(
+            200, status, "duplicate names remain allowed by the current contract"
+        )
+        self.assertNotEqual(
+            first_agency["agency_id"], second["agency"]["agency_id"]
+        )
+
+        _, before_blank = self.request("GET", "/api/local/agencies")
+        status, blank = self.request(
+            "POST", "/api/local/agencies", {"name": "   "}
+        )
+        self.assertEqual(400, status)
+        self.assertEqual("AGENCY_NAME_REQUIRED", blank["error"]["code"])
+        self.assertEqual(
+            "Agency 名称不能为空。", blank["error"]["message"]
+        )
+        _, after_blank = self.request("GET", "/api/local/agencies")
+        self.assertEqual(
+            len(before_blank["agencies"]),
+            len(after_blank["agencies"]),
+            "invalid create must not leave a placeholder row",
+        )
+
+        status, updated = self.request(
+            "POST",
+            "/api/local/agencies",
+            {"agency_id": first_agency["agency_id"], "note": "Edited"},
+        )
+        self.assertEqual(200, status)
+        self.assertEqual(
+            first_agency["agency_id"], updated["agency"]["agency_id"]
+        )
+        self.assertEqual(
+            first_agency["created_at"], updated["agency"]["created_at"]
+        )
+        self.assertEqual("Edited", updated["agency"]["note"])
+
+    def test_agency_create_persistence_failure_uses_safe_structured_error(self) -> None:
+        repository = self.factory.agency()
+        with mock.patch.object(
+            repository,
+            "save_agency",
+            side_effect=RuntimeError("sqlite path /private/example must stay local"),
+        ):
+            status, body = self.request(
+                "POST", "/api/local/agencies", {"name": "Safe Failure"}
+            )
+        self.assertEqual(500, status)
+        self.assertEqual("AGENCY_CREATE_FAILED", body["error"]["code"])
+        self.assertEqual(
+            "Agency 创建失败，请稍后重试。", body["error"]["message"]
+        )
+        self.assertNotIn("/private/example", json.dumps(body, ensure_ascii=False))
 
     def test_creator_relation_validation_http_contract(self) -> None:
         for creator_id, payload, expected_error in (

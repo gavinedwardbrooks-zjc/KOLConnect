@@ -3,6 +3,7 @@
 import re
 import json
 
+from app_logging import log_sanitized_exception
 from creator_batch_import import CreatorBatchImportError
 from api_contract import error_payload
 from creator_repository import ExtensionMutationError
@@ -400,10 +401,31 @@ def handle(handler, request: dict, context: dict) -> bool:
 
     # POST /api/local/agencies → 保存本地 Agency；{"ok": true, "agency": {...}}
     if method == "POST" and path == "/api/local/agencies":
+        payload = request["get_payload"]()
+        creating = not str(payload.get("agency_id") or "").strip() if isinstance(payload, dict) else True
         try:
-            handler._ok(**agency_service.save_agency(request["get_payload"]()))
+            handler._ok(**agency_service.save_agency(payload))
         except ValueError as exc:
-            handler._error(str(exc))
+            message = str(exc)
+            if "名称不能为空" in message:
+                handler._api_error("AGENCY_NAME_REQUIRED", message, status=400)
+            else:
+                handler._api_error(
+                    "AGENCY_CREATE_FAILED" if creating else "AGENCY_UPDATE_FAILED",
+                    message,
+                    status=404 if "未找到" in message else 400,
+                )
+        except Exception as exc:
+            log_sanitized_exception(
+                "Agency",
+                f"Agency 保存失败 | operation={'create' if creating else 'update'} | exception_type={type(exc).__name__}",
+                exc,
+            )
+            handler._api_error(
+                "AGENCY_CREATE_FAILED" if creating else "AGENCY_UPDATE_FAILED",
+                "Agency 创建失败，请稍后重试。" if creating else "Agency 保存失败，请稍后重试。",
+                status=500,
+            )
         return True
 
     # POST /api/local/agency-contacts → 保存本地 Agency 联系人；{"ok": true, "contact": {...}}

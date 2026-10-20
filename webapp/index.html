@@ -1221,7 +1221,10 @@
             <h1 data-i18n="agencyTitle">Agency</h1>
             <p data-i18n="agencySubtitle">查看合作机构、联系人覆盖和已关联的达人资源。</p>
           </div>
-          <button class="soft-btn" id="agency-list-refresh" type="button" data-i18n="agencyRefreshList">刷新列表</button>
+          <div class="action-row">
+            <button class="primary-btn" id="agency-create-open" type="button" data-i18n="agencyCreateAction">新增 Agency</button>
+            <button class="soft-btn" id="agency-list-refresh" type="button" data-i18n="agencyRefreshList">刷新列表</button>
+          </div>
         </div>
 
         <div class="agency-overview" aria-label="Agency 概览" data-i18n-aria-label="agencyOverviewAria">
@@ -1241,7 +1244,7 @@
             <button class="soft-btn" id="agency-list-retry" type="button" data-i18n="agencyRetry">重新加载</button>
           </div>
           <div class="empty-note agency-list-empty" id="agency-list-empty" hidden>
-            <span data-i18n="agencyEmpty">暂无 Agency。可以在现有 Agency 数据入口建立第一条记录。</span>
+            <span data-i18n="agencyEmpty">暂无 Agency。点击“新增 Agency”创建第一条合作机构记录。</span>
           </div>
           <div class="review-table-wrap" id="agency-list-table-wrap" hidden>
             <table class="review-table compact-management-table agency-table">
@@ -1282,7 +1285,9 @@
               <div><dt>国家/地区</dt><dd id="agency-detail-country">--</dd></div>
               <div><dt>网站</dt><dd id="agency-detail-website">--</dd></div>
               <div><dt>公开邮箱</dt><dd id="agency-detail-email">--</dd></div>
+              <div><dt data-i18n="agencyWhatsApp">WhatsApp</dt><dd id="agency-detail-whatsapp">--</dd></div>
               <div><dt>合作阶段</dt><dd id="agency-detail-stage">--</dd></div>
+              <div><dt data-i18n="agencyTags">标签</dt><dd id="agency-detail-tags">--</dd></div>
               <div><dt>负责人</dt><dd id="agency-detail-owner">--</dd></div>
               <div class="agency-profile-wide"><dt>备注</dt><dd id="agency-detail-note">--</dd></div>
             </dl>
@@ -1292,16 +1297,18 @@
                 <label class="field"><span>国家/地区</span><input id="agency-edit-country"></label>
                 <label class="field"><span>网站</span><input id="agency-edit-website" type="url"></label>
                 <label class="field"><span>公开邮箱</span><input id="agency-edit-email" type="email"></label>
+                <label class="field"><span data-i18n="agencyWhatsApp">WhatsApp</span><input id="agency-edit-whatsapp"></label>
                 <label class="field"><span>合作阶段</span><input id="agency-edit-stage"></label>
+                <label class="field"><span data-i18n="agencyTags">标签</span><input id="agency-edit-tags"></label>
                 <label class="field"><span>负责人</span><input id="agency-edit-owner"></label>
                 <label class="field agency-profile-wide"><span>备注</span><textarea id="agency-edit-note" rows="3"></textarea></label>
-                <div class="action-row"><button class="soft-btn" id="agency-edit-cancel" type="button">取消</button><button class="primary-btn" type="submit">保存 Agency</button></div>
+                <div class="action-row"><button class="soft-btn" id="agency-edit-cancel" type="button">取消</button><button class="primary-btn" id="agency-edit-submit" type="submit">保存 Agency</button></div>
               </form>
             </div>
           </section>
 
           <section class="section-card agency-edit-mode-card" id="agency-edit-mode" hidden>
-            <div class="agency-detail-section-heading"><div><p class="eyebrow" data-i18n="agencyEditEyebrow">EDIT AGENCY</p><h2 data-i18n="agencyEditTitle">编辑 Agency</h2></div></div>
+            <div class="agency-detail-section-heading"><div><p class="eyebrow" id="agency-edit-eyebrow" data-i18n="agencyEditEyebrow">EDIT AGENCY</p><h2 id="agency-edit-title" data-i18n="agencyEditTitle">编辑 Agency</h2></div></div>
             <div id="agency-edit-form-host"></div>
           </section>
 
