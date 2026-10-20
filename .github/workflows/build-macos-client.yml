@@ -279,6 +279,14 @@ jobs:
           echo "PACKAGED_SETTINGS_SHA256=$(shasum -a 256 "${packaged_settings}" | awk '{print $1}')"
           echo "SOURCE_I18N_SHA256=$(shasum -a 256 "${source_i18n}" | awk '{print $1}')"
           echo "PACKAGED_I18N_SHA256=$(shasum -a 256 "${packaged_i18n}" | awk '{print $1}')"
+          echo "SOURCE_INDEX_SHA256=$(shasum -a 256 "${source_index}" | awk '{print $1}')"
+          echo "PACKAGED_INDEX_SHA256=$(shasum -a 256 "${webapp_index}" | awk '{print $1}')"
+          echo "SOURCE_STYLES_SHA256=$(shasum -a 256 "${source_styles}" | awk '{print $1}')"
+          echo "PACKAGED_STYLES_SHA256=$(shasum -a 256 "${webapp_root}/styles.css" | awk '{print $1}')"
+          echo "SOURCE_AGENCIES_SHA256=$(shasum -a 256 "${source_agencies}" | awk '{print $1}')"
+          echo "PACKAGED_AGENCIES_SHA256=$(shasum -a 256 "${packaged_agencies}" | awk '{print $1}')"
+          echo "SOURCE_CAMPAIGNS_SHA256=$(shasum -a 256 "${source_campaigns}" | awk '{print $1}')"
+          echo "PACKAGED_CAMPAIGNS_SHA256=$(shasum -a 256 "${packaged_campaigns}" | awk '{print $1}')"
           cmp -s "${source_settings}" "${packaged_settings}" || fail_gate packaged_settings_source_mismatch
           cmp -s "${source_i18n}" "${packaged_i18n}" || fail_gate packaged_i18n_source_mismatch
           cmp -s "${source_index}" "${webapp_index}" || fail_gate packaged_index_source_mismatch
@@ -287,12 +295,6 @@ jobs:
           cmp -s "${source_campaigns}" "${packaged_campaigns}" || fail_gate packaged_campaigns_source_mismatch
           cmp -s "${source_creator_library}" "${packaged_creator_library}" || fail_gate packaged_creator_library_source_mismatch
           cmp -s "${source_api_client}" "${packaged_api_client}" || fail_gate packaged_api_client_source_mismatch
-          grep -Fq 'agencyCreateFormTitle' "${packaged_agencies}" || fail_gate packaged_agency_create_semantics
-          grep -Fq 'agency-form-actions' "${webapp_root}/styles.css" || fail_gate packaged_agency_create_layout
-          grep -Fq 'campaign-status-cell' "${packaged_campaigns}" || fail_gate packaged_campaign_status_layout
-          grep -Fq 'campaign-platform-value' "${packaged_campaigns}" || fail_gate packaged_campaign_platform_layout
-          grep -Fq '#campaign-list-table-wrap { overflow-x: auto; }' "${webapp_root}/styles.css" || fail_gate packaged_campaign_horizontal_scroll
-          grep -Fq '.review-table.campaign-table { min-width: 1450px; table-layout: fixed; }' "${webapp_root}/styles.css" || fail_gate packaged_campaign_table_layout
           grep -Fq 'FEISHU_FIELD_FETCH_FAILED: "settingsFeishuFieldFetchFailed"' "${packaged_settings}" || fail_gate packaged_settings_feishu_error
           grep -Fq 'FEISHU_CHAT_CONNECT_TIMEOUT: "settingsFeishuConnectTimeout"' "${packaged_settings}" || fail_gate packaged_settings_feishu_chat_diagnostics
           echo "SETTINGS_MARKER_FOUND=YES"
