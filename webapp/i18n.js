@@ -107,6 +107,27 @@
   });
 
   Object.assign(dictionaries.zh, {
+    campaignDetailCurrencyHkd: "HKD · 港元", campaignDetailCurrencyTwd: "TWD · 新台币",
+    campaignDetailCurrencySgd: "SGD · 新加坡元", campaignDetailCurrencyAud: "AUD · 澳大利亚元",
+    campaignDetailCurrencyCad: "CAD · 加拿大元", campaignDetailCurrencyMxn: "MXN · 墨西哥比索",
+    campaignDetailCurrencySar: "SAR · 沙特里亚尔", campaignDetailCurrencyAed: "AED · 阿联酋迪拉姆",
+    campaignDetailCurrencyInr: "INR · 印度卢比", campaignDetailCurrencyIdr: "IDR · 印度尼西亚盾",
+    campaignDetailCurrencyThb: "THB · 泰铢", campaignDetailCurrencyVnd: "VND · 越南盾",
+    campaignDetailCurrencyPhp: "PHP · 菲律宾比索", campaignDetailCurrencyMyr: "MYR · 马来西亚林吉特",
+    campaignDetailCurrencyTry: "TRY · 土耳其里拉", campaignDetailCurrencyZar: "ZAR · 南非兰特",
+  });
+  Object.assign(dictionaries.en, {
+    campaignDetailCurrencyHkd: "HKD · Hong Kong Dollar", campaignDetailCurrencyTwd: "TWD · New Taiwan Dollar",
+    campaignDetailCurrencySgd: "SGD · Singapore Dollar", campaignDetailCurrencyAud: "AUD · Australian Dollar",
+    campaignDetailCurrencyCad: "CAD · Canadian Dollar", campaignDetailCurrencyMxn: "MXN · Mexican Peso",
+    campaignDetailCurrencySar: "SAR · Saudi Riyal", campaignDetailCurrencyAed: "AED · UAE Dirham",
+    campaignDetailCurrencyInr: "INR · Indian Rupee", campaignDetailCurrencyIdr: "IDR · Indonesian Rupiah",
+    campaignDetailCurrencyThb: "THB · Thai Baht", campaignDetailCurrencyVnd: "VND · Vietnamese Dong",
+    campaignDetailCurrencyPhp: "PHP · Philippine Peso", campaignDetailCurrencyMyr: "MYR · Malaysian Ringgit",
+    campaignDetailCurrencyTry: "TRY · Turkish Lira", campaignDetailCurrencyZar: "ZAR · South African Rand",
+  });
+
+  Object.assign(dictionaries.zh, {
     settingsAvailable: "可用", settingsUnavailable: "不可用", settingsNeedsAttention: "需处理", settingsConfigurationError: "配置异常", settingsCreated: "已创建", settingsMigrationError: "迁移错误", settingsUnsupportedSchema: "不支持的 Schema",
     settingsCategoryGeneral: "常规", settingsCategoryGeneralHint: "界面偏好与默认本机 Profile。", settingsCategoryAccounts: "账号与邮箱", settingsCategoryAccountsHint: "管理浏览器 Profile 与已连接邮箱。", settingsAccountsHint: "管理用于抓取的 Chrome Profile 和已连接的邮箱账户。", settingsCategoryIntegrations: "集成", settingsCategoryIntegrationsHint: "可选的 Feishu 与 Google Sheets 连接。", settingsCategoryData: "数据与备份", settingsCategoryDataHint: "本机 SQLite 数据、汇率和兼容导出设置。", settingsCategoryAdvanced: "高级", settingsCategoryAdvancedHint: "诊断、恢复与高风险本机维护工具。",
     settingsFeishuSchemaNeedsReview: "飞书表结构需要补充", settingsFeishuMissingFields: "{table} 缺少：", settingsFeishuIncompatibleFields: "{table} 字段类型不兼容：", settingsFeishuCurrentType: "{field}（当前类型：{type}）", settingsFeishuFieldFetchFailed: "飞书连接成功，但 KOLConnect 无法读取目标表的字段结构。系统已自动重试且未修改任何飞书数据。请稍后重试；如果问题持续存在，请查看诊断日志。", settingsFeishuReadPermissionDenied: "飞书拒绝了读取操作。请检查应用是否已开通 bitable:app（或只读权限）、已发布包含该权限的新版本，并已被授予目标 Base 及 Creator、CreatorAccount 表的读取权限。", settingsFeishuWritePermissionDenied: "飞书拒绝了写入操作。请检查应用是否已开通 bitable:app、已发布包含该权限的新版本，并已被授予目标 Base 及 Creator、CreatorAccount 表的读写权限。若 Base 启用了高级权限，请同时检查应用身份的数据权限。",

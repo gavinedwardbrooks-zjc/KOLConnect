@@ -512,6 +512,19 @@ class FeishuSyncFoundationTests(unittest.TestCase):
                 else:
                     self.assertEqual(expected, account_payload["粉丝数"])
 
+    def test_account_create_omits_missing_datetime_but_keeps_valid_sync_time(self):
+        result = self.service.full_sync(confirm=True)
+
+        self.assertEqual("success", result["status"])
+        account_payload = next(
+            payloads[0]
+            for table_id, payloads in self.client.create_calls
+            if table_id == "accounts"
+        )
+        self.assertNotIn("最后分析时间", account_payload)
+        self.assertIsInstance(account_payload["最近同步时间"], int)
+        self.assertGreater(account_payload["最近同步时间"], 0)
+
     def test_account_create_number_failure_logs_safe_field_names(self):
         events = []
 
@@ -549,6 +562,40 @@ class FeishuSyncFoundationTests(unittest.TestCase):
         self.assertNotIn("1200", diagnostic)
         self.assertNotIn("secret-value", diagnostic)
         self.assertNotIn("private-provider-message", diagnostic)
+
+    def test_account_create_datetime_failure_logs_safe_context(self):
+        events = []
+
+        def fail_account_create(table_id, payloads):
+            if table_id == "accounts":
+                raise FeishuClientError(
+                    "INVALID_FIELD_VALUE",
+                    "private datetime provider message",
+                    api_code=1254064,
+                    failure_stage="api",
+                    http_status=200,
+                )
+            return FakeClient.batch_create(self.client, table_id, payloads)
+
+        self.client.batch_create = fail_account_create
+        service = FeishuSyncService(
+            self.source,
+            lambda: self.client,
+            event_logger=events.append,
+        )
+
+        result = service.full_sync(confirm=True)
+
+        self.assertEqual("partial", result["status"])
+        diagnostic = next(
+            item for item in events
+            if "endpoint_category=bitable_record_batch_create" in item
+            and "table_role=account" in item
+        )
+        self.assertIn("feishu_api_code=1254064", diagnostic)
+        self.assertIn("failure_stage=api", diagnostic)
+        self.assertIn("field_names=", diagnostic)
+        self.assertNotIn("private datetime provider message", diagnostic)
 
     def test_blocked_plan_prevents_full_sync(self):
         self.client.schemas["creators"] = []

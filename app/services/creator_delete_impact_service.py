@@ -22,9 +22,19 @@ class CreatorDeleteImpactError(RuntimeError):
     code = "CREATOR_DELETE_IMPACT_FAILED"
     operation = "permanent_delete_impact"
 
-    def __init__(self, exception_class: str) -> None:
+    def __init__(
+        self,
+        exception_class: str,
+        *,
+        dependency_stage: str = "unknown",
+        safe_error_code: str = "CREATOR_DELETE_IMPACT_FAILED",
+    ) -> None:
         super().__init__("永久删除影响检查未完成，未执行任何删除。")
         self.exception_class = str(exception_class or "RuntimeError")
+        self.dependency_stage = str(dependency_stage or "unknown")
+        self.safe_error_code = str(
+            safe_error_code or "CREATOR_DELETE_IMPACT_FAILED"
+        )
 
     def to_response(self) -> dict[str, Any]:
         return {
@@ -34,7 +44,9 @@ class CreatorDeleteImpactError(RuntimeError):
                 "message": str(self),
                 "details": {
                     "operation": self.operation,
+                    "dependency_stage": self.dependency_stage,
                     "exception_class": self.exception_class,
+                    "safe_error_code": self.safe_error_code,
                 },
             },
         }
@@ -62,13 +74,29 @@ class CreatorDeleteImpactService:
         except CreatorDeleteImpactError:
             raise
         except Exception as exc:
+            dependency_stage = str(
+                getattr(exc, "dependency_stage", "unknown") or "unknown"
+            )
+            exception_class = str(
+                getattr(exc, "exception_class", type(exc).__name__)
+                or type(exc).__name__
+            )
+            safe_error_code = str(
+                getattr(exc, "safe_error_code", "CREATOR_DELETE_IMPACT_FAILED")
+                or "CREATOR_DELETE_IMPACT_FAILED"
+            )
             self._error_logger(
                 "operation=permanent_delete_impact "
-                f"exception_class={type(exc).__name__} "
-                "safe_error_code=CREATOR_DELETE_IMPACT_FAILED",
+                f"dependency_stage={dependency_stage} "
+                f"exception_class={exception_class} "
+                f"safe_error_code={safe_error_code}",
                 exc,
             )
-            raise CreatorDeleteImpactError(type(exc).__name__) from exc
+            raise CreatorDeleteImpactError(
+                exception_class,
+                dependency_stage=dependency_stage,
+                safe_error_code=safe_error_code,
+            ) from exc
 
     def _inspect_delete_impact(self, creator_id: str) -> dict[str, Any]:
         snapshot = self._impact_port_provider().scan_creator_delete_impact(creator_id)

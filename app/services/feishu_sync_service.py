@@ -1179,9 +1179,13 @@ class FeishuSyncService:
             value = canonical.get(spec.key, "")
             if for_update and not self._update_value_available(value, spec):
                 continue
-            if not for_update and spec.kind == "number" and self._number(value) == "":
-                # Missing and invalid numeric values must never be sent as text.
-                # Full Sync remains conservative: the remote field stays missing.
+            if (
+                not for_update
+                and spec.kind in {"number", "datetime"}
+                and not self._update_value_available(value, spec)
+            ):
+                # Missing typed create values must remain absent instead of being
+                # coerced to text that Feishu's field converters reject.
                 continue
             payload[spec.remote_name] = self._encode_value(value, spec, field)
         return payload

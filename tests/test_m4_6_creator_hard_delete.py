@@ -371,6 +371,53 @@ class CreatorHardDeleteTests(unittest.TestCase):
         )
         self.assertEqual("DELETE_BLOCKED", blocked.code)
 
+    def test_unreadable_data_protection_file_blocks_without_mutation(self) -> None:
+        self.seed_creator("creator_protection_broken")
+        self.protection_file.write_text("{invalid", encoding="utf-8")
+        before = self.workbook_path.read_bytes()
+
+        impact = self.preview("creator_protection_broken")
+
+        self.assertFalse(impact["can_delete"])
+        self.assertIn(
+            "DATA_PROTECTION_UNREADABLE",
+            {item["code"] for item in impact["blockers"]},
+        )
+        self.assertEqual(before, self.workbook_path.read_bytes())
+
+    def test_unreadable_legacy_analysis_blocks_without_mutation(self) -> None:
+        self.seed_creator("creator_legacy_analysis_broken")
+        self.legacy_dir.mkdir(parents=True)
+        (self.legacy_dir / "analysis_task_broken.json").write_text(
+            "{invalid", encoding="utf-8"
+        )
+        before = self.workbook_path.read_bytes()
+
+        impact = self.preview("creator_legacy_analysis_broken")
+
+        self.assertFalse(impact["can_delete"])
+        self.assertIn(
+            "LEGACY_ANALYSIS_UNREADABLE",
+            {item["code"] for item in impact["blockers"]},
+        )
+        self.assertEqual(before, self.workbook_path.read_bytes())
+
+    def test_invalid_legacy_library_schema_blocks_without_mutation(self) -> None:
+        self.seed_creator("creator_legacy_library_broken")
+        self.legacy_file.write_text(
+            json.dumps({"records": []}), encoding="utf-8"
+        )
+        before = self.workbook_path.read_bytes()
+
+        impact = self.preview("creator_legacy_library_broken")
+
+        self.assertFalse(impact["can_delete"])
+        self.assertIn(
+            "LEGACY_LIBRARY_SCHEMA_INVALID",
+            {item["code"] for item in impact["blockers"]},
+        )
+        self.assertEqual(before, self.workbook_path.read_bytes())
+
     def test_active_campaign_and_video_ownership_conflict_block_delete(self) -> None:
         self.seed_creator("creator_conflict")
         self.seed_creator("creator_other")

@@ -21,6 +21,17 @@ _REQUIRED_SHEETS = {
 }
 
 
+class CreatorDeleteImpactScanError(RuntimeError):
+    """Safe, stage-aware failure raised for an incomplete impact scan."""
+
+    safe_error_code = "CREATOR_DELETE_IMPACT_FAILED"
+
+    def __init__(self, dependency_stage: str, exception_class: str) -> None:
+        super().__init__("删除影响扫描未完成。")
+        self.dependency_stage = str(dependency_stage or "unknown")
+        self.exception_class = str(exception_class or "RuntimeError")
+
+
 class CreatorDeleteImpactRepository(ExcelDataRepository):
     def __init__(
         self,
@@ -48,6 +59,13 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
         try:
             with self.store.read_only_workbook() as workbook:
                 snapshot = self._scan_workbook(workbook, creator_id)
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise CreatorDeleteImpactScanError(
+                "workbook", type(exc).__name__
+            ) from exc
+        try:
             artifacts = self._scan_artifacts(
                 creator_id,
                 set(snapshot.pop("account_ids")),
@@ -58,10 +76,12 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                 snapshot.pop("snapshot_id_owners"),
                 set(snapshot.pop("known_creator_ids")),
             )
-        except ValueError:
+        except CreatorDeleteImpactScanError:
             raise
         except Exception as exc:
-            raise RuntimeError("删除影响扫描未完成。") from exc
+            raise CreatorDeleteImpactScanError(
+                "compatibility_artifacts", type(exc).__name__
+            ) from exc
 
         snapshot["impact"].update(artifacts["impact"])
         snapshot["structural_ids"].update(artifacts["structural_ids"])
@@ -447,18 +467,27 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
         snapshot_id_owners: dict[str, list[str]],
         known_creator_ids: set[str],
     ) -> dict[str, Any]:
-        task_locators, unmapped_task_ids, task_blocks = self._matching_task_artifacts(
-            creator_id,
-            account_ids,
-            snapshot_ids,
-            account_id_owners,
-            snapshot_id_owners,
+        task_locators, unmapped_task_ids, task_blocks = self._scan_dependency(
+            "task_artifacts",
+            lambda: self._matching_task_artifacts(
+                creator_id,
+                account_ids,
+                snapshot_ids,
+                account_id_owners,
+                snapshot_id_owners,
+            ),
         )
-        protection_locators, protection_blocks = self._matching_protection_entries(
-            creator_id, account_uids, account_uid_owners
+        protection_locators, protection_blocks = self._scan_dependency(
+            "data_protection",
+            lambda: self._matching_protection_entries(
+                creator_id, account_uids, account_uid_owners
+            ),
         )
-        legacy_locators, legacy_blocks = self._matching_legacy_sources(
-            creator_id, account_uids, account_uid_owners, known_creator_ids
+        legacy_locators, legacy_blocks = self._scan_dependency(
+            "legacy_sources",
+            lambda: self._matching_legacy_sources(
+                creator_id, account_uids, account_uid_owners, known_creator_ids
+            ),
         )
         task_ids = {str(item["stable_id"]) for item in task_locators}
         protection_uids = {str(item["stable_id"]) for item in protection_locators}
@@ -483,6 +512,17 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
             },
             "safety_blocks": [*task_blocks, *protection_blocks, *legacy_blocks],
         }
+
+    @staticmethod
+    def _scan_dependency(dependency_stage: str, callback):
+        try:
+            return callback()
+        except CreatorDeleteImpactScanError:
+            raise
+        except Exception as exc:
+            raise CreatorDeleteImpactScanError(
+                dependency_stage, type(exc).__name__
+            ) from exc
 
     def _matching_task_artifacts(
         self,
@@ -620,7 +660,15 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
             return [], []
         data, source = load_json_with_backup(path)
         if source is None or not isinstance(data, dict):
-            raise RuntimeError("数据保护文件无法读取。")
+            locator = self._locator(
+                "data_protection", "unreadable:primary", "json:data_protection"
+            )
+            locator["ownership"] = "unresolved"
+            return [locator], [{
+                "source": "data_protection",
+                "code": "DATA_PROTECTION_UNREADABLE",
+                "stable_id": "primary",
+            }]
         locators: list[dict[str, str]] = []
         blocks: list[dict[str, str]] = []
         if source != path:
@@ -665,7 +713,18 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                     continue
                 data, source = load_json_with_backup(path)
                 if source is None or not isinstance(data, dict):
-                    raise RuntimeError("Legacy analysis 文件无法读取。")
+                    stable_id = f"unreadable:{path.name}"
+                    locator = self._locator(
+                        "legacy_sources", stable_id, "filesystem:legacy_analysis"
+                    )
+                    locator["ownership"] = "unresolved"
+                    locators.append(locator)
+                    blocks.append({
+                        "source": "legacy_sources",
+                        "code": "LEGACY_ANALYSIS_UNREADABLE",
+                        "stable_id": stable_id,
+                    })
+                    continue
                 if source != path:
                     blocks.append({
                         "source": "legacy_sources",
@@ -706,7 +765,18 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
             if path.exists() or backup.exists():
                 data, source = load_json_with_backup(path)
                 if source is None or not isinstance(data, dict):
-                    raise RuntimeError("Legacy Creator Library 文件无法读取。")
+                    stable_id = f"unreadable:{path.name}"
+                    locator = self._locator(
+                        "legacy_sources", stable_id, "json:legacy_library"
+                    )
+                    locator["ownership"] = "unresolved"
+                    locators.append(locator)
+                    blocks.append({
+                        "source": "legacy_sources",
+                        "code": "LEGACY_LIBRARY_UNREADABLE",
+                        "stable_id": stable_id,
+                    })
+                    return locators, blocks
                 if source != path:
                     blocks.append({
                         "source": "legacy_sources",
@@ -715,7 +785,18 @@ class CreatorDeleteImpactRepository(ExcelDataRepository):
                     })
                 records = data.get("records")
                 if not isinstance(records, dict):
-                    raise RuntimeError("Legacy Creator Library 格式无效。")
+                    stable_id = f"invalid:{path.name}"
+                    locator = self._locator(
+                        "legacy_sources", stable_id, "json:legacy_library"
+                    )
+                    locator["ownership"] = "unresolved"
+                    locators.append(locator)
+                    blocks.append({
+                        "source": "legacy_sources",
+                        "code": "LEGACY_LIBRARY_SCHEMA_INVALID",
+                        "stable_id": stable_id,
+                    })
+                    return locators, blocks
                 for key, value in records.items():
                     record = value if isinstance(value, dict) else {}
                     owners, reliable = self._legacy_owners(

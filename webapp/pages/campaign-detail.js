@@ -27,7 +27,20 @@
   let campaignBrief = null;
   let contentSubmissions = [];
   let fxRates = new Map();
-  const CURRENCY_KEYS = { USD: "campaignDetailCurrencyUsd", BRL: "campaignDetailCurrencyBrl", CNY: "campaignDetailCurrencyCny", EUR: "campaignDetailCurrencyEur", GBP: "campaignDetailCurrencyGbp", JPY: "campaignDetailCurrencyJpy", KRW: "campaignDetailCurrencyKrw" };
+  const CURRENCY_KEYS = Object.freeze({
+    USD: "campaignDetailCurrencyUsd", CNY: "campaignDetailCurrencyCny",
+    BRL: "campaignDetailCurrencyBrl", EUR: "campaignDetailCurrencyEur",
+    GBP: "campaignDetailCurrencyGbp", JPY: "campaignDetailCurrencyJpy",
+    KRW: "campaignDetailCurrencyKrw", HKD: "campaignDetailCurrencyHkd",
+    TWD: "campaignDetailCurrencyTwd", SGD: "campaignDetailCurrencySgd",
+    AUD: "campaignDetailCurrencyAud", CAD: "campaignDetailCurrencyCad",
+    MXN: "campaignDetailCurrencyMxn", SAR: "campaignDetailCurrencySar",
+    AED: "campaignDetailCurrencyAed", INR: "campaignDetailCurrencyInr",
+    IDR: "campaignDetailCurrencyIdr", THB: "campaignDetailCurrencyThb",
+    VND: "campaignDetailCurrencyVnd", PHP: "campaignDetailCurrencyPhp",
+    MYR: "campaignDetailCurrencyMyr", TRY: "campaignDetailCurrencyTry",
+    ZAR: "campaignDetailCurrencyZar",
+  });
   const submissionReviewFindings = new Map();
   let publicationRefreshPending = false;
   let googleSheetsSyncPending = false;
@@ -301,6 +314,8 @@
       row.appendChild(createCell(formatNumber(relation.roi)));
 
       const actionCell = document.createElement("td");
+      const actionRow = document.createElement("div");
+      actionRow.className = "campaign-creator-action-row";
       if (!isArchived()) {
         const editButton = document.createElement("button");
         editButton.type = "button";
@@ -308,7 +323,7 @@
         editButton.dataset.campaignCreatorAction = "edit";
         editButton.dataset.campaignCreatorId = String(relation.id || "");
         editButton.textContent = t("campaignEdit");
-        actionCell.appendChild(editButton);
+        actionRow.appendChild(editButton);
       }
       const removeButton = document.createElement("button");
       removeButton.type = "button";
@@ -316,7 +331,8 @@
       removeButton.dataset.campaignCreatorAction = "remove";
       removeButton.dataset.campaignCreatorId = String(relation.id || "");
       removeButton.textContent = t("campaignDetailRemove");
-      actionCell.appendChild(removeButton);
+      actionRow.appendChild(removeButton);
+      actionCell.appendChild(actionRow);
       row.appendChild(actionCell);
       body.appendChild(row);
     });

@@ -213,6 +213,11 @@ class CreatorDeleteImpactHttpTests(unittest.TestCase):
             response["error"]["details"]["operation"],
         )
         self.assertEqual("KeyError", response["error"]["details"]["exception_class"])
+        self.assertEqual("unknown", response["error"]["details"]["dependency_stage"])
+        self.assertEqual(
+            "CREATOR_DELETE_IMPACT_FAILED",
+            response["error"]["details"]["safe_error_code"],
+        )
         self.assertIn("safe_error_code=CREATOR_DELETE_IMPACT_FAILED", events[0][0])
         self.assertNotIn("private creator data", json.dumps(response, ensure_ascii=False))
 

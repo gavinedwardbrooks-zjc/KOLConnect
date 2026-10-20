@@ -273,6 +273,7 @@ class FeishuClientTests(unittest.TestCase):
         cases = (
             (1254302, "request denied", "PERMISSION_DENIED"),
             (1254061, "NumberFieldConvFail", "INVALID_FIELD_VALUE"),
+            (1254064, "DatetimeFieldConvFail", "INVALID_FIELD_VALUE"),
             (9001, "table not found", "TABLE_NOT_FOUND"),
             (9002, "field value invalid", "INVALID_FIELD_VALUE"),
             (9003, "relation value invalid", "INVALID_RELATION_VALUE"),
