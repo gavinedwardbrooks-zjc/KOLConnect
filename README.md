@@ -110,6 +110,14 @@ open /Applications/KOLConnect.app
 4. 如需页面采集，安装 Chrome 扩展并保持桌面应用运行。
 5. 如需邮箱、飞书或 Google Sheets，同步前先在“设置”中完成对应配置。
 
+## 开源与自行开发
+
+KOLConnect 是开源项目，源代码就在这个 GitHub 仓库中。你可以下载、Fork 或 Clone 项目，并使用能够读取本地项目文件夹的 AI 编程助手，在自己的电脑上继续开发。
+
+项目使用 MIT License。修改和运行开发版本产生的结果由使用者自行负责；开始前请先备份本地数据，并将正式安装包与开发版本分开保存。
+
+第一次接触源码，请阅读 [用 AI 在本地继续开发 KOLConnect](docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md)。
+
 ## 数据与隐私
 
 - KOLConnect 采用本地优先设计，主要业务数据保存在你的电脑上。
@@ -120,7 +128,7 @@ open /Applications/KOLConnect.app
 ## 当前限制
 
 - TikTok 页面分析可用，但 `TikTok Passive Capture V2` 尚不是正式生产功能，部分近期内容指标可能无法获取。
-- 暂不支持 Outlook / Microsoft 365 OAuth 登录。
+- 不支持 Outlook / Microsoft 365 邮箱，后续也不计划支持。
 - 暂不提供自动实时汇率；汇率需要手动维护。
 - 邮箱功能用于同步和跟进，不会从 KOLConnect 直接发送邮件。
 - macOS 应用尚未经过 Apple 公证，首次启动可能需要按上方说明解除隔离。
@@ -132,6 +140,7 @@ open /Applications/KOLConnect.app
 - 飞书设置：[docs/feishu_setup.md](docs/feishu_setup.md)
 - 邮箱设置：[docs/mail_setup.md](docs/mail_setup.md)
 - Google Sheets 设置：[docs/google_sheets_setup.md](docs/google_sheets_setup.md)
+- AI 本地开发指南：[docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md](docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md)
 - 问题反馈：[GitHub Issues](https://github.com/gavinedwardbrooks-zjc/KOLConnect/issues)
 
 提交问题时，请描述操作步骤和错误提示，但不要附带密码、Token、Cookie 或个人数据。

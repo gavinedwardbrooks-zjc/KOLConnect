@@ -13,7 +13,9 @@
 - 将历史邮件与已有达人邮箱匹配。
 - 显示待我回复、待对方回复、稍后处理等跟进状态。
 
-当前使用标准 IMAP 方式连接邮箱。Outlook / Microsoft 365 OAuth2 尚未支持；如果服务商已经停用密码或授权码登录，该邮箱可能无法连接。
+当前使用标准 IMAP 方式连接邮箱。
+
+> **Outlook / Microsoft 365 不受支持。** KOLConnect 不支持 Outlook / Microsoft 365 邮箱，后续也不计划加入该支持。由于 Microsoft 对第三方邮箱客户端的认证和接入方式有限制，KOLConnect 当前的邮箱同步方案不会兼容 Outlook / Microsoft 365。请不要尝试通过普通密码、OAuth 或应用密码绕过；请改用 Gmail、QQ 邮箱、网易邮箱、阿里企业邮箱或其他支持标准 IMAP 的邮箱。
 
 ## 一、先在邮箱服务商处准备
 
