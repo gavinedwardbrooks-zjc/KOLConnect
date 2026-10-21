@@ -1,88 +1,223 @@
-# Feishu Setup
+# 飞书配置指南
 
-This is the canonical setup guide for the current KOLConnect Feishu integration. It covers two independent optional capabilities that reuse the same Feishu app:
+本指南帮助你把 KOLConnect 连接到飞书多维表格，并可选启用飞书 AI 助手。
 
-1. **Bitable synchronization**: an explicit KOLConnect-to-Feishu replica workflow for Creator and CreatorAccount data.
-2. **Feishu Chat Assistant**: an optional official long-connection transport to KOLConnect Assistant.
+> 飞书是可选的同步目标。KOLConnect 的主要数据仍保存在本机；在飞书中手工修改数据，不会自动回写 KOLConnect。
 
-KOLConnect's SQLite database remains authoritative. Feishu is not an independent source of truth, and Chat does not directly access Bitable or local files.
+[返回外部服务配置总指南](EXTERNAL_SYNC_SETUP_GUIDE_ZH.md)
 
-## Configure KOLConnect
+## 你可以用飞书做什么
 
-Open **Settings -> Feishu configuration** and save the values below. They are stored locally in %APPDATA%\KOLConnect\settings.json; the Settings API masks the saved App Secret and App Token when reading state. Protect the Windows user profile and do not share or commit that settings file.
+- 将达人数据同步到飞书多维表格。
+- 将 TikTok、Instagram、YouTube 等达人账号同步到另一张表。
+- 在两张表之间建立达人与社媒账号的关联。
+- 可选启用飞书 AI 助手，通过飞书消息查询 KOLConnect 信息。
 
-| Setting | Required for Bitable sync | Required for Chat | Notes |
-|---|---:|---:|---|
-| App ID | Yes | Yes | Feishu app identifier, such as cli_xxx |
-| App Secret | Yes | Yes | Secret; leave the masked Settings value empty to keep it unchanged |
-| App Token | Yes | No | Bitable app/base token |
-| Creator Table ID | Yes | No | Target Creator table ID |
-| Creator Account Table ID | Yes | No | Target CreatorAccount table ID |
-| Agency Contact Table ID | No | No | Optional, used only by the separate Agency-contact lookup path |
+普通数据同步和 AI 助手是两个独立功能。你可以只使用其中一个。
 
-agency_table_id exists in local compatibility state but is not required by the current Bitable sync or Chat setup flow. The desktop app does not load .env.example or environment variables for these Settings values. Environment variables are only a command-line compatibility input for scraper.py.
+## 一、创建飞书应用
 
-Use placeholders in examples only:
+1. 打开 [飞书开放平台](https://open.feishu.cn/app)。
+2. 登录你的企业账号，创建一个“企业自建应用”。
+3. 打开刚创建的应用。
+4. 找到“凭证与基础信息”或名称相近的页面。
+5. 复制 **App ID** 和 **App Secret**。
+6. 在 KOLConnect 中进入“设置” → “集成” → “飞书配置（同一个 App）”，准备填写这两个值。
 
-~~~text
-FEISHU_APP_ID=cli_xxx
-FEISHU_APP_SECRET=your_app_secret
-FEISHU_APP_TOKEN=your_bitable_app_token
-FEISHU_CREATOR_TABLE_ID=tbl_creator
-FEISHU_ACCOUNT_TABLE_ID=tbl_creator_account
-~~~
+**App ID** 是应用的唯一编号；**App Secret** 相当于应用密码。不要在聊天、截图、Issue 或公开文档中分享 App Secret。
 
-## Bitable Sync
+## 二、开通最小权限
 
-The normal write workflow is:
+达人和达人账号同步推荐只开通：
 
-~~~text
-Settings -> Validate -> Dry Run -> confirmed Full Sync
-~~~
+- `bitable:app`：飞书开放平台中通常显示为“多维表格应用权限（应用身份）”。
 
-Validate and Dry Run are read-only remote operations. Full Sync requires an explicit confirmation, rebuilds the plan at execution time, and stops later batches after a batch failure. Do not use Chat or a task-result page as an alternate business-record write path.
+KOLConnect 使用应用身份访问多维表格，不需要用户 OAuth 登录。正常同步也不需要以下权限：
 
-For sync, configure a Bitable app/base with the Creator and CreatorAccount tables. The application authenticates with the tenant access-token endpoint, reads table fields/records, and plans batched Creator/Account create and update operations plus relation changes. Remote deletion is governed separately by the durable Creator hard-delete lifecycle, not inferred from an ordinary Full Sync. Grant only the Bitable permissions that permit those actual table operations for the configured app and tables; KOLConnect does not need broad tenant, drive, mail, or contact access for the base sync flow.
+- 通讯录
+- 日历
+- 云盘或云文档
+- Wiki
+- 搜索
+- 删除记录
+- 创建或删除数据表
+- 创建、删除或修改字段
 
-The current schema validator requires these fields:
+不要为了排错一次性开通大量无关权限。
 
-| Table | Required fields |
-|---|---|
-| Creator | KOLConnect Creator ID, 达人名称, 国家/地区, 语言, 内容类型, 已归档, 最近同步时间, 社媒账号 |
-| CreatorAccount | 账号唯一ID, KOLConnect Creator ID, 平台, 主页链接, 粉丝数, 最近同步时间, 达人 |
+修改应用权限后，需要在飞书开放平台创建并发布一个新版本。你的企业如果启用了管理员审批，还需要等待管理员批准。
 
-Insight等级, 最后分析时间, and CreatorAccount 平均播放量 are optional when present with compatible field types. Creator 社媒账号 must be a relation to the configured CreatorAccount table and must allow multiple records. CreatorAccount 达人 must relate to the configured Creator table. The validator supports legacy relation type 18 and current bidirectional relation type 21 only when the linked table identity and multiplicity meet those rules.
+## 三、让应用能够访问目标 Base
 
-## Feishu Chat Assistant
+开通 API 权限后，还必须让应用能够访问具体的多维表格 Base。只有 API 权限、没有 Base 访问权时，仍会出现 `PERMISSION_DENIED`。
 
-Chat is disabled by default. It uses the official lark-oapi SDK long connection and only needs the saved App ID and App Secret. In the Feishu Open Platform:
+1. 打开要用于 KOLConnect 的飞书多维表格。
+2. 打开“分享”“权限管理”或“协作者”。
+3. 将刚创建的应用或应用身份加入协作者。
+4. 为它授予目标 Base 的读取和写入权限。
+5. 如果 Base 开启了高级权限，确认应用身份可以读写 Creator 和 CreatorAccount 两张表。
 
-1. Enable the Bot capability.
-2. Subscribe to im.message.receive_v1 with long-connection delivery.
-3. Grant the message scopes used by the runtime:
-   - im:message.p2p_msg:readonly
-   - im:message.group_at_msg:readonly
-   - im:message:send_as_bot
-4. Publish the app version and make the bot available to intended users.
+不同飞书版本的按钮名称可能略有不同，通常在“分享 / 权限管理 / 协作者”中完成。如果界面不允许直接添加应用，请让飞书管理员在 Base 的高级权限中为该应用身份授权。
 
-No public callback or webhook URL is required for this Chat event path. Direct messages are accepted; group messages require an explicit bot mention. The transport has a 20-second connection watchdog, reports connection errors in Settings, and stops cleanly when disabled or when KOLConnect exits. Saving Feishu configuration restarts an already enabled Chat transport so it uses the new App ID/App Secret.
+## 四、创建两张数据表
 
-Use **Check local configuration** first, then **Enable Assistant**. This local check validates credentials/SDK construction without sending a message. A real connection still requires network access, an installed/published app, Bot capability, and the event/scopes above.
+普通同步只需要两张表：
 
-## Verify Safely
+1. `Creator`
+2. `CreatorAccount`
 
-1. Save configuration in Settings.
-2. Select **Validate** and resolve any missing or incompatible schema fields.
-3. Select **Dry Run** and inspect counts/conflicts. It does not write records.
-4. If using Chat, select **Check local configuration**, enable it, and make a disposable read-only request.
-5. Run Full Sync only after reviewing a successful Dry Run and explicitly confirming the action.
+字段名称必须与下表完全一致。建议先建表，再复制两张表的 Table ID。
 
-Common codes include CONFIGURATION_ERROR, AUTHENTICATION_FAILED, PERMISSION_DENIED, FEISHU_SCHEMA_INVALID, FEISHU_CHAT_INVALID_CREDENTIALS, FEISHU_CHAT_EVENT_CONFIGURATION_ERROR, and FEISHU_CHAT_CONNECT_TIMEOUT. Use the Settings result and sanitized runtime logs for diagnosis. Never paste App Secrets, App Tokens, tenant/access tokens, or Authorization headers into issues or chat.
+### Creator 表
 
-## Documentation Status
+| 字段名称 | 推荐字段类型 | 是否必需 | 说明 |
+| --- | --- | --- | --- |
+| `KOLConnect Creator ID` | 单行文本 | 是 | KOLConnect 自动维护的达人编号 |
+| `达人名称` | 单行文本 | 是 | 达人显示名称 |
+| `国家/地区` | 单行文本或单选 | 是 | 达人所在国家或地区 |
+| `语言` | 单行文本或单选 | 是 | 主要语言 |
+| `内容类型` | 单行文本或单选 | 是 | 内容分类 |
+| `已归档` | 复选框、单选或文本 | 是 | 是否已归档 |
+| `最近同步时间` | 日期时间 | 是 | 最近一次同步时间 |
+| `社媒账号` | 关联记录 | 是 | 关联到 CreatorAccount，允许多条记录 |
+| `Insight等级` | 单行文本或单选 | 否 | 可选分析信息 |
+| `最后分析时间` | 日期时间 | 否 | 可选分析时间 |
 
-- docs/feishu_setup.md: **CURRENT** canonical setup.
-- docs/feishu_chat_assistant_setup.md: **CURRENT** Chat-specific supplement.
-- docs/assistant_architecture.md: **CURRENT** Assistant boundary and intent contract.
-- docs/feishu-openclaw-skill.md: **HISTORICAL / REFERENCE-ONLY**; OpenClaw is retired from the active runtime.
-- docs/飞书集成配置指南.md: **HISTORICAL / REFERENCE-ONLY** v0.1.2 material.
+### CreatorAccount 表
+
+| 字段名称 | 推荐字段类型 | 是否必需 | 说明 |
+| --- | --- | --- | --- |
+| `账号唯一ID` | 单行文本 | 是 | KOLConnect 自动维护的平台账号编号 |
+| `KOLConnect Creator ID` | 单行文本 | 是 | 对应 Creator 的稳定编号 |
+| `平台` | 单行文本或单选 | 是 | TikTok、Instagram、YouTube 等 |
+| `主页链接` | 超链接或单行文本 | 是 | 平台主页 |
+| `粉丝数` | 数字 | 是 | 公开粉丝数 |
+| `最近同步时间` | 日期时间 | 是 | 最近一次同步时间 |
+| `达人` | 关联记录 | 是 | 关联到 Creator |
+| `平均播放量` | 数字 | 否 | 可选表现信息 |
+| `最后分析时间` | 日期时间 | 否 | 可选分析时间 |
+
+上表是新建数据表时的推荐类型。为兼容已有表，当前校验也接受“粉丝数”“平均播放量”使用单行文本，并接受“最近同步时间”“最后分析时间”使用单行文本；新表仍建议使用数字和日期时间类型，便于在飞书中筛选、排序和统计。
+
+### 正确设置关联字段
+
+- `Creator.社媒账号` → 关联 `CreatorAccount` 表 → 允许关联多条记录。
+- `CreatorAccount.达人` → 关联 `Creator` 表。
+
+不要手工编造、复制或复用 `KOLConnect Creator ID` 和 `账号唯一ID`。这些编号由 KOLConnect 维护，重复编号会阻止同步。
+
+## 五、找到需要填写的 ID
+
+### App ID 和 App Secret
+
+在飞书开放平台打开应用，进入“凭证与基础信息”页面复制。
+
+示例格式：
+
+```text
+App ID: cli_xxx
+App Secret: 请使用你自己的应用密钥
+```
+
+### App Token
+
+App Token 用于定位整个多维表格 Base。你可以在 Base 的开发者信息或地址中查看；常见格式类似：
+
+```text
+bascnxxxxxxxxxxxx
+```
+
+如果地址类似：
+
+```text
+https://example.feishu.cn/base/bascnxxxxxxxxxxxx?table=tblxxxxxxxxxxxx
+```
+
+其中 `bascn...` 通常是 App Token，`tbl...` 是当前数据表的 Table ID。飞书通过 Wiki 打开的 Base 可能不会在地址中直接显示 App Token，此时请以飞书界面或官方开发者信息显示的值为准，不要猜测。
+
+### Creator 和 CreatorAccount Table ID
+
+分别打开两张表，从表格地址或开发者信息中复制对应的 Table ID。常见格式为：
+
+```text
+tblxxxxxxxxxxxx
+```
+
+- Creator 表 → `达人 Table ID`
+- CreatorAccount 表 → `达人账号 Table ID`
+- Agency 联系人表 → `Agency 联系人 Table ID`，仅独立的 Agency 联系人功能使用，可留空
+
+App Token、Table ID 和表名不是同一个值。
+
+## 六、在 KOLConnect 中填写
+
+进入“设置” → “集成” → “飞书配置（同一个 App）”。
+
+| KOLConnect 字段 | 是否必填 | 填写内容 |
+| --- | --- | --- |
+| `App ID` | 是 | 飞书应用的 App ID |
+| `App Secret` | 是 | 飞书应用的 App Secret |
+| `App Token` | 是 | 目标多维表格 Base 的 App Token |
+| `达人 Table ID` | 是 | Creator 表的 Table ID |
+| `达人账号 Table ID` | 是 | CreatorAccount 表的 Table ID |
+| `Agency 联系人 Table ID` | 否 | 仅 Agency 联系人功能需要 |
+
+填写后点击“保存飞书配置”。重新打开设置时，秘密字段可能显示为空或掩码；如果不想更换 App Secret，请不要把掩码当作新密钥填写。
+
+## 七、安全完成第一次同步
+
+推荐始终按以下顺序操作：
+
+1. **保存飞书配置**
+2. **验证连接**
+3. **预检查 / Dry Run**
+4. 查看待新增、待更新、冲突和关系变更
+5. 确认结果无误后，点击 **同步到飞书**
+
+各步骤含义：
+
+- **验证连接**：检查凭据、表是否可访问、字段名称和字段类型；不会写入记录。
+- **预检查 / Dry Run**：预览将新增或更新的内容；不会写入记录。
+- **同步到飞书**：确认后才会真正创建或更新记录。
+
+普通同步不会删除飞书记录，也不会把飞书中的修改反向写回 KOLConnect。首次使用时，建议先用少量本地测试数据确认表结构。
+
+## 八、可选：启用飞书 AI 助手
+
+如果只需要多维表格同步，可以跳过本节。
+
+AI 助手复用同一个 App ID 和 App Secret，但不需要 App Token 或 Table ID。请在飞书开放平台：
+
+1. 为应用启用“机器人”能力。
+2. 在事件订阅中选择“长连接”接收方式。
+3. 订阅事件 `im.message.receive_v1`。
+4. 开通以下消息权限：
+   - `im:message.p2p_msg:readonly`
+   - `im:message.group_at_msg:readonly`
+   - `im:message:send_as_bot`
+5. 创建并发布新的应用版本。
+6. 确保机器人对需要使用的成员可见。
+
+然后回到 KOLConnect：
+
+1. 进入“设置” → “集成” → “飞书 AI 助手”。
+2. 点击“检查本机配置”。
+3. 检查通过后点击“启用助手”。
+4. 等待状态变为“已连接”。
+
+私聊可直接发送文字消息；群聊需要先 `@` 机器人。连接是否成功还取决于本机网络、代理、防火墙、飞书应用发布状态及事件配置，不能仅凭“本机配置检查通过”判断长连接一定可用。
+
+## 九、常见问题
+
+| 现象或错误 | 常见原因 | 建议 |
+| --- | --- | --- |
+| 验证提示缺少字段 | 字段名不完全一致，或建在了错误的数据表 | 对照本指南逐字检查字段名和 Table ID |
+| 验证提示字段类型不兼容 | 数字、日期时间或关联字段类型不正确 | 按字段表调整类型，再重新验证 |
+| `PERMISSION_DENIED` | 未开通 `bitable:app`、应用版本未发布，或应用没有 Base/表访问权 | 依次检查 API 权限、版本发布、Base 协作者和高级权限 |
+| `AUTHENTICATION_FAILED` | App ID 或 App Secret 错误 | 从应用凭证页重新复制并保存 |
+| 找不到 Base 或数据表 | App Token 或 Table ID 错误，或应用无权访问 | 重新确认 Base、两张表和应用身份 |
+| `1254061` / `NumberFieldConvFail` | 目标数字字段类型不正确 | 当前版本已修复已知的数值传输问题；仍需确认“粉丝数”“平均播放量”为兼容类型 |
+| `1254064` / `DatetimeFieldConvFail` | 目标日期字段类型不正确 | 将“最近同步时间”“最后分析时间”设为日期时间或其他兼容类型 |
+| `FEISHU_CHAT_CONNECT_TIMEOUT` | 网络、代理、应用发布、机器人或事件订阅配置有问题 | 检查连接状态、应用版本、长连接事件和消息权限后重试 |
+
+如果问题仍未解决，请记录界面中的错误码和操作步骤。不要公开 App Secret、App Token、访问令牌或包含个人数据的日志。

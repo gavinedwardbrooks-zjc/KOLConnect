@@ -128,7 +128,10 @@ open /Applications/KOLConnect.app
 
 ## 获取帮助
 
+- 外部服务配置总指南：[docs/EXTERNAL_SYNC_SETUP_GUIDE_ZH.md](docs/EXTERNAL_SYNC_SETUP_GUIDE_ZH.md)
 - 飞书设置：[docs/feishu_setup.md](docs/feishu_setup.md)
+- 邮箱设置：[docs/mail_setup.md](docs/mail_setup.md)
+- Google Sheets 设置：[docs/google_sheets_setup.md](docs/google_sheets_setup.md)
 - 问题反馈：[GitHub Issues](https://github.com/gavinedwardbrooks-zjc/KOLConnect/issues)
 
 提交问题时，请描述操作步骤和错误提示，但不要附带密码、Token、Cookie 或个人数据。
