@@ -1,117 +1,137 @@
 # KOLConnect
 
-KOLConnect 是一个本地桌面工作台，用于管理海外达人 Creator、Campaign 协作、内容发布及相关数据。
+KOLConnect 是一款面向海外达人营销团队的本地桌面工作台，帮助你集中管理达人资料、Campaign、邮件跟进、Agency 关系和跨平台公开数据。
 
-## 当前支持的能力
+数据默认保存在你的电脑上。只有在你主动配置飞书、Google Sheets 或邮箱等外部服务后，KOLConnect 才会连接对应服务。
 
-- **Creator Library**：支持搜索、筛选、归档/恢复、永久删除、Agency 关系、导入，以及按所选 达人导出 Excel。
-- **Creator / CreatorAccount 多账号模型**：一个 达人可拥有多个平台账号 （比如：达人A 同时有YouTube tiktok Instagram 账号）。
-- **Campaign 管理**：支持产品、CampaignCreator 协作记录、执行账号选择、互动/表现数据及风险检查。
-- **邮箱管理**：支持除outlook邮箱外、gmail 网易邮箱 qq邮箱等邮箱，可以读取收件箱内容，同步达人邮件 （注：暂不支持发邮件 ）
-- **Feishu 集成**：可选 Feishu Bitable 同步，以及可选的 Feishu Chat Assistant。
-- **浏览器采集**：支持 Instagram 公开主页/相关 API 采集和 YouTube Shorts 指标；TikTok 提供页面分析工具，但被动网络采集不是当前生产功能。（之后会更新tiktok采集功能）
+## 主要功能
 
-## 存储与运行时
+### 达人管理
 
-KOLConnect 是本地应用，**SQLite 是当前应用数据权威（application authority）**：
+- 集中管理达人及其 TikTok、Instagram、YouTube 账号。
+- 搜索、筛选、归档、恢复和合并重复达人。
+- 保存公开邮箱、账号数据、合作记录和备注。
+- 按需导出所选达人数据。
 
-~~~text
-%APPDATA%\KOLConnect\data\kolconnect.db
-%APPDATA%\KOLConnect\storage_authority.json
-~~~
+### Campaign 管理
 
-当前 SQLite schema version 为 **6**。`storage_authority.json` 记录活动数据权威与预期 schema，应用会在启动时验证。
+- 创建 Campaign 并添加合作达人。
+- 记录报价、币种、计划发布日期和实际发布内容。
+- 跟踪 Brief、草稿、待发布、已完成等合作阶段。
+- 汇总内容表现、成本和需要处理的事项。
 
-`Creator_Library.xlsx` 是历史导入/兼容性文件，不再是当前权威数据库。KOLConnect 不提供整库 SQLite 到 Excel 的导出；Creator Library 的所选 Creator Excel 导出是独立且受限的导出功能。
+### 邮件与跟进
 
-Windows 应用通过仅限 localhost 的服务（`127.0.0.1`）和原生 JavaScript 前端运行，桌面壳使用 `pywebview`。用户设置、日志、任务数据与存储均位于 `%APPDATA%\KOLConnect`，不会写入 release 文件夹。
+- 通过标准 IMAP 同步收件箱和已发送邮件。
+- 将邮件与已有达人账号进行匹配。
+- 查看待回复、等待达人回复、稍后处理和停止跟进等状态。
+- 邮件事实保存在本地，方便持续跟进。
 
-## Creator 与 CreatorAccount 模型
+### Agency 管理
 
-**Creator** 是规范化的个人或业务实体；**CreatorAccount** 是归属于该 Creator 的单个、平台专属账号。二者为一对多关系：一个 Creator 可以拥有 TikTok、Instagram、YouTube 或其他已支持平台上的多个账号。
+- 管理 Agency、联系人和旗下达人。
+- 维护机构资料、联系方式、负责人和合作状态。
+- 将达人、Agency 与联系人关系集中到同一工作流中。
 
-Creator 导出遵循当前 Creator 级别合同：每个规范化 Creator 一行，并以 Creator 名称作为导出名称。它不是数据库备份，也不是按账号导出的原始数据转储。
+### 飞书集成
 
-## Campaign 与内容发布模型
+- 将达人和达人账号同步到飞书多维表格。
+- 同步前可先验证配置并预览变更。
+- 可选启用飞书聊天助手。
 
-Campaign 计划和实际发布证据被明确区分：
+首次配置请阅读 [飞书设置指南](docs/feishu_setup.md)。
 
-- **Planned** 协作数据记录执行账号与计划发布日期。
-- **Actual** 发布数据记录公开 URL、实际发布账号、实际发布时间，以及可用时的观察时间戳。
+### 浏览器采集与 Chrome 扩展
 
-一个 `CampaignCreator` 可以有多条实际发布记录。KOLConnect 不会将计划日期和实际日期折叠为一个含义不明确的 `publish date`。
+- 在 Instagram、YouTube 和 TikTok 达人页面查看公开资料并添加或更新账号。
+- 支持 Instagram Reels 和 YouTube Shorts 的可用公开指标。
+- 可将新平台账号明确关联到已有 Creator，减少重复记录。
 
-## 报价与成本
+Chrome 扩展需要与正在运行的 KOLConnect 桌面应用配合使用。
 
-金额记录使用 ISO 风格代码保留明确的币种身份。结构化报价包含 `unit amount`、正数 `quantity` 与 `pricing unit`；总 `creator_quote` 为 `unit amount × quantity`。`cost` 为已确认或应支付的合作总成本。历史的仅总额 quote/cost 记录仍然有效。
+## 下载与安装
 
-系统可以存储多种币种，但混合币种金额绝不会被静默相加为单一总额。KOLConnect 支持手动维护 USD 基准汇率并在需要时换算为 USD；不提供实时或历史 FX 汇率，也不提供会计账本。
+请前往 [KOLConnect v2.0.0 Releases](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/tag/v2.0.0) 下载与你设备匹配的文件。
 
-## Feishu
+### Windows x64
 
-Feishu 使用 **Settings** 中的一套本地配置。Bitable 同步是明确的 KOLConnect 到 Feishu 工作流：Validate、Dry Run，再执行确认后的 Full Sync。Feishu Chat 为可选功能，默认关闭；它使用官方 `lark-oapi` long connection，通过 KOLConnect Assistant 的允许工具集处理消息。Chat 不具备对 workbook、filesystem、SQL 或 Bitable 的直接访问权限。
+下载：[`KOLConnect_v2.0.0_Windows_x64.zip`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.0/KOLConnect_v2.0.0_Windows_x64.zip)
 
-当前 Chat 事件通道不需要 public callback 或 webhook URL。OpenClaw 不是当前运行时依赖，运行 KOLConnect 不需要它。关于配置、事件、权限与安全细节，请参阅 [Feishu setup](docs/feishu_setup.md)。
+1. 完整解压 ZIP，不要直接在压缩包内运行。
+2. 保持解压后的所有文件和文件夹在一起。
+3. 双击 `KOLConnect_v2.0.0.exe` 启动。
 
-### 飞书最小权限要求
+不要只移动 EXE。它需要与同目录中的运行文件保持在一起。
 
-常规 Creator/CreatorAccount 同步推荐只为应用身份开通 `bitable:app`。KOLConnect 使用 `tenant_access_token`，不要求用户 OAuth；Validate/Dry Run 也可使用 `bitable:app:readonly`，但 Full Sync 必须具备写权限。权限范围变更后必须创建并发布新的应用版本，并在租户要求时完成管理员审批。
+### macOS Apple Silicon
 
-API 权限之外，还必须把应用加入目标 Base，并让应用身份能够访问 Creator 与 CreatorAccount 两张表；启用高级权限时，Full Sync 需要两张表的读写权限。当前同步不会删除远端记录，也不会创建、删除或修改表和字段，因此不要求通讯录、日历、云文档、云盘、IM、Wiki、搜索、记录删除、建表或字段管理权限。飞书 Chat/AI Assistant 的机器人与消息权限是独立功能，不属于数据同步权限。
+适用于 M1、M2、M3、M4 等 Apple Silicon Mac，系统要求为 **macOS 14 或更高版本**。
 
-## 邮箱
+下载：[`KOLConnect_v2.0.0_macOS_arm64.dmg`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.0/KOLConnect_v2.0.0_macOS_arm64.dmg)
 
-当前支持的邮箱认证合同为：服务商允许时，通过密码或 app-password 使用标准 IMAP/SMTP。`Microsoft Outlook / Microsoft 365 OAuth2` 不属于官方支持范围。未来 Microsoft OAuth2 集成属于新功能，不是当前的兼容性承诺。
+打开 DMG，将 `KOLConnect.app` 拖入 `/Applications` 后再启动。
 
-## Chrome 扩展
+### macOS Intel
 
-在本地 KOLConnect 应用运行时，可通过 Chrome 的 **Load unpacked** 流程加载仓库中的 `chrome_extension/` 目录。采集能力按平台和页面状态严格限定：
+适用于 Intel 处理器 Mac，系统要求为 **macOS 14 或更高版本**。
 
-- Instagram 公开主页及相关 API 采集。
-- YouTube Shorts 指标支持。
-- TikTok 页面分析工具。
+下载：[`KOLConnect_v2.0.0_macOS_x64.dmg`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.0/KOLConnect_v2.0.0_macOS_x64.dmg)
 
-历史 TikTok 被动网络导入管线仅作为实验性参考，未接入生产扩展。`TikTok Passive Capture V2` 不是当前生产功能；请参阅独立的 Post-M8 提案：[TikTok Passive Capture V2](docs/post_m8_tiktok_passive_capture_v2.md)。
+打开 DMG，将 `KOLConnect.app` 拖入 `/Applications` 后再启动。
 
-## 开发与测试
+### macOS 首次启动
 
-仓库包含 Python 后端、原生 JavaScript Web 前端及 Chrome 扩展源码。
+当前 macOS 应用使用 ad-hoc 签名，尚未经过 Apple 公证。Gatekeeper 可能会阻止首次启动。
 
-权威 Python 全量测试命令为：
+先将应用拖入 `/Applications`，确认文件来自本项目的正式 Release，然后打开“终端”并运行：
 
-~~~powershell
-python scripts/run_python_tests.py --verbosity 1
-~~~
+```bash
+xattr -dr com.apple.quarantine /Applications/KOLConnect.app
+open /Applications/KOLConnect.app
+```
 
-该命令创建仓库测试沙箱，并隔离生产 `APPDATA`、运行时目录、临时目录、SQLite 与 workbook 路径。除非已在该沙箱内运行，否则不要将原始 `python -m unittest discover` 视为权威测试命令。
+第一条命令用于移除下载文件的隔离标记，正常情况下不会显示输出；第二条命令用于启动应用。未来完成 Developer ID 签名和 Apple 公证后，将不再需要此操作。
 
-其他当前检查命令：
+### Chrome 扩展
 
-~~~powershell
-node tests/run_extension_tests.js
-node tests/run_extension_tests.js --syntax
-python -m compileall app
-git diff --check
-~~~
+下载：[`KOLConnect_Chrome_Extension_v2.0.0.zip`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.0/KOLConnect_Chrome_Extension_v2.0.0.zip)
 
-## Windows 发布
+1. 解压 ZIP。
+2. 在 Chrome 地址栏打开 `chrome://extensions/`。
+3. 开启“开发者模式”。
+4. 选择“加载已解压的扩展程序”，并选择解压后的扩展目录。
+5. 先启动 KOLConnect 桌面应用，再打开支持的达人主页。
 
-Windows 的规范发布格式为 **ONEDIR + ZIP**。请解压完整的版本目录并运行其中的 EXE，不要将其与相邻的 `_internal` 目录分离。
+## 快速开始
 
-使用以下命令构建发布包：
+1. 启动 KOLConnect。
+2. 在“达人库”中手动添加达人，或使用任务导入公开主页链接。
+3. 创建 Campaign，并将达人加入合作流程。
+4. 如需页面采集，安装 Chrome 扩展并保持桌面应用运行。
+5. 如需邮箱、飞书或 Google Sheets，同步前先在“设置”中完成对应配置。
 
-~~~powershell
-powershell -ExecutionPolicy Bypass -File .\packaging\build_release.ps1
-~~~
+## 数据与隐私
 
-构建会生成 `release/KOLConnect_v2.0.0/` 和 `release/KOLConnect_v2.0.0.zip`，验证固定的 SQLite runtime，并检查 ZIP 仅包含一个版本化顶层目录。
+- KOLConnect 采用本地优先设计，主要业务数据保存在你的电脑上。
+- 邮箱密码或授权码使用操作系统提供的安全凭据存储能力。
+- 飞书、Google Sheets 和邮箱同步均为可选功能，未配置时不会连接这些服务。
+- 请勿在 Issue、截图或聊天中公开密码、授权码、Token、Cookie 或其他敏感信息。
 
-## 当前限制与 Post-M8 工作
+## 当前限制
 
-- `TikTok Passive Capture V2` 尚未实现。
-- Microsoft OAuth2 邮箱支持尚未实现。
-- 自动 FX 汇率与会计功能尚未实现。
-- OpenClaw 部署不是当前产品要求。
+- TikTok 页面分析可用，但 `TikTok Passive Capture V2` 尚不是正式生产功能，部分近期内容指标可能无法获取。
+- 暂不支持 Outlook / Microsoft 365 OAuth 登录。
+- 暂不提供自动实时汇率；汇率需要手动维护。
+- 邮箱功能用于同步和跟进，不会从 KOLConnect 直接发送邮件。
+- macOS 应用尚未经过 Apple 公证，首次启动可能需要按上方说明解除隔离。
+- 平台公开页面、登录状态或访问限制可能导致部分资料和内容指标缺失；KOLConnect 不会猜测或伪造缺失数据。
+
+## 获取帮助
+
+- 飞书设置：[docs/feishu_setup.md](docs/feishu_setup.md)
+- 问题反馈：[GitHub Issues](https://github.com/gavinedwardbrooks-zjc/KOLConnect/issues)
+
+提交问题时，请描述操作步骤和错误提示，但不要附带密码、Token、Cookie 或个人数据。
 
 ## 许可证
 
