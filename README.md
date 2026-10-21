@@ -116,7 +116,7 @@ KOLConnect 是开源项目，源代码就在这个 GitHub 仓库中。你可以�
 
 项目使用 MIT License。修改和运行开发版本产生的结果由使用者自行负责；开始前请先备份本地数据，并将正式安装包与开发版本分开保存。
 
-第一次接触源码，请阅读 [用 AI 在本地继续开发 KOLConnect](docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md)。
+第一次接触源码，请阅读 [用 AI 继续开发 KOLConnect](docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md)。
 
 ## 数据与隐私
 
@@ -140,7 +140,7 @@ KOLConnect 是开源项目，源代码就在这个 GitHub 仓库中。你可以�
 - 飞书设置：[docs/feishu_setup.md](docs/feishu_setup.md)
 - 邮箱设置：[docs/mail_setup.md](docs/mail_setup.md)
 - Google Sheets 设置：[docs/google_sheets_setup.md](docs/google_sheets_setup.md)
-- AI 本地开发指南：[docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md](docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md)
+- 用 AI 继续开发 KOLConnect：[docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md](docs/AI_LOCAL_DEVELOPMENT_GUIDE_ZH.md)
 - 问题反馈：[GitHub Issues](https://github.com/gavinedwardbrooks-zjc/KOLConnect/issues)
 
 提交问题时，请描述操作步骤和错误提示，但不要附带密码、Token、Cookie 或个人数据。
