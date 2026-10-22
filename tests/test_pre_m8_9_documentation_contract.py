@@ -18,9 +18,9 @@ class PreM89DocumentationContractTests(unittest.TestCase):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("KOLConnect 采用本地优先设计", readme)
         self.assertIn("主要业务数据保存在你的电脑上", readme)
-        self.assertIn("KOLConnect_v2.0.0_Windows_x64.zip", readme)
-        self.assertIn("KOLConnect_v2.0.0_macOS_arm64.dmg", readme)
-        self.assertIn("KOLConnect_Chrome_Extension_v2.0.0.zip", readme)
+        self.assertIn("KOLConnect_v2.0.1_Windows_x64.zip", readme)
+        self.assertIn("KOLConnect_v2.0.1_macOS_arm64.dmg", readme)
+        self.assertIn("KOLConnect_Chrome_Extension_v2.0.1.zip", readme)
 
     def test_readme_does_not_advertise_retired_or_unsupported_contracts(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

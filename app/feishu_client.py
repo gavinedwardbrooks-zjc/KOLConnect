@@ -21,7 +21,7 @@ import requests
 
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_PAGE_SIZE = 500
-FEISHU_USER_AGENT = "KOLConnect/2.0.0"
+FEISHU_USER_AGENT = "KOLConnect/2.0.1"
 
 
 def is_packaged_macos() -> bool:

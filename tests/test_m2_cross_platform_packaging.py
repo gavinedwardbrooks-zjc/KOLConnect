@@ -255,9 +255,9 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("arm64_test_only:", manual)
         self.assertIn("source_sha:", manual)
         self.assertIn("fromJSON(inputs.arm64_test_only", manual)
-        self.assertIn("KOLConnect_v2.0.0_macOS_arm64_TEST.dmg", manual)
+        self.assertIn("KOLConnect_v2.0.1_macOS_arm64_TEST.dmg", manual)
         self.assertIn(
-            "inputs.source_sha || (inputs.arm64_test_only && github.sha)",
+            "inputs.source_sha || github.sha",
             manual,
         )
         self.assertIn("pyi-archive_viewer -r -b", manual)
@@ -415,9 +415,10 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("workflow_dispatch:", build)
         self.assertIn('runs-on: macos-15', build)
         self.assertIn('runs-on: macos-15-intel', build)
-        self.assertIn('refs/tags/v', build)
+        self.assertNotIn('refs/tags/v', build)
         self.assertNotIn("branches:\n      - main", build)
-        self.assertIn('if: startsWith(github.ref', build)
+        self.assertNotIn('if: startsWith(github.ref', build)
+        self.assertNotIn("softprops/action-gh-release", build)
         self.assertIn('./packaging/build_release.ps1', build)
         self.assertIn('bash packaging/build_macos.sh', build)
         self.assertIn('bash packaging/build_macos.sh x86_64', build)
@@ -451,10 +452,9 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertNotIn("needs", manual_job)
         self.assertEqual("1", manual_job["env"]["HOMEBREW_NO_AUTO_UPDATE"])
 
-        frozen_sha = "4b2833bd9d6c797d459cba72bf4a9949d1d1d9d2"
         workflow_env = manual_workflow["env"]
-        self.assertEqual(frozen_sha, workflow_env["FROZEN_RELEASE_SHA"])
-        self.assertEqual("2.0.0", workflow_env["PRODUCT_VERSION"])
+        self.assertNotIn("FROZEN_RELEASE_SHA", workflow_env)
+        self.assertEqual("2.0.1", workflow_env["PRODUCT_VERSION"])
         self.assertEqual("frozen-src", workflow_env["FROZEN_PRODUCT_ROOT"])
         matrix_expression = manual_job["strategy"]["matrix"]["include"]
         self.assertFalse(manual_job["strategy"]["fail-fast"])
@@ -471,9 +471,9 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "runner": "macos-14",
                 "target_min_macos": "14",
                 "build_argument": "",
-                "source_dmg": "release/KOLConnect_v2.0.0_mac_arm64.dmg",
-                "target_dmg": "release/KOLConnect_v2.0.0_macOS_arm64.dmg",
-                "artifact_name": "KOLConnect-v2.0.0-macOS-arm64",
+                "source_dmg": "release/KOLConnect_v2.0.1_mac_arm64.dmg",
+                "target_dmg": "release/KOLConnect_v2.0.1_macOS_arm64.dmg",
+                "artifact_name": "KOLConnect-v2.0.1-macOS-arm64",
                 "app_path": "packaging/.pyinstaller-dist-macos/KOLConnect.app",
             },
             "x86_64": {
@@ -481,9 +481,9 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "runner": "macos-15-intel",
                 "target_min_macos": "14",
                 "build_argument": "x86_64",
-                "source_dmg": "release/KOLConnect_v2.0.0_mac_intel.dmg",
-                "target_dmg": "release/KOLConnect_v2.0.0_macOS_x64.dmg",
-                "artifact_name": "KOLConnect-v2.0.0-macOS-x64",
+                "source_dmg": "release/KOLConnect_v2.0.1_mac_intel.dmg",
+                "target_dmg": "release/KOLConnect_v2.0.1_macOS_x64.dmg",
+                "artifact_name": "KOLConnect-v2.0.1-macOS-x64",
                 "app_path": "dist/pyinstaller-macos-intel/KOLConnect.app",
             },
         }
@@ -502,14 +502,12 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertEqual(2, len(checkout_steps))
         root_checkout, frozen_checkout = checkout_steps
         self.assertEqual(
-            "${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || 'main' }}",
+            "${{ inputs.source_sha || github.sha }}",
             root_checkout["with"]["ref"],
         )
         self.assertNotIn("path", root_checkout["with"])
         self.assertEqual(
-            "${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || '"
-            + frozen_sha
-            + "' }}",
+            "${{ inputs.source_sha || github.sha }}",
             frozen_checkout["with"]["ref"],
         )
         self.assertEqual("frozen-src", frozen_checkout["with"]["path"])
@@ -525,9 +523,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('"${actual_sha}" == "${EXPECTED_SOURCE_SHA}"', revision_check)
         self.assertIn("exit 1", revision_check)
         self.assertEqual(
-            "${{ inputs.source_sha || (inputs.arm64_test_only && github.sha) || '"
-            + frozen_sha
-            + "' }}",
+            "${{ inputs.source_sha || github.sha }}",
             manual_job["env"]["EXPECTED_SOURCE_SHA"],
         )
 
@@ -552,9 +548,9 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("platform.machine()", manual)
         self.assertIn('python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"', manual)
 
-        version_check = steps_by_name["Assert v2.0.0 version metadata"]["run"]
+        version_check = steps_by_name["Assert v2.0.1 version metadata"]["run"]
         self.assertIn("from app.version import APP_VERSION", version_check)
-        self.assertIn('expected = "2.0.0"', version_check)
+        self.assertIn('expected = "2.0.1"', version_check)
         self.assertIn("CFBundleShortVersionString", version_check)
         self.assertIn("CFBundleVersion", version_check)
 
@@ -583,7 +579,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(
             "frozen-src",
-            steps_by_name["Assert v2.0.0 version metadata"]["working-directory"],
+            steps_by_name["Assert v2.0.1 version metadata"]["working-directory"],
         )
         self.assertEqual("${{ matrix.target_min_macos }}", manual_job["env"]["TARGET_MIN_MACOS"])
         verification = steps_by_name["Verify macOS deployment targets and packaged resources"]["run"]
@@ -675,7 +671,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         dmg_build = steps_by_name["Create final macOS DMG"]["run"]
         self.assertIn("hdiutil create", dmg_build)
         self.assertIn('product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"', dmg_build)
-        self.assertIn("KOLConnect_v2.0.0_macOS_arm64_TEST.dmg", dmg_build)
+        self.assertIn("KOLConnect_v2.0.1_macOS_arm64_TEST.dmg", dmg_build)
         self.assertIn("fail_gate dmg_output_filename", dmg_build)
         self.assertIn("fail_gate dmg_create", dmg_build)
         dmg_validation = steps_by_name["Validate DMG and calculate SHA-256"]["run"]
@@ -824,18 +820,17 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("build-macos-arm64:", build)
         self.assertIn("build-macos-intel:", build)
         arm_job = build.split("  build-macos-arm64:", 1)[1].split("  build-macos-intel:", 1)[0]
-        intel_job = build.split("  build-macos-intel:", 1)[1].split("  release:", 1)[0]
+        intel_job = build.split("  build-macos-intel:", 1)[1]
         self.assertNotIn("\n    needs:", arm_job)
         self.assertNotIn("\n    needs:", intel_job)
         self.assertIn("packaging/requirements-build.txt", intel_job)
         self.assertIn('[[ "$(uname -m)" == "x86_64" ]]', build)
         self.assertIn("KOLConnect-macos-arm64", build)
         self.assertIn("KOLConnect-macos-intel", build)
-        self.assertIn("KOLConnect_v2.0.0_mac_arm64.dmg", build)
-        self.assertIn("KOLConnect_v2.0.0_mac_intel.dmg", build)
-        self.assertIn("- build-macos-intel", build)
-        self.assertIn("actions/download-artifact@v4", build)
-        self.assertIn("if: startsWith(github.ref, 'refs/tags/v')", build)
+        self.assertIn("KOLConnect_v2.0.1_mac_arm64.dmg", build)
+        self.assertIn("KOLConnect_v2.0.1_mac_intel.dmg", build)
+        self.assertNotIn("actions/download-artifact@v4", build)
+        self.assertNotIn("softprops/action-gh-release", build)
         self.assertNotIn("branches:\n      - main", build)
 
         self.assertIn('TARGET_ARCH="${1:-arm64}"', script)

@@ -8,7 +8,7 @@ $packaging = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $packaging
 Set-Location $root
 
-$releaseVersion = "v2.0.0"
+$releaseVersion = "v2.0.1"
 $releaseName = "KOLConnect_$releaseVersion"
 $releaseFileName = "$releaseName.exe"
 $workPath = Join-Path $packaging ".pyinstaller-build"
@@ -65,11 +65,11 @@ if (-not (Test-Path -LiteralPath $builtExe)) {
 $release = Join-Path $root "release"
 $releaseDirectory = Join-Path $release $releaseName
 $releaseExe = Join-Path $releaseDirectory $releaseFileName
-$releaseZip = Join-Path $release "$releaseName.zip"
+$releaseZip = Join-Path $release "$releaseName`_Windows_x64.zip"
 $legacyOneFileExe = Join-Path $release $releaseFileName
 $stagingRoot = Join-Path $release ".staging-$([guid]::NewGuid().ToString('N'))"
 $stagingDirectory = Join-Path $stagingRoot $releaseName
-$stagingZip = Join-Path $stagingRoot "$releaseName.zip"
+$stagingZip = Join-Path $stagingRoot "$releaseName`_Windows_x64.zip"
 New-Item -ItemType Directory -Force -Path $release | Out-Null
 
 # A prior interrupted publication must not become part of the next release.

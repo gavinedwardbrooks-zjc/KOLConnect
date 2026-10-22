@@ -387,7 +387,7 @@ class FeishuClientTests(unittest.TestCase):
         self.assertEqual(2, result.pagination_pages)
         self.assertEqual("GET", fallback.calls[0][0].method)
         self.assertIn("page_token=next-page", fallback.calls[1][0].full_url)
-        self.assertEqual("KOLConnect/2.0.0", fallback.calls[0][0].get_header("User-agent"))
+        self.assertEqual("KOLConnect/2.0.1", fallback.calls[0][0].get_header("User-agent"))
 
     def test_malformed_primary_and_fallback_return_explicit_failure(self):
         transport = QueueTransport([

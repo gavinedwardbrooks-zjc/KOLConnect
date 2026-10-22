@@ -65,11 +65,14 @@ class RuntimeLifecycleHotfixTests(unittest.TestCase):
         )
         self.assertIn("exclude_binaries=True", spec)
         self.assertIn("COLLECT(", spec)
-        self.assertIn('RELEASE_NAME = "KOLConnect_v2.0.0"', spec)
+        self.assertIn('RELEASE_NAME = "KOLConnect_v2.0.1"', spec)
         self.assertIn('Write-Host "RELEASE_FORMAT = ONEDIR"', build)
         self.assertIn('$release = Join-Path $root "release"', build)
         self.assertIn('$releaseDirectory = Join-Path $release $releaseName', build)
-        self.assertIn('$releaseZip = Join-Path $release "$releaseName.zip"', build)
+        self.assertIn(
+            '$releaseZip = Join-Path $release "$releaseName`_Windows_x64.zip"',
+            build,
+        )
         self.assertIn("[System.IO.Compression.ZipFile]::CreateFromDirectory(", build)
         self.assertIn('$stagingRoot = Join-Path $release ".staging-', build)
         self.assertIn('Get-ChildItem -LiteralPath $release -Directory -Filter ".staging-*"', build)

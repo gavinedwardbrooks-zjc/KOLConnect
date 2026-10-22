@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-CURRENT_VERSION = "2.0.0"
+CURRENT_VERSION = "2.0.1"
 
 
 class VersionConsistencyTests(unittest.TestCase):
@@ -71,7 +71,7 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn(f"KOLConnect_v{CURRENT_VERSION}_Windows_x64.zip", readme)
 
         artifacts = (
-            f"KOLConnect_v{CURRENT_VERSION}.zip",
+            f"KOLConnect_v{CURRENT_VERSION}_Windows_x64.zip",
             f"KOLConnect_v{CURRENT_VERSION}_mac_arm64.dmg",
             f"KOLConnect_v{CURRENT_VERSION}_mac_intel.dmg",
         )
@@ -82,12 +82,9 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn('$releaseDirectory', windows_build)
         self.assertIn('$releaseZip', windows_build)
 
-        self.assertIn("actions/download-artifact@v4", workflow)
-        self.assertIn("merge-multiple: true", workflow)
-        self.assertIn("files: release-assets/*", workflow)
-        self.assertIn("- build-windows", workflow)
-        self.assertIn("- build-macos-arm64", workflow)
-        self.assertIn("- build-macos-intel", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertNotIn("softprops/action-gh-release", workflow)
+        self.assertNotIn("refs/tags/v", workflow)
 
 
 if __name__ == "__main__":
