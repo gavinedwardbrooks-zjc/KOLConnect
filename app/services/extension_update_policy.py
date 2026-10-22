@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from domain.creator_naming import default_creator_name
+
 
 @dataclass(frozen=True)
 class ExtensionUpdateDecision:
@@ -95,6 +97,18 @@ def decide_extension_update(
             else creator.get(observation_field)
         )
         observed = field_observed(analysis, observation_field, source_value)
+        if field == "name" and not has_observed_value(old_value):
+            derived_name = default_creator_name(
+                display_name=creator.get("creator_name"),
+                username=creator.get("username"),
+                profile_title=creator.get("profile_title") or creator.get("title"),
+            )
+            if derived_name:
+                creator_values[field] = derived_name
+                observed = observed or field_observed(
+                    analysis, "username", creator.get("username")
+                )
+                new_value = derived_name
         if has_observed_value(old_value):
             creator_values[field] = old_value
             if observed and has_observed_value(new_value) and str(old_value) != str(new_value):

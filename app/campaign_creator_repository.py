@@ -11,6 +11,7 @@ from typing import Any
 
 from data_repository_base import ExcelDataRepository, utc_now
 from campaign_repository import CampaignRepository
+from domain.creator_naming import preserved_or_default_creator_name
 from domain.money import apply_quote_contract
 from domain.publication import (
     normalize_publication_url,
@@ -191,7 +192,8 @@ class CampaignCreatorRepository(ExcelDataRepository):
             raise ValueError("关联的 Campaign 不存在。")
         if str(campaign.get("archived_at") or "").strip():
             raise ValueError("关联的 Campaign 已归档。")
-        if not self.row_by_key(workbook["Creators"], "creator_id", creator_id):
+        creator = self.row_by_key(workbook["Creators"], "creator_id", creator_id)
+        if not creator:
             raise ValueError("关联的达人不存在。")
         campaign_platforms = CampaignRepository.parse_platforms(
             campaign.get("platforms"), campaign.get("platform")
@@ -204,6 +206,20 @@ class CampaignCreatorRepository(ExcelDataRepository):
                 raise ValueError("达人账号不属于所选达人。")
             if campaign_platforms and str(account.get("platform") or "") not in campaign_platforms:
                 raise ValueError("执行账号平台不属于 Campaign 目标平台。")
+        if not str(creator.get("name") or "").strip():
+            primary_account = self.row_by_key(
+                workbook["CreatorAccounts"], "account_id", normalized_account_ids[0]
+            )
+            repaired_name = preserved_or_default_creator_name(
+                "", username=(primary_account or {}).get("username")
+            )
+            if repaired_name:
+                self.upsert_row(
+                    workbook["Creators"],
+                    "creator_id",
+                    creator_id,
+                    {**creator, "name": repaired_name, "updated_at": utc_now()},
+                )
         for row in self.rows(workbook["CampaignCreators"]):
             if str(row.get("id") or "") == current_id:
                 continue
@@ -285,7 +301,9 @@ class CampaignCreatorRepository(ExcelDataRepository):
             "planned_publish_dates": planned_dates,
             "publications": publications,
             "archived_at": str(record.get("archived_at") or "").strip() or None,
-            "creator_name": str(creator.get("name") or ""),
+            "creator_name": preserved_or_default_creator_name(
+                creator.get("name"), username=account.get("username")
+            ),
             "agency_id": agency_id or None,
             "agency_name": str(agency.get("name") or "").strip() or None,
             "account_platform": str(account.get("platform") or ""),
@@ -449,6 +467,16 @@ class CampaignCreatorRepository(ExcelDataRepository):
                     })
                     continue
                 account = eligible_accounts[0]
+                if not str(creator.get("name") or "").strip():
+                    repaired_name = preserved_or_default_creator_name(
+                        "", username=account.get("username")
+                    )
+                    if repaired_name:
+                        creator = {**creator, "name": repaired_name, "updated_at": now}
+                        creators[creator_id] = creator
+                        self.upsert_row(
+                            workbook["Creators"], "creator_id", creator_id, creator
+                        )
                 existing = relations_by_creator.get(creator_id)
                 if existing and not str(existing.get("archived_at") or "").strip():
                     results.append({

@@ -19,6 +19,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from domain.normalization import normalize_country, normalize_followers, normalize_tags
+from domain.creator_naming import default_creator_name, preserved_or_default_creator_name
 
 from openpyxl.styles import Font
 
@@ -283,6 +284,13 @@ class CreatorRepository:
                 if not creator_values.get(field) and existing_value:
                     creator_values[field] = existing_value
             creator_values["created_at"] = existing.get("created_at") or creator_values["created_at"]
+            creator_values["name"] = preserved_or_default_creator_name(
+                existing.get("name"),
+                display_name=creator_values.get("name"),
+                username=(analysis.get("creator") or {}).get("username")
+                if isinstance(analysis.get("creator"), dict)
+                else "",
+            )
             if not self._account_row_by_uid(workbook["CreatorAccounts"], account_uid):
                 for field in ("platform", "profile_url", "followers"):
                     creator_values[field] = existing.get(field) or creator_values.get(field)
@@ -529,9 +537,16 @@ class CreatorRepository:
             if creator_id in creator_ids:
                 skipped_existing += 1
                 continue
+            username = self._username_from_profile_url(
+                str(record.get("platform") or ""), str(record.get("profile_url") or "")
+            )
             creator_values = {
                 "creator_id": creator_id,
-                "name": str(record.get("name") or ""),
+                "name": default_creator_name(
+                    display_name=record.get("name") or record.get("creator_name"),
+                    username=record.get("username") or username,
+                    profile_title=record.get("profile_title") or record.get("title"),
+                ),
                 "platform": str(record.get("platform") or ""),
                 "profile_url": str(record.get("profile_url") or ""),
                 "country": str(record.get("country") or ""),
@@ -555,9 +570,7 @@ class CreatorRepository:
                 "creator_id": creator_id,
                 "account_uid": account_uid,
                 "platform": str(record.get("platform") or ""),
-                "username": self._username_from_profile_url(
-                    str(record.get("platform") or ""), str(record.get("profile_url") or "")
-                ),
+                "username": username,
                 "profile_url": str(record.get("profile_url") or ""),
                 "followers": "",
                 "account_email": str(record.get("email") or ""),
@@ -669,14 +682,20 @@ class CreatorRepository:
                 else {}
             )
             is_new_creator = not bool(existing_creator)
-            creator_name = str(record.get("creator_name") or "").strip()
+            creator_name = default_creator_name(
+                display_name=record.get("creator_name"),
+                username=record.get("username") or self._username_from_profile_url(platform, profile_url),
+                profile_title=record.get("profile_title") or record.get("title"),
+            )
             incoming_email = str(record.get("email") or "").strip()
             creator_email = str(existing_creator.get("email") or incoming_email)
             if record.get("email_recheck") and incoming_email:
                 creator_email = incoming_email
             creator_values = {
                 "creator_id": creator_id,
-                "name": creator_name or str(existing_creator.get("name") or ""),
+                "name": preserved_or_default_creator_name(
+                    existing_creator.get("name"), display_name=creator_name
+                ),
                 "platform": str(existing_creator.get("platform") or platform),
                 "profile_url": str(existing_creator.get("profile_url") or profile_url),
                 "country": str(existing_creator.get("country") or record.get("country") or ""),
@@ -2121,7 +2140,14 @@ class CreatorRepository:
             "imported_at": imported_at,
             "source": source,
             "creator": {
-                "creator_name": str(record.get("creator_name") or ""),
+                "creator_name": default_creator_name(
+                    display_name=record.get("creator_name"),
+                    username=record.get("username") or CreatorRepository._username_from_profile_url(
+                        str(record.get("platform") or ""),
+                        str(record.get("profile_url") or ""),
+                    ),
+                    profile_title=record.get("profile_title") or record.get("title"),
+                ),
                 "platform": str(record.get("platform") or ""),
                 "profile_url": str(record.get("profile_url") or ""),
                 "followers": str(record.get("followers") or ""),
@@ -2352,9 +2378,16 @@ class CreatorRepository:
     def _creator_values(analysis: dict[str, Any], status: str, creator_id: str) -> dict[str, Any]:
         creator = analysis.get("creator") if isinstance(analysis.get("creator"), dict) else {}
         insight = analysis.get("creator_insight") if isinstance(analysis.get("creator_insight"), dict) else {}
+        username = creator.get("username") or CreatorRepository._username_from_profile_url(
+            str(creator.get("platform") or ""), str(creator.get("profile_url") or "")
+        )
         return {
             "creator_id": creator_id,
-            "name": str(creator.get("creator_name") or ""),
+            "name": default_creator_name(
+                display_name=creator.get("creator_name"),
+                username=username,
+                profile_title=creator.get("profile_title") or creator.get("title"),
+            ),
             "platform": str(creator.get("platform") or ""),
             "profile_url": str(creator.get("profile_url") or ""),
             "country": str(creator.get("country") or ""),

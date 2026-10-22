@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 from creator_repository import CreatorRepository, ExtensionMutationError, _mutation_synchronized, _utc_now
 from domain.creator_url_resolver import CreatorURLResolver
+from domain.creator_naming import preserved_or_default_creator_name
 from storage.sqlite_runtime import sqlite_module
 from storage.migration import _value
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
@@ -300,6 +301,15 @@ class SQLiteCreatorRepository(CreatorRepository):
             if existing is not None:
                 account = dict(existing)
                 if str(account.get("creator_id") or "") == creator_id:
+                    repaired_name = preserved_or_default_creator_name(
+                        account.get("creator_name"), username=account.get("username")
+                    )
+                    if repaired_name and not str(account.get("creator_name") or "").strip():
+                        connection.execute(
+                            "UPDATE creators SET name=?, updated_at=? WHERE creator_id=?",
+                            (repaired_name, now, creator_id),
+                        )
+                        self.store.increment_business_revision(connection)
                     return {"created": False, "account": account}
                 return {
                     "created": False,
@@ -323,6 +333,15 @@ class SQLiteCreatorRepository(CreatorRepository):
                 f"INSERT INTO creator_accounts({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
                 tuple(account.values()),
             )
+            repaired_name = preserved_or_default_creator_name(
+                "", username=account["username"]
+            )
+            if repaired_name:
+                connection.execute(
+                    "UPDATE creators SET name=?, updated_at=? "
+                    "WHERE creator_id=? AND TRIM(COALESCE(name,''))=''",
+                    (repaired_name, now, creator_id),
+                )
             self.store.increment_business_revision(connection)
         return {"created": True, "account": account}
 
@@ -359,7 +378,20 @@ class SQLiteCreatorRepository(CreatorRepository):
                     raise ExtensionMutationError(
                         "ACCOUNT_OWNED_BY_OTHER_CREATOR", "账号已关联其他达人；此操作不支持重新关联。", 409
                     )
-                changed = False
+                repaired_name = preserved_or_default_creator_name(
+                    "", username=resolved.get("username")
+                )
+                repaired = bool(
+                    repaired_name
+                    and connection.execute(
+                        "UPDATE creators SET name=?, updated_at=? "
+                        "WHERE creator_id=? AND TRIM(COALESCE(name,''))=''",
+                        (repaired_name, _utc_now(), creator_id),
+                    ).rowcount
+                )
+                if repaired:
+                    self.store.increment_business_revision(connection)
+                changed = repaired
             else:
                 now = _utc_now()
                 try:
@@ -371,6 +403,15 @@ class SQLiteCreatorRepository(CreatorRepository):
                          str(resolved.get("username") or ""), profile_url,
                          resolved.get("platform_account_id"), now, now),
                     )
+                    repaired_name = preserved_or_default_creator_name(
+                        "", username=resolved.get("username")
+                    )
+                    if repaired_name:
+                        connection.execute(
+                            "UPDATE creators SET name=?, updated_at=? "
+                            "WHERE creator_id=? AND TRIM(COALESCE(name,''))=''",
+                            (repaired_name, now, creator_id),
+                        )
                 except sqlite_module().IntegrityError as exc:
                     raise ExtensionMutationError(
                         "ACCOUNT_IDENTITY_CONFLICT", "账号身份已被其他记录占用。", 409

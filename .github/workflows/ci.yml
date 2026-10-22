@@ -115,7 +115,7 @@ jobs:
             patterns: test_m3_*.py,test_m6_*.py,test_m7_*.py,test_m8_*.py,test_plugin_*.py,test_pre_m9_google_auth_status.py,test_pre_m9_google_sheets_data_sync.py
           - shard: storage-foundation
             timeout_minutes: 30
-            patterns: test_pre_m8_*.py,test_data_foundation_phase1.py,test_data_foundation_phase1_6.py,test_m1_b1_c1.py,test_m1_c2_bio_archived_columns.py
+            patterns: test_pre_m8_*.py,test_data_foundation_phase1.py,test_data_foundation_phase1_6.py,test_m1_b1_c1.py,test_m1_c2_bio_archived_columns.py,test_creator_default_name_policy.py
           - shard: mail-followup-core
             timeout_minutes: 30
             patterns: test_mail_followup_gate2.py,test_mail_followup_gate3.py,test_mail_followup_gate4.py,test_mail_followup_gate5.py

@@ -32,6 +32,7 @@ MACOS_PYTHON_SHARD_PATTERNS = {
     "storage-foundation": (
         "test_pre_m8_*.py", "test_data_foundation_phase1.py",
         "test_data_foundation_phase1_6.py", "test_m1_b1_c1.py", "test_m1_c2_bio_archived_columns.py",
+        "test_creator_default_name_policy.py",
     ),
     "mail-followup-core": (
         "test_mail_followup_gate2.py", "test_mail_followup_gate3.py",
@@ -330,6 +331,7 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "test_data_foundation_phase1_6.py",
                 "test_m1_b1_c1.py",
                 "test_m1_c2_bio_archived_columns.py",
+                "test_creator_default_name_policy.py",
             ),
             MACOS_PYTHON_SHARD_PATTERNS["storage-foundation"],
         )
