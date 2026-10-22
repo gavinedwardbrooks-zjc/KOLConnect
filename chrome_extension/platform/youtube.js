@@ -1027,7 +1027,16 @@ export async function collectRecentContent(tabId, options = {}) {
           dom_candidate_count: null,
           unique_video_count: discovered.length
         }
-      : discovery?.diagnostics || {}
+        : discovery?.diagnostics || {},
+    pipeline: {
+      network_records: Number(enriched.diagnostics?.matched_count || 0),
+      hydration_records: Number(discovery?.diagnostics?.structured_candidate_count || 0),
+      dom_records: Number(discovery?.diagnostics?.dom_candidate_count || 0),
+      normalized_records: analysis.returned_count,
+      usable_records: analysis.usable_content_count,
+      persisted_records: null,
+      final_status_reason: analysis.status_reason,
+    }
   };
   return analysis;
 }

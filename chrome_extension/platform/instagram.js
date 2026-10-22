@@ -1205,11 +1205,23 @@ async function collectInstagramLegacyContent(tabId, options = {}) {
   const completedById = new Map(completed.map((item) => [item.video_id || item.video_url, item]));
   const merged = discovered.map((item) => completedById.get(item.video_id || item.video_url) || item);
   options.onProgress?.({ phase: "calculating" });
-  return finalizeContentAnalysis(merged, {
+  const analysis = finalizeContentAnalysis(merged, {
     limit,
     excludePinned: options.excludePinned !== false,
     contentType: "reel"
   });
+  analysis.capture_diagnostics = {
+    pipeline: {
+      network_records: 0,
+      hydration_records: discovered.filter((item) => item.source === "structured_data").length,
+      dom_records: discovered.filter((item) => item.source === "page_dom").length,
+      normalized_records: analysis.returned_count,
+      usable_records: analysis.usable_content_count,
+      persisted_records: null,
+      final_status_reason: analysis.status_reason,
+    }
+  };
+  return analysis;
 }
 
 function logUnavailableFallbacks(diagnostics) {
@@ -1298,6 +1310,17 @@ export async function collectRecentContent(tabId, options = {}) {
     analysis.collector_mode = "instagram_internal_api";
     analysis.data_source = "clips_user_api";
     analysis.api_diagnostics = apiDiagnostics;
+    analysis.capture_diagnostics = {
+      pipeline: {
+        network_records: mapped.length,
+        hydration_records: 0,
+        dom_records: 0,
+        normalized_records: analysis.returned_count,
+        usable_records: analysis.usable_content_count,
+        persisted_records: null,
+        final_status_reason: analysis.status_reason,
+      }
+    };
     return analysis;
   } catch (error) {
     if (error?.name === "AbortError") throw error;

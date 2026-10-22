@@ -14,6 +14,21 @@ export function metric(value, source = "", confidence = "missing", missingReason
   };
 }
 
+function normalizedMetric(value, source = "", confidence = "missing", missingReason = "") {
+  if (value && typeof value === "object" && Object.prototype.hasOwnProperty.call(value, "value")) {
+    return {
+      ...value,
+      ...metric(
+        value.value,
+        value.source || source,
+        value.confidence || confidence,
+        value.missing_reason || missingReason
+      )
+    };
+  }
+  return metric(value, source, confidence, missingReason);
+}
+
 export function publishedAt(value, rawText = "", source = "", confidence = "missing", missingReason = "", estimated = false) {
   let normalized = null;
   if (value != null && value !== "") {
@@ -74,28 +89,30 @@ export function engagementRate(views, likes, comments) {
 }
 
 export function contentItem(raw = {}) {
-  const views = raw.views?.value !== undefined
-    ? raw.views
-    : metric(raw.views, raw.views_source, raw.views_confidence || "medium", raw.views_missing_reason);
-  const likes = raw.likes?.value !== undefined
-    ? raw.likes
-    : metric(raw.likes, raw.likes_source, raw.likes_confidence || "medium", raw.likes_missing_reason);
-  const comments = raw.comments?.value !== undefined
-    ? raw.comments
-    : metric(raw.comments, raw.comments_source, raw.comments_confidence || "medium", raw.comments_missing_reason);
-  const shares = raw.shares?.value !== undefined
-    ? raw.shares
-    : metric(raw.shares, raw.shares_source, raw.shares_confidence || "medium", raw.shares_missing_reason);
-  const published = raw.published_at?.value !== undefined
-    ? raw.published_at
-    : publishedAt(
-      raw.published_at,
-      raw.published_raw_text,
-      raw.published_source,
-      raw.published_confidence || "medium",
-      raw.published_missing_reason,
-      raw.published_estimated
-    );
+  const views = normalizedMetric(
+    raw.views, raw.views_source, raw.views_confidence || "medium", raw.views_missing_reason
+  );
+  const likes = normalizedMetric(
+    raw.likes, raw.likes_source, raw.likes_confidence || "medium", raw.likes_missing_reason
+  );
+  const comments = normalizedMetric(
+    raw.comments, raw.comments_source, raw.comments_confidence || "medium", raw.comments_missing_reason
+  );
+  const shares = normalizedMetric(
+    raw.shares, raw.shares_source, raw.shares_confidence || "medium", raw.shares_missing_reason
+  );
+  const publishedState = raw.published_at && typeof raw.published_at === "object"
+    ? raw.published_at : {};
+  const published = publishedAt(
+    raw.published_at && typeof raw.published_at === "object"
+      ? publishedState.value
+      : raw.published_at,
+    publishedState.raw_text || raw.published_raw_text,
+    publishedState.source || raw.published_source,
+    publishedState.confidence || raw.published_confidence || "medium",
+    publishedState.missing_reason || raw.published_missing_reason,
+    publishedState.is_estimated ?? raw.published_estimated
+  );
   return {
     platform: normalizeText(raw.platform),
     ...(raw.capture_layer ? {
@@ -200,18 +217,33 @@ export function finalizeContentAnalysis(rawItems = [], options = {}) {
     0
   );
   const returnedCount = contents.length;
+  const usableContentCount = contents.filter((item) => (
+    item.views.value != null
+    || item.likes.value != null
+    || item.comments.value != null
+    || item.shares.value != null
+    || item.published_at.value != null
+  )).length;
   const viewCoverage = returnedCount ? views.length / returnedCount : 0;
   const publishTimeCoverage = returnedCount ? validPublished / returnedCount : 0;
   const engagementCoverage = returnedCount ? engagementItems.length / returnedCount : 0;
   let captureStatus = "unavailable";
   if (returnedCount >= 10 && viewCoverage >= 0.8) captureStatus = "success";
-  else if (returnedCount && (views.length || validPublished || engagementItems.length)) captureStatus = "partial_success";
+  else if (usableContentCount > 0) captureStatus = "partial_success";
+  const statusReason = captureStatus === "success"
+    ? "CONTENT_CAPTURE_COMPLETE"
+    : captureStatus === "partial_success"
+      ? "PARTIAL_PUBLIC_DATA"
+      : returnedCount > 0
+        ? "NO_USABLE_RECENT_CONTENT"
+        : "NO_CONTENT_FOUND";
 
   return {
     requested_count: requestedCount,
     discovered_count: discovered.length,
     excluded_pinned_count: options.excludePinned === false ? 0 : pinned.length,
     returned_count: returnedCount,
+    usable_content_count: usableContentCount,
     valid_views_count: summaryValidation.valid_views_count,
     valid_publish_time_count: validPublished,
     valid_engagement_count: engagementItems.length,
@@ -226,6 +258,7 @@ export function finalizeContentAnalysis(rawItems = [], options = {}) {
     sorting_basis: sortingBasis,
     content_type: contents[0]?.content_type || normalizeText(options.contentType),
     capture_status: captureStatus,
+    status_reason: statusReason,
     missing_field_summary: {
       views: returnedCount - views.length,
       published_at: returnedCount - validPublished,
@@ -240,6 +273,13 @@ export function failedContentAnalysis(message, options = {}) {
   const result = finalizeContentAnalysis([], options);
   result.capture_status = "failed";
   result.error = normalizeText(message) || "Recent content analysis failed.";
+  result.status_reason = /login|required/i.test(result.error)
+    ? "LOGIN_REQUIRED"
+    : /captcha|challenge|blocked|restricted/i.test(result.error)
+      ? "ACCESS_RESTRICTED"
+      : /supported creator profile|unsupported/i.test(result.error)
+        ? "UNSUPPORTED_STATE"
+        : "CAPTURE_FAILED";
   return result;
 }
 

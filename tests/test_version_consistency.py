@@ -68,7 +68,7 @@ class VersionConsistencyTests(unittest.TestCase):
         self.assertIn(f"KOLConnect v{CURRENT_VERSION}", extension_ui)
         self.assertIn(f"KOLConnect v{CURRENT_VERSION}", web_index)
         self.assertIn(f"KOLConnect v{CURRENT_VERSION}", web_app)
-        self.assertIn(f"KOLConnect_v{CURRENT_VERSION}.zip", readme)
+        self.assertIn(f"KOLConnect_v{CURRENT_VERSION}_Windows_x64.zip", readme)
 
         artifacts = (
             f"KOLConnect_v{CURRENT_VERSION}.zip",

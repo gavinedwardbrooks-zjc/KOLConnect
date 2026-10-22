@@ -356,6 +356,15 @@ export async function collectRecentContent(tabId, options = {}) {
     l3: fallback.some((row) => row.capture_layer === "L3") ? "AVAILABLE" : "UNAVAILABLE",
     bridge_connected: state.l1_available, parser_error: state.parser_error,
     fallback_error: fallbackError ? "PARSER_ERROR" : "",
+    pipeline: {
+      network_records: layers.filter((layer) => layer === "L1").length,
+      hydration_records: layers.filter((layer) => layer === "L2").length,
+      dom_records: layers.filter((layer) => layer === "L3").length,
+      normalized_records: analysis.returned_count,
+      usable_records: analysis.usable_content_count,
+      persisted_records: null,
+      final_status_reason: analysis.status_reason,
+    },
   };
   analysis.capture_session_id = state.session_id;
   analysis.detail_request_count = 0;

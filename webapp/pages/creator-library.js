@@ -830,7 +830,6 @@
       } else {
         actions.append(
           createAction(t("creatorLibraryChooseCampaign"), "campaign", creatorId, "soft-btn compact-btn"),
-          createAction(t("creatorLibraryCreateTask"), "task", creatorId, "primary-btn compact-btn"),
           createAction(t("creatorLibraryArchive"), "archive", creatorId, "soft-btn compact-btn"),
         );
       }
@@ -1275,23 +1274,6 @@
     await loadRecords();
   }
 
-  async function openCollaborationTask(creatorId) {
-    const context = pageContext;
-    const data = await context.api.post(
-      `/api/creator-library/${encodeURIComponent(creatorId)}/create-task`,
-      {},
-      { signal: context.resources.signal },
-    );
-    const task = data.task;
-    if (!task?.id) throw new Error(t("creatorLibraryTaskMissing"));
-    context.state.currentTaskId = task.id;
-    context.state.currentTask = task;
-    context.state.review.taskId = task.id;
-    global.localStorage.setItem("kolconnect.currentTaskId", task.id);
-    await context.navigate("review");
-    context.ui.showSaved(data.message || t("creatorLibraryTaskOpened"));
-  }
-
   async function changeArchiveState(creatorId, archived) {
     const message = archived
       ? t("creatorLibraryArchiveConfirm")
@@ -1319,8 +1301,6 @@
           item => String(item.creator_id || item.analysis_id || "") === creatorId,
         );
         await campaignModal.open(record);
-      } else if (button.dataset.creatorAction === "task") {
-        await openCollaborationTask(creatorId);
       } else if (button.dataset.creatorAction === "archive") {
         await changeArchiveState(creatorId, true);
       } else if (button.dataset.creatorAction === "restore") {

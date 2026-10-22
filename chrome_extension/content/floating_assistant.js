@@ -693,7 +693,15 @@
       CAPTURE_L1_UNAVAILABLE: "CAPTURE_L1_UNAVAILABLE：被动桥接未就绪，请更新扩展后刷新 TikTok 页面。",
     };
     const passiveState = analysis.passive_capture_status || (state.profile?.platform === "TikTok" ? String(analysis.error || "").split(":")[0] : "");
-    contentStatus.textContent = passiveLabels[passiveState] || (analysis.error === "CONTENT_VIEW_SUMMARY_MISMATCH"
+    const reasonLabels = {
+      NO_CONTENT_FOUND: "未读取到符合条件的近期内容。",
+      NO_USABLE_RECENT_CONTENT: "读取到内容条目，但没有可用的公开指标。",
+      LOGIN_REQUIRED: "当前页面需要登录，无法读取近期内容。",
+      ACCESS_RESTRICTED: "当前页面受到平台访问限制，无法读取近期内容。",
+      UNSUPPORTED_STATE: "当前页面状态不支持近期内容分析。",
+      CAPTURE_FAILED: "达人主页读取成功，但近期内容暂未获取到。",
+    };
+    contentStatus.textContent = passiveLabels[passiveState] || reasonLabels[analysis.status_reason] || (analysis.error === "CONTENT_VIEW_SUMMARY_MISMATCH"
       ? "播放统计数据不一致，请重新分析。"
       : analysis.capture_status === "success"
       ? "最近内容分析完成。"

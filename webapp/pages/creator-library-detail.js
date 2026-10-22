@@ -641,24 +641,6 @@
     }
   }
 
-  async function openCollaborationTask() {
-    if (detail?.record?.archived_at) return;
-    const context = pageContext;
-    const data = await context.api.post(
-      `/api/creator-library/${encodeURIComponent(creatorId)}/create-task`,
-      {},
-      { signal: context.resources.signal },
-    );
-    const task = data.task;
-    if (!task?.id) throw new Error(t("creatorReviewTaskMissing"));
-    context.state.currentTaskId = task.id;
-    context.state.currentTask = task;
-    context.state.review.taskId = task.id;
-    global.localStorage.setItem("kolconnect.currentTaskId", task.id);
-    await context.navigate("review");
-    context.ui.showSaved(data.message || t("creatorReviewTaskOpened"));
-  }
-
   function listen(id, type, listener) {
     const target = element(id);
     if (target) pageContext.resources.listen(target, type, listener);
@@ -1022,7 +1004,6 @@
       listen("creator-library-detail-archive", "click", () => changeArchiveState().catch(showError));
       listen("creator-library-detail-add-campaign", "click", () => openCampaignModal().catch(showError));
       listen("creator-library-detail-similar", "click", () => loadSimilarCandidates());
-      listen("creator-library-detail-task", "click", () => openCollaborationTask().catch(showError));
       listen("creator-account-options", "click", handleAccountSwitch);
       listen("creator-ai-summary-generate", "click", () => generateAISummary().catch(showError));
       listen("creator-campaigns-body", "click", handleCampaignAction);
