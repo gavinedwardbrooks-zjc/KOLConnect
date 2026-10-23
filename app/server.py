@@ -93,7 +93,12 @@ from services.clean_reset_service import CleanResetService
 from services.assistant_service import AssistantService
 from services.assistant_provider import DeterministicAssistantProvider
 from services.task_service import TaskService
-from services.mail_auth_service import classify_imap_error, classify_smtp_error
+from services.mail_auth_service import MailAuthenticationError
+from services.mail_connection_service import (
+    open_imap_connection,
+    test_smtp_connection,
+    validate_mail_account,
+)
 from services.mail_secret_storage import (
     MailSecretProtectionError,
     is_protected_mail_secret,
@@ -103,7 +108,6 @@ from services.mail_secret_storage import (
     mail_secret_recovery_path,
     record_failed_keychain_compensation,
     retry_failed_keychain_compensation,
-    unprotect_mail_secret,
     uses_macos_keychain,
 )
 from services.risk_service import RiskService
@@ -282,6 +286,30 @@ MAIL_PROVIDER_PRESETS = {
         "smtp_host": "smtp.163.com",
         "smtp_port": "465",
     },
+    "netease126": {
+        "imap_host": "imap.126.com",
+        "imap_port": "993",
+        "smtp_host": "smtp.126.com",
+        "smtp_port": "465",
+    },
+    "qq": {
+        "imap_host": "imap.qq.com",
+        "imap_port": "993",
+        "smtp_host": "smtp.qq.com",
+        "smtp_port": "465",
+    },
+    "aliyun": {
+        "imap_host": "imap.qiye.aliyun.com",
+        "imap_port": "993",
+        "smtp_host": "smtp.qiye.aliyun.com",
+        "smtp_port": "465",
+    },
+}
+
+MAIL_PROVIDER_ALIASES = {
+    "163": "netease",
+    "126": "netease126",
+    "netease163": "netease",
 }
 
 HANDLERS = [
@@ -311,12 +339,14 @@ PRODUCTION_MIGRATION_SERVICE = None
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
-    return MAIL_PROVIDER_PRESETS.get(provider, {})
+    normalized = MAIL_PROVIDER_ALIASES.get(str(provider or "").strip().lower(), str(provider or "").strip().lower())
+    return MAIL_PROVIDER_PRESETS.get(normalized, {})
 
 
 def normalize_mail_account(raw: dict | None) -> dict:
     raw = raw or {}
     provider = str(raw.get("provider") or "custom").strip().lower() or "custom"
+    provider = MAIL_PROVIDER_ALIASES.get(provider, provider)
     preset = get_mail_provider_preset(provider)
     password = raw.get("password")
     if is_protected_mail_secret(password):
@@ -325,7 +355,7 @@ def normalize_mail_account(raw: dict | None) -> dict:
         password = str(password or "")
     return {
         "name": str(raw.get("name") or "").strip(),
-        "provider": provider if provider in {"aliyun", "netease", "gmail", "custom"} else "custom",
+        "provider": provider if provider in {*MAIL_PROVIDER_PRESETS, "custom"} else "custom",
         "email": str(raw.get("email") or "").strip(),
         "sender_name": str(raw.get("sender_name") or "").strip(),
         "imap_host": str(raw.get("imap_host") or preset.get("imap_host") or "").strip(),
@@ -442,23 +472,12 @@ def parse_port(value: str, default: int) -> int:
 
 
 def test_imap_login(account: dict) -> None:
-    host = str(account.get("imap_host") or "").strip()
-    username = str(account.get("username") or "").strip()
-    password = unprotect_mail_secret(account.get("password"), allow_transient_plaintext=True)
-    port = parse_port(account.get("imap_port") or "", 993)
-    if not host or not username or not password:
-        raise RuntimeError("请完整填写 IMAP Host、IMAP Port、用户名和密码/授权码。")
     client = None
     try:
-        if port == 993:
-            client = imaplib.IMAP4_SSL(host, port, timeout=10)
-        else:
-            client = imaplib.IMAP4(host, port, timeout=10)
-            if hasattr(client, "starttls"):
-                client.starttls()
-        client.login(username, password)
-    except Exception as exc:
-        raise classify_imap_error(exc, account=account) from exc
+        factory = imaplib.IMAP4_SSL if parse_port(account.get("imap_port") or "", 993) == 993 else imaplib.IMAP4
+        client, _result = open_imap_connection(
+            account, imap_factory=factory, allow_transient_plaintext=True
+        )
     finally:
         if client is not None:
             try:
@@ -468,32 +487,19 @@ def test_imap_login(account: dict) -> None:
 
 
 def test_smtp_login(account: dict) -> None:
-    host = str(account.get("smtp_host") or "").strip()
-    username = str(account.get("username") or "").strip()
-    password = unprotect_mail_secret(account.get("password"), allow_transient_plaintext=True)
     port = parse_port(account.get("smtp_port") or "", 587)
-    if not host or not username or not password:
-        raise RuntimeError("请完整填写 SMTP Host、SMTP Port、用户名和密码/授权码。")
-    client = None
-    try:
-        if port == 465:
-            client = smtplib.SMTP_SSL(host, port, timeout=10)
-            client.ehlo()
-        else:
-            client = smtplib.SMTP(host, port, timeout=10)
-            client.ehlo()
-            if client.has_extn("starttls"):
-                client.starttls()
-                client.ehlo()
-        client.login(username, password)
-    except Exception as exc:
-        raise classify_smtp_error(exc, account=account) from exc
-    finally:
-        if client is not None:
-            try:
-                client.quit()
-            except Exception:
-                pass
+    result = test_smtp_connection(
+        account,
+        smtp_factory=smtplib.SMTP,
+        smtp_ssl_factory=smtplib.SMTP_SSL if port == 465 else None,
+    )
+    if result["status"] != "pass":
+        raise MailAuthenticationError(
+            str(result.get("code") or "MAIL_SMTP_AUTH_FAILED"),
+            str(result.get("message") or "SMTP 验证失败。"),
+            protocol="smtp",
+            stage=str(result.get("stage") or "unknown"),
+        )
 
 def clone_default_state() -> dict:
     return json.loads(json.dumps(DEFAULT_STATE))
@@ -2974,6 +2980,7 @@ class Handler(BaseHTTPRequestHandler):
                 "state_for_client": state_for_client,
                 "test_imap_login": test_imap_login,
                 "test_smtp_login": test_smtp_login,
+                "validate_mail_account": validate_mail_account,
                 "start_scrape": start_scrape,
                 "stop_task": stop_task,
                 "utc_now": _utc_now,

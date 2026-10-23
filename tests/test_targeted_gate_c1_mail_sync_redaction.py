@@ -92,7 +92,7 @@ class MailSyncProviderErrorRedactionTests(unittest.TestCase):
         }
         self.cache_path = self.runtime.root / "mail_messages.json"
         self._secret_unprotectors = [
-            patch("services.mail_inbox_facts.unprotect_mail_secret", return_value="fixture-password"),
+            patch("services.mail_connection_service.unprotect_mail_secret", return_value="fixture-password"),
             patch("mail_sync.unprotect_mail_secret", return_value="fixture-password"),
         ]
         for patcher in self._secret_unprotectors:
@@ -119,12 +119,12 @@ class MailSyncProviderErrorRedactionTests(unittest.TestCase):
         cache = json.loads(self.cache_path.read_text(encoding="utf-8"))
         serialized_cache = json.dumps(cache)
 
-        self.assertEqual("MAIL_CREDENTIAL_REJECTED", result["errors"][0]["code"])
+        self.assertEqual("MAIL_IMAP_AUTH_FAILED", result["errors"][0]["code"])
         for value in (serialized_result, serialized_cache, logged):
             self.assertNotIn(SENSITIVE_PROVIDER_TEXT, value)
             self.assertNotIn("SYNTHETIC-SECRET", value)
         last_result = cache["accounts"][mail_sync.build_account_key(self.account)]["last_result"]
-        self.assertEqual(["MAIL_CREDENTIAL_REJECTED"], last_result["error_codes"])
+        self.assertEqual(["MAIL_IMAP_AUTH_FAILED"], last_result["error_codes"])
 
         handler = _Handler()
         context = {
@@ -161,18 +161,18 @@ class MailSyncProviderErrorRedactionTests(unittest.TestCase):
 
         self.account = {**gmail, "imap_host": "imap.example.test"}
         generic_result, _logged = self._inbox_failure(imaplib.IMAP4.error(SENSITIVE_PROVIDER_TEXT))
-        self.assertEqual("MAIL_CREDENTIAL_REJECTED", generic_result["errors"][0]["code"])
+        self.assertEqual("MAIL_IMAP_AUTH_FAILED", generic_result["errors"][0]["code"])
         self.assertNotIn("Gmail", generic_result["errors"][0]["error"])
 
     def test_connection_and_tls_errors_are_safely_classified(self):
         timeout, _logged = self._inbox_failure(TimeoutError(SENSITIVE_PROVIDER_TEXT))
-        self.assertEqual("MAIL_AUTH_TIMEOUT", timeout["errors"][0]["code"])
+        self.assertEqual("MAIL_IMAP_AUTH_TIMEOUT", timeout["errors"][0]["code"])
 
         connection, _logged = self._inbox_failure(ConnectionRefusedError(SENSITIVE_PROVIDER_TEXT))
-        self.assertEqual("MAIL_NETWORK_ERROR", connection["errors"][0]["code"])
+        self.assertEqual("MAIL_IMAP_CONNECT_FAILED", connection["errors"][0]["code"])
 
         tls, _logged = self._inbox_failure(ssl.SSLError(SENSITIVE_PROVIDER_TEXT))
-        self.assertEqual("MAIL_TLS_FAILED", tls["errors"][0]["code"])
+        self.assertEqual("MAIL_IMAP_TLS_FAILED", tls["errors"][0]["code"])
         for result in (timeout, connection, tls):
             self.assertNotIn("SYNTHETIC-SECRET", json.dumps(result))
 

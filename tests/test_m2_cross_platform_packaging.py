@@ -39,7 +39,7 @@ MACOS_PYTHON_SHARD_PATTERNS = {
         "test_mail_followup_gate4.py", "test_mail_followup_gate5.py",
     ),
     "mail-security-core": (
-        "test_mail_followup_google_sheets_replica.py", "test_mail_followup_ui_api.py",
+        "test_mail_connectivity_reliability.py", "test_mail_followup_google_sheets_replica.py", "test_mail_followup_ui_api.py",
         "test_targeted_gate_b_observability.py", "test_targeted_gate_c_mail_secret_storage.py",
         "test_targeted_gate_c1_mail_sync_redaction.py",
     ),
@@ -346,6 +346,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(
             (
+                "test_mail_connectivity_reliability.py",
                 "test_mail_followup_google_sheets_replica.py",
                 "test_mail_followup_ui_api.py",
                 "test_targeted_gate_b_observability.py",

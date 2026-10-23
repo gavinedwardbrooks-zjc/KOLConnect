@@ -2096,6 +2096,32 @@ button {
   color: var(--danger-dark);
 }
 
+.status-pill[data-status="warning"] {
+  border-color: rgba(180, 120, 20, 0.22);
+  background: rgba(224, 161, 40, 0.1);
+  color: #8a5a09;
+}
+
+.mail-test-result {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(45, 125, 87, 0.08);
+  color: var(--primary-dark);
+  overflow-wrap: anywhere;
+}
+
+.mail-test-result[data-status="warning"] {
+  background: rgba(224, 161, 40, 0.1);
+  color: #76500c;
+}
+
+.mail-test-result[data-status="failed"] {
+  background: rgba(196, 87, 87, 0.08);
+  color: var(--danger-dark);
+}
+
 .table-row {
   display: grid;
   grid-template-columns: 44px 1fr 1fr 1fr 96px;

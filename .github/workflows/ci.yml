@@ -121,7 +121,7 @@ jobs:
             patterns: test_mail_followup_gate2.py,test_mail_followup_gate3.py,test_mail_followup_gate4.py,test_mail_followup_gate5.py
           - shard: mail-security-core
             timeout_minutes: 30
-            patterns: test_mail_followup_google_sheets_replica.py,test_mail_followup_ui_api.py,test_targeted_gate_b_observability.py,test_targeted_gate_c_mail_secret_storage.py,test_targeted_gate_c1_mail_sync_redaction.py
+            patterns: test_mail_connectivity_reliability.py,test_mail_followup_google_sheets_replica.py,test_mail_followup_ui_api.py,test_targeted_gate_b_observability.py,test_targeted_gate_c_mail_secret_storage.py,test_targeted_gate_c1_mail_sync_redaction.py
           - shard: macos-keychain-canonical
             timeout_minutes: 30
             patterns: test_targeted_gate_d_macos_keychain.py

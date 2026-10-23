@@ -223,7 +223,7 @@ Object.assign(I18N.zh, {
   mailTitle: "邮件",
   mailSubtitle: "同步达人回复并管理合作邮箱账户。",
   mailAccountsTitle: "邮箱账户",
-  mailAccountsHint: "可配置多个邮箱账号，测试连接时只验证 IMAP/SMTP 登录，不发送真实邮件。",
+  mailAccountsHint: "IMAP 用于邮件同步，必须可用；SMTP 仅作提示，KOLConnect 不发送邮件。",
   mailAddAccount: "新增邮箱账户",
   mailEmptyAccounts: "暂无邮箱账户，请先新增一个账户。",
   mailAccountName: "账户名称",
@@ -240,13 +240,22 @@ Object.assign(I18N.zh, {
   mailStatusUntested: "未测试",
   mailStatusSuccess: "正常",
   mailStatusFailed: "失败",
+  mailStatusWarning: "收件可用",
   mailTestConnection: "测试连接",
   mailDeleteAccount: "删除",
   mailProviderGmail: "Gmail",
-  mailProviderNetease: "网易邮箱",
+  mailProviderQq: "QQ 邮箱",
+  mailProviderNetease: "网易 163 邮箱",
+  mailProviderNetease126: "网易 126 邮箱",
   mailProviderAliyun: "阿里邮箱",
   mailProviderCustom: "自定义邮箱",
-  mailTestSuccess: "IMAP 和 SMTP 登录测试通过。",
+  mailTestSuccess: "IMAP 收件同步连接成功。",
+  mailTestImapFailed: "IMAP 验证失败：{message}",
+  mailTestSmtpWarning: "收件同步可用；SMTP 验证失败，不影响当前邮件同步。{message}",
+  mailTestProtocolSummary: "IMAP：{imap} · SMTP：{smtp}",
+  mailProtocolPass: "通过",
+  mailProtocolFail: "失败",
+  mailProtocolNotConfigured: "未配置",
   mailSaveSuccess: "邮箱配置保存成功。连接验证需单独执行。",
   mailInboxSyncTitle: "收件箱同步",
   mailInboxSyncHint: "仅手动同步启用邮箱的 INBOX，默认每个账户最近 20 封，不下载附件。",
@@ -276,7 +285,7 @@ Object.assign(I18N.en, {
   mailTitle: "Mail Accounts",
   mailSubtitle: "Sync creator replies and manage collaboration mail accounts.",
   mailAccountsTitle: "Mail Accounts",
-  mailAccountsHint: "Connection tests verify IMAP/SMTP login only and never send a real email.",
+  mailAccountsHint: "IMAP is required for mail sync. SMTP is informational because KOLConnect does not send mail.",
   mailAddAccount: "Add mail account",
   mailEmptyAccounts: "No mail accounts yet. Add one to begin.",
   mailAccountName: "Account name",
@@ -293,13 +302,22 @@ Object.assign(I18N.en, {
   mailStatusUntested: "Untested",
   mailStatusSuccess: "Healthy",
   mailStatusFailed: "Failed",
+  mailStatusWarning: "Inbox available",
   mailTestConnection: "Test connection",
   mailDeleteAccount: "Delete account",
   mailProviderGmail: "Gmail",
-  mailProviderNetease: "NetEase",
+  mailProviderQq: "QQ Mail",
+  mailProviderNetease: "NetEase 163",
+  mailProviderNetease126: "NetEase 126",
   mailProviderAliyun: "Aliyun Mail",
   mailProviderCustom: "Custom",
-  mailTestSuccess: "IMAP and SMTP logins both succeeded.",
+  mailTestSuccess: "The IMAP mail-sync connection succeeded.",
+  mailTestImapFailed: "IMAP validation failed: {message}",
+  mailTestSmtpWarning: "Inbox sync is available; SMTP validation failed and does not affect current mail sync. {message}",
+  mailTestProtocolSummary: "IMAP: {imap} · SMTP: {smtp}",
+  mailProtocolPass: "Pass",
+  mailProtocolFail: "Failed",
+  mailProtocolNotConfigured: "Not configured",
   mailSaveSuccess: "Mail configuration saved. Connection validation is a separate step.",
   mailInboxSyncTitle: "Inbox Sync",
   mailInboxSyncHint: "Manual sync only. Reads up to 20 recent INBOX messages per enabled account and skips attachments.",
@@ -534,6 +552,24 @@ const MAIL_PROVIDER_DEFAULTS = {
     imap_host: "imap.163.com",
     imap_port: "993",
     smtp_host: "smtp.163.com",
+    smtp_port: "465"
+  },
+  netease126: {
+    imap_host: "imap.126.com",
+    imap_port: "993",
+    smtp_host: "smtp.126.com",
+    smtp_port: "465"
+  },
+  qq: {
+    imap_host: "imap.qq.com",
+    imap_port: "993",
+    smtp_host: "smtp.qq.com",
+    smtp_port: "465"
+  },
+  aliyun: {
+    imap_host: "imap.qiye.aliyun.com",
+    imap_port: "993",
+    smtp_host: "smtp.qiye.aliyun.com",
     smtp_port: "465"
   }
 };
@@ -2162,7 +2198,9 @@ function renderAccounts(accounts) {
 function getMailProviderOptions() {
   return [
     { value: "aliyun", label: t("mailProviderAliyun") },
+    { value: "qq", label: t("mailProviderQq") },
     { value: "netease", label: t("mailProviderNetease") },
+    { value: "netease126", label: t("mailProviderNetease126") },
     { value: "gmail", label: t("mailProviderGmail") },
     { value: "custom", label: t("mailProviderCustom") }
   ];
@@ -2195,6 +2233,7 @@ function createEmptyMailAccount() {
 
 function statusLabelForMail(status) {
   if (status === "success") return t("mailStatusSuccess");
+  if (status === "warning") return t("mailStatusWarning");
   if (status === "failed") return t("mailStatusFailed");
   return t("mailStatusUntested");
 }
@@ -2204,6 +2243,37 @@ function updateMailAccountStatus(card, status) {
   if (!badge) return;
   badge.dataset.status = status;
   badge.textContent = statusLabelForMail(status);
+}
+
+function renderMailConnectionResult(card, result) {
+  const output = card.querySelector('[data-role="mail-test-result"]');
+  if (!output) return;
+  const imap = result?.imap || {};
+  const smtp = result?.smtp || {};
+  const protocolStatus = status => ({
+    pass: t("mailProtocolPass"),
+    fail: t("mailProtocolFail"),
+    not_configured: t("mailProtocolNotConfigured")
+  })[status] || "--";
+  const protocolSummary = t("mailTestProtocolSummary", {
+    imap: protocolStatus(imap.status),
+    smtp: protocolStatus(smtp.status)
+  });
+  if (!result?.usable) {
+    output.textContent = `${t("mailTestImapFailed", { message: imap.message || "--" })} ${protocolSummary}`;
+    output.dataset.status = "failed";
+    updateMailAccountStatus(card, "failed");
+    return;
+  }
+  if (smtp.status === "fail") {
+    output.textContent = `${t("mailTestSmtpWarning", { message: smtp.message || "" })} ${protocolSummary}`;
+    output.dataset.status = "warning";
+    updateMailAccountStatus(card, "warning");
+    return;
+  }
+  output.textContent = `${t("mailTestSuccess")} ${protocolSummary}`;
+  output.dataset.status = "success";
+  updateMailAccountStatus(card, "success");
 }
 
 function applyProviderDefaultsToCard(card, force = false) {
@@ -2268,6 +2338,7 @@ function renderMailAccountCard(account = {}) {
       <label class="field"><span>${t("mailPassword")}</span><input type="password" data-key="password" value="${item.password}"></label>
       <p class="hint mail-gmail-auth-hint" data-role="gmail-auth-hint" ${item.provider === "gmail" ? "" : "hidden"}>${t("mailGmailPasswordHint")}</p>
       <label class="checkbox-line mail-checkbox-line"><input type="checkbox" data-key="enabled" ${item.enabled ? "checked" : ""}><span>${t("mailEnabled")}</span></label>
+      <p class="mail-test-result" data-role="mail-test-result" hidden></p>
     </div>
   `;
   card.querySelector('[data-action="delete"]').addEventListener("click", () => {
@@ -2278,14 +2349,20 @@ function renderMailAccountCard(account = {}) {
     }
   });
   card.querySelector('[data-action="test"]').addEventListener("click", async () => {
+    const button = card.querySelector('[data-action="test"]');
     try {
+      button.disabled = true;
       const accountPayload = collectMailAccountFromCard(card);
-      await apiPost("/api/mail/test", { account: accountPayload });
-      updateMailAccountStatus(card, "success");
-      showSaved(t("mailTestSuccess"));
+      const result = await apiPost("/api/mail/test", { account: accountPayload });
+      const output = card.querySelector('[data-role="mail-test-result"]');
+      if (output) output.hidden = false;
+      renderMailConnectionResult(card, result);
+      if (result.usable) showSaved(result.warning || t("mailTestSuccess"));
     } catch (error) {
       updateMailAccountStatus(card, "failed");
       showError(error);
+    } finally {
+      button.disabled = false;
     }
   });
   card.querySelector('[data-key="provider"]').addEventListener("change", () => {

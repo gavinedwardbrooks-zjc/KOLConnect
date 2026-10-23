@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import imaplib
 import json
 import re
 import uuid
@@ -12,7 +11,7 @@ from email import message_from_bytes
 from email.policy import default
 from email.utils import getaddresses, parsedate_to_datetime
 
-from services.mail_secret_storage import unprotect_mail_secret
+from services.mail_connection_service import open_imap_connection
 
 
 LOOKBACK_DAYS = 30
@@ -365,12 +364,6 @@ def _sync_mailbox(account: dict, factory, *, folder_name: str, role: str, direct
     account_id, identity_key = mail_account_identity(account)
     own_addresses = {normalize_address(account.get(key)) for key in ("email", "username")}
     own_addresses.discard("")
-    host = str(account.get("imap_host") or "")
-    username = str(account.get("username") or "")
-    password = unprotect_mail_secret(account.get("password"))
-    if not host or not username or not password:
-        raise ValueError("IMAP configuration is incomplete.")
-    port = int(account.get("imap_port") or 993)
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     observed_at = _iso(now)
     mailbox_id = f"mailbox_{hashlib.sha256((account_id + ':' + folder_name).encode()).hexdigest()[:32]}"
@@ -382,15 +375,10 @@ def _sync_mailbox(account: dict, factory, *, folder_name: str, role: str, direct
     with factory.read_connection() as connection:
         state = connection.execute("SELECT * FROM mailbox_sync_states WHERE mailbox_id=?", (mailbox_id,)).fetchone()
         previous = dict(state)
-    constructor = imap_factory or (imaplib.IMAP4_SSL if port == 993 else imaplib.IMAP4)
-    mailbox = constructor(host, port, timeout=15)
+    mailbox, _connection_result = open_imap_connection(
+        account, folder=folder_name, imap_factory=imap_factory, timeout=15
+    )
     try:
-        if port != 993:
-            mailbox.starttls()
-        mailbox.login(username, password)
-        select_status, _ = mailbox.select(folder_name, readonly=True)
-        if select_status != "OK":
-            raise RuntimeError(f"IMAP {role} mailbox selection failed.")
         validity = _uidvalidity(mailbox)
         first = not previous["first_sync_completed_at"] or previous["uidvalidity"] != validity
         cutoff = now - timedelta(days=LOOKBACK_DAYS)
@@ -456,19 +444,10 @@ def sync_inbox(account: dict, factory, *, imap_factory=None, now: datetime | Non
 
 def sync_sent(account: dict, factory, *, imap_factory=None, now: datetime | None = None) -> dict:
     """Discover and persist authoritative Sent observations without provider-specific APIs."""
-    account_id, _identity_key = mail_account_identity(account)
-    host = str(account.get("imap_host") or "")
-    username = str(account.get("username") or "")
-    password = unprotect_mail_secret(account.get("password"))
-    if not host or not username or not password:
-        raise ValueError("IMAP configuration is incomplete.")
-    port = int(account.get("imap_port") or 993)
-    constructor = imap_factory or (imaplib.IMAP4_SSL if port == 993 else imaplib.IMAP4)
-    mailbox = constructor(host, port, timeout=15)
+    mailbox, _connection_result = open_imap_connection(
+        account, imap_factory=imap_factory, timeout=15
+    )
     try:
-        if port != 993:
-            mailbox.starttls()
-        mailbox.login(username, password)
         folder_name = discover_sent_mailbox(mailbox)
     finally:
         try:

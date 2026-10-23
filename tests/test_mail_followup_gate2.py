@@ -95,7 +95,7 @@ class MailFollowupGate2Tests(unittest.TestCase):
         # Mail fact tests exercise the authentication boundary with a narrow
         # test double; native Windows DPAPI has dedicated platform-only tests.
         self._secret_unprotectors = [
-            patch("services.mail_inbox_facts.unprotect_mail_secret", return_value="fake-secret"),
+            patch("services.mail_connection_service.unprotect_mail_secret", return_value="fake-secret"),
             patch("mail_sync.unprotect_mail_secret", return_value="fake-secret"),
         ]
         for patcher in self._secret_unprotectors:

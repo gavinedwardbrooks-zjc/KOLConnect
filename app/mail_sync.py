@@ -22,7 +22,7 @@ from runtime_paths import (
 from app_logging import log_sanitized_exception
 from feishu_client import FeishuClient, FeishuClientError
 from feishu_relation import relation_record_ids
-from services.mail_auth_service import classify_imap_error
+from services.mail_auth_service import MailAuthenticationError, classify_imap_error
 from services.mail_inbox_facts import (
     inbox_fact_projection,
     mail_account_identity,
@@ -64,6 +64,8 @@ def utc_now_iso() -> str:
 
 def _safe_mail_sync_error(exc: BaseException, account: dict) -> dict[str, str]:
     """Convert provider failures to stable, non-sensitive sync result fields."""
+    if isinstance(exc, MailAuthenticationError):
+        return {"code": exc.code, "message": str(exc)}
     if isinstance(exc, (imaplib.IMAP4.error, OSError, TimeoutError)):
         classified = classify_imap_error(exc, account=account)
         return {"code": classified.code, "message": str(classified)}

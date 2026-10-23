@@ -2,6 +2,7 @@
 
 import copy
 import sys
+import platform
 
 from feishu_client import FeishuClientError
 from services.workbook_backup_service import (
@@ -324,14 +325,23 @@ def handle(handler, request: dict, context: dict) -> bool:
             {"accounts": [raw_account]}, state.get("mail")
         ).get("accounts", [])
         account = services["normalize_mail_account"](merged_test_accounts[0] if merged_test_accounts else None)
-        try:
-            services["test_imap_login"](account)
-            services["test_smtp_login"](account)
-        except Exception as exc:
-            code = str(getattr(exc, "code", "MAIL_AUTH_FAILED"))
-            handler._api_error(code, str(exc), status=400)
-            return True
-        handler._ok(imap_ok=True, smtp_ok=True)
+        result = services["validate_mail_account"](account)
+        imap = result["imap"]
+        smtp = result["smtp"]
+        context["logging"]["event"](
+            "MailValidation",
+            " | ".join([
+                f"provider={account.get('provider') or 'custom'}",
+                f"imap_host={imap.get('host')}", f"imap_port={imap.get('port')}",
+                f"imap_stage={imap.get('stage')}", f"imap_result={imap.get('status')}",
+                f"smtp_host={smtp.get('host')}", f"smtp_port={smtp.get('port')}",
+                f"smtp_stage={smtp.get('stage')}", f"smtp_result={smtp.get('status')}",
+                f"elapsed_ms={result.get('elapsed_ms')}",
+                f"platform={sys.platform}", f"runtime={platform.python_version()}",
+                f"trace_id={context.get('request', {}).get('trace_id', '')}",
+            ]),
+        )
+        handler._ok(**result)
         return True
 
     # POST /api/mail/inbox/sync → 同步收件箱；{"ok": true, "updated_at": "...", "accounts_checked": 0, "messages_fetched": 0, "messages_new": 0, "matched_messages": 0, "messages_total": 0, "errors": [...]}

@@ -30,11 +30,11 @@ class M74OutlookAuthTests(unittest.TestCase):
 
     def test_invalid_credentials_remain_distinct(self):
         exc = classify_imap_error(imaplib.IMAP4.error(b"LOGIN failed"))
-        self.assertEqual("MAIL_CREDENTIAL_REJECTED", exc.code)
+        self.assertEqual("MAIL_IMAP_AUTH_FAILED", exc.code)
 
     def test_timeout_and_network_are_classified(self):
-        self.assertEqual("MAIL_AUTH_TIMEOUT", classify_imap_error(TimeoutError()).code)
-        self.assertEqual("MAIL_NETWORK_ERROR", classify_imap_error(ConnectionError()).code)
+        self.assertEqual("MAIL_IMAP_AUTH_TIMEOUT", classify_imap_error(TimeoutError()).code)
+        self.assertEqual("MAIL_IMAP_CONNECT_FAILED", classify_imap_error(ConnectionError()).code)
 
     def test_gmail_auth_rejection_is_safe_and_provider_specific(self):
         account = {"imap_host": "imap.gmail.com"}
@@ -59,10 +59,10 @@ class M74OutlookAuthTests(unittest.TestCase):
         generic = classify_imap_error(
             imaplib.IMAP4.error(b"LOGIN failed"), account={"imap_host": "imap.example.test"}
         )
-        self.assertEqual("MAIL_CREDENTIAL_REJECTED", generic.code)
+        self.assertEqual("MAIL_IMAP_AUTH_FAILED", generic.code)
         self.assertNotIn("Gmail", str(generic))
         self.assertEqual(
-            "MAIL_TLS_FAILED",
+            "MAIL_IMAP_TLS_FAILED",
             classify_imap_error(ssl.SSLError("certificate verify failed")).code,
         )
         self.assertEqual(

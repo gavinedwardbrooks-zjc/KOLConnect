@@ -82,7 +82,7 @@ class MailFollowupGate5Tests(unittest.TestCase):
         with self.factory.read_connection() as connection:
             apply_schema_migrations(connection)
         self._secret_unprotectors = [
-            patch("services.mail_inbox_facts.unprotect_mail_secret", return_value="fake-secret"),
+            patch("services.mail_connection_service.unprotect_mail_secret", return_value="fake-secret"),
             patch("mail_sync.unprotect_mail_secret", return_value="fake-secret"),
         ]
         for patcher in self._secret_unprotectors:

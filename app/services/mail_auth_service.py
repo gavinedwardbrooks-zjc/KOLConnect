@@ -8,9 +8,11 @@ from typing import Mapping
 
 
 class MailAuthenticationError(RuntimeError):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, protocol: str = "", stage: str = "") -> None:
         super().__init__(message)
         self.code = code
+        self.protocol = protocol
+        self.stage = stage
 
 
 def _is_gmail_account(account: Mapping[str, object] | None, host_key: str) -> bool:
@@ -42,6 +44,8 @@ def classify_mail_auth_error(
     *,
     account: Mapping[str, object] | None = None,
     host_key: str = "imap_host",
+    protocol: str = "imap",
+    stage: str = "auth",
 ) -> MailAuthenticationError:
     raw = str(exc or "")
     lowered = raw.casefold()
@@ -50,18 +54,49 @@ def classify_mail_auth_error(
         return MailAuthenticationError(
             "IMAP_BASIC_AUTH_REJECTED",
             "IMAP 服务器不接受当前 Basic 登录方式。配置已保存；请确认该服务商是否支持密码或授权码登录。",
+            protocol=protocol,
+            stage=stage,
+        )
+    if isinstance(exc, socket.gaierror):
+        return MailAuthenticationError(
+            "MAIL_DNS_FAILED",
+            "无法解析邮箱服务器地址，请检查 Host 是否拼写正确。",
+            protocol=protocol,
+            stage="dns",
         )
     if isinstance(exc, (TimeoutError, socket.timeout)) or "timed out" in lowered:
-        return MailAuthenticationError("MAIL_AUTH_TIMEOUT", "邮箱验证超时，请检查网络和服务器地址。")
+        code = f"MAIL_{protocol.upper()}_{stage.upper()}_TIMEOUT"
+        label = "IMAP" if protocol == "imap" else "SMTP"
+        return MailAuthenticationError(
+            code,
+            f"{label} {stage.upper()} 阶段超时，请检查服务器地址、端口和网络。",
+            protocol=protocol,
+            stage=stage,
+        )
     if isinstance(exc, ssl.SSLError) or any(token in lowered for token in ("tls", "ssl", "certificate verify")):
-        return MailAuthenticationError("MAIL_TLS_FAILED", "邮箱服务器 TLS 连接失败，请检查 Host、端口和证书配置。")
+        return MailAuthenticationError(
+            f"MAIL_{protocol.upper()}_TLS_FAILED",
+            "已连接邮箱服务器，但安全连接建立失败。请检查端口和加密方式。",
+            protocol=protocol,
+            stage="tls",
+        )
     if isinstance(exc, OSError) and not isinstance(exc, PermissionError):
-        return MailAuthenticationError("MAIL_NETWORK_ERROR", "无法连接邮箱服务器，请检查网络、Host 和端口。")
+        return MailAuthenticationError(
+            f"MAIL_{protocol.upper()}_CONNECT_FAILED",
+            "无法连接邮箱服务器，请检查网络、Host 和端口。",
+            protocol=protocol,
+            stage="connect",
+        )
     if is_gmail:
-        return _gmail_auth_error(raw)
+        classified = _gmail_auth_error(raw)
+        classified.protocol = protocol
+        classified.stage = stage
+        return classified
     return MailAuthenticationError(
-        "MAIL_CREDENTIAL_REJECTED",
+        f"MAIL_{protocol.upper()}_AUTH_FAILED",
         "邮箱服务器拒绝当前登录凭据。配置保存状态不受影响。",
+        protocol=protocol,
+        stage=stage,
     )
 
 
@@ -69,13 +104,19 @@ def classify_imap_error(
     exc: BaseException,
     *,
     account: Mapping[str, object] | None = None,
+    stage: str = "auth",
 ) -> MailAuthenticationError:
-    return classify_mail_auth_error(exc, account=account, host_key="imap_host")
+    return classify_mail_auth_error(
+        exc, account=account, host_key="imap_host", protocol="imap", stage=stage
+    )
 
 
 def classify_smtp_error(
     exc: BaseException,
     *,
     account: Mapping[str, object] | None = None,
+    stage: str = "auth",
 ) -> MailAuthenticationError:
-    return classify_mail_auth_error(exc, account=account, host_key="smtp_host")
+    return classify_mail_auth_error(
+        exc, account=account, host_key="smtp_host", protocol="smtp", stage=stage
+    )
