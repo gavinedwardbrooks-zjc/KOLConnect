@@ -79,6 +79,103 @@
   color: #a3544b;
 }
 
+#kolconnect-next-root .kol-update-card {
+  margin-bottom: 12px;
+  padding: 15px;
+  border: 1px solid rgba(174, 209, 166, 0.28);
+  border-radius: 15px;
+  background: linear-gradient(145deg, #1f2d25 0%, #293c30 100%);
+  color: #f5f2e9;
+  box-shadow: 0 13px 28px rgba(28, 45, 34, 0.2);
+}
+
+#kolconnect-next-root .kol-update-eyebrow {
+  display: block;
+  color: #a9caa6;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+#kolconnect-next-root .kol-update-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+#kolconnect-next-root .kol-update-top .kol-update-dismiss {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #dce7d9;
+  font-size: 16px;
+  line-height: 1;
+}
+
+#kolconnect-next-root .kol-update-title,
+#kolconnect-next-root .kol-update-notes-title {
+  margin: 0;
+  color: #fffdf8;
+}
+
+#kolconnect-next-root .kol-update-title {
+  font-size: 17px;
+}
+
+#kolconnect-next-root .kol-update-version {
+  margin: 6px 0 12px;
+  color: #d9e5d7;
+  font-size: 12px;
+}
+
+#kolconnect-next-root .kol-update-notes-title {
+  font-size: 12px;
+}
+
+#kolconnect-next-root .kol-update-notes {
+  display: grid;
+  gap: 4px;
+  margin: 7px 0 0;
+  padding-left: 18px;
+  color: #edf3e9;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+#kolconnect-next-root .kol-update-hint {
+  margin: 10px 0 0;
+  color: #aebdaf;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+#kolconnect-next-root .kol-update-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-top: 12px;
+}
+
+#kolconnect-next-root .kol-update-actions button {
+  min-height: 36px;
+  padding: 8px;
+}
+
+#kolconnect-next-root .kol-update-actions .kol-update-download {
+  background: #a8c89e;
+  color: #1e3024;
+}
+
+#kolconnect-next-root .kol-update-actions .kol-update-snooze {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef3eb;
+}
+
 #kolconnect-next-root .kol-card {
   display: grid;
   gap: 9px;

@@ -10,6 +10,11 @@ import {
 import { MESSAGE } from "./core/messaging.js";
 import { failedProfile, finalizeProfile } from "./core/schema.js";
 import { addAccount, linkExistingCreator, loadAgencies, lookupAccount, searchCreators, updateAccount } from "./services/local_api.js";
+import {
+  allowedUpdateUrl,
+  checkForExtensionUpdate,
+  snoozeExtensionUpdate
+} from "./services/update_service.js";
 
 const PLATFORMS = [TikTok, Instagram, YouTube];
 const contentControllers = new Map();
@@ -75,7 +80,7 @@ async function openAssistant(tab) {
     });
     await chrome.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["config.js", "core/analysis_session.js", "core/page_support.js", "content/floating_assistant.js"]
+      files: ["config.js", "core/analysis_session.js", "core/page_support.js", "content/update_prompt.js", "content/floating_assistant.js"]
     });
     await sendToTab(tab.id, { type: MESSAGE.OPEN });
   }
@@ -240,6 +245,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         ok: false,
         error: error?.message || "Agency list unavailable."
       }));
+    return true;
+  }
+  if (message?.type === MESSAGE.CHECK_UPDATE) {
+    checkForExtensionUpdate({ currentVersion: chrome.runtime.getManifest().version })
+      .then((update) => sendResponse({ ok: true, update }))
+      .catch(() => sendResponse({ ok: true, update: null }));
+    return true;
+  }
+  if (message?.type === MESSAGE.SNOOZE_UPDATE) {
+    snoozeExtensionUpdate(message.version)
+      .then((snoozed) => sendResponse({ ok: snoozed }))
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+  if (message?.type === MESSAGE.OPEN_UPDATE_DOWNLOAD) {
+    const target = allowedUpdateUrl(message.url);
+    if (!target) {
+      sendResponse({ ok: false });
+      return false;
+    }
+    chrome.tabs.create({ url: target })
+      .then(() => sendResponse({ ok: true }))
+      .catch(() => sendResponse({ ok: false }));
     return true;
   }
   if (message?.type === MESSAGE.ANALYZE_CONTENT) {

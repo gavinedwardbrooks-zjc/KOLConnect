@@ -309,7 +309,7 @@ assert.equal(readFileSync(new URL(`../chrome_extension/${recoveryMain.js[0]}`, i
   "both worlds must use the same protocol implementation");
 assert.deepEqual(recoveryInjections[0], { world: "ISOLATED", files: manifestIsolated.js });
 assert.deepEqual(recoveryInjections[1].files,
-  ["config.js", "core/analysis_session.js", "core/page_support.js", "content/floating_assistant.js"]);
+  ["config.js", "core/analysis_session.js", "core/page_support.js", "content/update_prompt.js", "content/floating_assistant.js"]);
 assert.ok(assistantMessages.some(message => message.type === "KOLCONNECT_NEXT_OPEN"));
 const recoveredRuntime = backgroundTab.target.KOLConnectTikTokCapture;
 const recoveredDiagnostic = JSON.stringify(recoveredRuntime.diagnostics());

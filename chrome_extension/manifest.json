@@ -26,6 +26,7 @@
   "host_permissions": [
     "http://127.0.0.1:8765/*",
     "http://localhost:8765/*",
+    "https://api.github.com/*",
     "*://*.tiktok.com/*",
     "*://*.instagram.com/*",
     "*://*.youtube.com/*"
@@ -53,6 +54,7 @@
         "config.js",
         "core/analysis_session.js",
         "core/page_support.js",
+        "content/update_prompt.js",
         "content/floating_assistant.js"
       ],
       "css": [

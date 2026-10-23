@@ -13,6 +13,9 @@
     SEARCH_CREATORS: "KOLCONNECT_NEXT_SEARCH_CREATORS",
     LINK_EXISTING_CREATOR: "KOLCONNECT_NEXT_LINK_EXISTING_CREATOR",
     LOAD_AGENCIES: "KOLCONNECT_NEXT_LOAD_AGENCIES",
+    CHECK_UPDATE: "KOLCONNECT_NEXT_CHECK_UPDATE",
+    SNOOZE_UPDATE: "KOLCONNECT_NEXT_SNOOZE_UPDATE",
+    OPEN_UPDATE_DOWNLOAD: "KOLCONNECT_NEXT_OPEN_UPDATE_DOWNLOAD",
     PAGE_CHANGED: "KOLCONNECT_NEXT_PAGE_CHANGED",
     ANALYZE_CONTENT: "KOLCONNECT_NEXT_ANALYZE_CONTENT",
     CANCEL_CONTENT: "KOLCONNECT_NEXT_CANCEL_CONTENT",
@@ -24,6 +27,7 @@
   const URL_CHECK_INTERVAL_MS = 1500;
   const SessionController = globalThis.KOLConnectAnalysisSessionController;
   const pageSupport = globalThis.KOLConnectPageSupport;
+  const UpdatePrompt = globalThis.KOLConnectUpdatePrompt;
   const contentCategoryOptions = globalThis.KOLConnectConfig?.CONTENT_CATEGORY_OPTIONS || [];
   if (!SessionController || !pageSupport || !contentCategoryOptions.length) return;
 
@@ -75,7 +79,8 @@
     creatorSearchLoading: false,
     creatorSearchError: "",
     selectedCreatorId: "",
-    creatorSelectorContext: null
+    creatorSelectorContext: null,
+    updateCheckStarted: false
   };
 
   const create = (tag, className = "", text = "") => {
@@ -101,6 +106,7 @@
 
   const body = create("main", "kol-body");
   const status = create("div", "kol-status", "等待分析当前达人主页。");
+  const updatePromptHost = create("div", "kol-update-host");
   const card = create("section", "kol-card");
   const fieldElements = {};
   const labels = {
@@ -272,7 +278,7 @@
   importButton.disabled = true;
   linkButton.hidden = true;
   actions.append(refreshButton, analyzeContentButton, cancelContentButton, copyButton, importButton, linkButton);
-  body.append(status, card, accountAwareness, creatorSelector, previewSection, contentSection, diagnostics, actions);
+  body.append(status, updatePromptHost, card, accountAwareness, creatorSelector, previewSection, contentSection, diagnostics, actions);
   panel.append(head, body);
   root.append(panel);
   document.documentElement.append(root);
@@ -318,6 +324,30 @@
       agencySelect.disabled = true;
       agencyStatus.textContent = "Agency 暂不可用，不影响导入";
     }
+  };
+
+  const checkForUpdate = async () => {
+    if (state.updateCheckStarted || !UpdatePrompt) return;
+    state.updateCheckStarted = true;
+    try {
+      const response = await sendMessage({ type: MESSAGE.CHECK_UPDATE });
+      if (!response?.ok || !response.update) return;
+      const prompt = UpdatePrompt.render({
+        update: response.update,
+        onDownload: async (update) => {
+          const result = await sendMessage({
+            type: MESSAGE.OPEN_UPDATE_DOWNLOAD,
+            url: update.download_url
+          });
+          return Boolean(result?.ok);
+        },
+        onSnooze: async (update) => {
+          const result = await sendMessage({ type: MESSAGE.SNOOZE_UPDATE, version: update.latest_version });
+          return Boolean(result?.ok);
+        }
+      });
+      if (prompt) updatePromptHost.replaceChildren(prompt);
+    } catch (_) {}
   };
 
   const formatNumber = (value) => value == null
@@ -976,6 +1006,7 @@
     state.dismissedUrl = "";
     state.visible = true;
     root.style.display = "block";
+    checkForUpdate();
     scheduleProfileAnalysis(nextUrl);
   };
 
@@ -1166,6 +1197,7 @@
     if (manual) state.dismissedUrl = "";
     state.visible = true;
     root.style.display = "block";
+    checkForUpdate();
     if (!state.profile || state.analyzedUrl !== location.href) {
       scheduleProfileAnalysis(location.href, 0);
     }
