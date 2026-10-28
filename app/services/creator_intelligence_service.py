@@ -30,7 +30,7 @@ class CreatorIntelligenceService:
         limitations = self._limitations(creator, accounts, source)
         freshness = self._freshness(creator, accounts)
         confidence = self._confidence(creator, accounts, source)
-        price_values = [normalize_number(row.get("creator_quote") or row.get("cost")) for row in source.get("campaign_creators") or []]
+        price_values = [self._recorded_price(row) for row in source.get("campaign_creators") or []]
         has_price = any(value is not None for value in price_values)
         engagement_available = any(
             normalize_number(snapshot.get("average_views")) is not None
@@ -75,6 +75,11 @@ class CreatorIntelligenceService:
             },
         }
 
+
+    @staticmethod
+    def _recorded_price(row: dict[str, Any]) -> float | int | None:
+        quote = normalize_number(row.get("creator_quote"))
+        return quote if quote is not None else normalize_number(row.get("cost"))
 
     @staticmethod
     def _account_signal(account: dict[str, Any], snapshots: list[dict[str, Any]]) -> dict[str, Any]:
@@ -127,7 +132,7 @@ class CreatorIntelligenceService:
         if not str(creator.get("language") or "").strip(): items.append("missing_language")
         if not source.get("videos"): items.append("no_video_history")
         if not any(normalize_number(row.get("average_views")) is not None for row in source.get("snapshots") or []): items.append("insufficient_engagement_data")
-        if not any(normalize_number(row.get("creator_quote") or row.get("cost")) is not None for row in source.get("campaign_creators") or []): items.append("insufficient_price_data")
+        if not any(CreatorIntelligenceService._recorded_price(row) is not None for row in source.get("campaign_creators") or []): items.append("insufficient_price_data")
         return items
 
     def _freshness(self, creator: dict[str, Any], accounts: list[dict[str, Any]]) -> str:

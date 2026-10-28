@@ -71,6 +71,7 @@ async function run() {
       get: async url => {
         calls.push({ method: "GET", url });
         if (url === "/api/feishu-chat/status") return { state: "disabled" };
+        if (url === "/api/settings/ai-provider") return { configuration: null };
         if (url.endsWith("/status")) return { status: "success", authority: "legacy_excel", migration_required: true, migration_status: "available" };
         throw new Error(`unexpected GET ${url}`);
       },

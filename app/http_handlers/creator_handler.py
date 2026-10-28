@@ -11,6 +11,7 @@ from storage.errors import StorageError
 from services.creator_hard_delete_service import CreatorHardDeleteError
 from services.creator_delete_impact_service import CreatorDeleteImpactError
 from services.creator_merge_service import CreatorMergeError
+from services.creator_ai_decision_service import CreatorAIDecisionError
 
 
 XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -202,6 +203,42 @@ def handle(handler, request: dict, context: dict) -> bool:
             })
         except ValueError as exc:
             handler._error(str(exc), status=404)
+        return True
+
+    ai_decision_match = re.fullmatch(r"/api/creator-library/([^/]+)/ai-decision", path)
+    if method in {"GET", "POST"} and ai_decision_match:
+        decision_service = services["creator_ai_decision"]
+        try:
+            if method == "GET":
+                result = decision_service.get_capability_and_facts(ai_decision_match.group(1))
+                handler._json({"ok": True, **result})
+                return True
+            payload = request["get_payload"]()
+            if not isinstance(payload, dict) or set(payload) - {"decision_context"}:
+                raise CreatorAIDecisionError(
+                    "INVALID_AI_DECISION_REQUEST",
+                    "AI decision request contains unsupported fields.",
+                )
+            result = decision_service.generate_decision(
+                ai_decision_match.group(1),
+                trace_id=str(request.get("trace_id") or context["request"]["trace_id"]),
+                decision_context=payload.get("decision_context"),
+            )
+            if result.get("status") == "provider_error":
+                code = str((result.get("provider_error") or {}).get("code") or "AI_PROVIDER_UNAVAILABLE")
+                handler._json({
+                    "ok": False,
+                    **result,
+                    "error": {"code": code, "message": "AI judgment is unavailable; deterministic facts remain available."},
+                }, status=503)
+            else:
+                handler._json({"ok": True, **result})
+        except CreatorAIDecisionError as exc:
+            handler._api_error(exc.code, str(exc), status=exc.status)
+        except ValueError as exc:
+            handler._error(str(exc), status=404)
+        except RuntimeError as exc:
+            handler._repository_error(exc)
         return True
 
     delete_impact_match = re.fullmatch(

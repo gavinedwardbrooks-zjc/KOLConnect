@@ -82,6 +82,32 @@ class M74CreatorIntelligenceTests(unittest.TestCase):
         result = self.service().get_creator_intelligence("creator_insa")
         self.assertEqual("fresh", result["data_freshness"])
 
+    def test_zero_quote_is_recorded_and_does_not_fall_back_to_cost(self):
+        self.source["campaign_creators"] = [{"creator_quote": 0, "cost": 500}]
+        result = self.service().get_creator_intelligence("creator_insa")
+        self.assertEqual("recorded_data_available", result["price_band"])
+        self.assertNotIn("insufficient_price_data", result["limitations"])
+
+    def test_zero_cost_is_recorded_when_quote_is_missing(self):
+        self.source["campaign_creators"] = [{"creator_quote": None, "cost": 0}]
+        result = self.service().get_creator_intelligence("creator_insa")
+        self.assertEqual("recorded_data_available", result["price_band"])
+        self.assertNotIn("insufficient_price_data", result["limitations"])
+
+    def test_missing_quote_falls_back_to_recorded_cost(self):
+        self.source["campaign_creators"] = [{"creator_quote": None, "cost": 125}]
+        result = self.service().get_creator_intelligence("creator_insa")
+        self.assertEqual("recorded_data_available", result["price_band"])
+
+    def test_all_missing_prices_remain_unavailable(self):
+        self.source["campaign_creators"] = [
+            {"creator_quote": None, "cost": None},
+            {"creator_quote": "", "cost": ""},
+        ]
+        result = self.service().get_creator_intelligence("creator_insa")
+        self.assertEqual("unavailable", result["price_band"])
+        self.assertIn("insufficient_price_data", result["limitations"])
+
 
 if __name__ == "__main__":
     unittest.main()

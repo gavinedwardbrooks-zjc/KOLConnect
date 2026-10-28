@@ -1573,8 +1573,10 @@ class CreatorRepository:
             raise ValueError("未找到达人分析记录。")
         metadata = self._metadata_row(workbook["_AnalysisData"], creator_id)
         analysis = self._decode_analysis(metadata.get("analysis_json"))
+        insight = self._creator_row(workbook["Insights"], creator_id)
         return {
             "creator": dict(creator),
+            "insight": dict(insight),
             "accounts": [
                 dict(row)
                 for row in self._rows(workbook["CreatorAccounts"])

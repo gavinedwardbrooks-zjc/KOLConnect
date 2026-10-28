@@ -112,7 +112,7 @@ jobs:
             patterns: test_m2_*.py,test_m4_*.py,test_m5_*.py,test_phase3_*.py,test_agency_delete_sqlite.py,test_campaign_execution_foundation.py,test_dashboard_v2.py,test_discovery_ux_consolidation.py,test_discovery_workflow_polish.py,test_fx_service.py,test_locale_state_authority.py
           - shard: platform-integrations
             timeout_minutes: 30
-            patterns: test_m3_*.py,test_m6_*.py,test_m7_*.py,test_m8_*.py,test_plugin_*.py,test_pre_m9_google_auth_status.py,test_pre_m9_google_sheets_data_sync.py
+            patterns: test_m3_*.py,test_m6_*.py,test_m7_*.py,test_m8_*.py,test_m9_*.py,test_plugin_*.py,test_pre_m9_google_auth_status.py,test_pre_m9_google_sheets_data_sync.py
           - shard: storage-foundation
             timeout_minutes: 30
             patterns: test_pre_m8_*.py,test_data_foundation_phase1.py,test_data_foundation_phase1_6.py,test_m1_b1_c1.py,test_m1_c2_bio_archived_columns.py,test_creator_default_name_policy.py

@@ -707,7 +707,7 @@
             <div>
               <div class="creator-ai-summary-title-row">
                 <h2 data-i18n="creatorAiSummary">AI 达人摘要</h2>
-                <span class="creator-ai-mock-badge" id="creator-ai-mock-badge">AI Mock</span>
+                <span class="creator-ai-mock-badge" id="creator-ai-mock-badge" data-i18n="creatorLocalRulesBadge">本地规则</span>
               </div>
               <p class="hint" id="creator-ai-summary-disclosure" data-i18n="creatorAiDisclosure">当前为本地规则生成，未连接真实 AI</p>
             </div>
@@ -734,6 +734,30 @@
               <section><h3 data-i18n="creatorEngagementBand">Engagement Band</h3><p id="creator-intelligence-engagement-band">--</p></section>
               <section><h3 data-i18n="creatorPriceBand">Price Band</h3><p id="creator-intelligence-price-band">--</p></section>
               <section><h3 data-i18n="creatorConfidence">Confidence</h3><p id="creator-intelligence-confidence">--</p></section>
+            </div>
+          </div>
+          <div class="creator-ai-decision-panel">
+            <div class="creator-ai-summary-heading">
+              <div>
+                <h3 data-i18n="creatorAiDecisionTitle">AI 合作判断</h3>
+                <p class="hint" data-i18n="creatorAiDecisionHint">仅在你点击后，向设置中选择的服务商发送最小化 Creator 数据。结果不会修改业务状态。</p>
+              </div>
+              <button class="primary-btn" type="button" id="creator-ai-decision-generate" data-i18n="creatorAiDecisionGenerate">生成 AI 判断</button>
+            </div>
+            <p class="creator-ai-summary-status" id="creator-ai-decision-status" data-i18n="creatorAiDecisionPrompt">请先在设置中配置 AI；点击后才会产生远程请求，并可能产生费用。</p>
+            <div class="creator-ai-decision-content" id="creator-ai-decision-content" hidden>
+              <div class="creator-ai-summary-grid">
+                <section><h3 data-i18n="creatorAiRecommendation">建议</h3><p id="creator-ai-decision-recommendation">--</p></section>
+                <section><h3 data-i18n="creatorConfidence">可信度</h3><p id="creator-ai-decision-confidence">--</p></section>
+              </div>
+              <p class="creator-ai-decision-summary" id="creator-ai-decision-summary">--</p>
+              <div class="creator-ai-summary-notes">
+                <section><h3 data-i18n="creatorAiReasons">理由</h3><ul id="creator-ai-decision-reasons"></ul></section>
+                <section><h3 data-i18n="creatorAiRisks">风险</h3><ul id="creator-ai-decision-risks"></ul></section>
+                <section><h3 data-i18n="creatorAiMissingInformation">缺失信息</h3><ul id="creator-ai-decision-missing"></ul></section>
+                <section><h3 data-i18n="creatorAiNextActions">建议下一步</h3><ul id="creator-ai-decision-actions"></ul></section>
+              </div>
+              <p class="hint" id="creator-ai-decision-meta">--</p>
             </div>
           </div>
         </div>
@@ -2105,6 +2129,51 @@
           </div>
           <p class="form-message" id="clean-reset-result" hidden></p>
         </div>
+        <div class="section-card ai-provider-card" id="settings-ai-provider-card">
+          <div class="section-title" data-i18n="settingsAiTitle">AI 判断（使用你自己的 API Key）</div>
+          <p class="hint" data-i18n="settingsAiHint">AI 完全可选。保存配置不会调用模型；只有你在 Creator 页面明确生成判断或在此测试连接时才会请求所选服务商。</p>
+          <div class="form-grid two">
+            <label class="field">
+              <span data-i18n="settingsAiProvider">服务商</span>
+              <select id="ai-provider"></select>
+            </label>
+            <label class="field">
+              <span data-i18n="settingsAiModel">Model ID</span>
+              <input id="ai-model" type="text" list="ai-model-suggestions" autocomplete="off" data-i18n-placeholder="settingsAiModelPlaceholder" placeholder="选择建议或手动输入模型 ID">
+              <datalist id="ai-model-suggestions"></datalist>
+            </label>
+          </div>
+          <label class="field">
+            <span data-i18n="settingsAiEndpoint">API Endpoint</span>
+            <input id="ai-endpoint" type="url" spellcheck="false" autocomplete="off">
+          </label>
+          <p class="hint" id="ai-endpoint-hint" data-i18n="settingsAiPresetEndpointHint">官方预设 endpoint 已锁定，避免凭据发送到错误地址。</p>
+          <div class="form-grid two">
+            <label class="field">
+              <span>API Key</span>
+              <input id="ai-api-key" type="password" autocomplete="new-password" data-i18n-placeholder="settingsSecretPlaceholder" placeholder="留空表示不修改">
+            </label>
+            <label class="checkbox-field ai-provider-toggle">
+              <input id="ai-enabled" type="checkbox">
+              <span data-i18n="settingsAiEnabled">启用此 AI 配置</span>
+            </label>
+          </div>
+          <label class="checkbox-field ai-provider-clear">
+            <input id="ai-clear-key" type="checkbox">
+            <span data-i18n="settingsAiClearKey">清除当前服务商保存的 API Key</span>
+          </label>
+          <div class="feishu-sync-state">
+            <span data-i18n="settingsConnectionStatus">连接状态</span>
+            <strong id="ai-provider-status" data-i18n="settingsNotConfigured">未配置</strong>
+          </div>
+          <p class="hint" data-i18n="settingsAiModelHint">模型建议不是完整列表；你可以输入服务商支持的文本模型 ID。模型必须兼容 OpenAI Chat Completions 与 JSON object 输出。</p>
+          <div class="action-row">
+            <button class="primary-btn" id="ai-provider-save" type="button" data-i18n="settingsAiSave">保存 AI 配置</button>
+            <button class="secondary-btn" id="ai-provider-test" type="button" data-i18n="settingsAiTest">测试连接（可能计费）</button>
+          </div>
+          <p class="form-message" id="ai-provider-result" hidden></p>
+        </div>
+
         <div class="section-card" id="settings-feishu-config-card">
           <div class="section-title" data-i18n="feishuSettingsTitle">飞书配置（同一个 App）</div>
           <div class="form-grid two">

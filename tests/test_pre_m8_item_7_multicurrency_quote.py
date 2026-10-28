@@ -185,6 +185,37 @@ class MultiCurrencyQuoteTests(unittest.TestCase):
         self.assertEqual(250, same["total"])
         self.assertFalse(same["multiple_currencies"])
 
+    def test_amount_aggregation_distinguishes_missing_from_recorded_zero(self) -> None:
+        empty = grouped_amounts([], "cost", "cost_currency")
+        missing = grouped_amounts(
+            [{"cost": None, "cost_currency": "USD"}], "cost", "cost_currency"
+        )
+        zero = grouped_amounts(
+            [{"cost": 0, "cost_currency": "USD"}], "cost", "cost_currency"
+        )
+        mixed = grouped_amounts(
+            [
+                {"cost": None, "cost_currency": "USD"},
+                {"cost": 0, "cost_currency": "USD"},
+                {"cost": 25, "cost_currency": "USD"},
+            ],
+            "cost",
+            "cost_currency",
+        )
+
+        self.assertEqual(0, empty["recorded_amount_count"])
+        self.assertEqual(0, missing["recorded_amount_count"])
+        self.assertEqual(1, zero["recorded_amount_count"])
+        self.assertEqual(2, mixed["recorded_amount_count"])
+        self.assertEqual(0, zero["total"])
+        self.assertEqual({"USD": 0.0}, zero["totals_by_currency"])
+        self.assertEqual(25, mixed["total"])
+
+    def test_existing_grouped_amount_consumers_ignore_additive_metadata(self) -> None:
+        performance = DashboardService(DashboardSource([])).getCooperationPerformance()
+        self.assertEqual(0, performance["total_cost"])
+        self.assertNotIn("recorded_amount_count", performance)
+
     def test_dashboard_suppresses_mixed_currency_scalar(self) -> None:
         rows = [
             {"campaign_id": "one", "creator_id": "a", "stage": "completed", "cost": 200, "cost_currency": "USD"},

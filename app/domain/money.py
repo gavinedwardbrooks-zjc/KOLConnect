@@ -122,6 +122,7 @@ def grouped_amounts(
     totals: dict[str, Decimal] = {}
     unknown = Decimal(0)
     unknown_count = 0
+    recorded_amount_count = 0
     for row in rows:
         try:
             amount = optional_decimal(row.get(amount_field), amount_field)
@@ -129,6 +130,7 @@ def grouped_amounts(
             continue
         if amount is None:
             continue
+        recorded_amount_count += 1
         code = str(row.get(currency_field) or "").strip().upper()
         if CURRENCY_CODE_PATTERN.fullmatch(code):
             totals[code] = totals.get(code, Decimal(0)) + amount
@@ -148,4 +150,5 @@ def grouped_amounts(
         "totals_by_currency": groups,
         "unknown_currency_total": float(unknown) if unknown_count else None,
         "multiple_currencies": mixed,
+        "recorded_amount_count": recorded_amount_count,
     }

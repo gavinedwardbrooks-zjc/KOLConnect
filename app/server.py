@@ -92,6 +92,9 @@ from services.creator_intelligence_service import (
 from services.clean_reset_service import CleanResetService
 from services.assistant_service import AssistantService
 from services.assistant_provider import DeterministicAssistantProvider
+from services.ai_provider_configuration import AIProviderConfigurationService
+from services.ai_secret_storage import AISecretStorage
+from services.creator_ai_decision_service import CreatorAIDecisionService
 from services.task_service import TaskService
 from services.mail_auth_service import MailAuthenticationError
 from services.mail_connection_service import (
@@ -140,6 +143,7 @@ from local_request_security import (
 )
 from version import APP_DISPLAY_VERSION
 from http_handlers import (
+    ai_provider_handler,
     analytics_handler,
     assistant_handler,
     campaign_handler,
@@ -175,6 +179,8 @@ STATIC_DIR = APP_DIR / "webapp"
 STATE_FILE = DATA_DIR / "settings.json"
 TASKS_DIR = DATA_DIR / "tasks"
 DATA_PROTECTION_FILE = DATA_DIR / "data_protection.json"
+AI_PROVIDER_CONFIG_FILE = DATA_DIR / "ai_provider.json"
+AI_PROVIDER_SECRET_FILE = DATA_DIR / "ai_provider.secret.json"
 GOOGLE_SHEETS_TOKEN_FILE = DATA_DIR / "google_sheets_token.json"
 CREATOR_ANALYSIS_DIR = DATA_DIR / "creator_analysis"
 CREATOR_LIBRARY_FILE = DATA_DIR / "creator_library.json"
@@ -313,6 +319,7 @@ MAIL_PROVIDER_ALIASES = {
 }
 
 HANDLERS = [
+    ai_provider_handler,
     assistant_handler,
     analytics_handler,
     dashboard_handler,
@@ -334,6 +341,8 @@ DASHBOARD_RESPONSE_CACHE = DashboardResponseCache(
     build_event_logger=lambda message: log_event("DashboardCache", message)
 )
 ASSISTANT_SERVICE = None
+AI_PROVIDER_CONFIGURATION_SERVICE = None
+CREATOR_AI_DECISION_SERVICE = None
 FEISHU_CHAT_TRANSPORT = None
 PRODUCTION_MIGRATION_SERVICE = None
 
@@ -2393,6 +2402,57 @@ def get_assistant_service() -> AssistantService:
     return ASSISTANT_SERVICE
 
 
+def get_ai_provider_configuration_service() -> AIProviderConfigurationService:
+    global AI_PROVIDER_CONFIGURATION_SERVICE
+    if AI_PROVIDER_CONFIGURATION_SERVICE is None:
+        def observe(event: dict) -> None:
+            usage = event.get("usage") if isinstance(event.get("usage"), dict) else {}
+            log_event(
+                "AIProvider",
+                " | ".join((
+                    f"trace_id={str(event.get('trace_id') or '')[:128]}",
+                    f"feature={str(event.get('feature') or '')[:80]}",
+                    f"provider={str(event.get('provider') or '')[:40]}",
+                    f"model={str(event.get('model') or '')[:160]}",
+                    f"latency_ms={int(event.get('latency_ms') or 0)}",
+                    f"status={str(event.get('status') or '')[:24]}",
+                    f"input_schema_version={str(event.get('input_schema_version') or '')[:32]}",
+                    f"output_schema_version={str(event.get('output_schema_version') or '')[:32]}",
+                    f"input_tokens={usage.get('input_tokens')}",
+                    f"output_tokens={usage.get('output_tokens')}",
+                    f"total_tokens={usage.get('total_tokens')}",
+                    f"error_code={str(event.get('error_code') or '')[:64]}",
+                )),
+            )
+
+        def secret_storage_for(provider_id: str) -> AISecretStorage:
+            normalized = str(provider_id or "openai").strip().casefold()
+            path = (
+                AI_PROVIDER_SECRET_FILE
+                if normalized == "openai"
+                else DATA_DIR / f"ai_provider.{normalized}.secret.json"
+            )
+            return AISecretStorage(path, profile_id=normalized)
+
+        AI_PROVIDER_CONFIGURATION_SERVICE = AIProviderConfigurationService(
+            AI_PROVIDER_CONFIG_FILE,
+            secret_storage_for("openai"),
+            secret_storage_factory=secret_storage_for,
+            observer=observe,
+        )
+    return AI_PROVIDER_CONFIGURATION_SERVICE
+
+
+def get_creator_ai_decision_service() -> CreatorAIDecisionService:
+    global CREATOR_AI_DECISION_SERVICE
+    if CREATOR_AI_DECISION_SERVICE is None:
+        CREATOR_AI_DECISION_SERVICE = CreatorAIDecisionService(
+            get_creator_repository,
+            get_ai_provider_configuration_service(),
+        )
+    return CREATOR_AI_DECISION_SERVICE
+
+
 def get_feishu_chat_transport() -> FeishuChatTransport:
     global FEISHU_CHAT_TRANSPORT
     if FEISHU_CHAT_TRANSPORT is None:
@@ -2930,6 +2990,7 @@ class Handler(BaseHTTPRequestHandler):
             "services": {
                 "agency": get_agency_service(),
                 "assistant": get_assistant_service(),
+                "ai_provider_configuration": get_ai_provider_configuration_service(),
                 "analytics": get_analytics_service(),
                 "google_campaign_report": get_google_campaign_report_service(),
                 "google_sheets_data_sync": get_google_sheets_data_sync_service(),
@@ -2941,6 +3002,7 @@ class Handler(BaseHTTPRequestHandler):
                 "similar_creator_search": get_similar_creator_search_service(),
                 "email_url_capture": get_email_url_capture_service(),
                 "creator_summary": get_creator_summary_service(),
+                "creator_ai_decision": get_creator_ai_decision_service(),
                 "creator_delete_impact": get_creator_delete_impact_service(),
                 "creator_hard_delete": get_creator_hard_delete_service(),
                 "creator_merge": get_creator_merge_service(),

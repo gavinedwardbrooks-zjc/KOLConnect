@@ -8,6 +8,7 @@
   let campaignsController = null;
   let editController = null;
   let summaryController = null;
+  let decisionController = null;
   let similarController = null;
   let campaignModal = null;
   let mergeModal = null;
@@ -300,6 +301,107 @@
       "creator-intelligence-engagement-band", "creator-intelligence-price-band",
       "creator-intelligence-confidence",
     ].forEach(id => setText(id, "--"));
+    resetAIDecision();
+  }
+
+  function resetAIDecision() {
+    decisionController?.abort();
+    decisionController = null;
+    const button = element("creator-ai-decision-generate");
+    if (button) {
+      button.disabled = false;
+      button.textContent = t("creatorAiDecisionGenerate");
+    }
+    setText("creator-ai-decision-status", t("creatorAiDecisionPrompt"));
+    const content = element("creator-ai-decision-content");
+    if (content) content.hidden = true;
+    [
+      "creator-ai-decision-reasons", "creator-ai-decision-risks",
+      "creator-ai-decision-missing", "creator-ai-decision-actions",
+    ].forEach(id => element(id)?.replaceChildren());
+    [
+      "creator-ai-decision-recommendation", "creator-ai-decision-confidence",
+      "creator-ai-decision-summary", "creator-ai-decision-meta",
+    ].forEach(id => setText(id, "--"));
+  }
+
+  function decisionLabel(value) {
+    return {
+      recommend: t("creatorAiRecommend"),
+      consider: t("creatorAiConsider"),
+      not_recommend: t("creatorAiNotRecommend"),
+      insufficient_data: t("creatorAiInsufficientData"),
+    }[value] || t("creatorAiInsufficientData");
+  }
+
+  function confidenceLabel(value) {
+    return {
+      high: t("creatorAiConfidenceHigh"),
+      medium: t("creatorAiConfidenceMedium"),
+      low: t("creatorAiConfidenceLow"),
+    }[value] || t("creatorAiConfidenceLow");
+  }
+
+  function renderAIDecision(data) {
+    const decision = data?.decision;
+    if (!decision || typeof decision !== "object") return;
+    const content = element("creator-ai-decision-content");
+    if (content) content.hidden = false;
+    setText("creator-ai-decision-recommendation", decisionLabel(decision.recommendation));
+    setText("creator-ai-decision-confidence", confidenceLabel(decision.confidence));
+    setText("creator-ai-decision-summary", decision.summary || t("creatorAiNoContent"));
+    renderList("creator-ai-decision-reasons", decision.reasons, t("creatorAiNoContent"));
+    renderList("creator-ai-decision-risks", decision.risks, t("creatorAiNoContent"));
+    renderList("creator-ai-decision-missing", decision.missing_information, t("creatorAiNoContent"));
+    renderList("creator-ai-decision-actions", decision.suggested_next_actions, t("creatorAiNoContent"));
+    setText("creator-ai-decision-meta", t("creatorAiDecisionMeta", {
+      provider: data.provider || t("creatorAiLocalGuard"),
+      model: data.model || "--",
+      time: formatTime(data.generated_at),
+    }));
+    setText(
+      "creator-ai-decision-status",
+      data.remote_request_performed ? t("creatorAiDecisionComplete") : t("creatorAiDecisionLocalGuard"),
+    );
+    const button = element("creator-ai-decision-generate");
+    if (button) button.textContent = t("creatorAiDecisionRegenerate");
+  }
+
+  function aiDecisionErrorKey(error) {
+    const code = String(error?.responseData?.error?.code || "");
+    return {
+      AI_PROVIDER_DISABLED: "creatorAiProviderDisabled",
+      AI_PROVIDER_UNAVAILABLE: "creatorAiProviderUnavailable",
+      AI_PROVIDER_AUTHENTICATION_FAILED: "creatorAiProviderAuthFailed",
+      AI_PROVIDER_RATE_LIMITED: "creatorAiProviderRateLimited",
+      AI_PROVIDER_TIMEOUT: "creatorAiProviderTimeout",
+      AI_PROVIDER_CONNECTION_FAILED: "creatorAiProviderConnectionFailed",
+      AI_PROVIDER_INVALID_OUTPUT: "creatorAiProviderInvalidOutput",
+    }[code] || "creatorAiDecisionFailed";
+  }
+
+  async function generateAIDecision() {
+    const currentLifecycle = lifecycleId;
+    const button = element("creator-ai-decision-generate");
+    decisionController?.abort();
+    decisionController = pageContext.resources.createAbortController();
+    if (button) button.disabled = true;
+    setText("creator-ai-decision-status", t("creatorAiDecisionGenerating"));
+    try {
+      const data = await pageContext.api.post(
+        `/api/creator-library/${encodeURIComponent(creatorId)}/ai-decision`,
+        {},
+        { signal: decisionController.signal },
+      );
+      if (!pageContext || currentLifecycle !== lifecycleId) return;
+      renderAIDecision(data);
+    } catch (error) {
+      if (error?.name !== "AbortError" && pageContext && currentLifecycle === lifecycleId) {
+        setText("creator-ai-decision-status", t(aiDecisionErrorKey(error)));
+      }
+    } finally {
+      if (button && pageContext && currentLifecycle === lifecycleId) button.disabled = false;
+    }
   }
 
   function renderIntelligence(intelligence) {
@@ -1006,6 +1108,7 @@
       listen("creator-library-detail-similar", "click", () => loadSimilarCandidates());
       listen("creator-account-options", "click", handleAccountSwitch);
       listen("creator-ai-summary-generate", "click", () => generateAISummary().catch(showError));
+      listen("creator-ai-decision-generate", "click", () => generateAIDecision().catch(showError));
       listen("creator-campaigns-body", "click", handleCampaignAction);
       listen("creator-library-similar-results", "click", handleSimilarCreatorAction);
       listen("creator-edit-modal-close", "click", closeEditModal);
@@ -1026,6 +1129,8 @@
       editController = null;
       summaryController?.abort();
       summaryController = null;
+      decisionController?.abort();
+      decisionController = null;
       similarController?.abort();
       similarController = null;
       campaignModal = null;

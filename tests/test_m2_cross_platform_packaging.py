@@ -26,7 +26,7 @@ MACOS_PYTHON_SHARD_PATTERNS = {
         "test_discovery_workflow_polish.py", "test_fx_service.py", "test_locale_state_authority.py",
     ),
     "platform-integrations": (
-        "test_m3_*.py", "test_m6_*.py", "test_m7_*.py", "test_m8_*.py", "test_plugin_*.py",
+        "test_m3_*.py", "test_m6_*.py", "test_m7_*.py", "test_m8_*.py", "test_m9_*.py", "test_plugin_*.py",
         "test_pre_m9_google_auth_status.py", "test_pre_m9_google_sheets_data_sync.py",
     ),
     "storage-foundation": (

@@ -62,7 +62,7 @@ function deferred() {
 
 async function run() {
   assert.match(html, /id="creator-ai-summary-card"/); // 22
-  assert.match(html, /id="creator-ai-mock-badge"[^>]*>AI Mock</); // 23
+  assert.match(html, /id="creator-ai-mock-badge"[^>]*>本地规则</); // 23
   assert.match(html, /当前为本地规则生成，未连接真实 AI/); // 24
 
   const ids = [
@@ -79,6 +79,10 @@ async function run() {
     "creator-ai-summary-generate", "creator-ai-summary-status", "creator-ai-summary-content",
     "creator-ai-summary-profile", "creator-ai-summary-performance", "creator-ai-summary-data-status",
     "creator-ai-summary-freshness", "creator-ai-summary-observations", "creator-ai-summary-limitations",
+    "creator-ai-decision-generate", "creator-ai-decision-status", "creator-ai-decision-content",
+    "creator-ai-decision-recommendation", "creator-ai-decision-confidence", "creator-ai-decision-summary",
+    "creator-ai-decision-reasons", "creator-ai-decision-risks", "creator-ai-decision-missing",
+    "creator-ai-decision-actions", "creator-ai-decision-meta",
   ];
   const elements = new Map(ids.map(id => [id, new FakeElement("div", id)]));
   elements.get("creator-edit-modal").hidden = true;
@@ -142,6 +146,10 @@ async function run() {
           creatorAnalysisTimeUnknown: "分析时间未知", creatorFreshnessFresh: "最新（{days} 天前）", creatorFreshnessUpdate: "建议更新（{days} 天前）", creatorFreshnessStale: "数据过期（{days} 天前）",
           creatorAccount: "账号", creatorUnknownPlatform: "未知平台", creatorDataLoading: "正在加载达人资料...", creatorManualReview: "请结合主页内容进行人工判断。",
           creatorNoStrengths: "暂无优势结论。", creatorNoRisks: "暂无风险结论。", creatorArchive: "归档达人", creatorRestore: "恢复达人",
+          creatorAiDecisionGenerate: "生成 AI 判断", creatorAiDecisionPrompt: "点击后生成", creatorAiDecisionGenerating: "正在请求",
+          creatorAiDecisionComplete: "AI 判断已生成。请结合原始数据人工复核。", creatorAiDecisionRegenerate: "重新生成 AI 判断",
+          creatorAiConsider: "可进一步考虑", creatorAiConfidenceMedium: "中", creatorAiNoContent: "暂无",
+          creatorAiDecisionMeta: "服务商：{provider} · 模型：{model} · 生成时间：{time}",
         };
         return String(labels[key] || key).replace(/\{(\w+)\}/g, (_match, name) => params[name] ?? "");
       },
@@ -155,13 +163,25 @@ async function run() {
         return detail;
       },
       async patch() {},
-      async post() {},
+      async post(url, payload) {
+        calls.push({ url, payload });
+        return {
+          mode: "ai", status: "success", provider: "deepseek", model: "deepseek-test",
+          generated_at: "2026-10-27T00:00:00Z", remote_request_performed: true,
+          decision: {
+            recommendation: "consider", confidence: "medium", summary: "建议补充目标后再评估。",
+            reasons: ["账号数据可用"], risks: ["缺少 Campaign context"],
+            missing_information: ["营销目标"], suggested_next_actions: ["补充目标"],
+          },
+        };
+      },
     },
   };
 
   await registeredPage.load(context);
   registeredPage.bind();
   assert.equal(calls.some(url => url.endsWith("/ai-summary")), false); // 25
+  assert.equal(calls.some(call => typeof call === "object" && call.url.endsWith("/ai-decision")), false);
 
   const partial = {
     mode: "mock",
@@ -216,6 +236,14 @@ async function run() {
   await errorClick;
   assert.match(elements.get("creator-ai-summary-status").textContent, /原始达人资料仍可正常查看/);
   assert.equal(elements.get("creator-library-detail-summary").textContent, originalDetailSummary); // 31
+
+  await elements.get("creator-ai-decision-generate").dispatch("click");
+  const decisionCalls = calls.filter(call => typeof call === "object" && call.url.endsWith("/ai-decision"));
+  assert.equal(decisionCalls.length, 1);
+  assert.equal(Object.keys(decisionCalls[0].payload).length, 0);
+  assert.equal(elements.get("creator-ai-decision-content").hidden, false);
+  assert.match(elements.get("creator-ai-decision-status").textContent, /复核/);
+  assert.match(elements.get("creator-ai-decision-recommendation").textContent, /考虑/);
 
   registeredPage.unbind();
   console.log("M6.2 Creator AI Mock UI: 12/12 behaviors PASS");

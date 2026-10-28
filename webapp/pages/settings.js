@@ -9,6 +9,8 @@
   const storageMigrationSession = `settings-${global.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
   let fxRates = [];
   let showAllFxRates = false;
+  let aiConfiguration = null;
+  let aiSaveSequence = 0;
 
   function getApp() {
     if (!global.KOLConnectApp) throw new Error("KOLConnect application helpers are unavailable.");
@@ -48,6 +50,95 @@
   function setSyncText(id, value) {
     const element = document.getElementById(id);
     if (element) element.textContent = value ?? "--";
+  }
+
+  function selectedAiProfile(providerId) {
+    return aiConfiguration?.profiles?.[providerId] || {};
+  }
+
+  function renderAiProvider(configuration) {
+    if (!configuration) return;
+    aiConfiguration = configuration;
+    const providerSelect = document.getElementById("ai-provider");
+    const selected = String(configuration.provider || "openai");
+    if (providerSelect) {
+      providerSelect.replaceChildren();
+      (configuration.provider_catalog || []).forEach(item => {
+        const option = document.createElement("option");
+        option.value = item.id;
+        option.textContent = item.label;
+        providerSelect.appendChild(option);
+      });
+      providerSelect.value = selected;
+    }
+    renderAiProfile(selected);
+  }
+
+  function renderAiProfile(providerId) {
+    const catalog = (aiConfiguration?.provider_catalog || []).find(item => item.id === providerId) || {};
+    const profile = selectedAiProfile(providerId);
+    const endpoint = document.getElementById("ai-endpoint");
+    const model = document.getElementById("ai-model");
+    const enabled = document.getElementById("ai-enabled");
+    const key = document.getElementById("ai-api-key");
+    const clear = document.getElementById("ai-clear-key");
+    const suggestions = document.getElementById("ai-model-suggestions");
+    if (endpoint) {
+      endpoint.value = profile.base_url || catalog.base_url || "";
+      endpoint.readOnly = !catalog.custom_endpoint;
+    }
+    if (model) model.value = profile.model || "";
+    if (enabled) enabled.checked = Boolean(profile.enabled);
+    if (key) {
+      key.value = "";
+      key.placeholder = profile.key_configured ? t("settingsAiKeyConfigured") : t("settingsAiKeyMissing");
+    }
+    if (clear) {
+      clear.checked = false;
+      clear.disabled = !profile.key_configured;
+    }
+    if (suggestions) {
+      suggestions.replaceChildren();
+      (catalog.model_suggestions || []).forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        suggestions.appendChild(option);
+      });
+    }
+    const hint = document.getElementById("ai-endpoint-hint");
+    if (hint) hint.textContent = t(catalog.custom_endpoint ? "settingsAiCustomEndpointHint" : "settingsAiPresetEndpointHint");
+    setSyncText("ai-provider-status", profile.key_configured ? t("settingsAiKeyReady") : t("settingsNotConfigured"));
+  }
+
+  async function loadAiProvider(api, options = {}) {
+    const data = await api.get("/api/settings/ai-provider", options);
+    renderAiProvider(data?.configuration);
+    return data;
+  }
+
+  function renderAiResult(message, status = "") {
+    const result = document.getElementById("ai-provider-result");
+    if (!result) return;
+    result.hidden = false;
+    result.dataset.status = status;
+    result.textContent = message;
+  }
+
+  function renderAiError(error) {
+    const code = String(error?.responseData?.error?.code || error?.responseData?.error || "");
+    const keys = {
+      AI_PROVIDER_AUTHENTICATION_FAILED: "settingsAiAuthFailed",
+      AI_PROVIDER_RATE_LIMITED: "settingsAiRateLimited",
+      AI_PROVIDER_TIMEOUT: "settingsAiTimeout",
+      AI_PROVIDER_CONNECTION_FAILED: "settingsAiConnectionFailed",
+      AI_PROVIDER_UNSAFE_ENDPOINT: "settingsAiUnsafeEndpoint",
+      AI_PROVIDER_INVALID_OUTPUT: "settingsAiIncompatibleOutput",
+      AI_PROVIDER_DISABLED: "settingsAiDisabledError",
+      AI_PROVIDER_UNAVAILABLE: "settingsAiUnavailable",
+      AI_PROVIDER_CONFIGURATION_INVALID: "settingsAiConfigurationInvalid",
+      AI_PROVIDER_ENDPOINT_KEY_REBIND_REQUIRED: "settingsAiEndpointKeyRebindRequired",
+    };
+    renderAiResult(t(keys[code] || "settingsAiOperationFailed"), "failed");
   }
 
   function renderFxSettings(data) {
@@ -489,7 +580,7 @@
     const categoryEntries = [
       ['General', 'settingsCategoryGeneral', 'settingsCategoryGeneralHint', ['settings-general-card']],
       ['Accounts', 'settingsCategoryAccounts', 'settingsCategoryAccountsHint', ['settings-accounts-card']],
-      ['Integrations', 'settingsCategoryIntegrations', 'settingsCategoryIntegrationsHint', ['settings-feishu-config-card', 'google-sheets-card', 'feishu-sync-card', 'feishu-chat-card']],
+      ['Integrations', 'settingsCategoryIntegrations', 'settingsCategoryIntegrationsHint', ['settings-ai-provider-card', 'settings-feishu-config-card', 'google-sheets-card', 'feishu-sync-card', 'feishu-chat-card']],
       ['Data', 'settingsCategoryData', 'settingsCategoryDataHint', ['settings-workbook-card', 'fx-settings-card', 'settings-backup-card']],
       ['Advanced', 'settingsCategoryAdvanced', 'settingsCategoryAdvancedHint', ['settings-advanced-tools-card', 'storage-migration-card', 'clean-reset-card']],
     ];
@@ -539,6 +630,7 @@
           );
           if (chatStatus?.state === "connecting") startFeishuChatPolling(global.KOLConnectAPI);
           await loadStorageMigrationStatus(global.KOLConnectAPI, { signal: resources.signal });
+          await loadAiProvider(global.KOLConnectAPI, { signal: resources.signal });
         } catch (error) {
           handleError(error);
         }
@@ -575,6 +667,47 @@
       listen("settings-open-chrome-accounts", "click", () => global.KOLConnectPages.navigate("accounts"));
       listen("settings-open-mail-accounts", "click", () => global.KOLConnectPages.navigate("mail-accounts"));
       listen("settings-open-logs", "click", () => global.KOLConnectPages.navigate("logs"));
+
+      listen("ai-provider", "change", () => renderAiProfile(app.valueOf("ai-provider")));
+      listen("ai-provider-save", "click", async () => {
+        const button = document.getElementById("ai-provider-save");
+        if (button?.disabled) return;
+        const sequence = ++aiSaveSequence;
+        const provider = app.valueOf("ai-provider");
+        const payload = {
+          provider,
+          model: app.valueOf("ai-model").trim(),
+          base_url: app.valueOf("ai-endpoint").trim(),
+          enabled: app.checkedOf("ai-enabled"),
+          clear_api_key: app.checkedOf("ai-clear-key"),
+        };
+        const key = app.valueOf("ai-api-key").trim();
+        if (key) payload.api_key = key;
+        if (button) button.disabled = true;
+        renderAiResult(t("settingsAiSaving"), "pending");
+        try {
+          const data = await api.post("/api/settings/ai-provider", payload, { signal: resources.signal });
+          if (sequence !== aiSaveSequence) return;
+          aiConfiguration = data?.configuration || aiConfiguration;
+          if (app.valueOf("ai-provider") === provider) renderAiProvider(data?.configuration);
+          else renderAiProfile(app.valueOf("ai-provider"));
+          renderAiResult(t("settingsAiSaved"), "success");
+        } catch (error) {
+          if (sequence === aiSaveSequence) renderAiError(error);
+        } finally {
+          if (sequence === aiSaveSequence && button) button.disabled = false;
+        }
+      });
+      listen("ai-provider-test", "click", async () => {
+        if (!global.confirm(t("settingsAiTestWarning"))) return;
+        const button = document.getElementById("ai-provider-test");
+        if (button) button.disabled = true;
+        try {
+          const data = await api.post("/api/settings/ai-provider/health", { remote: true }, { signal: resources.signal });
+          renderAiResult(data?.health?.ok ? t("settingsAiTestSuccess") : t("settingsAiTestFailed"), data?.health?.ok ? "success" : "failed");
+        } catch (error) { renderAiError(error); }
+        finally { if (button) button.disabled = false; }
+      });
 
       listen("fx-save", "click", async () => {
         try {
