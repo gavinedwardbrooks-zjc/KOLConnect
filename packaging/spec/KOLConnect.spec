@@ -7,7 +7,7 @@ PROJECT_ROOT = Path(SPECPATH).resolve().parents[1]
 APP_DIR = PROJECT_ROOT / "app"
 PACKAGING_DIR = PROJECT_ROOT / "packaging"
 SQLITE_DLL = PACKAGING_DIR / "vendor" / "sqlite" / "windows-x64" / "sqlite3.dll"
-RELEASE_NAME = "KOLConnect_v2.0.1"
+RELEASE_NAME = "KOLConnect_v2.0.2"
 
 if not SQLITE_DLL.is_file():
     raise SystemExit(f"Pinned SQLite runtime is missing: {SQLITE_DLL}")

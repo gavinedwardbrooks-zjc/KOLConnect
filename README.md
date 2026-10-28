@@ -51,15 +51,15 @@ Chrome 扩展需要与正在运行的 KOLConnect 桌面应用配合使用。
 
 ## 下载与安装
 
-请前往 [KOLConnect v2.0.1 Releases](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/tag/v2.0.1) 下载与你设备匹配的文件。
+请前往 [KOLConnect v2.0.2 Releases](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/tag/v2.0.2) 下载与你设备匹配的文件。
 
 ### Windows x64
 
-下载：[`KOLConnect_v2.0.1_Windows_x64.zip`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.1/KOLConnect_v2.0.1_Windows_x64.zip)
+下载：[`KOLConnect_v2.0.2_Windows_x64.zip`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.2/KOLConnect_v2.0.2_Windows_x64.zip)
 
 1. 完整解压 ZIP，不要直接在压缩包内运行。
 2. 保持解压后的所有文件和文件夹在一起。
-3. 双击 `KOLConnect_v2.0.1.exe` 启动。
+3. 双击 `KOLConnect_v2.0.2.exe` 启动。
 
 不要只移动 EXE。它需要与同目录中的运行文件保持在一起。
 
@@ -67,7 +67,7 @@ Chrome 扩展需要与正在运行的 KOLConnect 桌面应用配合使用。
 
 适用于 M1、M2、M3、M4 等 Apple Silicon Mac，系统要求为 **macOS 14 或更高版本**。
 
-下载：[`KOLConnect_v2.0.1_macOS_arm64.dmg`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.1/KOLConnect_v2.0.1_macOS_arm64.dmg)
+下载：[`KOLConnect_v2.0.2_macOS_arm64.dmg`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.2/KOLConnect_v2.0.2_macOS_arm64.dmg)
 
 打开 DMG，将 `KOLConnect.app` 拖入 `/Applications` 后再启动。
 
@@ -75,7 +75,7 @@ Chrome 扩展需要与正在运行的 KOLConnect 桌面应用配合使用。
 
 适用于 Intel 处理器 Mac，系统要求为 **macOS 14 或更高版本**。
 
-下载：[`KOLConnect_v2.0.1_macOS_x64.dmg`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.1/KOLConnect_v2.0.1_macOS_x64.dmg)
+下载：[`KOLConnect_v2.0.2_macOS_x64.dmg`](https://github.com/gavinedwardbrooks-zjc/KOLConnect/releases/download/v2.0.2/KOLConnect_v2.0.2_macOS_x64.dmg)
 
 打开 DMG，将 `KOLConnect.app` 拖入 `/Applications` 后再启动。
 

@@ -255,7 +255,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("arm64_test_only:", manual)
         self.assertIn("source_sha:", manual)
         self.assertIn("fromJSON(inputs.arm64_test_only", manual)
-        self.assertIn("KOLConnect_v2.0.1_macOS_arm64_TEST.dmg", manual)
+        self.assertIn("KOLConnect_v2.0.2_macOS_arm64_TEST.dmg", manual)
         self.assertIn(
             "inputs.source_sha || github.sha",
             manual,
@@ -455,7 +455,7 @@ class PackagingConfigurationTests(unittest.TestCase):
 
         workflow_env = manual_workflow["env"]
         self.assertNotIn("FROZEN_RELEASE_SHA", workflow_env)
-        self.assertEqual("2.0.1", workflow_env["PRODUCT_VERSION"])
+        self.assertEqual("2.0.2", workflow_env["PRODUCT_VERSION"])
         self.assertEqual("frozen-src", workflow_env["FROZEN_PRODUCT_ROOT"])
         matrix_expression = manual_job["strategy"]["matrix"]["include"]
         self.assertFalse(manual_job["strategy"]["fail-fast"])
@@ -472,9 +472,9 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "runner": "macos-14",
                 "target_min_macos": "14",
                 "build_argument": "",
-                "source_dmg": "release/KOLConnect_v2.0.1_mac_arm64.dmg",
-                "target_dmg": "release/KOLConnect_v2.0.1_macOS_arm64.dmg",
-                "artifact_name": "KOLConnect-v2.0.1-macOS-arm64",
+                "source_dmg": "release/KOLConnect_v2.0.2_mac_arm64.dmg",
+                "target_dmg": "release/KOLConnect_v2.0.2_macOS_arm64.dmg",
+                "artifact_name": "KOLConnect-v2.0.2-macOS-arm64",
                 "app_path": "packaging/.pyinstaller-dist-macos/KOLConnect.app",
             },
             "x86_64": {
@@ -482,9 +482,9 @@ class PackagingConfigurationTests(unittest.TestCase):
                 "runner": "macos-15-intel",
                 "target_min_macos": "14",
                 "build_argument": "x86_64",
-                "source_dmg": "release/KOLConnect_v2.0.1_mac_intel.dmg",
-                "target_dmg": "release/KOLConnect_v2.0.1_macOS_x64.dmg",
-                "artifact_name": "KOLConnect-v2.0.1-macOS-x64",
+                "source_dmg": "release/KOLConnect_v2.0.2_mac_intel.dmg",
+                "target_dmg": "release/KOLConnect_v2.0.2_macOS_x64.dmg",
+                "artifact_name": "KOLConnect-v2.0.2-macOS-x64",
                 "app_path": "dist/pyinstaller-macos-intel/KOLConnect.app",
             },
         }
@@ -549,9 +549,11 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("platform.machine()", manual)
         self.assertIn('python3 "${FROZEN_PRODUCT_ROOT}/scripts/check_sqlite_runtime.py"', manual)
 
-        version_check = steps_by_name["Assert v2.0.1 version metadata"]["run"]
+        version_check = steps_by_name["Assert v2.0.2 application version metadata"]["run"]
         self.assertIn("from app.version import APP_VERSION", version_check)
-        self.assertIn('expected = "2.0.1"', version_check)
+        self.assertIn('expected = "2.0.2"', version_check)
+        self.assertIn('expected_extension = "2.0.1"', version_check)
+        self.assertIn('manifest["version"] == expected_extension', version_check)
         self.assertIn("CFBundleShortVersionString", version_check)
         self.assertIn("CFBundleVersion", version_check)
 
@@ -580,7 +582,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         )
         self.assertEqual(
             "frozen-src",
-            steps_by_name["Assert v2.0.1 version metadata"]["working-directory"],
+            steps_by_name["Assert v2.0.2 application version metadata"]["working-directory"],
         )
         self.assertEqual("${{ matrix.target_min_macos }}", manual_job["env"]["TARGET_MIN_MACOS"])
         verification = steps_by_name["Verify macOS deployment targets and packaged resources"]["run"]
@@ -672,7 +674,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         dmg_build = steps_by_name["Create final macOS DMG"]["run"]
         self.assertIn("hdiutil create", dmg_build)
         self.assertIn('product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"', dmg_build)
-        self.assertIn("KOLConnect_v2.0.1_macOS_arm64_TEST.dmg", dmg_build)
+        self.assertIn("KOLConnect_v2.0.2_macOS_arm64_TEST.dmg", dmg_build)
         self.assertIn("fail_gate dmg_output_filename", dmg_build)
         self.assertIn("fail_gate dmg_create", dmg_build)
         dmg_validation = steps_by_name["Validate DMG and calculate SHA-256"]["run"]
@@ -828,8 +830,8 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn('[[ "$(uname -m)" == "x86_64" ]]', build)
         self.assertIn("KOLConnect-macos-arm64", build)
         self.assertIn("KOLConnect-macos-intel", build)
-        self.assertIn("KOLConnect_v2.0.1_mac_arm64.dmg", build)
-        self.assertIn("KOLConnect_v2.0.1_mac_intel.dmg", build)
+        self.assertIn("KOLConnect_v2.0.2_mac_arm64.dmg", build)
+        self.assertIn("KOLConnect_v2.0.2_mac_intel.dmg", build)
         self.assertNotIn("actions/download-artifact@v4", build)
         self.assertNotIn("softprops/action-gh-release", build)
         self.assertNotIn("branches:\n      - main", build)

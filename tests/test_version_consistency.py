@@ -9,27 +9,28 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-CURRENT_VERSION = "2.0.1"
+APP_VERSION = "2.0.2"
+EXTENSION_VERSION = "2.0.1"
 
 
 class VersionConsistencyTests(unittest.TestCase):
     def test_current_version_is_consistent_across_runtime_and_packaging(self):
-        from app.version import APP_VERSION
+        from app.version import APP_VERSION as runtime_version
 
-        self.assertEqual(APP_VERSION, CURRENT_VERSION)
+        self.assertEqual(runtime_version, APP_VERSION)
 
         manifest = json.loads(
             (ROOT / "chrome_extension" / "manifest.json").read_text(encoding="utf-8")
         )
-        self.assertEqual(manifest["version"], CURRENT_VERSION)
-        self.assertEqual(manifest["version_name"], f"KOLConnect v{CURRENT_VERSION}")
+        self.assertEqual(manifest["version"], EXTENSION_VERSION)
+        self.assertEqual(manifest["version_name"], f"KOLConnect v{EXTENSION_VERSION}")
 
         windows_build = (ROOT / "packaging" / "build_release.ps1").read_text(encoding="utf-8")
         macos_build = (ROOT / "packaging" / "build_macos.sh").read_text(encoding="utf-8")
         workflow = (ROOT / ".github" / "workflows" / "build.yml").read_text(encoding="utf-8")
 
-        self.assertIn(f'$releaseVersion = "v{CURRENT_VERSION}"', windows_build)
-        self.assertIn(f'VERSION="v{CURRENT_VERSION}"', macos_build)
+        self.assertIn(f'$releaseVersion = "v{APP_VERSION}"', windows_build)
+        self.assertIn(f'VERSION="v{APP_VERSION}"', macos_build)
 
         windows_metadata = (ROOT / "packaging" / "windows_version_info.txt").read_text(
             encoding="utf-8-sig"
@@ -56,24 +57,24 @@ class VersionConsistencyTests(unittest.TestCase):
         web_app = (ROOT / "webapp" / "app.js").read_text(encoding="utf-8")
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
-        self.assertIn(f'RELEASE_NAME = "KOLConnect_v{CURRENT_VERSION}"', windows_spec)
-        self.assertIn(f"KOLConnect v{CURRENT_VERSION}", windows_metadata)
-        self.assertIn(f"'{CURRENT_VERSION}.0'", windows_metadata)
-        self.assertIn(f'#define AppVersion "{CURRENT_VERSION}"', windows_installer)
-        self.assertIn(f"KOLConnect_v{CURRENT_VERSION}.exe", windows_installer)
+        self.assertIn(f'RELEASE_NAME = "KOLConnect_v{APP_VERSION}"', windows_spec)
+        self.assertIn(f"KOLConnect v{APP_VERSION}", windows_metadata)
+        self.assertIn(f"'{APP_VERSION}.0'", windows_metadata)
+        self.assertIn(f'#define AppVersion "{APP_VERSION}"', windows_installer)
+        self.assertIn(f"KOLConnect_v{APP_VERSION}.exe", windows_installer)
         for spec in (mac_arm_spec, mac_intel_spec):
-            self.assertIn(f'"CFBundleShortVersionString": "{CURRENT_VERSION}"', spec)
-            self.assertIn(f'"CFBundleVersion": "{CURRENT_VERSION}"', spec)
-        self.assertIn(f'EXTENSION_VERSION = "v{CURRENT_VERSION}"', extension_schema)
-        self.assertIn(f"KOLConnect v{CURRENT_VERSION}", extension_ui)
-        self.assertIn(f"KOLConnect v{CURRENT_VERSION}", web_index)
-        self.assertIn(f"KOLConnect v{CURRENT_VERSION}", web_app)
-        self.assertIn(f"KOLConnect_v{CURRENT_VERSION}_Windows_x64.zip", readme)
+            self.assertIn(f'"CFBundleShortVersionString": "{APP_VERSION}"', spec)
+            self.assertIn(f'"CFBundleVersion": "{APP_VERSION}"', spec)
+        self.assertIn(f'EXTENSION_VERSION = "v{EXTENSION_VERSION}"', extension_schema)
+        self.assertIn(f"KOLConnect v{EXTENSION_VERSION}", extension_ui)
+        self.assertIn(f"KOLConnect v{APP_VERSION}", web_index)
+        self.assertIn(f"KOLConnect v{APP_VERSION}", web_app)
+        self.assertIn(f"KOLConnect_v{APP_VERSION}_Windows_x64.zip", readme)
 
         artifacts = (
-            f"KOLConnect_v{CURRENT_VERSION}_Windows_x64.zip",
-            f"KOLConnect_v{CURRENT_VERSION}_mac_arm64.dmg",
-            f"KOLConnect_v{CURRENT_VERSION}_mac_intel.dmg",
+            f"KOLConnect_v{APP_VERSION}_Windows_x64.zip",
+            f"KOLConnect_v{APP_VERSION}_mac_arm64.dmg",
+            f"KOLConnect_v{APP_VERSION}_mac_intel.dmg",
         )
         for artifact in artifacts:
             self.assertIn(artifact, workflow)

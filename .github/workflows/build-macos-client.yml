@@ -18,7 +18,7 @@ permissions:
   contents: read
 
 env:
-  PRODUCT_VERSION: 2.0.1
+  PRODUCT_VERSION: 2.0.2
   FROZEN_PRODUCT_ROOT: frozen-src
   PYTHON_SOURCE_VERSION: 3.12.11
   SQLITE_SOURCE_VERSION: 3.51.3
@@ -34,14 +34,14 @@ jobs:
       matrix:
         # A static include entry creates an extra job even when the base axis omits
         # that architecture. Select the complete include list instead.
-        include: ${{ fromJSON(inputs.arm64_test_only && '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.1_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.1_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.1-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"}]' || '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.1_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.1_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.1-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"},{"arch":"x86_64","runner":"macos-15-intel","target_min_macos":"14","build_argument":"x86_64","source_dmg":"release/KOLConnect_v2.0.1_mac_intel.dmg","target_dmg":"release/KOLConnect_v2.0.1_macOS_x64.dmg","artifact_name":"KOLConnect-v2.0.1-macOS-x64","app_path":"dist/pyinstaller-macos-intel/KOLConnect.app"}]') }}
+        include: ${{ fromJSON(inputs.arm64_test_only && '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.2_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.2_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.2-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"}]' || '[{"arch":"arm64","runner":"macos-14","target_min_macos":"14","build_argument":"","source_dmg":"release/KOLConnect_v2.0.2_mac_arm64.dmg","target_dmg":"release/KOLConnect_v2.0.2_macOS_arm64.dmg","artifact_name":"KOLConnect-v2.0.2-macOS-arm64","app_path":"packaging/.pyinstaller-dist-macos/KOLConnect.app"},{"arch":"x86_64","runner":"macos-15-intel","target_min_macos":"14","build_argument":"x86_64","source_dmg":"release/KOLConnect_v2.0.2_mac_intel.dmg","target_dmg":"release/KOLConnect_v2.0.2_macOS_x64.dmg","artifact_name":"KOLConnect-v2.0.2-macOS-x64","app_path":"dist/pyinstaller-macos-intel/KOLConnect.app"}]') }}
     env:
       HOMEBREW_NO_AUTO_UPDATE: "1"
       TARGET_ARCH: ${{ matrix.arch }}
       BUILD_ARGUMENT: ${{ matrix.build_argument }}
       SOURCE_DMG: ${{ matrix.source_dmg }}
-      TARGET_DMG: ${{ inputs.arm64_test_only && 'release/KOLConnect_v2.0.1_macOS_arm64_TEST.dmg' || matrix.target_dmg }}
-      ARTIFACT_NAME: ${{ inputs.arm64_test_only && 'KOLConnect-v2.0.1-macOS-arm64-TEST' || matrix.artifact_name }}
+      TARGET_DMG: ${{ inputs.arm64_test_only && 'release/KOLConnect_v2.0.2_macOS_arm64_TEST.dmg' || matrix.target_dmg }}
+      ARTIFACT_NAME: ${{ inputs.arm64_test_only && 'KOLConnect-v2.0.2-macOS-arm64-TEST' || matrix.artifact_name }}
       APP_PATH: ${{ matrix.app_path }}
       TARGET_MIN_MACOS: ${{ matrix.target_min_macos }}
       EXPECTED_SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
@@ -142,7 +142,7 @@ jobs:
           echo "PYINSTALLER_BOOTLOADER_MIN_MACOS=${bootloader_minos}"
           [[ "${bootloader_minos}" == "${MACOSX_DEPLOYMENT_TARGET}" ]]
 
-      - name: Assert v2.0.1 version metadata
+      - name: Assert v2.0.2 application version metadata
         working-directory: frozen-src
         shell: bash
         run: |
@@ -151,7 +151,8 @@ jobs:
           import json
           from pathlib import Path
           from app.version import APP_VERSION
-          expected = "2.0.1"
+          expected = "2.0.2"
+          expected_extension = "2.0.1"
           root = Path.cwd()
           manifest = json.loads((root / "chrome_extension" / "manifest.json").read_text(encoding="utf-8"))
           mac_specs = [
@@ -159,8 +160,8 @@ jobs:
               (root / "packaging" / "spec" / "KOLConnect_mac_intel.spec").read_text(encoding="utf-8"),
           ]
           assert APP_VERSION == expected
-          assert manifest["version"] == expected
-          assert manifest["version_name"] == f"KOLConnect v{expected}"
+          assert manifest["version"] == expected_extension
+          assert manifest["version_name"] == f"KOLConnect v{expected_extension}"
           for spec in mac_specs:
               assert f'"CFBundleShortVersionString": "{expected}"' in spec
               assert f'"CFBundleVersion": "{expected}"' in spec
@@ -368,10 +369,10 @@ jobs:
           ditto "${FROZEN_PRODUCT_ROOT}/${APP_PATH}" "${dmg_stage}/KOLConnect.app" || fail_gate dmg_stage_app
           ln -s /Applications "${dmg_stage}/Applications" || fail_gate dmg_stage_applications_link
           product_dmg="${FROZEN_PRODUCT_ROOT}/${TARGET_DMG}"
-          expected_dmg="$([[ "${TEST_BUILD}" == "true" ]] && echo 'KOLConnect_v2.0.1_macOS_arm64_TEST.dmg' || basename "${TARGET_DMG}")"
+          expected_dmg="$([[ "${TEST_BUILD}" == "true" ]] && echo 'KOLConnect_v2.0.2_macOS_arm64_TEST.dmg' || basename "${TARGET_DMG}")"
           [[ "$(basename "${product_dmg}")" == "${expected_dmg}" ]] || fail_gate dmg_output_filename
           rm -f "${product_dmg}"
-          hdiutil create -volname "KOLConnect v2.0.1" -srcfolder "${dmg_stage}" -ov -format UDZO "${product_dmg}" || fail_gate dmg_create
+          hdiutil create -volname "KOLConnect v2.0.2" -srcfolder "${dmg_stage}" -ov -format UDZO "${product_dmg}" || fail_gate dmg_create
 
       - name: Validate DMG and calculate SHA-256
         shell: bash
@@ -400,7 +401,7 @@ jobs:
         shell: bash
         run: |
           {
-            echo "## KOLConnect v2.0.1 macOS ${TARGET_MIN_MACOS}+ ${TARGET_ARCH} $([[ "${TEST_BUILD}" == "true" ]] && echo 'test build' || echo 'release candidate')"
+            echo "## KOLConnect v2.0.2 macOS ${TARGET_MIN_MACOS}+ ${TARGET_ARCH} $([[ "${TEST_BUILD}" == "true" ]] && echo 'test build' || echo 'release candidate')"
             echo "- Source: ${ACTUAL_BUILD_SHA}"
             echo "- Runner: ${{ matrix.runner }}"
             echo "- Architecture: ${TARGET_ARCH}"
