@@ -154,7 +154,10 @@ from http_handlers import (
     feishu_delete_handler,
     feishu_sync_handler,
     google_sheets_handler,
+    mail_draft_ai_handler,
     mail_follow_up_handler,
+    mail_send_handler,
+    mail_workspace_handler,
     settings_handler,
     storage_migration_handler,
     task_handler,
@@ -169,6 +172,12 @@ from services.feishu_delete_intent_service import (
     FeishuDeleteReconciliationService,
 )
 from services.production_migration_service import ProductionMigrationService
+from services.mail_inbox_facts import mail_account_identity as mail_fact_account_identity
+from services.mail_send_security import MailSendSessionStore
+from services.mail_send_service import MailSendError, MailSendService
+from services.mail_template_service import MailTemplateService
+from services.mail_ai_draft_service import MailAIDraftService
+from services.mail_workspace_service import MailWorkspaceService
 from storage.paths import SQLiteStoragePaths
 
 
@@ -329,6 +338,9 @@ HANDLERS = [
     feishu_delete_handler,
     feishu_sync_handler,
     google_sheets_handler,
+    mail_draft_ai_handler,
+    mail_send_handler,
+    mail_workspace_handler,
     mail_follow_up_handler,
     clean_reset_handler,
     storage_migration_handler,
@@ -345,6 +357,10 @@ AI_PROVIDER_CONFIGURATION_SERVICE = None
 CREATOR_AI_DECISION_SERVICE = None
 FEISHU_CHAT_TRANSPORT = None
 PRODUCTION_MIGRATION_SERVICE = None
+MAIL_SEND_SERVICE = None
+MAIL_TEMPLATE_SERVICE = None
+MAIL_AI_DRAFT_SERVICE = None
+MAIL_SEND_SESSIONS = MailSendSessionStore()
 
 
 def get_mail_provider_preset(provider: str) -> dict[str, str]:
@@ -1877,6 +1893,59 @@ def get_mail_connection_factory():
     return factory.store.factory
 
 
+def get_mail_account_for_send(mail_account_id: str) -> dict:
+    """Resolve one enabled saved account without accepting transport settings from a request."""
+    target = str(mail_account_id or "").strip()
+    accounts = STATE.get("mail", {}).get("accounts") if isinstance(STATE.get("mail"), dict) else []
+    for raw_account in accounts if isinstance(accounts, list) else []:
+        if not isinstance(raw_account, dict):
+            continue
+        account = normalize_mail_account(raw_account)
+        try:
+            account_id, _identity = mail_fact_account_identity(account)
+        except (TypeError, ValueError):
+            continue
+        if account_id == target:
+            return account
+    raise MailSendError("MAIL_ACCOUNT_NOT_FOUND", "发送邮箱不存在或身份已变化。", status=404)
+
+
+def get_mail_send_service() -> MailSendService:
+    global MAIL_SEND_SERVICE
+    if MAIL_SEND_SERVICE is None:
+        MAIL_SEND_SERVICE = MailSendService(get_mail_connection_factory, get_mail_account_for_send)
+    return MAIL_SEND_SERVICE
+
+
+def get_mail_template_service() -> MailTemplateService:
+    global MAIL_TEMPLATE_SERVICE
+    if MAIL_TEMPLATE_SERVICE is None:
+        MAIL_TEMPLATE_SERVICE = MailTemplateService(get_mail_connection_factory)
+    return MAIL_TEMPLATE_SERVICE
+
+
+def get_mail_ai_draft_service() -> MailAIDraftService:
+    global MAIL_AI_DRAFT_SERVICE
+    if MAIL_AI_DRAFT_SERVICE is None:
+        def read_draft(draft_id):
+            return get_mail_send_service().get_draft(draft_id)
+
+        def update_draft(draft_id, payload):
+            return get_mail_send_service().update_draft(draft_id, payload)
+
+        MAIL_AI_DRAFT_SERVICE = MailAIDraftService(
+            get_mail_connection_factory,
+            get_ai_provider_configuration_service(),
+            read_draft,
+            update_draft,
+        )
+    return MAIL_AI_DRAFT_SERVICE
+
+
+def get_mail_workspace_service() -> MailWorkspaceService:
+    return MailWorkspaceService(get_mail_connection_factory, get_mail_account_for_send)
+
+
 def get_agency_repository() -> AgencyRepository:
     factory = get_active_repository_factory() or _new_repository_factory()
     return factory.agency()
@@ -2792,6 +2861,9 @@ class Handler(BaseHTTPRequestHandler):
         return
 
     def _json(self, data: dict, status: int = 200) -> None:
+        self._json_with_headers(data, {}, status=status)
+
+    def _json_with_headers(self, data: dict, headers: dict[str, str], status: int = 200) -> None:
         payload = dict(data)
         payload.setdefault("trace_id", self._request_trace_id())
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -2800,6 +2872,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Trace-ID", payload["trace_id"])
+            for name, value in headers.items():
+                self.send_header(name, value)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -3021,6 +3095,11 @@ class Handler(BaseHTTPRequestHandler):
                 "get_agency_contact_options": get_agency_contact_options,
                 "get_four_table_feishu_config": get_four_table_feishu_config,
                 "get_mail_connection_factory": get_mail_connection_factory,
+                "mail_send": get_mail_send_service(),
+                "mail_templates": get_mail_template_service(),
+                "mail_ai_drafts": get_mail_ai_draft_service(),
+                "mail_workspace": get_mail_workspace_service(),
+                "mail_send_sessions": MAIL_SEND_SESSIONS,
                 "get_google_sheets_config": get_google_sheets_config,
                 "get_profiles": get_profiles,
                 "get_system_health": get_system_health,
@@ -3224,6 +3303,7 @@ def run() -> None:
     global _RUNTIME_SERVER, _RUNTIME_SHUTDOWN_THREAD
     # Resolve storage before accepting concurrent first-page API requests.
     _new_repository_factory(bootstrap_new_install=True)
+    recovered_mail_attempts = get_mail_send_service().recover_interrupted_attempts()
     server = KOLConnectHTTPServer((HOST, PORT), Handler)
     with _RUNTIME_SERVER_LOCK:
         _RUNTIME_SERVER = server
@@ -3232,7 +3312,8 @@ def run() -> None:
     workbook_path = STATE.get("creator_library", {}).get("workbook_path") or DEFAULT_CREATOR_LIBRARY_WORKBOOK
     log_event(
         "KOLConnect Start",
-        f"version={APP_DISPLAY_VERSION} | platform={sys.platform} | data_path={DATA_DIR} | excel_path={workbook_path}",
+        f"version={APP_DISPLAY_VERSION} | platform={sys.platform} | data_path={DATA_DIR} | "
+        f"excel_path={workbook_path} | recovered_mail_attempts={recovered_mail_attempts}",
     )
     if STATE.get("feishu", {}).get("chat_enabled"):
         chat_transport.start()

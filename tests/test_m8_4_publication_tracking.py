@@ -142,7 +142,10 @@ class M84PublicationTrackingTests(unittest.TestCase):
             connection.execute("INSERT INTO creator_snapshots(snapshot_id,creator_id) VALUES ('snapshot_1','creator_1')")
             connection.execute("INSERT INTO video_snapshots(video_snapshot_id,snapshot_id,creator_id,video_id) VALUES ('vs_1','snapshot_1','creator_1','video_1')")
             connection.execute("DROP TABLE publication_performance_observations")
-            for table in ("mail_message_addresses", "mail_message_observations", "mail_messages",
+            for table in ("mail_ai_draft_candidates", "mail_templates",
+                          "mail_send_recipient_results", "mail_send_attempts",
+                          "mail_send_authorizations", "mail_send_previews", "mail_drafts",
+                          "mail_message_addresses", "mail_message_observations", "mail_messages",
                           "mailbox_sync_states", "mail_accounts", "mail_follow_up_preferences"):
                 connection.execute(f"DROP TABLE {table}")
             connection.execute("UPDATE storage_metadata SET value='3' WHERE key='schema_version'")
@@ -152,7 +155,7 @@ class M84PublicationTrackingTests(unittest.TestCase):
             self.assertEqual(3, connection.execute("SELECT COUNT(*) FROM campaign_creator_publish_links").fetchone()[0])
             self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM video_snapshots").fetchone()[0])
             compatibility = connection.execute("SELECT value FROM storage_metadata WHERE key='application_compatibility'").fetchone()[0]
-            self.assertEqual("m8-campaign-execution", compatibility)
+            self.assertEqual("m9-2-multilingual-mail-drafts", compatibility)
 
     def test_append_only_idempotency_latest_missing_zero_and_provenance(self):
         provider = _Provider([

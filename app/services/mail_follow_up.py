@@ -31,7 +31,8 @@ def _fact_rows(factory) -> list[dict]:
     placeholders = ",".join("?" for _status in RELIABLE_MATCH_STATUSES)
     query = f"""
         SELECT DISTINCT
-            m.mail_message_id, m.direction, m.message_at,
+            m.mail_message_id, m.mail_account_id, m.direction, m.message_at,
+            m.rfc_message_id, m.in_reply_to, m.reference_ids, m.subject,
             a.normalized_address AS correspondent_email,
             a.matched_creator_id AS creator_id,
             a.matched_account_uid AS creator_account_uid,
@@ -99,6 +100,8 @@ def _derive_group(creator_id: str, correspondent_email: str, facts: list[dict], 
         days_waiting = int((now - latest).total_seconds() // 86400)
     coverage, partial_history = _history_coverage(facts)
     account_uids = {fact["creator_account_uid"] for fact in facts if fact["creator_account_uid"]}
+    latest_facts = [fact for fact, timestamp in reliable if latest is not None and timestamp == latest]
+    latest_fact = latest_facts[0] if len(latest_facts) == 1 else None
     return {
         "creator_id": creator_id,
         "correspondent_email": correspondent_email,
@@ -108,6 +111,11 @@ def _derive_group(creator_id: str, correspondent_email: str, facts: list[dict], 
         "last_inbound_at": _utc_text(last_inbound),
         "last_outbound_at": _utc_text(last_outbound),
         "last_mail_at": _utc_text(last_mail),
+        "latest_mail_message_id": latest_fact["mail_message_id"] if latest_fact else None,
+        "latest_mail_account_id": latest_fact["mail_account_id"] if latest_fact else None,
+        "latest_rfc_message_id": latest_fact["rfc_message_id"] if latest_fact else None,
+        "latest_subject": latest_fact["subject"] if latest_fact else None,
+        "latest_reference_ids": latest_fact["reference_ids"] if latest_fact else None,
         "synced_inbound_count": sum(fact["direction"] == "inbound" for fact in facts),
         "synced_outbound_count": sum(fact["direction"] == "outbound" for fact in facts),
         "days_waiting": days_waiting,

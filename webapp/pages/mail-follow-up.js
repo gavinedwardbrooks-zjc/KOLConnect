@@ -77,6 +77,16 @@
   function appendActionButtons(cell, group) {
     const actions = document.createElement("div");
     actions.className = "mail-followup-actions";
+    const compose = actionButton(
+      group.latest_direction === "inbound" ? t("mailWorkspaceReply") : t("mailWorkspaceFollowUp"),
+      "compose", group, "primary-btn",
+    );
+    compose.dataset.mailMessageId = group.latest_mail_message_id || "";
+    compose.dataset.mailAccountId = group.latest_mail_account_id || "";
+    compose.dataset.mailSubject = group.latest_subject || "";
+    compose.dataset.creatorName = group.creator_name || "";
+    compose.dataset.draftType = group.latest_direction === "inbound" ? "reply" : "follow_up";
+    actions.appendChild(compose);
     if (group.actionability === "stopped") {
       actions.appendChild(actionButton(t("mailFollowupResume"), "resume", group, "secondary-btn"));
     } else {
@@ -209,6 +219,18 @@
     if (actionPending) return;
     try {
       const action = String(button.dataset.followupAction || "");
+      if (action === "compose") {
+        global.KOLConnectMailWorkspace.open({
+          creatorId: button.dataset.creatorId,
+          creatorName: button.dataset.creatorName,
+          recipientEmail: button.dataset.correspondentEmail,
+          mailMessageId: button.dataset.mailMessageId,
+          mailAccountId: button.dataset.mailAccountId,
+          subject: button.dataset.mailSubject,
+          draftType: button.dataset.draftType || "follow_up",
+        });
+        return;
+      }
       const payload = {
         creator_id: button.dataset.creatorId,
         correspondent_email: button.dataset.correspondentEmail,

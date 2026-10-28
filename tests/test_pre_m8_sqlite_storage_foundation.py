@@ -153,14 +153,19 @@ class SQLiteStorageFoundationTests(unittest.TestCase):
         self._initialize()
         with self.factory.read_connection() as connection:
             report = validate_schema(connection)
-            self.assertEqual(30, report["table_count"])
+            self.assertEqual(37, report["table_count"])
             tables = {
                 row[0]
                 for row in connection.execute(
                     "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                 )
             }
-            self.assertTrue({"creators", "creator_accounts", "campaign_creators", "analysis_data"} <= tables)
+            self.assertTrue({
+                "creators", "creator_accounts", "campaign_creators", "analysis_data",
+                "mail_drafts", "mail_send_previews", "mail_send_authorizations",
+                "mail_templates", "mail_ai_draft_candidates",
+                "mail_send_attempts", "mail_send_recipient_results",
+            } <= tables)
             indexes = {
                 row[0]
                 for row in connection.execute(

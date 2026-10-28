@@ -116,9 +116,9 @@ class MailFollowupGate2Tests(unittest.TestCase):
         return result, fake
 
     def test_schema_six_identity_constraints_and_nonsecret_account(self):
-        self.assertEqual(6, CURRENT_SCHEMA_VERSION)
+        self.assertEqual(8, CURRENT_SCHEMA_VERSION)
         with self.factory.read_connection() as connection:
-            self.assertEqual(6, schema_version(connection))
+            self.assertEqual(8, schema_version(connection))
             names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertTrue({"mail_accounts", "mailbox_sync_states", "mail_messages",
                              "mail_message_observations", "mail_message_addresses",
@@ -141,14 +141,16 @@ class MailFollowupGate2Tests(unittest.TestCase):
             connection.execute("INSERT INTO creators(creator_id,name) VALUES ('old_creator','Original')")
             connection.execute("INSERT INTO creator_accounts(account_uid,creator_id,account_email) VALUES ('old_account','old_creator','old@example.com')")
             connection.execute("INSERT INTO products(product_id,name) VALUES ('old_product','Product')")
-            for table in ("mail_message_addresses", "mail_message_observations", "mail_messages",
+            for table in ("mail_ai_draft_candidates", "mail_templates",
+                          "mail_send_recipient_results", "mail_send_attempts", "mail_send_authorizations",
+                          "mail_send_previews", "mail_drafts", "mail_message_addresses", "mail_message_observations", "mail_messages",
                           "mailbox_sync_states", "mail_accounts", "mail_follow_up_preferences"):
                 connection.execute(f"DROP TABLE {table}")
             connection.execute("UPDATE storage_metadata SET value='5' WHERE key='schema_version'")
         with old_factory.read_connection() as connection:
             self.assertEqual(5, schema_version(connection))
-            self.assertEqual(6, apply_schema_migrations(connection))
-            self.assertEqual(6, apply_schema_migrations(connection))
+            self.assertEqual(8, apply_schema_migrations(connection))
+            self.assertEqual(8, apply_schema_migrations(connection))
             self.assertEqual("Original", connection.execute("SELECT name FROM creators WHERE creator_id='old_creator'").fetchone()[0])
             self.assertEqual("old@example.com", connection.execute("SELECT account_email FROM creator_accounts WHERE account_uid='old_account'").fetchone()[0])
             self.assertEqual("Product", connection.execute("SELECT name FROM products WHERE product_id='old_product'").fetchone()[0])

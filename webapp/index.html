@@ -637,6 +637,7 @@
             <button class="soft-btn danger" id="creator-library-detail-archive" data-i18n="creatorArchive">归档达人</button>
             <button class="soft-btn" id="creator-library-detail-add-campaign" data-i18n="creatorAddCampaign">加入 Campaign</button>
             <button class="soft-btn" id="creator-library-detail-similar" data-i18n="creatorFindSimilar">查找相似达人</button>
+            <button class="secondary-btn" id="creator-library-detail-mail" type="button" data-i18n="mailWorkspaceContact">发送合作邮件</button>
           </div>
         </div>
 
@@ -793,6 +794,44 @@
         </div>
 
       </section>
+
+      <div class="modal mail-workspace-modal" id="mail-workspace-modal" hidden role="dialog" aria-modal="true" aria-labelledby="mail-workspace-title">
+        <div class="modal-panel mail-workspace-panel">
+          <div class="mail-workspace-heading">
+            <div><p class="eyebrow">MAIL WORKSPACE</p><h2 id="mail-workspace-title" data-i18n="mailWorkspaceTitle">邮件工作区</h2><p class="hint" id="mail-workspace-context">--</p></div>
+            <button class="soft-btn compact-btn" id="mail-workspace-close" type="button" data-i18n="mailWorkspaceClose">关闭</button>
+          </div>
+          <div class="mail-workspace-grid">
+            <label class="field"><span data-i18n="mailWorkspaceAccount">发件邮箱</span><select id="mail-workspace-account"><option value="" data-i18n="mailWorkspaceChooseAccount">请选择邮箱账户</option></select></label>
+            <label class="field"><span data-i18n="mailWorkspaceRecipient">Creator 联系邮箱</span><select id="mail-workspace-recipient"><option value="" data-i18n="mailWorkspaceChooseRecipient">请选择联系邮箱</option></select></label>
+            <label class="field"><span data-i18n="mailWorkspaceLanguage">目标语言</span><input id="mail-workspace-language" value="en" maxlength="35"></label>
+            <label class="field"><span data-i18n="mailWorkspaceTemplateTone">模板语气筛选</span><input id="mail-workspace-template-tone" placeholder="professional" maxlength="80"></label>
+            <label class="field"><span data-i18n="mailWorkspaceTemplate">邮件模板</span><select id="mail-workspace-template"><option value="" data-i18n="mailWorkspaceChooseTemplate">不使用模板</option></select></label>
+          </div>
+          <div class="mail-workspace-template-actions action-row">
+            <button class="soft-btn compact-btn" id="mail-workspace-apply-template" type="button" data-i18n="mailWorkspaceApplyTemplate">应用模板</button>
+            <button class="soft-btn compact-btn" id="mail-workspace-save-template" type="button" data-i18n="mailWorkspaceSaveTemplate">将当前内容保存为模板</button>
+            <button class="soft-btn compact-btn" id="mail-workspace-update-template" type="button" data-i18n="mailWorkspaceUpdateTemplate">更新所选模板</button>
+            <button class="soft-btn compact-btn danger" id="mail-workspace-deactivate-template" type="button" data-i18n="mailWorkspaceDeactivateTemplate">停用所选模板</button>
+            <button class="soft-btn compact-btn" id="mail-workspace-read-body" type="button" data-i18n="mailWorkspaceReadBody">读取所选邮件正文</button>
+          </div>
+          <div id="mail-workspace-source" class="mail-workspace-source" hidden><strong data-i18n="mailWorkspaceSourceBody">所选邮件正文（仅内存）</strong><pre id="mail-workspace-source-body"></pre></div>
+          <label class="field"><span data-i18n="mailWorkspaceSubject">主题</span><input id="mail-workspace-subject" maxlength="998"></label>
+          <label class="field"><span data-i18n="mailWorkspaceBody">正文</span><textarea id="mail-workspace-body" rows="12" maxlength="100000"></textarea></label>
+          <section class="mail-workspace-ai">
+            <div><strong data-i18n="mailWorkspaceAI">AI 草稿候选</strong><p class="hint" id="mail-workspace-ai-provider">--</p></div>
+            <div class="mail-workspace-grid">
+              <label class="field"><span data-i18n="mailWorkspaceAIOperation">操作</span><select id="mail-workspace-ai-operation"><option value="generate">Generate</option><option value="rewrite">Rewrite</option><option value="translate">Translate</option></select></label>
+              <label class="field"><span data-i18n="mailWorkspaceTone">语气</span><input id="mail-workspace-tone" value="professional" maxlength="80"></label>
+            </div>
+            <label class="checkbox-line"><input id="mail-workspace-ai-consent" type="checkbox"><span data-i18n="mailWorkspaceAIConsent">我确认将当前选择的必要邮件上下文发送给所选 AI Provider，可能产生费用。</span></label>
+            <button class="secondary-btn compact-btn" id="mail-workspace-ai-generate" type="button" data-i18n="mailWorkspaceAIGenerate">生成候选（不会发送）</button>
+          </section>
+          <div class="mail-workspace-preview" id="mail-workspace-preview" hidden><strong data-i18n="mailWorkspaceFinalPreview">最终发送预览</strong><p id="mail-workspace-preview-envelope"></p><h3 id="mail-workspace-preview-subject"></h3><pre id="mail-workspace-preview-body"></pre><label class="checkbox-line"><input id="mail-workspace-confirm" type="checkbox"><span data-i18n="mailWorkspaceConfirm">我已核对收件人、主题和正文，并明确确认发送。</span></label></div>
+          <p class="hint" id="mail-workspace-status" aria-live="polite"></p>
+          <div class="action-row mail-workspace-footer"><button class="soft-btn" id="mail-workspace-preview-button" type="button" data-i18n="mailWorkspacePreview">生成最终预览</button><button class="primary-btn" id="mail-workspace-send" type="button" disabled data-i18n="mailWorkspaceSend">确认并发送</button></div>
+        </div>
+      </div>
 
       <div class="creator-edit-modal" id="creator-edit-modal" hidden>
         <div class="creator-edit-modal-card" role="dialog" aria-modal="true" aria-labelledby="creator-edit-modal-title">
@@ -2280,6 +2319,7 @@
 <script src="pages/campaign-execution.js"></script>
 <script src="pages/campaign-detail.js"></script>
   <script src="pages/settings.js"></script>
+  <script src="pages/mail-workspace.js"></script>
   <script src="pages/mail-follow-up.js"></script>
 </body>
 </html>

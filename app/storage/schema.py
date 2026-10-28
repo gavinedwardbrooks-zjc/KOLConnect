@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from storage.errors import SQLiteSchemaUnsupportedError
 
 
-CURRENT_SCHEMA_VERSION = 6
+CURRENT_SCHEMA_VERSION = 8
 
 
 SCHEMA_V1_SQL = r"""
@@ -541,6 +541,108 @@ def apply_schema_migrations(connection, *, migration_reference: str = "") -> int
             connection.execute("UPDATE storage_metadata SET value='6' WHERE key='schema_version'")
             connection.commit()
             current = 6
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 6:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            for statement in (
+                "CREATE TABLE mail_drafts ("
+                "draft_id TEXT PRIMARY KEY, context_type TEXT NOT NULL "
+                "CHECK(context_type IN ('initial','reply')), reply_mail_message_id TEXT "
+                "REFERENCES mail_messages(mail_message_id) ON DELETE SET NULL, "
+                "mail_account_id TEXT NOT NULL REFERENCES mail_accounts(mail_account_id), "
+                "from_address TEXT NOT NULL, to_addresses TEXT NOT NULL, cc_addresses TEXT NOT NULL, "
+                "reply_to_address TEXT, subject TEXT NOT NULL, body_text TEXT NOT NULL, "
+                "in_reply_to TEXT, reference_ids TEXT NOT NULL, version INTEGER NOT NULL, "
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, content_deleted_at TEXT)",
+                "CREATE TABLE mail_send_previews ("
+                "preview_id TEXT PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES mail_drafts(draft_id) ON DELETE CASCADE, "
+                "draft_version INTEGER NOT NULL, mail_account_id TEXT NOT NULL REFERENCES mail_accounts(mail_account_id), "
+                "from_address TEXT NOT NULL, to_addresses TEXT NOT NULL, cc_addresses TEXT NOT NULL, "
+                "reply_to_address TEXT, subject TEXT NOT NULL, body_text TEXT NOT NULL, "
+                "in_reply_to TEXT, reference_ids TEXT NOT NULL, content_hash TEXT NOT NULL, "
+                "expires_at TEXT NOT NULL, invalidated_at TEXT, created_at TEXT NOT NULL, content_deleted_at TEXT, "
+                "UNIQUE(draft_id,draft_version,content_hash))",
+                "CREATE TABLE mail_send_authorizations ("
+                "authorization_id TEXT PRIMARY KEY, preview_id TEXT NOT NULL "
+                "REFERENCES mail_send_previews(preview_id) ON DELETE CASCADE, "
+                "token_hash TEXT NOT NULL UNIQUE, session_hash TEXT NOT NULL, "
+                "authorization_source TEXT NOT NULL CHECK(authorization_source IN "
+                "('human_direct','human_approved_ai_proposal','future_scoped_ai_authorization')), "
+                "mail_account_id TEXT NOT NULL REFERENCES mail_accounts(mail_account_id), "
+                "draft_id TEXT NOT NULL REFERENCES mail_drafts(draft_id), draft_version INTEGER NOT NULL, "
+                "preview_hash TEXT NOT NULL, envelope_hash TEXT NOT NULL, expires_at TEXT NOT NULL, "
+                "consumed_at TEXT, created_at TEXT NOT NULL)",
+                "CREATE TABLE mail_send_attempts ("
+                "attempt_id TEXT PRIMARY KEY, preview_id TEXT NOT NULL REFERENCES mail_send_previews(preview_id), "
+                "authorization_id TEXT NOT NULL REFERENCES mail_send_authorizations(authorization_id), "
+                "idempotency_key TEXT NOT NULL UNIQUE, rfc_message_id TEXT NOT NULL UNIQUE, "
+                "draft_id TEXT NOT NULL REFERENCES mail_drafts(draft_id), draft_version INTEGER NOT NULL, "
+                "mail_account_id TEXT NOT NULL REFERENCES mail_accounts(mail_account_id), "
+                "authorization_source TEXT NOT NULL, outcome TEXT NOT NULL "
+                "CHECK(outcome IN ('started','accepted','failed','unknown')), smtp_stage TEXT NOT NULL, "
+                "safe_error_code TEXT, started_at TEXT NOT NULL, completed_at TEXT, updated_at TEXT NOT NULL, "
+                "reconciliation_status TEXT NOT NULL DEFAULT 'pending' "
+                "CHECK(reconciliation_status IN ('pending','observed','reconciled','ambiguous','unmatched')), "
+                "sent_observation_id TEXT REFERENCES mail_message_observations(observation_id))",
+                "CREATE TABLE mail_send_recipient_results ("
+                "attempt_id TEXT NOT NULL REFERENCES mail_send_attempts(attempt_id) ON DELETE CASCADE, "
+                "position INTEGER NOT NULL, recipient_type TEXT NOT NULL CHECK(recipient_type IN ('to','cc')), "
+                "recipient_address TEXT NOT NULL, outcome TEXT NOT NULL "
+                "CHECK(outcome IN ('pending','accepted','rejected','unknown')), smtp_code INTEGER, "
+                "safe_error_code TEXT, PRIMARY KEY(attempt_id,recipient_type,position))",
+                "CREATE INDEX idx_mail_drafts_account_updated ON mail_drafts(mail_account_id,updated_at DESC)",
+                "CREATE INDEX idx_mail_previews_draft ON mail_send_previews(draft_id,draft_version)",
+                "CREATE INDEX idx_mail_attempts_draft ON mail_send_attempts(draft_id,started_at DESC)",
+                "CREATE INDEX idx_mail_attempts_reconciliation ON mail_send_attempts(reconciliation_status,updated_at)",
+            ):
+                connection.execute(statement)
+            connection.execute("UPDATE storage_metadata SET value='7' WHERE key='schema_version'")
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key,value) VALUES (?,?)",
+                ("application_compatibility", "m9-2-native-smtp"),
+            )
+            connection.commit()
+            current = 7
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 7:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            for statement in (
+                "CREATE TABLE mail_templates ("
+                "template_id TEXT PRIMARY KEY, template_group_id TEXT NOT NULL, template_version INTEGER NOT NULL, "
+                "template_source TEXT NOT NULL CHECK(template_source IN ('user')), "
+                "draft_type TEXT NOT NULL CHECK(draft_type IN ('initial_outreach','reply','follow_up')), "
+                "language TEXT NOT NULL, name TEXT NOT NULL, tone TEXT NOT NULL, "
+                "subject_template TEXT NOT NULL, body_template TEXT NOT NULL, required_variables TEXT NOT NULL, "
+                "active INTEGER NOT NULL CHECK(active IN (0,1)), created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+                "UNIQUE(template_group_id,language,template_version))",
+                "CREATE TABLE mail_ai_draft_candidates ("
+                "candidate_id TEXT PRIMARY KEY, draft_id TEXT NOT NULL REFERENCES mail_drafts(draft_id) ON DELETE CASCADE, "
+                "base_draft_version INTEGER NOT NULL, operation TEXT NOT NULL "
+                "CHECK(operation IN ('generate','rewrite','translate','localize','adjust_tone')), "
+                "draft_type TEXT NOT NULL CHECK(draft_type IN ('initial_outreach','reply','follow_up')), "
+                "target_language TEXT NOT NULL, subject TEXT NOT NULL, body_text TEXT NOT NULL, tone TEXT NOT NULL, "
+                "limitations TEXT NOT NULL, missing_information TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, "
+                "trace_id TEXT NOT NULL, input_fingerprint TEXT NOT NULL, "
+                "status TEXT NOT NULL CHECK(status IN ('ready','needs_human_revision','adopted')), "
+                "commercial_fact_status TEXT NOT NULL CHECK(commercial_fact_status IN ('pass','fail','not_applicable')), "
+                "created_at TEXT NOT NULL, adopted_at TEXT, content_deleted_at TEXT)",
+                "CREATE INDEX idx_mail_templates_active ON mail_templates(draft_type,language,active,template_group_id)",
+                "CREATE INDEX idx_mail_candidates_draft ON mail_ai_draft_candidates(draft_id,created_at DESC)",
+            ):
+                connection.execute(statement)
+            connection.execute("UPDATE storage_metadata SET value='8' WHERE key='schema_version'")
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key,value) VALUES (?,?)",
+                ("application_compatibility", "m9-2-multilingual-mail-drafts"),
+            )
+            connection.commit()
+            current = 8
         except Exception:
             connection.rollback()
             raise

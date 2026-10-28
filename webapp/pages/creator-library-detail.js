@@ -664,7 +664,7 @@
     renderHistoricalPerformance();
     const archiveButton = element("creator-library-detail-archive");
     if (archiveButton) archiveButton.textContent = archived ? t("creatorRestore") : t("creatorArchive");
-    ["creator-library-detail-edit", "creator-library-detail-add-campaign", "creator-library-detail-similar", "creator-library-detail-task"].forEach(id => {
+    ["creator-library-detail-edit", "creator-library-detail-add-campaign", "creator-library-detail-similar", "creator-library-detail-task", "creator-library-detail-mail"].forEach(id => {
       const button = element(id);
       if (button) button.disabled = archived;
     });
@@ -1106,6 +1106,11 @@
       listen("creator-library-detail-archive", "click", () => changeArchiveState().catch(showError));
       listen("creator-library-detail-add-campaign", "click", () => openCampaignModal().catch(showError));
       listen("creator-library-detail-similar", "click", () => loadSimilarCandidates());
+      listen("creator-library-detail-mail", "click", () => global.KOLConnectMailWorkspace.open({
+        creatorId,
+        creatorName: detail?.record?.name || detail?.creator?.name || "",
+        draftType: "initial_outreach",
+      }));
       listen("creator-account-options", "click", handleAccountSwitch);
       listen("creator-ai-summary-generate", "click", () => generateAISummary().catch(showError));
       listen("creator-ai-decision-generate", "click", () => generateAIDecision().catch(showError));

@@ -268,7 +268,7 @@ def validate_mail_account(account: Mapping[str, object], *, imap_factory: Callab
     usable = imap["status"] == "pass"
     warning = ""
     if usable and smtp["status"] == "fail":
-        warning = "收件同步连接成功，但 SMTP 验证失败。当前 KOLConnect 不发送邮件，因此不影响邮件同步，可继续保存使用。"
+        warning = "收件同步连接成功，但 SMTP 验证失败。不影响邮件同步；发送邮件前必须修复 SMTP 配置。"
     return {
         "usable": usable,
         "imap": imap,

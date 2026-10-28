@@ -683,6 +683,33 @@
     agencyEditTitle: "Edit agency",
   });
 
+  Object.assign(dictionaries.zh, {
+    mailWorkspaceContact: "发送合作邮件", mailWorkspaceTitle: "邮件工作区", mailWorkspaceClose: "关闭",
+    mailWorkspaceAccount: "发件邮箱", mailWorkspaceChooseAccount: "请选择邮箱账户", mailWorkspaceRecipient: "Creator 联系邮箱", mailWorkspaceChooseRecipient: "请选择联系邮箱",
+    mailWorkspaceLanguage: "目标语言", mailWorkspaceTemplateTone: "模板语气筛选", mailWorkspaceTemplate: "邮件模板", mailWorkspaceChooseTemplate: "不使用模板", mailWorkspaceApplyTemplate: "应用模板", mailWorkspaceSaveTemplate: "将当前内容保存为模板", mailWorkspaceUpdateTemplate: "更新所选模板", mailWorkspaceDeactivateTemplate: "停用所选模板",
+    mailWorkspaceReadBody: "读取所选邮件正文", mailWorkspaceSourceBody: "所选邮件正文（仅内存）", mailWorkspaceSubject: "主题", mailWorkspaceBody: "正文", mailWorkspaceAI: "AI 草稿候选",
+    mailWorkspaceAIOperation: "操作", mailWorkspaceTone: "语气", mailWorkspaceAIConsent: "我确认将当前选择的必要邮件上下文发送给所选 AI Provider，可能产生费用。", mailWorkspaceAIGenerate: "生成候选（不会发送）",
+    mailWorkspaceFinalPreview: "最终发送预览", mailWorkspaceConfirm: "我已核对收件人、主题和正文，并明确确认发送。", mailWorkspacePreview: "生成最终预览", mailWorkspaceSend: "确认并发送",
+    mailWorkspaceReply: "回复", mailWorkspaceFollowUp: "跟进邮件", mailWorkspaceObservedEmail: "邮件事实联系人", mailWorkspaceNewMessage: "新建合作邮件", mailWorkspaceLoading: "正在准备安全邮件工作区…", mailWorkspaceReady: "请选择发件邮箱和 Creator 联系邮箱。",
+    mailWorkspaceAIProvider: "当前 Provider：{provider} · {model}", mailWorkspaceAIDisabled: "AI 未配置；仍可手动编辑或使用模板。", mailWorkspaceDiscardConfirm: "当前邮件有未保存修改，确定关闭吗？",
+    mailWorkspaceBodyEmpty: "邮件正文为空。", mailWorkspaceBodyLoaded: "正文已按需读取，仅保留在当前页面内存中。", mailWorkspaceTemplateName: "输入自定义模板名称：", mailWorkspaceTemplateSaved: "自定义模板已保存。", mailWorkspaceTemplateUpdated: "自定义模板已创建新版本。", mailWorkspaceDeactivateConfirm: "确定停用所选自定义模板吗？", mailWorkspaceTemplateDeactivated: "自定义模板已停用。",
+    mailWorkspaceAIConsentRequired: "生成 AI 候选前需要明确确认本次上下文授权。", mailWorkspaceAIFailed: "AI 候选生成失败。", mailWorkspaceAICandidateReady: "AI 候选已采纳为可编辑草稿；发送前仍需最终预览和人工确认。", mailWorkspacePreviewReady: "最终预览已生成，请逐项核对后确认。",
+    mailWorkspaceOutcome_accepted: "SMTP 已接受邮件；请等待 Sent 同步对账。", mailWorkspaceOutcome_failed: "发送失败，邮件未被 SMTP 接受。", mailWorkspaceOutcome_unknown: "发送结果未知；不要自动重发，请先检查 Sent 邮箱。", mailWorkspaceOutcome_started: "发送处理中。",
+  });
+  Object.assign(dictionaries.en, {
+    mailWorkspaceContact: "Send Collaboration Email", mailWorkspaceTitle: "Mail Workspace", mailWorkspaceClose: "Close",
+    mailWorkspaceAccount: "From Account", mailWorkspaceChooseAccount: "Choose a mail account", mailWorkspaceRecipient: "Creator Contact Email", mailWorkspaceChooseRecipient: "Choose a contact email",
+    mailWorkspaceLanguage: "Target Language", mailWorkspaceTemplateTone: "Template Tone Filter", mailWorkspaceTemplate: "Mail Template", mailWorkspaceChooseTemplate: "No template", mailWorkspaceApplyTemplate: "Apply Template", mailWorkspaceSaveTemplate: "Save Current Content as Template", mailWorkspaceUpdateTemplate: "Update Selected Template", mailWorkspaceDeactivateTemplate: "Deactivate Selected Template",
+    mailWorkspaceReadBody: "Read Selected Message Body", mailWorkspaceSourceBody: "Selected message body (memory only)", mailWorkspaceSubject: "Subject", mailWorkspaceBody: "Body", mailWorkspaceAI: "AI Draft Candidate",
+    mailWorkspaceAIOperation: "Operation", mailWorkspaceTone: "Tone", mailWorkspaceAIConsent: "I confirm sending the selected minimum mail context to the chosen AI provider; charges may apply.", mailWorkspaceAIGenerate: "Generate Candidate (Does Not Send)",
+    mailWorkspaceFinalPreview: "Final Send Preview", mailWorkspaceConfirm: "I reviewed the recipient, subject, and body and explicitly confirm sending.", mailWorkspacePreview: "Create Final Preview", mailWorkspaceSend: "Confirm and Send",
+    mailWorkspaceReply: "Reply", mailWorkspaceFollowUp: "Follow Up", mailWorkspaceObservedEmail: "Observed mail contact", mailWorkspaceNewMessage: "New collaboration email", mailWorkspaceLoading: "Preparing the secure mail workspace…", mailWorkspaceReady: "Choose a mail account and Creator contact email.",
+    mailWorkspaceAIProvider: "Current provider: {provider} · {model}", mailWorkspaceAIDisabled: "AI is not configured; manual editing and templates remain available.", mailWorkspaceDiscardConfirm: "This email has unsaved changes. Close it?",
+    mailWorkspaceBodyEmpty: "The message body is empty.", mailWorkspaceBodyLoaded: "The body was read on demand and remains only in this page's memory.", mailWorkspaceTemplateName: "Enter a custom template name:", mailWorkspaceTemplateSaved: "Custom template saved.", mailWorkspaceTemplateUpdated: "A new custom template version was created.", mailWorkspaceDeactivateConfirm: "Deactivate the selected custom template?", mailWorkspaceTemplateDeactivated: "Custom template deactivated.",
+    mailWorkspaceAIConsentRequired: "Explicit context consent is required before generating an AI candidate.", mailWorkspaceAIFailed: "AI candidate generation failed.", mailWorkspaceAICandidateReady: "The AI candidate is now an editable draft; final preview and human confirmation are still required.", mailWorkspacePreviewReady: "Final preview created. Review every field before confirming.",
+    mailWorkspaceOutcome_accepted: "SMTP accepted the message; wait for Sent reconciliation.", mailWorkspaceOutcome_failed: "Send failed and SMTP did not accept the message.", mailWorkspaceOutcome_unknown: "The send result is unknown. Do not retry automatically; check Sent first.", mailWorkspaceOutcome_started: "Sending is in progress.",
+  });
+
   global.KOLConnectI18n = Object.freeze({
     register(source) {
       ["zh", "en"].forEach(name => Object.assign(dictionaries[name], source?.[name] || {}));

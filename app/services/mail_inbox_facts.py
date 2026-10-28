@@ -470,6 +470,13 @@ def sync_sent(account: dict, factory, *, imap_factory=None, now: datetime | None
     except Exception as exc:
         result["export_queue_reconciled"] = 0
         result["export_queue_reconciliation_error"] = str(exc)
+    try:
+        from services.mail_workspace_service import reconcile_sent_attempts
+
+        result["send_attempt_reconciliation"] = reconcile_sent_attempts(factory, result["mail_account_id"])
+    except Exception:
+        # Sent facts remain authoritative even if the secondary local projection cannot update.
+        result["send_attempt_reconciliation"] = {"pending": 0, "reconciled": 0, "ambiguous": 0, "unmatched": 0}
     return result
 
 
