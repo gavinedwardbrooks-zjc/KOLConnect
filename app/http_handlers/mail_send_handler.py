@@ -45,6 +45,10 @@ def handle(handler, request: dict, context: dict) -> bool:
             _session(handler, context)
             handler._json({"ok": True, "draft": service.create_draft(request["get_payload"]())}, status=201)
             return True
+        if method == "GET" and draft_match:
+            _session(handler, context)
+            handler._json({"ok": True, "draft": service.get_draft(draft_match.group(1))})
+            return True
         if method == "PUT" and draft_match:
             _session(handler, context)
             handler._json({"ok": True, "draft": service.update_draft(draft_match.group(1), request["get_payload"]())})

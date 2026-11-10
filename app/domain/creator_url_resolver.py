@@ -197,6 +197,22 @@ class CreatorURLResolver:
         first = parts[0]
         reserved = {"reel", "reels", "p", "stories", "tv", "explore", "accounts", "directory"}
         if (
+            len(parts) >= 3
+            and first.lower() not in reserved
+            and _IDENTIFIER.fullmatch(first)
+            and parts[1].lower() in {"p", "reel", "reels", "tv"}
+            and _VIDEO_IDENTIFIER.fullmatch(parts[2])
+        ):
+            content_type = parts[1].lower()
+            return cls._content_result(
+                raw_url,
+                "instagram",
+                parts[2],
+                f"https://www.instagram.com/{content_type}/{parts[2]}/",
+                username=first,
+                canonical_profile_url=f"https://www.instagram.com/{first}/",
+            )
+        if (
             first.lower() in {"p", "reel", "reels", "tv"}
             and len(parts) >= 2
             and _VIDEO_IDENTIFIER.fullmatch(parts[1])
@@ -207,7 +223,7 @@ class CreatorURLResolver:
                 parts[1],
                 f"https://www.instagram.com/{first.lower()}/{parts[1]}/",
             )
-        if first.lower() in reserved or first.startswith("_") or not _IDENTIFIER.fullmatch(first):
+        if first.lower() in reserved or not _IDENTIFIER.fullmatch(first):
             return result
         return cls._profile_result(raw_url, "instagram", first, f"https://www.instagram.com/{first}/")
 

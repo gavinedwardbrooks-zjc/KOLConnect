@@ -249,7 +249,7 @@ def _normalize_instagram_profile(parsed) -> str:
     first = parts[0]
     first_lower = first.lower()
     reserved = {"reel", "reels", "p", "stories", "tv", "explore", "accounts", "directory"}
-    if first_lower in reserved or first_lower.startswith("_"):
+    if first_lower in reserved:
         return ""
     return f"https://www.instagram.com/{first}/"
 

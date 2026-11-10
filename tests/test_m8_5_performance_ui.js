@@ -34,6 +34,7 @@ assert.match(campaign, /campaignDetailMoneySummary/);
 assert.match(campaign, /value === null \|\| value === undefined \|\| value === "" \? "—"/);
 assert.match(campaign, /textContent = value/);
 assert.doesNotMatch(campaign, /performance.*innerHTML/i);
+assert.doesNotMatch(html, /0 \/ 0 条有数据/);
 
 assert.match(creator, /\/historical-performance/);
 assert.match(creator, /total_cost_by_currency/);
@@ -46,10 +47,12 @@ assert.doesNotMatch(creator, /历史.*innerHTML/i);
 // Existing M8.4 refresh and M5.2 risk/navigation surfaces remain present.
 assert.match(html, /id="campaign-publications-refresh-all"/);
 assert.match(html, /id="dashboard-risk-high"/);
-assert.match(campaign, /publications\/refresh/);
+assert.match(campaign, /publication-capture-batches/);
+assert.match(campaign, /X-KOLConnect-Publication-Capture-CSRF/);
+assert.match(campaign, /campaign-publication-batch-(?:pause|resume|cancel)/);
 
 class Element {
-  constructor() { this.children = []; this.textContent = ""; this.hidden = false; }
+  constructor() { this.children = []; this.textContent = ""; this.hidden = false; this.dataset = {}; }
   append(...children) { this.children.push(...children); }
   appendChild(child) { this.children.push(child); }
   replaceChildren(...children) { this.children = children; this.textContent = ""; }
@@ -71,6 +74,9 @@ function harness(source, hook) {
       t(key, values = {}) {
         return {
           campaignDetailCoverage: `${values.valid} / ${values.total} 条有数据`,
+          campaignDetailCoverageUnavailable: "统计暂不可用",
+          campaignDetailNoStatisticalPublications: "暂无可统计视频",
+          campaignDetailPartialData: "部分数据",
           campaignDetailMoneySummary: `确认成本：${values.cost} · 历史报价：${values.quote} · ROI：—（缺少权威回报数据）`,
           campaignDetailTopCreator: "最佳达人",
           campaignDetailTopVideo: "最佳视频",
@@ -93,6 +99,8 @@ function harness(source, hook) {
           creatorHistoryEfficiency: `${values.currency} · CPV ${values.cpv} · CPE ${values.cpe}`,
           creatorHistoryRoiUnavailable: "ROI：--（缺少权威回报数据）",
           campaignDetailAccountUnrecorded: "账号未记录",
+          campaignBatchSummary: `总任务 ${values.total} · 已处理 ${values.processed} · 成功 ${values.success} · 部分成功 ${values.partial} · 数据不足 ${values.insufficient} · 失败 ${values.failed} · 跳过 ${values.skipped} · 待处理 ${values.pending} · 中断 ${values.interrupted}`,
+          campaignBatchStatus_completed: "已完成",
         }[key] || key;
       },
     },
@@ -104,6 +112,7 @@ function harness(source, hook) {
 
 async function run() {
   const c = harness(campaign, `global.testRender = data => { campaignPerformance = data; renderCampaignPerformanceAnalytics(); };
+    global.testBatch = data => { publicationBatch = data; renderPublicationBatch(); };
     global.testReload = () => { resources = {signal: undefined}; campaignId = 'c1'; return reloadCampaignPerformanceAnalytics(); };
     global.testInvalidate = () => { lifecycleId += 1; };`);
   c.window.testRender(null);
@@ -117,11 +126,19 @@ async function run() {
     ]}],
   });
   assert.equal(c.get("campaign-performance-total-views").textContent, "0");
-  assert.equal(c.get("campaign-performance-views-coverage").textContent, "1 / 2 条有数据");
+  assert.equal(c.get("campaign-performance-views-coverage").textContent, "1 / 2 条有数据 · 部分数据");
   assert.equal(c.get("campaign-performance-average-er").textContent, "0%");
   assert.match(c.get("campaign-performance-money").text, /USD 10 · BRL 20/);
   assert.match(c.get("campaign-performance-trends").text, /2026-01-01T00:00:00Z/);
   assert.match(c.get("campaign-performance-trends").text, /—/);
+  c.window.testBatch({
+    batch: {status: "completed"}, total: 3,
+    counts: {success: 1, insufficient: 2}, items: [],
+  });
+  assert.match(c.get("campaign-publication-batch-summary").textContent, /总任务 3 · 已处理 3/);
+  assert.match(c.get("campaign-publication-batch-summary").textContent, /数据不足 2 · 失败 0/);
+  assert.doesNotMatch(c.get("campaign-publication-batch-summary").textContent, /未完成/);
+  assert.doesNotMatch(c.get("campaign-performance-trends").text, /publication_|tiktok\|/);
   let resolve;
   c.window.KOLConnectAPI = {get: () => new Promise(done => {resolve = done;})};
   const pending = c.window.testReload();

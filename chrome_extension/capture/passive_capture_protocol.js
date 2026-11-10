@@ -154,7 +154,7 @@
     try {
       const url = new URL(rawUrl);
       if (!ALLOWED_HOSTS.has(url.hostname.toLowerCase()) || url.protocol !== "https:") return "";
-      return url.pathname.match(/^\/@([A-Za-z0-9._]{1,128})\/?$/)?.[1] || "";
+      return url.pathname.match(/^\/@([A-Za-z0-9._]{1,128})(?:\/video\/\d+)?\/?$/)?.[1] || "";
     } catch (_) { return ""; }
   }
 

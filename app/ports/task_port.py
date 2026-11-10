@@ -28,6 +28,7 @@ class ScrapeTaskCreateCommand:
     platforms: tuple[str, ...] = ()
     platform_summary: Mapping[str, int] = field(default_factory=dict)
     filtered_links: tuple[Mapping[str, object], ...] = ()
+    idempotency_key: str = ""
 
 
 @dataclass(frozen=True)

@@ -23,7 +23,13 @@
   let missingPublishLinks = [];
   let missingPublishError = "";
   let publicationObservations = new Map();
+  let publicationCaptureRequests = new Map();
+  let publicationAnalytics = new Map();
+  let publicationCaptureCsrf = "";
+  let publicationBatch = null;
+  let publicationBatchPollTimer = null;
   let campaignPerformance = null;
+  let campaignPerformanceError = false;
   let campaignBrief = null;
   let contentSubmissions = [];
   let fxRates = new Map();
@@ -90,6 +96,31 @@
     return global.KOLConnectApp?.t?.(key, params)
       || global.KOLConnectI18n?.t?.(key, params)
       || key;
+  }
+
+  function captureFailureReason(code) {
+    const supported = new Set([
+      "AUTH_REQUIRED", "PLATFORM_RESTRICTED", "VIDEO_IDENTITY_MISSING", "VIDEO_IDENTITY_MISMATCH",
+      "SOURCE_UNAVAILABLE", "METRICS_NOT_FOUND", "EVIDENCE_NOT_FOUND", "CAPTURE_TIMEOUT",
+      "COLLECTOR_NOT_STARTED", "COLLECTOR_UNAVAILABLE", "PLAYBACK_UNAVAILABLE",
+      "CAPTURE_REQUEST_EXPIRED", "CAPTURE_CAPABILITY_INVALID", "CAPTURE_TARGET_MISMATCH",
+      "CAPTURE_TARGET_STALE", "CAPTURE_CONTRACT_UNSUPPORTED", "CAPTURE_SUBMIT_FAILED",
+      "PUBLICATION_URL_UNSUPPORTED", "PUBLICATION_ACCOUNT_REQUIRED", "PUBLICATION_ACCOUNT_MISMATCH",
+      "PUBLICATION_PLATFORM_MISMATCH", "PUBLICATION_VIDEO_MISMATCH", "DUPLICATE_VIDEO_IN_BATCH",
+      "CAPTURE_ITEM_INTERRUPTED", "BATCH_EXECUTOR_INTERRUPTED", "BATCH_BROWSER_LAUNCH_FAILED",
+      "BATCH_CLAIM_EXPIRED", "BATCH_PAUSED",
+    ]);
+    return supported.has(String(code || "")) ? t(`campaignDetailCaptureReason_${code}`) : (code || "--");
+  }
+
+  function captureStatusLabel(value) {
+    const normalized = String(value || "failed");
+    return t(`campaignDetailCaptureStatus_${normalized}`);
+  }
+
+  function captureCompletenessLabel(value) {
+    const normalized = String(value || "none");
+    return t(`campaignDetailCaptureCompleteness_${normalized}`);
   }
 
   function stageLabel(value) { return t(STAGE_KEYS[value]) || value || "--"; }
@@ -516,7 +547,12 @@
   }
 
   function coverageText(coverage) {
-    return t("campaignDetailCoverage", { valid: coverage?.valid_count || 0, total: coverage?.total_publications || 0 });
+    if (campaignPerformanceError || !coverage) return t("campaignDetailCoverageUnavailable");
+    const total = Number(coverage.total_publications || 0);
+    if (!total) return t("campaignDetailNoStatisticalPublications");
+    const valid = Number(coverage.valid_count || 0);
+    const base = t("campaignDetailCoverage", { valid, total });
+    return valid < total ? `${base} · ${t("campaignDetailPartialData")}` : base;
   }
 
   function currencyGroupsText(groups) {
@@ -526,7 +562,7 @@
       : "—";
   }
 
-  function appendPerformanceHighlight(label, value, detail = "") {
+  function appendPerformanceHighlight(label, value, detail = "", url = "") {
     const container = element("campaign-performance-highlights");
     if (!container) return;
     const item = document.createElement("article");
@@ -537,6 +573,14 @@
     primary.textContent = value || "—";
     context.textContent = detail;
     item.append(title, primary, context);
+    if (url) {
+      const link = document.createElement("a");
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = t("campaignDetailViewVideo");
+      item.appendChild(link);
+    }
     container.appendChild(item);
   }
 
@@ -548,13 +592,13 @@
       setText(`campaign-performance-${metric}-coverage`, coverageText(totals[metric]));
     });
     setText("campaign-performance-average-er", data?.average_er == null ? "—" : `${formatNumber(data.average_er)}%`);
-    setText("campaign-performance-er-coverage", t("campaignDetailCoverage", { valid: data?.valid_er_count || 0, total: data?.total_publications || 0 }));
+    setText("campaign-performance-er-coverage", coverageText({ valid_count: data?.valid_er_count || 0, total_publications: data?.total_publications || 0 }));
 
     const highlights = element("campaign-performance-highlights");
     if (highlights) highlights.replaceChildren();
     appendPerformanceHighlight(t("campaignDetailTopCreator"), data?.top_creator?.creator_name, data?.top_creator ? t("campaignDetailTotalViews", { count: formatNumber(data.top_creator.views) }) : t("campaignDetailNoViews"));
-    appendPerformanceHighlight(t("campaignDetailTopVideo"), data?.top_video?.creator_name, data?.top_video ? t("campaignDetailPublicationViews", { publication: data.top_video.publication_id, count: formatNumber(data.top_video.views) }) : t("campaignDetailNoViews"));
-    appendPerformanceHighlight(t("campaignDetailHighestEngagement"), data?.highest_er?.creator_name, data?.highest_er ? `${data.highest_er.publication_id} · ${formatNumber(data.highest_er.engagement_rate)}%` : t("campaignDetailNoEngagement"));
+    appendPerformanceHighlight(t("campaignDetailTopVideo"), data?.top_video?.creator_name, data?.top_video ? `${data.top_video.platform || t("creatorUnknownPlatform")} · ${t("campaignDetailKnownViews", { count: formatNumber(data.top_video.views) })}` : t("campaignDetailNoViews"), data?.top_video?.publication_url);
+    appendPerformanceHighlight(t("campaignDetailHighestEngagement"), data?.highest_er?.creator_name, data?.highest_er ? `${data.highest_er.platform || t("creatorUnknownPlatform")} · ${formatNumber(data.highest_er.engagement_rate)}%` : t("campaignDetailNoEngagement"), data?.highest_er?.publication_url);
     const fastest = data?.fastest_growing;
     appendPerformanceHighlight(
       t("campaignDetailFastestGrowth"),
@@ -576,7 +620,15 @@
       const heading = document.createElement("h3");
       heading.textContent = `${publication.creator_name || t("unnamedCreator")} · ${publication.platform || t("creatorUnknownPlatform")}`;
       const identity = document.createElement("small");
-      identity.textContent = `${publication.publication_id} · ${publication.actual_account_uid || t("campaignDetailAccountUnrecorded")}`;
+      identity.textContent = publication.publication_url ? t("campaignDetailVerifiedPublicationLink") : t("campaignDetailVideoLinkPending");
+      if (publication.publication_url) {
+        const link = document.createElement("a");
+        link.href = publication.publication_url;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = t("campaignDetailViewVideo");
+        identity.append(" · ", link);
+      }
       const table = document.createElement("table");
       table.className = "campaign-performance-trend-table";
       const head = document.createElement("thead");
@@ -616,12 +668,16 @@
       );
       if (!resources || currentLifecycle !== lifecycleId) return;
       campaignPerformance = data;
+      campaignPerformanceError = false;
     } catch (error) {
       if (!resources || currentLifecycle !== lifecycleId) return;
       if (error?.name === "AbortError") throw error;
       campaignPerformance = null;
+      campaignPerformanceError = true;
     }
     renderCampaignPerformanceAnalytics();
+    hydrateLatestPublicationObservations();
+    renderPublicationPerformance();
   }
 
   function allPublications() {
@@ -643,9 +699,11 @@
     count.textContent = t("campaignDetailRecordCount", { count: publications.length });
     empty.hidden = publications.length !== 0;
     refreshAll.disabled = publicationRefreshPending || publications.length === 0;
+    renderPublicationBatch();
     publications.forEach(({ relation, publication }) => {
       const publicationId = String(publication.publication_id || "");
       const observation = publicationObservations.get(publicationId) || null;
+      const analytics = publicationAnalytics.get(publicationId) || null;
       const card = document.createElement("article");
       card.className = "campaign-publication-performance-card";
       card.dataset.publicationPerformance = publicationId;
@@ -656,7 +714,8 @@
       const title = document.createElement("strong");
       title.textContent = relation.creator_name || t("unnamedCreator");
       const meta = document.createElement("small");
-      meta.textContent = `${publication.platform || t("creatorUnknownPlatform")} · ${observation ? t("campaignDetailLastChecked", { observedAt: observation.observed_at }) : t("campaignDetailNotChecked")}`;
+      const latestMetricTime = Object.values(analytics?.latest_metrics || {}).map(item => item?.observed_at).filter(Boolean).sort().at(-1);
+      meta.textContent = `${publication.platform || t("creatorUnknownPlatform")} · ${latestMetricTime ? t("campaignDetailLastSuccessfulCapture", { observedAt: latestMetricTime }) : t("campaignDetailNotChecked")}`;
       identity.append(title, meta);
       const refresh = document.createElement("button");
       refresh.type = "button";
@@ -665,7 +724,17 @@
       refresh.dataset.campaignCreatorId = String(relation.id || "");
       refresh.disabled = publicationRefreshPending;
       refresh.textContent = t("campaignDetailRefresh");
-      heading.append(identity, refresh);
+      const capture = document.createElement("button");
+      capture.type = "button";
+      capture.className = "primary-btn compact-btn";
+      capture.dataset.publicationCapture = publicationId;
+      capture.dataset.campaignCreatorId = String(relation.id || "");
+      capture.disabled = publicationRefreshPending;
+      capture.textContent = t("campaignDetailCaptureVideo");
+      const actions = document.createElement("div");
+      actions.className = "campaign-publication-actions";
+      actions.append(refresh, capture);
+      heading.append(identity, actions);
 
       const metrics = document.createElement("div");
       metrics.className = "campaign-publication-metrics";
@@ -673,33 +742,91 @@
         [t("campaignDetailViews"), observation?.views], [t("campaignDetailLikes"), observation?.likes],
         [t("campaignDetailComments"), observation?.comments], [t("campaignDetailShares"), observation?.shares],
         [t("campaignDetailEngagementRate"), observation?.engagement_rate == null ? null : `${observation.engagement_rate}%`],
-      ].forEach(([label, value]) => {
+      ].forEach(([label, value], index) => {
         const item = document.createElement("span");
         const labelNode = document.createElement("small");
         labelNode.textContent = label;
         const valueNode = document.createElement("b");
         valueNode.textContent = metricText(value);
         item.append(labelNode, valueNode);
+        const metricName = ["views", "likes", "comments", "shares", "engagement_rate"][index];
+        const metricObservedAt = analytics?.latest_metrics?.[metricName]?.observed_at;
+        if (metricObservedAt) {
+          const measured = document.createElement("small");
+          measured.textContent = t("campaignDetailMetricObservedAt", { observedAt: metricObservedAt });
+          item.appendChild(measured);
+        }
         metrics.appendChild(item);
       });
       const source = document.createElement("small");
       source.className = "hint";
+      const metricSources = [...new Set(Object.values(analytics?.latest_metrics || {}).map(item => item?.source).filter(Boolean))];
       source.textContent = observation
-        ? t("campaignDetailObservationSource", { source: observation.source, confidence: observation.confidence })
+        ? (metricSources.length
+          ? t("campaignDetailMetricSources", { sources: metricSources.join(" · ") })
+          : t("campaignDetailObservationSource", { source: observation.source, confidence: observation.confidence }))
         : t("campaignDetailTrackingUnavailable");
-      card.append(heading, metrics, source);
+      const request = publicationCaptureRequests.get(publicationId) || analytics?.latest_capture_attempt;
+      const capturePanel = document.createElement("div");
+      capturePanel.className = "campaign-publication-capture-state";
+      if (request?.capture_status === "pending" && request.capture_code) {
+        const instructions = document.createElement("p");
+        instructions.textContent = t("campaignDetailCaptureInstructions");
+        const code = document.createElement("code");
+        code.textContent = request.capture_code || "";
+        const copy = document.createElement("button");
+        copy.type = "button";
+        copy.className = "soft-btn compact-btn";
+        copy.dataset.captureCopy = request.capture_code || "";
+        copy.textContent = t("campaignDetailCopyCaptureCode");
+        const open = document.createElement("a");
+        open.href = request.canonical_url;
+        open.target = "_blank";
+        open.rel = "noopener noreferrer";
+        open.textContent = t("campaignDetailOpenVideoInChrome");
+        const check = document.createElement("button");
+        check.type = "button";
+        check.className = "soft-btn compact-btn";
+        check.dataset.captureCheck = request.request_id;
+        check.dataset.publicationId = publicationId;
+        check.textContent = t("campaignDetailCheckCaptureResult");
+        capturePanel.append(instructions, code, copy, open, check);
+      } else if (request) {
+        const summary = document.createElement("span");
+        summary.textContent = t("campaignDetailCaptureState", {
+          status: captureStatusLabel(request.capture_status), completeness: captureCompletenessLabel(request.completeness),
+          reason: captureFailureReason(request.safe_error_code),
+        });
+        capturePanel.append(summary);
+        if (request.capture_status === "pending" && request.request_id) {
+          const check = document.createElement("button");
+          check.type = "button";
+          check.className = "soft-btn compact-btn";
+          check.dataset.captureCheck = request.request_id;
+          check.dataset.publicationId = publicationId;
+          check.textContent = t("campaignDetailCheckCaptureResult");
+          capturePanel.append(check);
+        }
+        if (["expired", "failed", "insufficient"].includes(request.capture_status)) {
+          const retry = document.createElement("small");
+          retry.textContent = t("campaignDetailCaptureRetryHint");
+          capturePanel.append(retry);
+        }
+      }
+      card.append(heading, metrics, source, capturePanel);
       list.appendChild(card);
     });
   }
 
   function hydrateLatestPublicationObservations() {
-    publicationObservations = new Map(
-      (Array.isArray(campaignPerformance?.publications) ? campaignPerformance.publications : [])
-        .map(publication => {
-          const series = Array.isArray(publication.series) ? publication.series : [];
-          return [String(publication.publication_id || ""), series[series.length - 1] || null];
-        }),
-    );
+    const publications = Array.isArray(campaignPerformance?.publications) ? campaignPerformance.publications : [];
+    publicationAnalytics = new Map(publications.map(publication => [String(publication.publication_id || ""), publication]));
+    publicationObservations = new Map(publications.map(publication => {
+      const latest = publication.latest_metrics || {};
+      return [String(publication.publication_id || ""), Object.fromEntries(
+        ["views", "likes", "comments", "shares", "engagement_rate"].map(metric => [metric, latest[metric]?.value ?? null])
+      )];
+    }));
   }
 
   function setPublicationStatus(message, isError = false) {
@@ -735,26 +862,90 @@
     }
   }
 
+  function renderPublicationBatch() {
+    const panel = element("campaign-publication-batch");
+    const summary = element("campaign-publication-batch-summary");
+    const itemsNode = element("campaign-publication-batch-items");
+    if (!panel || !summary || !itemsNode) return;
+    panel.hidden = !publicationBatch?.batch;
+    if (panel.hidden) return;
+    const batch = publicationBatch.batch;
+    const counts = publicationBatch.counts || {};
+    const processed = ["success", "partial", "insufficient", "failed", "skipped", "cancelled"]
+      .reduce((total, key) => total + Number(counts[key] || 0), 0);
+    const pending = ["pending", "opening", "collecting"]
+      .reduce((total, key) => total + Number(counts[key] || 0), 0);
+    const latestCompletedAt = (publicationBatch.items || [])
+      .map(item => String(item.completed_at || "")).filter(Boolean).sort().at(-1) || "--";
+    summary.textContent = t("campaignBatchSummary", {
+      processed, total: publicationBatch.total || 0, success: counts.success || 0,
+      partial: counts.partial || 0, insufficient: counts.insufficient || 0, failed: counts.failed || 0,
+      skipped: counts.skipped || 0, pending, interrupted: counts.interrupted || 0,
+      cancelled: counts.cancelled || 0, status: t(`campaignBatchStatus_${batch.status}`), completedAt: latestCompletedAt,
+    });
+    element("campaign-publication-batch-pause").hidden = batch.status !== "running" && batch.status !== "pending_claim";
+    element("campaign-publication-batch-resume").hidden = !["paused", "interrupted"].includes(batch.status);
+    element("campaign-publication-batch-cancel").hidden = ["completed", "cancelled"].includes(batch.status);
+    const publications = new Map(allPublications().map(row => [String(row.publication.publication_id || ""), row]));
+    itemsNode.replaceChildren(...(publicationBatch.items || []).map(item => {
+      const row = document.createElement("div");
+      row.className = "campaign-publication-batch-item";
+      const known = publications.get(String(item.publication_id || ""));
+      const identity = document.createElement("span");
+      identity.textContent = `${known?.relation?.creator_name || t("unnamedCreator")} · ${item.platform || t("creatorUnknownPlatform")}`;
+      const state = document.createElement("span");
+      state.textContent = `${t(`campaignBatchItemStatus_${item.status}`)}${item.safe_error_code ? ` · ${captureFailureReason(item.safe_error_code)}` : ""}`;
+      row.append(identity, state);
+      if (item.canonical_url) {
+        const link = document.createElement("a");
+        link.href = item.canonical_url; link.target = "_blank"; link.rel = "noopener noreferrer";
+        link.textContent = t("campaignBatchOpenVideo");
+        row.appendChild(link);
+      }
+      if (["failed", "insufficient", "interrupted"].includes(item.status)) {
+        const retry = document.createElement("button");
+        retry.type = "button"; retry.className = "soft-btn compact-btn";
+        retry.dataset.batchRetryItem = item.item_id; retry.textContent = t("campaignBatchRetryItem");
+        row.appendChild(retry);
+      }
+      return row;
+    }));
+  }
+
+  function schedulePublicationBatchPoll() {
+    global.clearTimeout?.(publicationBatchPollTimer);
+    if (!publicationBatch?.batch || ["completed", "cancelled"].includes(publicationBatch.batch.status)) return;
+    publicationBatchPollTimer = global.setTimeout?.(() => loadPublicationBatch(false).catch(() => {}), 1500) || null;
+  }
+
+  async function loadPublicationBatch(activeOnly = false) {
+    if (!campaignId || !resources) return;
+    const path = activeOnly
+      ? `/api/campaigns/${encodeURIComponent(campaignId)}/publication-capture-batches/active`
+      : `/api/publication-capture/batches/${encodeURIComponent(publicationBatch?.batch?.batch_run_id || "")}`;
+    if (!activeOnly && !publicationBatch?.batch?.batch_run_id) return;
+    const result = await captureRequestApi("GET", path);
+    publicationBatch = activeOnly ? result.active : result;
+    renderPublicationBatch();
+    if (publicationBatch) {
+      await reloadCampaignPerformanceAnalytics();
+      hydrateLatestPublicationObservations();
+      renderCampaignPerformanceAnalytics();
+      renderPublicationPerformance();
+    }
+    schedulePublicationBatchPoll();
+  }
+
   async function refreshAllPublications() {
     if (publicationRefreshPending || !resources || !campaignId) return;
     publicationRefreshPending = true;
     setPublicationStatus("");
     renderPublicationPerformance();
     try {
-      const result = await global.KOLConnectAPI.post(
-        `/api/campaigns/${encodeURIComponent(campaignId)}/publications/refresh`,
-        {}, { signal: resources.signal },
-      );
-      result.results?.forEach(item => {
-        if (item.observation) publicationObservations.set(String(item.publication_id || ""), item.observation);
-      });
-      await reloadCampaignPerformanceAnalytics();
-      setPublicationStatus(
-        result.status === "SUCCESS"
-          ? t("campaignDetailAllPublicationsRefreshed")
-          : t("campaignDetailBatchRefreshResult", { status: result.status || "FAILED", succeeded: result.succeeded || 0, failed: result.failed || 0 }),
-        result.status !== "SUCCESS",
-      );
+      const result = await captureRequestApi("POST", `/api/campaigns/${encodeURIComponent(campaignId)}/publication-capture-batches`, {});
+      publicationBatch = result;
+      setPublicationStatus(t("campaignBatchStarted"));
+      schedulePublicationBatchPoll();
     } catch (error) {
       if (error?.name !== "AbortError") setPublicationStatus(error.message || t("campaignDetailBatchRefreshFailed"), true);
     } finally {
@@ -763,9 +954,88 @@
     }
   }
 
+  async function publicationBatchAction(action) {
+    const id = publicationBatch?.batch?.batch_run_id;
+    if (!id) return;
+    publicationBatch = await captureRequestApi("POST", `/api/publication-capture/batches/${encodeURIComponent(id)}/${action}`, {});
+    renderPublicationBatch();
+    schedulePublicationBatchPoll();
+  }
+
+  async function retryPublicationBatchItem(itemId) {
+    const id = publicationBatch?.batch?.batch_run_id;
+    if (!id || !itemId) return;
+    publicationBatch = await captureRequestApi("POST", `/api/publication-capture/batches/${encodeURIComponent(id)}/items/${encodeURIComponent(itemId)}/retry`, {});
+    renderPublicationBatch();
+    schedulePublicationBatchPoll();
+  }
+
+  async function ensurePublicationCaptureSession() {
+    if (publicationCaptureCsrf) return publicationCaptureCsrf;
+    const result = await global.KOLConnectAPI.get("/api/publication-capture/security/session", { signal: resources?.signal });
+    publicationCaptureCsrf = String(result.csrf_token || "");
+    if (!publicationCaptureCsrf) throw new Error(t("campaignDetailCaptureSessionFailed"));
+    return publicationCaptureCsrf;
+  }
+
+  async function captureRequestApi(method, url, payload) {
+    const csrf = await ensurePublicationCaptureSession();
+    return global.KOLConnectAPI.request(method, url, {
+      ...(method === "GET" ? {} : { payload }), signal: resources?.signal,
+      headers: { "X-KOLConnect-Publication-Capture-CSRF": csrf },
+    });
+  }
+
+  async function createPublicationCapture(relationId, publicationId) {
+    if (publicationRefreshPending || !resources) return;
+    publicationRefreshPending = true;
+    renderPublicationPerformance();
+    try {
+      const result = await captureRequestApi("POST", `/api/campaign-creators/${encodeURIComponent(relationId)}/publications/${encodeURIComponent(publicationId)}/capture-request`, {});
+      publicationCaptureRequests.set(publicationId, result.capture_request);
+      setPublicationStatus(t("campaignDetailCaptureRequestReady"));
+    } catch (error) {
+      setPublicationStatus(error.message || t("campaignDetailCaptureRequestFailed"), true);
+    } finally {
+      publicationRefreshPending = false;
+      renderPublicationPerformance();
+    }
+  }
+
+  async function checkPublicationCapture(requestId, publicationId) {
+    try {
+      const result = await captureRequestApi("GET", `/api/publication-capture/requests/${encodeURIComponent(requestId)}`);
+      publicationCaptureRequests.set(publicationId, {
+        ...(publicationCaptureRequests.get(publicationId) || {}),
+        ...(result.attempt || {}),
+      });
+      if (result.observation) publicationObservations.set(publicationId, result.observation);
+      if (result.observation) await reloadCampaignPerformanceAnalytics();
+      setPublicationStatus(result.attempt?.capture_status === "pending" ? t("campaignDetailCaptureStillWaiting") : t("campaignDetailCaptureResultLoaded"));
+      renderPublicationPerformance();
+    } catch (error) {
+      setPublicationStatus(error.message || t("campaignDetailCaptureCheckFailed"), true);
+    }
+  }
+
   function handlePublicationPerformanceClick(event) {
-    const button = event.target?.closest?.("[data-publication-refresh]");
-    if (button) refreshPublication(button.dataset.campaignCreatorId, button.dataset.publicationRefresh);
+    const refresh = event.target?.closest?.("[data-publication-refresh]");
+    if (refresh) return refreshPublication(refresh.dataset.campaignCreatorId, refresh.dataset.publicationRefresh);
+    const capture = event.target?.closest?.("[data-publication-capture]");
+    if (capture) return createPublicationCapture(capture.dataset.campaignCreatorId, capture.dataset.publicationCapture);
+    const copy = event.target?.closest?.("[data-capture-copy]");
+    if (copy) {
+      const value = copy.dataset.captureCopy || "";
+      const writeText = navigator.clipboard?.writeText?.bind(navigator.clipboard);
+      if (!writeText) return setPublicationStatus(t("campaignDetailCaptureCodeCopyFailed"), true);
+      return writeText(value)
+        .then(() => setPublicationStatus(t("campaignDetailCaptureCodeCopied")))
+        .catch(() => setPublicationStatus(t("campaignDetailCaptureCodeCopyFailed"), true));
+    }
+    const check = event.target?.closest?.("[data-capture-check]");
+    if (check) return checkPublicationCapture(check.dataset.captureCheck, check.dataset.publicationId);
+    const retry = event.target?.closest?.("[data-batch-retry-item]");
+    if (retry) return retryPublicationBatchItem(retry.dataset.batchRetryItem).catch(error => setPublicationStatus(error.message, true));
   }
 
   async function loadDetail() {
@@ -815,6 +1085,7 @@
         ? publishingData.missing_publish_links
         : [];
       campaignPerformance = performanceData;
+      campaignPerformanceError = performanceData === null;
       fxRates = new Map(
         (Array.isArray(fxData?.rates) ? fxData.rates : [])
           .map(rate => [normalizeCurrencyCode(rate?.currency_code), rate?.rate_per_usd])
@@ -830,6 +1101,7 @@
       renderMissingPublishLinks();
       renderCampaignPerformanceAnalytics();
       renderPublicationPerformance();
+      await loadPublicationBatch(true).catch(() => {});
       await reloadBriefAndSubmissions();
       setDetailState("loaded");
     } catch (error) {
@@ -1554,7 +1826,9 @@
       missingPublishLinks = [];
       missingPublishError = "";
       publicationObservations = new Map();
+      publicationAnalytics = new Map();
       campaignPerformance = null;
+      campaignPerformanceError = false;
       campaignBrief = null;
       contentSubmissions = [];
       fxRates = new Map();
@@ -1563,6 +1837,11 @@
       creatorEditorOpen = false;
       submissionReviewFindings.clear();
       publicationRefreshPending = false;
+      publicationCaptureCsrf = "";
+      publicationCaptureRequests = new Map();
+      publicationBatch = null;
+      global.clearTimeout?.(publicationBatchPollTimer);
+      publicationBatchPollTimer = null;
       googleSheetsSyncPending = false;
       creators = [];
       creatorsLoaded = false;
@@ -1607,6 +1886,10 @@
       listen("campaign-publication-list", "click", handlePublicationClick);
       listen("campaign-publication-performance-list", "click", handlePublicationPerformanceClick);
       listen("campaign-publications-refresh-all", "click", refreshAllPublications);
+      listen("campaign-publication-batch-pause", "click", () => publicationBatchAction("pause").catch(error => setPublicationStatus(error.message, true)));
+      listen("campaign-publication-batch-resume", "click", () => publicationBatchAction("resume").catch(error => setPublicationStatus(error.message, true)));
+      listen("campaign-publication-batch-cancel", "click", () => publicationBatchAction("cancel").catch(error => setPublicationStatus(error.message, true)));
+      listen("campaign-publication-batch-items", "click", handlePublicationPerformanceClick);
       listen("campaign-creator-list-body", "click", handleListAction);
       listen("campaign-brief-save", "click", () => saveBrief().catch(handleError));
       listen("content-submission-create", "click", () => createSubmission().catch(handleError));
@@ -1627,9 +1910,14 @@
       relations = [];
       missingPublishLinks = [];
       publicationObservations = new Map();
+      publicationAnalytics = new Map();
       campaignPerformance = null;
+      campaignPerformanceError = false;
       submissionReviewFindings.clear();
       publicationRefreshPending = false;
+      global.clearTimeout?.(publicationBatchPollTimer);
+      publicationBatchPollTimer = null;
+      publicationBatch = null;
       creators = [];
       creatorsLoaded = false;
       accountCache.clear();

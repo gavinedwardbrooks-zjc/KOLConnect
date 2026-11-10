@@ -233,6 +233,7 @@ async function run() {
         totals: {}, publications: [], average_er: null, valid_er_count: 0, total_publications: 0,
       };
       if (url === "/api/settings/fx") return { rates: clone(fxRates) };
+      if (url === "/api/publication-capture/security/session") return { csrf_token: "fixture-csrf" };
       if (url === "/api/campaigns/campaign_one/missing-publish-links") {
         if (missingPublishFailure) throw new Error("optional publishing data unavailable");
         return { missing_publish_links: [] };
@@ -245,6 +246,17 @@ async function run() {
       const creatorMatch = url.match(/^\/api\/creator-library\/(.+)$/);
       if (creatorMatch) return { accounts: clone(accounts[creatorMatch[1]] || []) };
       throw new Error(`Unexpected GET ${url}`);
+    },
+    async request(method, url, options = {}) {
+      calls.push({
+        method, url, payload: options.payload === undefined ? undefined : clone(options.payload),
+        signal: options.signal, headers: clone(options.headers || {}),
+      });
+      if (method === "GET" && url === "/api/campaigns/campaign_one/publication-capture-batches/active") {
+        assert.equal(options.headers["X-KOLConnect-Publication-Capture-CSRF"], "fixture-csrf");
+        return { active: null };
+      }
+      throw new Error(`Unexpected ${method} ${url}`);
     },
     async post(url, payload, options = {}) {
       calls.push({ method: "POST", url, payload: clone(payload), signal: options.signal });
@@ -381,6 +393,8 @@ async function run() {
     "GET /api/campaigns/campaign_one/creators",
     "GET /api/campaigns/campaign_one/missing-publish-links",
     "GET /api/campaigns/campaign_one/performance",
+    "GET /api/campaigns/campaign_one/publication-capture-batches/active",
+    "GET /api/publication-capture/security/session",
     "GET /api/settings/fx",
     "GET /api/campaigns/campaign_one/brief",
     "GET /api/campaign-creators/relation_one/submissions",

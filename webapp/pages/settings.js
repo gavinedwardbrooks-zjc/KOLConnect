@@ -500,8 +500,15 @@
   function renderStorageMigration(data) {
     const authority = String(data?.authority || "legacy_excel");
     const migrationCard = document.getElementById("storage-migration-card");
-    // Migration history remains supported, but its completed workflow is not a normal Settings surface.
-    if (migrationCard) migrationCard.hidden = true;
+    const needsAttention = Boolean(
+      data?.migration_required
+      || data?.migration_status === "activation_recovery_required"
+      || data?.migration_status === "migration_in_progress"
+      || data?.migration_status === "migration_error"
+    );
+    // Keep the completed workflow out of the normal surface, but never hide a
+    // legacy or interrupted migration that requires explicit user action.
+    if (migrationCard) migrationCard.hidden = !needsAttention;
     const labels = { legacy_excel: "Excel", sqlite_active: "SQLite", migration_error: "settingsMigrationError", unsupported_schema: "settingsUnsupportedSchema" };
     setSyncText("storage-migration-authority", labels[authority]?.startsWith("settings") ? t(labels[authority]) : labels[authority] || authority);
     setSyncText("storage-migration-status", data?.migration_status || data?.status || "--");

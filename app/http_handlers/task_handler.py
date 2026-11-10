@@ -284,6 +284,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             platforms=prepared["platforms"],
             platform_summary=prepared["platform_summary"],
             filtered_links=prepared["filtered_links"],
+            idempotency_key=payload.get("idempotency_key"),
         )
         handler._ok(task=task, invalid_links=prepared["invalid_links"], filtered_links=prepared["filtered_links"])
         return True

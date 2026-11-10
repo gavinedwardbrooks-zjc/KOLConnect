@@ -108,6 +108,7 @@ class TaskManagerAdapter:
             platform_summary=dict(command.platform_summary),
             filtered_links=[dict(item) for item in command.filtered_links],
             task_type="scrape",
+            idempotency_key=command.idempotency_key,
         )
         return CreatedTask(task=self._snapshot(task))
 

@@ -195,6 +195,18 @@ body {
   align-items: center;
   gap: 8px;
   font-weight: 600;
+  width: fit-content;
+  max-width: 100%;
+}
+
+.checkbox-field input {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.checkbox-field span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .system-tools-card { display: grid; gap: 16px; }
@@ -1303,6 +1315,80 @@ button:disabled {
   align-items: flex-start;
   flex-direction: column;
   gap: 3px;
+}
+
+.campaign-publication-performance-heading > .campaign-publication-actions,
+.campaign-publication-capture-state {
+  display: flex;
+  flex-flow: row wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.campaign-publication-performance-heading > .campaign-publication-actions {
+  justify-content: flex-end;
+}
+
+.campaign-publication-capture-state:empty {
+  display: none;
+}
+
+.campaign-publication-capture-state {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.campaign-publication-capture-state p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.campaign-publication-capture-state code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.campaign-publication-batch {
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent) 12%);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  display: grid;
+  gap: 12px;
+  margin: 14px 0;
+  padding: 14px;
+}
+
+.campaign-publication-batch[hidden] { display: none; }
+
+.campaign-publication-batch-summary {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.campaign-publication-batch-items {
+  display: grid;
+  gap: 8px;
+}
+
+.campaign-publication-batch-item {
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  padding: 10px 12px;
+}
+
+.campaign-publication-batch-item > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .campaign-publication-batch-item { grid-template-columns: 1fr; }
 }
 
 .campaign-publication-metrics {
@@ -3587,6 +3673,21 @@ button {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.mail-workspace-ai-candidate {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+}
+
+.mail-workspace-ai-candidate h3,
+.mail-workspace-ai-candidate pre {
+  margin: 0;
 }
 
 .mail-workspace-source,

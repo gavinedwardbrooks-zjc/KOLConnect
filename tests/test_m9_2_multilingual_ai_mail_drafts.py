@@ -135,10 +135,10 @@ class M92MultilingualAIMailDraftTests(unittest.TestCase):
             connection.execute("UPDATE storage_metadata SET value='7' WHERE key='schema_version'")
         with self.factory.read_connection() as connection:
             self.assertEqual(7, schema_version(connection))
-            self.assertEqual(8, apply_schema_migrations(connection))
-            self.assertEqual(8, apply_schema_migrations(connection))
+            self.assertEqual(11, apply_schema_migrations(connection))
+            self.assertEqual(11, apply_schema_migrations(connection))
             self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM mail_drafts").fetchone()[0])
-        self.assertEqual(8, CURRENT_SCHEMA_VERSION)
+        self.assertEqual(11, CURRENT_SCHEMA_VERSION)
 
     def test_schema_eight_migration_failure_rolls_back(self):
         with self.factory.write_transaction() as connection:

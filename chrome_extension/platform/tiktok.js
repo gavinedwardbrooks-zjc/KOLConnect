@@ -344,7 +344,14 @@ export async function collectRecentContent(tabId, options = {}) {
   if (state.stopped) throw new Error(state.stopped);
   const analysis = finalizeContentAnalysis(state.items, {
     limit: Math.min(20, Number(options.limit) || 20),
-    excludePinned: options.excludePinned !== false, contentType: "video",
+    maximumCount: 20,
+    range: options.range,
+    now: options.now,
+    excludePinned: options.excludePinned !== false,
+    sourceOrderNewestFirst: false,
+    sourceExhausted: false,
+    sourceLimitReached: state.items.length >= 20,
+    contentType: "video",
   });
   const layers = state.items.map((item) => item.capture_layer);
   analysis.passive_capture_status = layers.includes("L1") ? "CAPTURE_L1_ACTIVE"

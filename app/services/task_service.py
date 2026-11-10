@@ -303,6 +303,7 @@ class TaskService:
         platforms: list[str],
         platform_summary: dict[str, int],
         filtered_links: list[dict[str, object]],
+        idempotency_key: object = "",
     ) -> dict[str, object]:
         created = self._get_task_port().create_scrape_task(
             ScrapeTaskCreateCommand(
@@ -314,6 +315,7 @@ class TaskService:
                 platforms=tuple(platforms),
                 platform_summary=dict(platform_summary),
                 filtered_links=tuple(dict(item) for item in filtered_links),
+                idempotency_key=str(idempotency_key or "").strip(),
             )
         )
         return created.task.to_response()

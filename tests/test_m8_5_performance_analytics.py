@@ -139,6 +139,34 @@ class M85PerformanceAnalyticsTests(unittest.TestCase):
             self.assertEqual(0, history["publication_count"])
             self.assertIsNone(history["average_latest_views"])
 
+    def test_browser_capture_observation_counts_once_with_per_metric_coverage(self):
+        with test_runtime_sandbox("m8_5_browser_capture_coverage") as runtime:
+            store = SQLiteWorkbookStore.initialize_empty(runtime.root / "analytics.db")
+            with store.factory.write_transaction() as connection:
+                connection.execute("INSERT INTO creators(creator_id,name) VALUES ('creator','Suyane Rodrigues')")
+                connection.execute("INSERT INTO creator_accounts(account_uid,creator_id,platform,username) VALUES ('tiktok:creator','creator','TikTok','creator')")
+                connection.execute("INSERT INTO campaigns(campaign_id,name) VALUES ('campaign','Campaign')")
+                connection.execute("INSERT INTO campaign_creators(id,campaign_id,creator_id) VALUES ('relation','campaign','creator')")
+                connection.execute("INSERT INTO campaign_creator_publish_links(campaign_creator_id,position,publish_link,publication_id,actual_account_uid,platform,video_id) VALUES ('relation',0,'https://www.tiktok.com/@creator/video/100','publication', 'tiktok:creator','TikTok','100')")
+                connection.execute("INSERT INTO publication_capture_attempts(request_id,publication_id,campaign_creator_id,refresh_operation_id,platform,video_id,canonical_url,capability_hash,started_at,expires_at,completed_at,capture_status,contract_version,safe_error_code,completeness,field_provenance,observation_id,submission_count) VALUES ('request','publication','relation','refresh','TikTok','100','https://www.tiktok.com/@creator/video/100','hash','2026-11-04T11:00:00Z','2026-11-04T11:10:00Z','2026-11-04T11:05:30Z','partial','publication-capture-v1','','partial','{\"views\":{\"source\":\"SIGI_STATE\",\"confidence\":\"medium\",\"missing_reason\":\"\"},\"likes\":{\"source\":\"tiktok_page_state\",\"confidence\":\"high\",\"missing_reason\":\"\"},\"comments\":{\"source\":\"tiktok_page_state\",\"confidence\":\"high\",\"missing_reason\":\"\"}}','observation',1)")
+            repository = PublicationPerformanceRepository(store)
+            repository.append({
+                "observation_id": "observation", "publication_id": "publication", "refresh_operation_id": "refresh",
+                "observed_at": "2026-11-04T11:05:30Z", "views": 12200, "likes": 1551,
+                "comments": 19, "shares": None, "engagement_rate": 12.87,
+                "source": "browser_capture", "confidence": "high",
+            })
+            result = AnalyticsService(None, None, repository).get_campaign_performance("campaign")
+            self.assertEqual({"total": 12200, "valid_count": 1, "missing_count": 0, "total_publications": 1}, result["totals"]["views"])
+            self.assertEqual(1, result["totals"]["likes"]["valid_count"])
+            self.assertEqual(1, result["totals"]["comments"]["valid_count"])
+            self.assertEqual(0, result["totals"]["shares"]["valid_count"])
+            self.assertEqual("partial", result["publications"][0]["latest_capture_attempt"]["capture_status"])
+            self.assertEqual("2026-11-04T11:05:30Z", result["publications"][0]["latest_metrics"]["views"]["observed_at"])
+            self.assertEqual("SIGI_STATE", result["publications"][0]["latest_metrics"]["views"]["source"])
+            self.assertEqual("medium", result["publications"][0]["latest_metrics"]["views"]["confidence"])
+            self.assertEqual("tiktok_page_state", result["publications"][0]["latest_metrics"]["likes"]["source"])
+
     def test_growth_equal_zero_time_negative_and_unrounded_ranking(self):
         equal = publication(observations=[
             observation("a", "2026-01-01T00:00:00Z", views=10),

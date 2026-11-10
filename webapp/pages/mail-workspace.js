@@ -2,7 +2,7 @@
   "use strict";
 
   const $ = id => document.getElementById(id);
-  const state = { generation: 0, csrf: "", context: null, options: null, templates: [], draft: null, preview: null, authorization: null, dirty: false, busy: false };
+  const state = { generation: 0, csrf: "", context: null, options: null, templates: [], draft: null, aiCandidate: null, preview: null, authorization: null, dirty: false, busy: false };
   const t = (key, values) => global.KOLConnectApp?.t?.(key, values) || key;
 
   async function session() {
@@ -25,6 +25,7 @@
     if (!value) {
       $("mail-workspace-send").disabled = !state.preview || !$("mail-workspace-confirm").checked;
       updateTemplateActions();
+      $("mail-workspace-ai-adopt").disabled = state.aiCandidate?.status !== "ready";
     }
   }
 
@@ -42,8 +43,16 @@
     $("mail-workspace-send").disabled = true;
   }
 
+  function clearAICandidate() {
+    state.aiCandidate = null;
+    $("mail-workspace-ai-candidate").hidden = true;
+    $("mail-workspace-ai-candidate-subject").textContent = "";
+    $("mail-workspace-ai-candidate-body").textContent = "";
+  }
+
   function markDirty() {
     state.dirty = true;
+    clearAICandidate();
     resetTransient();
   }
 
@@ -72,7 +81,8 @@
   async function loadTemplates(generation) {
     const language = $("mail-workspace-language").value.trim().toLowerCase();
     const tone = $("mail-workspace-template-tone").value.trim().toLowerCase();
-    const data = await secure("GET", `/api/mail/templates?draft_type=${encodeURIComponent(draftType())}`, undefined);
+    const audience = $("mail-workspace-template-audience").value.trim().toLowerCase();
+    const data = await secure("GET", `/api/mail/templates?draft_type=${encodeURIComponent(draftType())}&audience_type=${encodeURIComponent(audience)}`, undefined);
     if (generation !== state.generation) return;
     state.templates = (data.templates || []).filter(item => (!language || String(item.language).toLowerCase() === language)
       && (!tone || String(item.tone).toLowerCase() === tone));
@@ -94,6 +104,7 @@
   function selectTemplate(template) {
     if (!template) return;
     $("mail-workspace-template-tone").value = template.tone || "";
+    $("mail-workspace-template-audience").value = template.audience_type || "all";
     return loadTemplates(state.generation).then(() => {
       if (state.templates.some(item => item.template_id === template.template_id)) {
         $("mail-workspace-template").value = template.template_id;
@@ -114,6 +125,7 @@
     state.context = { ...context };
     state.dirty = false;
     state.draft = null;
+    clearAICandidate();
     state.preview = null;
     state.authorization = null;
     $("mail-workspace-modal").hidden = false;
@@ -132,6 +144,25 @@
       state.options = data;
       populateOptions();
       await loadTemplates(generation);
+      if (context.draftId) {
+        const draftData = await secure("GET", `/api/mail/drafts/${encodeURIComponent(context.draftId)}`, undefined);
+        if (generation !== state.generation) return;
+        const draft = draftData.draft;
+        const recipient = String(draft.to_addresses?.[0] || "").trim().toLowerCase();
+        const recipientSelect = $("mail-workspace-recipient");
+        if (recipient && !Array.from(recipientSelect.options).some(option => option.value === recipient)) {
+          recipientSelect.add(new Option(`${recipient} · ${t("mailWorkspaceObservedEmail")}`, recipient));
+        }
+        $("mail-workspace-account").value = draft.mail_account_id || "";
+        recipientSelect.value = recipient;
+        $("mail-workspace-subject").value = draft.subject || "";
+        $("mail-workspace-body").value = draft.body_text || "";
+        state.draft = draft;
+        state.dirty = false;
+        $("mail-workspace-context").textContent = context.templateName
+          ? `${context.creatorName || recipient} · ${context.templateName}`
+          : context.creatorName || recipient || t("mailWorkspaceNewMessage");
+      }
       setStatus(t("mailWorkspaceReady"));
     } catch (error) {
       if (generation === state.generation) global.KOLConnectApp.showError(error);
@@ -210,6 +241,7 @@
       const data = await secure("POST", "/api/mail/templates", {
         draft_type: draftType(), language: $("mail-workspace-language").value.trim(), name,
         tone: $("mail-workspace-tone").value.trim() || "professional",
+        audience_type: $("mail-workspace-template-audience").value || "all",
         subject_template: subject, body_template: body,
         required_variables: requiredTemplateVariables(subject, body),
       });
@@ -229,6 +261,7 @@
         template_version: template.template_version,
         draft_type: template.draft_type, language: template.language, name: template.name,
         tone: $("mail-workspace-template-tone").value.trim() || template.tone,
+        audience_type: $("mail-workspace-template-audience").value || template.audience_type || "all",
         subject_template: subject,
         body_template: body,
         required_variables: requiredTemplateVariables(subject, body),
@@ -269,14 +302,29 @@
         consent: { confirmed: true, provider, purpose: "mail_ai_draft", context_fields: Object.keys(context).sort() },
       });
       if (!result.candidate) throw new Error(result.error_code || t("mailWorkspaceAIFailed"));
-      const adopted = await secure("POST", `/api/mail/ai-draft-candidates/${encodeURIComponent(result.candidate.candidate_id)}/adopt`, { draft_id: draft.draft_id, draft_version: draft.version });
+      state.aiCandidate = result.candidate;
+      $("mail-workspace-ai-candidate-subject").textContent = result.candidate.subject || "";
+      $("mail-workspace-ai-candidate-body").textContent = result.candidate.body_text || "";
+      $("mail-workspace-ai-candidate").hidden = false;
+      $("mail-workspace-ai-adopt").disabled = result.candidate.status !== "ready";
+      setStatus(t("mailWorkspaceAICandidateReady"));
+    } finally { setBusy(false); }
+  }
+
+  async function adoptAICandidate() {
+    const candidate = state.aiCandidate;
+    if (!candidate || !state.draft) return;
+    setBusy(true);
+    try {
+      const adopted = await secure("POST", `/api/mail/ai-draft-candidates/${encodeURIComponent(candidate.candidate_id)}/adopt`, { draft_id: state.draft.draft_id, draft_version: state.draft.version });
       state.draft = adopted.draft;
       state.context.aiAdopted = true;
       $("mail-workspace-subject").value = state.draft.subject;
       $("mail-workspace-body").value = state.draft.body_text;
       state.dirty = true;
+      clearAICandidate();
       resetTransient();
-      setStatus(t("mailWorkspaceAICandidateReady"));
+      setStatus(t("mailWorkspaceAICandidateAdopted"));
     } finally { setBusy(false); }
   }
 
@@ -328,10 +376,11 @@
     $("mail-workspace-update-template")?.addEventListener("click", () => updateTemplate().catch(global.KOLConnectApp.showError));
     $("mail-workspace-deactivate-template")?.addEventListener("click", () => deactivateTemplate().catch(global.KOLConnectApp.showError));
     $("mail-workspace-ai-generate")?.addEventListener("click", () => generateAI().catch(global.KOLConnectApp.showError));
+    $("mail-workspace-ai-adopt")?.addEventListener("click", () => adoptAICandidate().catch(global.KOLConnectApp.showError));
     $("mail-workspace-preview-button")?.addEventListener("click", () => preview().catch(global.KOLConnectApp.showError));
     $("mail-workspace-send")?.addEventListener("click", () => send().catch(global.KOLConnectApp.showError));
     $("mail-workspace-confirm")?.addEventListener("change", event => { $("mail-workspace-send").disabled = !state.preview || !event.target.checked; });
-    ["mail-workspace-language", "mail-workspace-template-tone"].forEach(id => $(id)?.addEventListener("change", () => loadTemplates(state.generation).catch(global.KOLConnectApp.showError)));
+    ["mail-workspace-language", "mail-workspace-template-tone", "mail-workspace-template-audience"].forEach(id => $(id)?.addEventListener("change", () => loadTemplates(state.generation).catch(global.KOLConnectApp.showError)));
     $("mail-workspace-template")?.addEventListener("change", updateTemplateActions);
     ["mail-workspace-account", "mail-workspace-recipient", "mail-workspace-subject", "mail-workspace-body"].forEach(id => $(id)?.addEventListener("input", markDirty));
     global.addEventListener("beforeunload", event => { if (state.dirty && !$("mail-workspace-modal").hidden) { event.preventDefault(); event.returnValue = ""; } });
@@ -339,4 +388,15 @@
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind, { once: true }); else bind();
   global.KOLConnectMailWorkspace = Object.freeze({ open });
+  document.addEventListener?.("kolconnect:mail-workspace-handoff", event => {
+    const context = event.detail && typeof event.detail === "object" ? event.detail : null;
+    if (!context?.creatorName || (context.mode !== "manage_templates" && !context?.recipientEmail)) return;
+    open(context).then(() => {
+      if (context.language) {
+        $("mail-workspace-language").value = context.language;
+        return loadTemplates(state.generation);
+      }
+      return undefined;
+    }).catch(error => global.KOLConnectApp.showError(error));
+  });
 })(window);

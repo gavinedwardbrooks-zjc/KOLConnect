@@ -15,6 +15,7 @@ packaging/*.iconset/
 /build/
 /dist/
 /release_candidate/
+/staging/
 *.spec.backup
 .pytest_cache/
 /.test_runtime/

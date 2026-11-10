@@ -22,6 +22,7 @@ MACOS_PYTHON_SHARD_PATTERNS = {
     "runtime-http": (
         "test_m2_*.py", "test_m4_*.py", "test_m5_*.py", "test_phase3_*.py",
         "test_agency_delete_sqlite.py", "test_campaign_execution_foundation.py",
+        "test_campaign_publication_capture.py",
         "test_dashboard_v2.py", "test_discovery_ux_consolidation.py",
         "test_discovery_workflow_polish.py", "test_fx_service.py", "test_locale_state_authority.py",
     ),
@@ -765,6 +766,7 @@ class PackagingConfigurationTests(unittest.TestCase):
         self.assertIn("assets/KOLConnect.icns", ignore)
         self.assertIn("packaging/.pyinstaller-build-macos/", ignore)
         self.assertIn("packaging/.pyinstaller-dist-macos/", ignore)
+        self.assertIn("/staging/", ignore)
 
     def test_windows_release_publication_cleans_only_named_staging_directories(self):
         script = (ROOT / "packaging" / "build_release.ps1").read_text(encoding="utf-8")
@@ -810,6 +812,29 @@ class PackagingConfigurationTests(unittest.TestCase):
             )
             self.assertEqual(
                 Path(payload["dist_dir"]), root / "packaging" / ".pyinstaller-dist"
+            )
+
+            candidate_result = subprocess.run(
+                [
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-File",
+                    str(script),
+                    "-ResolvePathsOnly",
+                    "-OutputRoot",
+                    "staging\\release-candidate",
+                ],
+                cwd=outside,
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            candidate_payload = json.loads(candidate_result.stdout.strip())
+            self.assertEqual(
+                Path(candidate_payload["release_dir"]),
+                root / "staging" / "release-candidate",
             )
             self.assertEqual(
                 Path(payload["spec_file"]), root / "packaging" / "spec" / "KOLConnect.spec"

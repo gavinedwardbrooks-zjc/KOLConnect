@@ -41,6 +41,7 @@ async function run() {
   assert.doesNotMatch(source, /api\/assistant\/.*storage-migration|api\/feishu-chat\/.*storage-migration/);
 
   const ids = [
+    "storage-migration-card",
     "storage-migration-check", "storage-migration-prepare", "storage-migration-confirm",
     "storage-migration-cancel", "storage-migration-recover", "storage-migration-authority",
     "storage-migration-status", "storage-migration-backup", "storage-migration-id",
@@ -117,6 +118,8 @@ async function run() {
   await sandbox.page.load();
   sandbox.page.bind();
 
+  assert.equal(elements.get("storage-migration-card").hidden, false, "legacy users must see the safe migration guidance");
+
   await elements.get("storage-migration-confirm").click();
   assert.equal(calls.filter(call => call.url.endsWith("/confirm")).length, 0, "confirm disabled before preparation");
   await elements.get("storage-migration-prepare").click();
@@ -132,6 +135,7 @@ async function run() {
   assert.equal(confirmCall.payload.confirmation_token, "token-secret");
   assert.match(confirmCall.payload.session_id, /settings-ui-session/);
   assert.match(elements.get("storage-migration-result").textContent, /SQLite 已启用/);
+  assert.equal(elements.get("storage-migration-card").hidden, true, "completed migration leaves the normal Settings surface");
   assert.equal(calls.filter(call => call.url.includes("feishu-sync/full-sync")).length, 0);
   assert.doesNotMatch(elements.get("storage-migration-result").textContent, /token-secret/);
   console.log("PRE-M8 production migration Settings UI: OK");

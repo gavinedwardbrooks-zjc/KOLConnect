@@ -19,6 +19,8 @@ from repositories.creator_hard_delete_repository import CreatorHardDeleteReposit
 from repositories.creator_merge_repository import CreatorMergeRepository
 from repositories.risk_repository import RiskRepository
 from repositories.publication_performance_repository import PublicationPerformanceRepository
+from repositories.publication_capture_repository import PublicationCaptureRepository
+from repositories.publication_capture_batch_repository import PublicationCaptureBatchRepository
 from storage.authority import resolve_runtime_authority
 from storage.paths import SQLiteStoragePaths
 from storage.sqlite_workbook_store import SQLiteWorkbookStore
@@ -66,6 +68,8 @@ class RepositoryFactory:
         self._dashboard: DashboardRepository | None = None
         self._risk: RiskRepository | None = None
         self._publication_performance: PublicationPerformanceRepository | None = None
+        self._publication_capture: PublicationCaptureRepository | None = None
+        self._publication_capture_batch: PublicationCaptureBatchRepository | None = None
 
     @classmethod
     def for_path(
@@ -209,6 +213,20 @@ class RepositoryFactory:
                 raise RuntimeError("Publication performance history requires SQLite authority.")
             self._publication_performance = PublicationPerformanceRepository(self.store)
         return self._publication_performance
+
+    def publication_capture(self) -> PublicationCaptureRepository:
+        if self._publication_capture is None:
+            if not isinstance(self.store, SQLiteWorkbookStore):
+                raise RuntimeError("Publication capture attempts require SQLite authority.")
+            self._publication_capture = PublicationCaptureRepository(self.store)
+        return self._publication_capture
+
+    def publication_capture_batch(self) -> PublicationCaptureBatchRepository:
+        if self._publication_capture_batch is None:
+            if not isinstance(self.store, SQLiteWorkbookStore):
+                raise RuntimeError("Publication capture batches require SQLite authority.")
+            self._publication_capture_batch = PublicationCaptureBatchRepository(self.store)
+        return self._publication_capture_batch
 
     def dashboard(
         self,

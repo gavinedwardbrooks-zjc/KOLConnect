@@ -1015,7 +1015,13 @@ export async function collectRecentContent(tabId, options = {}) {
   options.onProgress?.({ phase: "calculating" });
   const analysis = finalizeContentAnalysis(enriched.videos, {
     limit,
-    excludePinned: true,
+    maximumCount: 30,
+    range: options.range,
+    now: options.now,
+    excludePinned: options.excludePinned !== false,
+    sourceOrderNewestFirst: false,
+    sourceExhausted: false,
+    sourceLimitReached: discovered.length >= 30,
     contentType: target.contentType
   });
   analysis.rss_date_enrichment = enriched.diagnostics;

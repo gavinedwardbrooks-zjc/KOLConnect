@@ -20,6 +20,7 @@ from runtime_paths import atomic_write_bytes
 
 
 TASK_ID_PATTERN = re.compile(r"^task_[0-9]{8}T[0-9]{6}Z_[0-9a-f]{8}$")
+IDEMPOTENCY_KEY_PATTERN = re.compile(r"^creatorgraph:[0-9a-f]{64}$")
 DEFAULT_HEARTBEAT_INTERVAL = 240
 PLATFORM_KEYS = ("tiktok", "instagram", "youtube")
 PLATFORM_KEY_ALIASES = {
@@ -83,11 +84,27 @@ class TaskRepository:
         platforms: list[str] | None = None,
         filtered_links: list[dict] | None = None,
         task_type: str = "scrape",
+        idempotency_key: str = "",
     ) -> dict:
         if not normalized_links:
             raise ValueError("没有可创建任务的有效链接。")
 
+        normalized_idempotency_key = str(idempotency_key or "").strip().lower()
+        if normalized_idempotency_key and not IDEMPOTENCY_KEY_PATTERN.fullmatch(normalized_idempotency_key):
+            raise ValueError("任务幂等键无效。")
+
         with shared_storage_lock(), _TASK_LOCK:
+            if normalized_idempotency_key and self._tasks_dir.exists():
+                for root in self._tasks_dir.iterdir():
+                    if not root.is_dir() or not TASK_ID_PATTERN.fullmatch(root.name):
+                        continue
+                    metadata_path = root / "task.json"
+                    try:
+                        existing = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    except (OSError, json.JSONDecodeError):
+                        continue
+                    if isinstance(existing, dict) and existing.get("idempotency_key") == normalized_idempotency_key:
+                        return self._apply_task_defaults(existing)
             task_id = self._new_task_id()
             paths = self._paths(task_id)
             paths["root"].mkdir(parents=True, exist_ok=False)
@@ -148,6 +165,7 @@ class TaskRepository:
                 "retry_round": 0,
                 "retry_history": [],
                 "retry_requested_urls": [],
+                "idempotency_key": normalized_idempotency_key,
                 "creator_library_import_eligible": True,
                 "creator_library_imported_at": "",
                 "creator_library_creator_ids": [],

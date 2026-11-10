@@ -200,11 +200,11 @@ class M92NativeSMTPBackendTests(unittest.TestCase):
             connection.execute("UPDATE storage_metadata SET value='6' WHERE key='schema_version'")
         with self.factory.read_connection() as connection:
             self.assertEqual(6, schema_version(connection))
-            self.assertEqual(8, apply_schema_migrations(connection))
-            self.assertEqual(8, apply_schema_migrations(connection))
+            self.assertEqual(11, apply_schema_migrations(connection))
+            self.assertEqual(11, apply_schema_migrations(connection))
             self.assertEqual("Kept", connection.execute("SELECT name FROM creators WHERE creator_id='kept'").fetchone()[0])
             names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        self.assertEqual(8, CURRENT_SCHEMA_VERSION)
+        self.assertEqual(11, CURRENT_SCHEMA_VERSION)
         self.assertTrue({"mail_drafts", "mail_send_previews", "mail_send_authorizations",
                          "mail_send_attempts", "mail_send_recipient_results"} <= names)
 

@@ -13,6 +13,7 @@ LANGUAGE_PATTERN = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8}){0,3}$")
 VARIABLE_PATTERN = re.compile(r"{{\s*([a-z][a-z0-9_]*)\s*}}")
 GROUP_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$")
 ALLOWED_DRAFT_TYPES = {"initial_outreach", "reply", "follow_up"}
+ALLOWED_AUDIENCE_TYPES = {"all", "kol", "koc"}
 ALLOWED_VARIABLES = {
     "creator_name", "brand_name", "game_name", "sender_name", "campaign_name", "collaboration_type",
 }
@@ -71,6 +72,7 @@ BUILTIN_TEMPLATES: tuple[dict[str, Any], ...] = (
         "subject_template": "Collaboration opportunity with {{brand_name}}",
         "body_template": "Hello {{creator_name}},\n\nI'm {{sender_name}} from {{brand_name}}. We'd like to discuss a {{collaboration_type}} collaboration.\n\nBest regards,\n{{sender_name}}",
         "required_variables": ["brand_name", "collaboration_type", "creator_name", "sender_name"], "active": True,
+        "audience_type": "all",
     },
     {
         "template_id": "builtin-initial-outreach-zh-cn-v1", "template_group_id": "builtin-initial-outreach",
@@ -79,6 +81,7 @@ BUILTIN_TEMPLATES: tuple[dict[str, Any], ...] = (
         "subject_template": "{{brand_name}} 合作邀请",
         "body_template": "你好，{{creator_name}}：\n\n我是 {{brand_name}} 的 {{sender_name}}。我们希望与你沟通 {{collaboration_type}} 合作。\n\n谢谢！\n{{sender_name}}",
         "required_variables": ["brand_name", "collaboration_type", "creator_name", "sender_name"], "active": True,
+        "audience_type": "all",
     },
     {
         "template_id": "builtin-initial-outreach-pt-br-v1", "template_group_id": "builtin-initial-outreach",
@@ -87,6 +90,7 @@ BUILTIN_TEMPLATES: tuple[dict[str, Any], ...] = (
         "subject_template": "Oportunidade de colaboração com {{brand_name}}",
         "body_template": "Olá, {{creator_name}}!\n\nSou {{sender_name}}, da {{brand_name}}. Gostaríamos de conversar sobre uma colaboração de {{collaboration_type}}.\n\nAtenciosamente,\n{{sender_name}}",
         "required_variables": ["brand_name", "collaboration_type", "creator_name", "sender_name"], "active": True,
+        "audience_type": "all",
     },
 )
 
@@ -96,9 +100,11 @@ class MailTemplateService:
         self._factory_provider = factory_provider
         self._now = now or (lambda: datetime.now(timezone.utc))
 
-    def list_templates(self, *, draft_type: object = None, language: object = None, include_inactive: bool = False) -> list[dict[str, Any]]:
+    def list_templates(self, *, draft_type: object = None, language: object = None,
+                       audience_type: object = None, include_inactive: bool = False) -> list[dict[str, Any]]:
         normalized_type = self._draft_type(draft_type) if draft_type not in (None, "") else None
         normalized_language = normalize_language_tag(language) if language not in (None, "") else None
+        normalized_audience = self._audience_type(audience_type) if audience_type not in (None, "") else None
         builtins = [self._builtin(item) for item in BUILTIN_TEMPLATES]
         with self._factory_provider().read_connection() as connection:
             rows = connection.execute("SELECT * FROM mail_templates ORDER BY template_group_id,template_version DESC").fetchall()
@@ -106,6 +112,7 @@ class MailTemplateService:
         result = builtins + users
         return [item for item in result if (not normalized_type or item["draft_type"] == normalized_type)
                 and (not normalized_language or item["language"] == normalized_language)
+                and (not normalized_audience or item.get("audience_type", "all") in {"all", normalized_audience})
                 and (include_inactive or item["active"])]
 
     def get_template(self, template_id: object) -> dict[str, Any]:
@@ -201,13 +208,14 @@ class MailTemplateService:
     def _validated(self, payload: Mapping[str, object], *, creating: bool) -> dict[str, Any]:
         allowed = {"copy_from_template_id", "template_group_id", "template_version", "template_id", "template_source",
                    "draft_type", "language", "name", "tone", "subject_template", "body_template", "required_variables",
-                   "active", "created_at", "updated_at"}
+                   "audience_type", "active", "created_at", "updated_at"}
         if set(payload) - allowed:
             raise MailTemplateError("MAIL_TEMPLATE_INVALID", "邮件模板包含不支持的字段。")
         draft_type = self._draft_type(payload.get("draft_type"))
         language = normalize_language_tag(payload.get("language"))
         name = self._text(payload.get("name"), "模板名称", 200, False)
         tone = self._text(payload.get("tone"), "语气", 80, False)
+        audience_type = self._audience_type(payload.get("audience_type", "all"))
         subject = self._text(payload.get("subject_template"), "主题模板", SUBJECT_LIMIT, True)
         body = self._text(payload.get("body_template"), "正文模板", BODY_LIMIT, False, header=False)
         placeholders = self._placeholders(subject) | self._placeholders(body)
@@ -218,6 +226,7 @@ class MailTemplateService:
             if set(declared) != placeholders:
                 raise MailTemplateError("MAIL_TEMPLATE_VARIABLES_MISMATCH", "必填变量与模板占位符不一致。")
         return {"draft_type": draft_type, "language": language, "name": name, "tone": tone,
+                "audience_type": audience_type,
                 "subject_template": subject, "body_template": body, "required_variables": sorted(placeholders)}
 
     @staticmethod
@@ -247,6 +256,13 @@ class MailTemplateService:
             raise MailTemplateError("MAIL_TEMPLATE_DRAFT_TYPE_INVALID", "邮件用途无效。")
         return normalized
 
+    @staticmethod
+    def _audience_type(value: object) -> str:
+        normalized = str(value or "all").strip().casefold()
+        if normalized not in ALLOWED_AUDIENCE_TYPES:
+            raise MailTemplateError("MAIL_TEMPLATE_AUDIENCE_INVALID", "模板适用达人分级无效。")
+        return normalized
+
     def _insert(self, group_id: str, version: int, values: Mapping[str, Any]) -> dict[str, Any]:
         now = self._timestamp()
         with self._factory_provider().write_transaction() as connection:
@@ -257,10 +273,11 @@ class MailTemplateService:
         template_id = f"template_{uuid.uuid4().hex}"
         connection.execute(
             "INSERT INTO mail_templates(template_id,template_group_id,template_version,template_source,draft_type,"
-            "language,name,tone,subject_template,body_template,required_variables,active,created_at,updated_at) "
-            "VALUES (?,?,?,'user',?,?,?,?,?,?,?,1,?,?)",
+            "language,name,tone,subject_template,body_template,required_variables,audience_type,active,created_at,updated_at) "
+            "VALUES (?,?,?,'user',?,?,?,?,?,?,?,?,1,?,?)",
             (template_id, group_id, version, values["draft_type"], values["language"], values["name"], values["tone"],
-             values["subject_template"], values["body_template"], json.dumps(values["required_variables"]), now, now),
+             values["subject_template"], values["body_template"], json.dumps(values["required_variables"]),
+             values["audience_type"], now, now),
         )
         return {"template_id": template_id, "template_group_id": group_id, "template_version": version,
                 "template_source": "user", **dict(values), "active": True, "created_at": now, "updated_at": now}

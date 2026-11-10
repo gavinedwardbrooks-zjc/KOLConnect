@@ -3,6 +3,31 @@ import { normalizeText, parseHumanCount } from "./normalize.js";
 export const CONTENT_ANALYSIS_TIMEOUT_MS = 90000;
 export const CONTENT_DETAIL_CONCURRENCY = 2;
 export const CONTENT_DETAIL_DELAY_MS = 900;
+const CONTENT_RANGE_VALUES = new Map([
+  ["items:7", { type: "last_n_posts", value: 7 }],
+  ["items:30", { type: "last_n_posts", value: 30 }],
+  ["days:7", { type: "last_n_days", value: 7 }],
+  ["days:30", { type: "last_n_days", value: 30 }]
+]);
+
+export function normalizeContentRange(input, fallbackLimit = 30) {
+  if (input == null || input === "") {
+    const legacyLimit = Math.max(1, Math.min(100, Number(fallbackLimit) || 30));
+    return { key: `items:${legacyLimit}`, type: "last_n_posts", value: legacyLimit };
+  }
+  let key = "";
+  if (typeof input === "string") key = input;
+  else if (input && typeof input === "object") {
+    const type = String(input.type || input.kind || "");
+    const value = Number(input.value ?? input.amount);
+    if (type === "last_n_posts") key = `items:${value}`;
+    else if (type === "last_n_days") key = `days:${value}`;
+    else if (typeof input.key === "string") key = input.key;
+  }
+  const selected = CONTENT_RANGE_VALUES.get(key);
+  if (selected) return { key, ...selected };
+  return { key: "items:30", type: "last_n_posts", value: 30 };
+}
 
 export function metric(value, source = "", confidence = "missing", missingReason = "") {
   const parsed = parseHumanCount(value);
@@ -124,7 +149,7 @@ export function contentItem(raw = {}) {
     video_id: normalizeText(raw.video_id),
     video_url: normalizeText(raw.video_url),
     title: normalizeText(raw.title) || null,
-    is_pinned: Boolean(raw.is_pinned),
+    is_pinned: typeof raw.is_pinned === "boolean" ? raw.is_pinned : null,
     views,
     likes,
     comments,
@@ -176,7 +201,10 @@ export function ensureContentSummaryConsistency(analysis = {}) {
 
 export function finalizeContentAnalysis(rawItems = [], options = {}) {
   const maximumCount = Math.max(1, Number(options.maximumCount) || 30);
-  const requestedCount = Math.max(1, Math.min(maximumCount, Number(options.limit) || 30));
+  const range = normalizeContentRange(options.range, options.limit);
+  const requestedCount = range.type === "last_n_posts"
+    ? Math.max(1, Math.min(maximumCount, range.value))
+    : maximumCount;
   const seen = new Set();
   const discovered = [];
   for (const raw of rawItems) {
@@ -205,6 +233,23 @@ export function finalizeContentAnalysis(rawItems = [], options = {}) {
         return b - a || left.index - right.index;
       })
       .map(({ item }) => item);
+  }
+  const rangeEligibleCount = eligible.length;
+  const unknownPublishTimeCount = eligible.filter((item) => !item.published_at.value).length;
+  const knownPublishTimeCount = rangeEligibleCount - unknownPublishTimeCount;
+  let cutoff = null;
+  let dateBoundaryReached = false;
+  if (range.type === "last_n_days") {
+    const now = Number.isFinite(options.now) ? options.now : Date.now();
+    cutoff = now - range.value * 24 * 60 * 60 * 1000;
+    dateBoundaryReached = options.sourceOrderNewestFirst === true && eligible.some((item) => {
+      const value = item.published_at.value ? Date.parse(item.published_at.value) : NaN;
+      return Number.isFinite(value) && value < cutoff;
+    });
+    eligible = eligible.filter((item) => {
+      const value = item.published_at.value ? Date.parse(item.published_at.value) : NaN;
+      return Number.isFinite(value) && value >= cutoff;
+    });
   }
   const contents = eligible.slice(0, requestedCount);
   const summaryValidation = calculateViewSummary(contents);
@@ -237,10 +282,37 @@ export function finalizeContentAnalysis(rawItems = [], options = {}) {
       : returnedCount > 0
         ? "NO_USABLE_RECENT_CONTENT"
         : "NO_CONTENT_FOUND";
+  const sourceExhausted = options.sourceExhausted === true;
+  const sourceLimitReached = options.sourceLimitReached === true;
+  const rangeCoverageComplete = range.type === "last_n_days"
+    ? unknownPublishTimeCount === 0 && (sourceExhausted || dateBoundaryReached)
+    : contents.length >= range.value || sourceExhausted;
+  const coverageReasons = [];
+  if (range.type === "last_n_days" && unknownPublishTimeCount) coverageReasons.push("PUBLISHED_TIME_MISSING");
+  if (sourceLimitReached) coverageReasons.push("SOURCE_LIMIT_REACHED");
+  if (range.type === "last_n_days" && !sourceExhausted && !dateBoundaryReached) {
+    coverageReasons.push("TIME_BOUNDARY_NOT_PROVEN");
+  }
+  if (range.type === "last_n_posts" && contents.length < range.value && !sourceExhausted) {
+    coverageReasons.push("REQUESTED_POST_COUNT_NOT_REACHED");
+  }
 
   return {
+    capture_range: range,
     requested_count: requestedCount,
     discovered_count: discovered.length,
+    range_eligible_count: rangeEligibleCount,
+    known_publish_time_count: knownPublishTimeCount,
+    unknown_publish_time_count: unknownPublishTimeCount,
+    range_coverage: {
+      status: rangeCoverageComplete ? "complete" : "partial",
+      complete: rangeCoverageComplete,
+      cutoff_at: cutoff == null ? null : new Date(cutoff).toISOString(),
+      source_exhausted: sourceExhausted,
+      source_limit_reached: sourceLimitReached,
+      date_boundary_reached: dateBoundaryReached,
+      reasons: coverageReasons
+    },
     excluded_pinned_count: options.excludePinned === false ? 0 : pinned.length,
     returned_count: returnedCount,
     usable_content_count: usableContentCount,

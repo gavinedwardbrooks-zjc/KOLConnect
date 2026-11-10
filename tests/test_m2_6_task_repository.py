@@ -4,6 +4,7 @@ import ast
 import json
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -116,6 +117,37 @@ class TaskRepositoryCompatibilityTests(unittest.TestCase):
         (self.tasks_dir / task["id"] / "progress.csv").write_text("", encoding="utf-8")
 
         self.assertEqual(self.repository.read_progress(task["id"]), [])
+
+    def test_creatorgraph_idempotency_key_reuses_one_task_under_concurrency(self):
+        key = "creatorgraph:" + ("a" * 64)
+        barrier = threading.Barrier(2)
+        task_ids: list[str] = []
+
+        def create() -> None:
+            barrier.wait(timeout=2)
+            task = self.repository.create_task(
+                ["https://www.tiktok.com/@example"], [], 1,
+                platforms=["tiktok"], idempotency_key=key,
+            )
+            task_ids.append(task["id"])
+
+        threads = [threading.Thread(target=create) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=3)
+
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(2, len(task_ids))
+        self.assertEqual(1, len(set(task_ids)))
+        self.assertEqual(1, len(self.repository.list_tasks()))
+
+    def test_rejects_untrusted_idempotency_key_shape(self):
+        with self.assertRaisesRegex(ValueError, "幂等键无效"):
+            self.repository.create_task(
+                ["https://www.tiktok.com/@example"], [], 1,
+                idempotency_key="creatorgraph:not-a-digest",
+            )
 
 
 class TaskRepositoryBoundaryTests(unittest.TestCase):

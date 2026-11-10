@@ -67,9 +67,10 @@ assert.equal(sanitized.itemList.length, 100);
 assert.doesNotMatch(JSON.stringify(sanitized), /secret|private|Cookie|headers/);
 
 // Production MAIN wrapper -> real bridge/parser/runtime -> real L2/L3 -> preview/import serializer.
-function harness(connect = true) {
+function harness(connect = true, href = "https://www.tiktok.com/@fixture_creator") {
   let requests = 0, blocked = "", anchors = [], hydration = null;
-  const location = { href: "https://www.tiktok.com/@fixture_creator", origin: "https://www.tiktok.com", pathname: "/@fixture_creator" };
+  const parsedLocation = new URL(href);
+  const location = { href, origin: parsedLocation.origin, pathname: parsedLocation.pathname };
   const document = {
     querySelectorAll(selector) {
       if (selector === 'a[href*="/video/"]') return anchors;
@@ -124,6 +125,13 @@ function harness(connect = true) {
   };
 }
 const savedChrome = globalThis.chrome;
+const videoTab = harness(true, `https://www.tiktok.com/@fixture_creator/video/${fixture.itemList[0].id}`);
+await tick();
+await videoTab.main.fetch("/api/post/item_list/");
+await tick();
+const videoSnapshot = videoTab.target.KOLConnectTikTokCapture.snapshot("fixture_creator");
+assert.equal(videoSnapshot.items[0].video_id, fixture.itemList[0].id);
+assert.equal(videoSnapshot.items[0].views.source, "tiktok_item_list_api");
 const tab = harness();
 await tick();
 globalThis.chrome = tab.chrome;

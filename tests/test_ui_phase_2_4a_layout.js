@@ -43,7 +43,8 @@ assert.match(settings, /category\.hidden = category\.dataset\.settingsCategory !
 assert.match(settings, /showSettingsCategory\(categories, 'General'\)/);
 assert.match(settings, /showSettingsCategory\(existingCategories, 'General'\)/);
 assert.match(settings, /section\.page\[data-page="settings"\]/);
-assert.match(settings, /migrationCard\.hidden = true/);
+assert.match(settings, /migrationCard\.hidden = !needsAttention/);
+assert.match(settings, /data\?\.migration_required[\s\S]*activation_recovery_required/);
 assert.doesNotMatch(html, /id="creator-library-freshness"/);
 assert.match(styles, /\.creator-library-detail-grid > \.detail-panel\[data-detail-panel="overview"\]/);
 assert.match(i18n, /settingsCategoryGeneral: "常规"/);

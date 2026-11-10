@@ -1238,9 +1238,11 @@ function showToast(message) {
 function showError(error) {
   const raw = String(error?.message || error || "");
   const lowered = raw.toLowerCase();
+  const unexpectedServerError = error?.code === "INTERNAL_SERVER_ERROR"
+    || (error?.status >= 500 && (!error?.code || error?.kind === "server"));
   const message = error?.code === "SERVER_UNREACHABLE" || lowered.includes("failed to fetch") || lowered.includes("networkerror")
     ? t("apiServerUnreachable")
-    : error?.status >= 500 || error?.code === "INTERNAL_SERVER_ERROR"
+    : unexpectedServerError
       ? `${t("apiServerError")}${error?.traceId ? `\n${t("apiErrorReference", { trace_id: error.traceId })}` : ""}`
     : lowered.includes("traceback")
       ? "操作失败，请查看系统日志中的详细原因。"

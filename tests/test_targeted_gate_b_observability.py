@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import tempfile
 import unittest
 import urllib.error
 import urllib.request
@@ -117,6 +118,32 @@ class ApiExceptionBoundaryTests(unittest.TestCase):
             with self.assertRaises(server.ChromeProfileError) as launch:
                 server.open_chrome_profile(server.AUTOMATION_PROFILE_NAME)
         self.assertEqual("CHROME_LAUNCH_FAILED", launch.exception.code)
+
+    def test_explicit_default_profile_survives_normalization_and_drives_batch_launch(self) -> None:
+        normalized = server.normalize_state({"profiles": {"selected": "Default"}})
+        self.assertEqual("Default", normalized["profiles"]["selected"])
+        with patch.object(server, "STATE", normalized), patch.object(server, "open_chrome_profile") as open_profile:
+            server.open_publication_batch_claim("http://127.0.0.1:8765/#publication-capture-claim=batch.token")
+        open_profile.assert_called_once_with(
+            "Default", "http://127.0.0.1:8765/#publication-capture-claim=batch.token"
+        )
+
+    def test_batch_chrome_launch_uses_only_the_selected_real_profile(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            user_data = Path(directory) / "User Data"
+            (user_data / "Profile 3").mkdir(parents=True)
+            with patch.object(server, "find_chrome_exe", return_value=Path("chrome.exe")), patch.object(
+                server, "resolve_chrome_launch_config", return_value=(user_data, "Profile 3")
+            ), patch.object(server.subprocess, "Popen") as popen:
+                server.open_chrome_profile(
+                    "Profile 3", "http://127.0.0.1:8765/#publication-capture-claim=batch.token"
+                )
+        command = popen.call_args.args[0]
+        self.assertEqual("chrome.exe", command[0])
+        self.assertIn(f"--user-data-dir={user_data}", command)
+        self.assertIn("--profile-directory=Profile 3", command)
+        self.assertEqual("http://127.0.0.1:8765/#publication-capture-claim=batch.token", command[-1])
+        self.assertFalse(any("headless" in item or "incognito" in item for item in command))
 
     def test_sanitized_exception_log_keeps_traceback_without_secret(self) -> None:
         set_trace_id("trace_test_sanitized")

@@ -50,6 +50,42 @@ class CreatorURLResolverTests(unittest.TestCase):
         self.assertIsNone(post["username"])
         self.assertEqual("REEL_456", reel["video_id"])
 
+    def test_instagram_creator_scoped_reel_resolves_exact_content_and_profile(self) -> None:
+        reel = self.resolver.resolve(
+            "https://www.instagram.com/tonikuneo/reel/DfW3nSUNdKC/"
+        )
+
+        self.assertEqual("resolved", reel["resolution_status"])
+        self.assertEqual("content", reel["input_type"])
+        self.assertEqual("DfW3nSUNdKC", reel["video_id"])
+        self.assertEqual("tonikuneo", reel["username"])
+        self.assertEqual(
+            "https://www.instagram.com/reel/DfW3nSUNdKC/",
+            reel["canonical_url"],
+        )
+        self.assertEqual(
+            "https://www.instagram.com/tonikuneo/",
+            reel["canonical_profile_url"],
+        )
+
+    def test_instagram_profile_may_start_with_underscore(self) -> None:
+        profile = self.resolver.resolve("https://www.instagram.com/__shinyeeun/")
+        normalized = scraper.normalize_link_record(
+            "https://www.instagram.com/__shinyeeun/"
+        )
+
+        self.assertEqual("resolved", profile["resolution_status"])
+        self.assertEqual("__shinyeeun", profile["username"])
+        self.assertEqual(
+            "https://www.instagram.com/__shinyeeun/",
+            profile["canonical_profile_url"],
+        )
+        self.assertTrue(normalized["valid"])
+        self.assertEqual(
+            "https://www.instagram.com/__shinyeeun/",
+            normalized["normalized_url"],
+        )
+
     def test_instagram_unsupported_forms_and_unknown_hosts_are_explicit(self) -> None:
         unsupported = self.resolver.resolve("https://www.instagram.com/explore/")
         malformed = self.resolver.resolve("https://www.instagram.com/alice%20bad/")

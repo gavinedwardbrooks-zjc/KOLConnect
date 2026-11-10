@@ -313,7 +313,7 @@ export function mapInstagramMedia(raw = {}) {
     likes: media?.like_count ?? null,
     comments: media?.comment_count ?? null,
     published_at: media?.taken_at ?? null,
-    is_pinned: Boolean(media?.is_pinned),
+    is_pinned: typeof media?.is_pinned === "boolean" ? media.is_pinned : null,
     product_type: String(media?.product_type || "").trim(),
     creator_username: String(media?.user?.username || "").trim(),
     views_source: media?.play_count == null ? "" : source,
@@ -329,6 +329,24 @@ export function mapInstagramMedia(raw = {}) {
     comments_missing_reason: media?.comment_count == null ? "clips_api_comment_count_not_exposed" : "",
     published_missing_reason: media?.taken_at == null ? "clips_api_taken_at_not_exposed" : ""
   };
+}
+
+export function matchesInstagramMediaIdentity(node = {}, videoId = "") {
+  const expected = String(videoId || "").trim();
+  if (!expected || !node || typeof node !== "object") return false;
+  const shortcode = String(node.shortcode || node.code || "").trim();
+  if (shortcode) return shortcode === expected;
+  const candidates = [
+    node.url, node.contentUrl, node.mainEntityOfPage,
+    node.identifier, node.embedUrl
+  ].flatMap((value) => {
+    if (value && typeof value === "object") return [value.url, value["@id"], value.value];
+    return [value];
+  });
+  return candidates.some((value) => {
+    const text = String(value || "");
+    return text.includes(`/reel/${expected}`) || text.includes(`/p/${expected}`);
+  });
 }
 
 export async function paginateInstagramClips({
@@ -868,6 +886,24 @@ export function bindInstagramCardViews(items = []) {
 async function fetchInstagramReelDetail(videoUrl) {
   const clean = (value, limit = 3000) => String(value ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
   const videoId = String(videoUrl).match(/\/reel\/([^/?#]+)/)?.[1] || "";
+  // This function is serialized into the page MAIN world, so identity checks
+  // must remain self-contained instead of referencing module-scope helpers.
+  const matchesIdentity = (node) => {
+    if (!videoId || !node || typeof node !== "object") return false;
+    const shortcode = String(node.shortcode || node.code || "").trim();
+    if (shortcode) return shortcode === videoId;
+    const candidates = [
+      node.url, node.contentUrl, node.mainEntityOfPage,
+      node.identifier, node.embedUrl
+    ].flatMap((value) => {
+      if (value && typeof value === "object") return [value.url, value["@id"], value.value];
+      return [value];
+    });
+    return candidates.some((value) => {
+      const text = String(value || "");
+      return text.includes(`/reel/${videoId}`) || text.includes(`/p/${videoId}`);
+    });
+  };
   const registry = globalThis.__KOLCONNECT_DETAIL_CONTROLLERS__
     ||= new Set();
   const controller = new AbortController();
@@ -1043,10 +1079,7 @@ async function fetchInstagramReelDetail(videoUrl) {
         if (!node || typeof node !== "object" || seen.has(node) || depth > 20) continue;
         seen.add(node);
         visited += 1;
-        const shortcode = String(node.shortcode || node.code || "");
-        const nodeUrl = clean(node.url || node.contentUrl || node.mainEntityOfPage);
-        const isVideoObject = /VideoObject/i.test(clean(node["@type"]));
-        if (shortcode === videoId || nodeUrl.includes(`/reel/${videoId}`) || isVideoObject) {
+        if (matchesIdentity(node)) {
           mergeMetrics(metrics, inspectMetrics(node, "reel_detail_structured_data"));
         }
         for (const child of Array.isArray(node) ? node : Object.values(node)) {
@@ -1079,13 +1112,19 @@ async function fetchInstagramReelDetail(videoUrl) {
       if (metrics.comments != null) metrics.comments_source = "reel_detail_meta";
     }
     if (metrics.published_at == null) {
-      const timeValue = parsed.querySelector("time[datetime]")?.getAttribute("datetime")
+      const exactTime = [...parsed.querySelectorAll("time[datetime]")].find((element) => {
+        const href = element.closest("a")?.getAttribute("href") || "";
+        return href.includes(`/reel/${videoId}`) || href.includes(`/p/${videoId}`);
+      });
+      const allTimes = [...parsed.querySelectorAll("time[datetime]")];
+      const timeValue = exactTime?.getAttribute("datetime")
+        || (allTimes.length === 1 ? allTimes[0].getAttribute("datetime") : "")
         || parsed.querySelector('meta[property="article:published_time"]')?.content
         || parsed.querySelector('meta[itemprop="datePublished"]')?.content
         || parsed.querySelector('meta[itemprop="uploadDate"]')?.content;
       if (timeValue) {
         metrics.published_at = timeValue;
-        metrics.published_source = "reel_detail_dom_meta";
+        metrics.published_source = exactTime ? "reel_detail_dom_exact" : "reel_detail_dom_meta";
       }
     }
     const parsedAnything = states.length > 0
@@ -1207,7 +1246,13 @@ async function collectInstagramLegacyContent(tabId, options = {}) {
   options.onProgress?.({ phase: "calculating" });
   const analysis = finalizeContentAnalysis(merged, {
     limit,
+    maximumCount: INSTAGRAM_MAX_REELS,
+    range: options.range,
+    now: options.now,
     excludePinned: options.excludePinned !== false,
+    sourceOrderNewestFirst: true,
+    sourceExhausted: false,
+    sourceLimitReached: discovered.length >= INSTAGRAM_MAX_REELS,
     contentType: "reel"
   });
   analysis.capture_diagnostics = {
@@ -1304,7 +1349,12 @@ export async function collectRecentContent(tabId, options = {}) {
     const analysis = finalizeContentAnalysis(mapped, {
       limit,
       maximumCount: INSTAGRAM_MAX_REELS,
-      excludePinned: false,
+      range: options.range,
+      now: options.now,
+      excludePinned: options.excludePinned !== false,
+      sourceOrderNewestFirst: true,
+      sourceExhausted: paginated.stop_reason === "more_available_false",
+      sourceLimitReached: paginated.stop_reason === "max_reels_reached",
       contentType: "reel"
     });
     analysis.collector_mode = "instagram_internal_api";

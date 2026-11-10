@@ -9,7 +9,15 @@ MUTATING_METHODS = frozenset({"POST", "PATCH", "PUT", "DELETE"})
 EXTENSION_MUTATION_PATHS = frozenset({
     "/api/extension/import",
     "/api/extension/accounts/link-existing-creator",
+    "/api/extension/workspace/template-preview",
+    "/api/extension/workspace/drafts",
+    "/api/extension/discovery/candidates/lookup",
+    "/api/extension/publication-capture/result",
+    "/api/tasks",
 })
+EXTENSION_MUTATION_PREFIXES = (
+    "/api/extension/publication-capture/batches/",
+)
 STORAGE_MIGRATION_PREFIX = "/api/settings/storage-migration/"
 
 
@@ -37,7 +45,7 @@ def allowed_mutation_origin(origin_header: object, path: str, port: int) -> bool
     ):
         return True
     return bool(
-        path in EXTENSION_MUTATION_PATHS
+        (path in EXTENSION_MUTATION_PATHS or any(path.startswith(prefix) for prefix in EXTENSION_MUTATION_PREFIXES))
         and parsed.scheme == "chrome-extension"
         and parsed.netloc
         and not parsed.path

@@ -38,6 +38,7 @@ def handle(handler, request: dict, context: dict) -> bool:
             items = templates.list_templates(
                 draft_type=query.get("draft_type", [""])[0],
                 language=query.get("language", [""])[0],
+                audience_type=query.get("audience_type", [""])[0],
                 include_inactive=query.get("include_inactive", [""])[0].lower() == "true",
             )
             handler._json({"ok": True, "templates": items})

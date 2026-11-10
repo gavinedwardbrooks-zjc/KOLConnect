@@ -19,19 +19,167 @@ export async function loadLocalApiUrl() {
   return stored.localApiUrl || DEFAULT_API_URL;
 }
 
-export async function loadAgencies() {
-  const apiUrl = await loadLocalApiUrl();
-  const endpoint = new URL("/api/local/agencies", apiUrl);
-  const response = await fetch(endpoint, { method: "GET", cache: "no-store" });
-  let result = {};
+export async function assertLocalApiAvailable() {
+  await extensionWorkspaceRequest("/api/system/health");
+  return true;
+}
+
+function discoveryPlatform(value) {
   try {
-    result = await response.json();
+    const url = new URL(clean(value));
+    if (/(^|\.)tiktok\.com$/i.test(url.hostname) && /^\/@[A-Za-z0-9._]{2,30}\/?$/.test(url.pathname)) return "TikTok";
+    const instagramMatch = url.pathname.match(/^\/([A-Za-z0-9._]{1,30})\/?$/);
+    const instagramReserved = new Set(["accounts", "direct", "explore", "p", "reel", "reels", "stories"]);
+    if (/(^|\.)instagram\.com$/i.test(url.hostname) && instagramMatch
+        && !instagramReserved.has(instagramMatch[1].toLowerCase())) return "Instagram";
+  } catch (_) {}
+  return "";
+}
+
+export async function createDiscoveryTask(profileUrls, seedUrl = "", requestedPlatform = "") {
+  const links = [...new Set((Array.isArray(profileUrls) ? profileUrls : [])
+    .map(clean).filter(Boolean))];
+  if (!links.length) throw new LocalApiError("VALIDATION_ERROR", "请至少选择一个候选账号。", 422);
+  const platforms = new Set(links.map(discoveryPlatform));
+  const platform = clean(requestedPlatform) || [...platforms][0];
+  if (platforms.has("") || platforms.size !== 1 || !new Set(["TikTok", "Instagram"]).has(platform)
+      || !platforms.has(platform)) {
+    throw new LocalApiError("VALIDATION_ERROR", "候选账号必须来自同一个受支持平台。", 422);
+  }
+  const identity = [platform.toLowerCase(), clean(seedUrl).toLowerCase(), ...links.slice().sort()].join("\n");
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
+  const idempotencyKey = `creatorgraph:${[...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL("/api/tasks", apiUrl);
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: links.join("\n"),
+        platforms: [platform],
+        name: `相似达人发现 · ${clean(seedUrl).split("/").filter(Boolean).at(-1)?.replace(/^@/, "") || platform}`,
+        idempotency_key: idempotencyKey
+      })
+    });
   } catch (_) {
-    result = {};
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。", 0);
   }
-  if (!response.ok || result.ok === false) {
-    throw new Error(result.error || `KOLConnect 请求失败（HTTP ${response.status}）。`);
+  let result = {};
+  try { result = await response.json(); } catch (_) {}
+  if (!response.ok || result.ok !== true || !result.task) {
+    throw new LocalApiError("DISCOVERY_TASK_FAILED", clean(result.error) || "发现任务未创建。", response.status);
   }
+  return result;
+}
+
+async function extensionWorkspaceRequest(path, { method = "GET", query = null, payload = null } = {}) {
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL(path, apiUrl);
+  for (const [key, value] of Object.entries(query || {})) endpoint.searchParams.set(key, clean(value));
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method,
+      cache: "no-store",
+      headers: method === "GET" ? undefined : { "Content-Type": "application/json" },
+      body: method === "GET" ? undefined : JSON.stringify(payload || {})
+    });
+  } catch (_) {
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。", 0);
+  }
+  let result = {};
+  try { result = await response.json(); } catch (_) {}
+  if (!response.ok || result.ok !== true) {
+    const error = result.error && typeof result.error === "object" ? result.error : {};
+    throw new LocalApiError(clean(error.code) || "EXTENSION_WORKSPACE_FAILED",
+      clean(error.message) || "KOLConnect 工作区请求失败。", response.status);
+  }
+  return result;
+}
+
+export function loadExtensionMailOptions(query) {
+  return extensionWorkspaceRequest("/api/extension/workspace/options", { query });
+}
+
+export function previewExtensionMailTemplate(payload) {
+  return extensionWorkspaceRequest("/api/extension/workspace/template-preview", { method: "POST", payload });
+}
+
+export function createExtensionMailDraft(payload) {
+  return extensionWorkspaceRequest("/api/extension/workspace/drafts", { method: "POST", payload });
+}
+
+export function lookupDiscoveryCandidates(profileUrls) {
+  return extensionWorkspaceRequest("/api/extension/discovery/candidates/lookup", {
+    method: "POST", payload: { profile_urls: [...new Set((profileUrls || []).map(clean).filter(Boolean))] }
+  });
+}
+
+export async function submitPublicationCapture(payload) {
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL("/api/extension/publication-capture/result", apiUrl);
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+  } catch (_) {
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。");
+  }
+  let result = {};
+  try { result = await response.json(); } catch (_) {}
+  if (!response.ok || result.ok !== true) {
+    const error = result.error && typeof result.error === "object" ? result.error : {};
+    throw new LocalApiError(clean(error.code) || "CAPTURE_SUBMIT_FAILED", clean(error.message) || "视频指标未能保存。", response.status);
+  }
+  return result;
+}
+
+async function publicationBatchPost(path, payload) {
+  const apiUrl = await loadLocalApiUrl();
+  const endpoint = new URL(path, apiUrl);
+  let response;
+  try {
+    response = await fetch(endpoint, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+    });
+  } catch (_) {
+    throw new LocalApiError("APP_OFFLINE", "KOLConnect 未运行。");
+  }
+  let result = {};
+  try { result = await response.json(); } catch (_) {}
+  if (!response.ok || result.ok !== true) {
+    const error = result.error && typeof result.error === "object" ? result.error : {};
+    throw new LocalApiError(clean(error.code) || "BATCH_REQUEST_FAILED", clean(error.message) || "批量采集请求失败。", response.status);
+  }
+  return result;
+}
+
+export function claimPublicationBatch(batchRunId, claimToken) {
+  return publicationBatchPost(`/api/extension/publication-capture/batches/${encodeURIComponent(clean(batchRunId))}/claim`, {
+    claim_token: clean(claimToken)
+  });
+}
+
+export function nextPublicationBatchItem(batchRunId, executorToken) {
+  return publicationBatchPost(`/api/extension/publication-capture/batches/${encodeURIComponent(clean(batchRunId))}/next`, {
+    executor_token: clean(executorToken)
+  });
+}
+
+export function publicationBatchExecutionState(batchRunId, executorToken, requestId) {
+  return publicationBatchPost(`/api/extension/publication-capture/batches/${encodeURIComponent(clean(batchRunId))}/state`, {
+    executor_token: clean(executorToken), request_id: clean(requestId)
+  });
+}
+
+export async function loadAgencies() {
+  const result = await extensionWorkspaceRequest("/api/local/agencies");
   return (Array.isArray(result.agencies) ? result.agencies : [])
     .filter((agency) => clean(agency?.agency_id))
     .map((agency) => ({
@@ -141,7 +289,7 @@ function buildVideoImportItem(video = {}, capturedAt = "") {
     video_id: video.video_id || "",
     video_url: video.video_url || "",
     title: video.title || null,
-    is_pinned: Boolean(video.is_pinned),
+    is_pinned: typeof video.is_pinned === "boolean" ? video.is_pinned : null,
     views: video.views?.value ?? null,
     likes: video.likes?.value ?? null,
     comments: video.comments?.value ?? null,

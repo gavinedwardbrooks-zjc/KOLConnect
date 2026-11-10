@@ -804,8 +804,9 @@
           <div class="mail-workspace-grid">
             <label class="field"><span data-i18n="mailWorkspaceAccount">发件邮箱</span><select id="mail-workspace-account"><option value="" data-i18n="mailWorkspaceChooseAccount">请选择邮箱账户</option></select></label>
             <label class="field"><span data-i18n="mailWorkspaceRecipient">Creator 联系邮箱</span><select id="mail-workspace-recipient"><option value="" data-i18n="mailWorkspaceChooseRecipient">请选择联系邮箱</option></select></label>
-            <label class="field"><span data-i18n="mailWorkspaceLanguage">目标语言</span><input id="mail-workspace-language" value="en" maxlength="35"></label>
-            <label class="field"><span data-i18n="mailWorkspaceTemplateTone">模板语气筛选</span><input id="mail-workspace-template-tone" placeholder="professional" maxlength="80"></label>
+            <label class="field"><span data-i18n="mailWorkspaceLanguage">模板 / AI 目标语言</span><select id="mail-workspace-language"><option value="en" data-i18n="mailWorkspaceLanguageEnglish">英语</option><option value="pt-BR" data-i18n="mailWorkspaceLanguagePortuguese">葡萄牙语（巴西）</option><option value="zh-CN" data-i18n="mailWorkspaceLanguageChinese">中文（简体）</option></select></label>
+            <label class="field"><span data-i18n="mailWorkspaceTemplateTone">模板语气筛选</span><select id="mail-workspace-template-tone"><option value="" data-i18n="mailWorkspaceTemplateToneAll">全部语气</option><option value="professional" data-i18n="mailWorkspaceToneProfessional">专业</option><option value="friendly" data-i18n="mailWorkspaceToneFriendly">友好</option><option value="concise" data-i18n="mailWorkspaceToneConcise">简洁</option><option value="formal" data-i18n="mailWorkspaceToneFormal">正式</option></select></label>
+            <label class="field"><span data-i18n="mailWorkspaceTemplateAudience">适用达人分级</span><select id="mail-workspace-template-audience"><option value="all" data-i18n="mailWorkspaceAudienceAll">KOL / KOC 通用</option><option value="kol">KOL</option><option value="koc">KOC</option></select></label>
             <label class="field"><span data-i18n="mailWorkspaceTemplate">邮件模板</span><select id="mail-workspace-template"><option value="" data-i18n="mailWorkspaceChooseTemplate">不使用模板</option></select></label>
           </div>
           <div class="mail-workspace-template-actions action-row">
@@ -819,13 +820,19 @@
           <label class="field"><span data-i18n="mailWorkspaceSubject">主题</span><input id="mail-workspace-subject" maxlength="998"></label>
           <label class="field"><span data-i18n="mailWorkspaceBody">正文</span><textarea id="mail-workspace-body" rows="12" maxlength="100000"></textarea></label>
           <section class="mail-workspace-ai">
-            <div><strong data-i18n="mailWorkspaceAI">AI 草稿候选</strong><p class="hint" id="mail-workspace-ai-provider">--</p></div>
+            <div><strong data-i18n="mailWorkspaceAI">AI 草稿</strong><p class="hint" id="mail-workspace-ai-provider">--</p></div>
             <div class="mail-workspace-grid">
-              <label class="field"><span data-i18n="mailWorkspaceAIOperation">操作</span><select id="mail-workspace-ai-operation"><option value="generate">Generate</option><option value="rewrite">Rewrite</option><option value="translate">Translate</option></select></label>
-              <label class="field"><span data-i18n="mailWorkspaceTone">语气</span><input id="mail-workspace-tone" value="professional" maxlength="80"></label>
+              <label class="field"><span data-i18n="mailWorkspaceAIOperation">操作</span><select id="mail-workspace-ai-operation"><option value="generate" data-i18n="mailWorkspaceOperationGenerate">生成草稿</option><option value="rewrite" data-i18n="mailWorkspaceOperationRewrite">改写当前正文</option><option value="translate" data-i18n="mailWorkspaceOperationTranslate">翻译当前正文</option></select></label>
+              <label class="field"><span data-i18n="mailWorkspaceTone">AI 草稿语气</span><select id="mail-workspace-tone"><option value="professional" data-i18n="mailWorkspaceToneProfessional">专业</option><option value="friendly" data-i18n="mailWorkspaceToneFriendly">友好</option><option value="concise" data-i18n="mailWorkspaceToneConcise">简洁</option><option value="formal" data-i18n="mailWorkspaceToneFormal">正式</option></select></label>
             </div>
             <label class="checkbox-line"><input id="mail-workspace-ai-consent" type="checkbox"><span data-i18n="mailWorkspaceAIConsent">我确认将当前选择的必要邮件上下文发送给所选 AI Provider，可能产生费用。</span></label>
             <button class="secondary-btn compact-btn" id="mail-workspace-ai-generate" type="button" data-i18n="mailWorkspaceAIGenerate">生成候选（不会发送）</button>
+            <div class="mail-workspace-ai-candidate" id="mail-workspace-ai-candidate" hidden>
+              <strong data-i18n="mailWorkspaceCandidateTitle">AI 草稿候选（尚未写入正文）</strong>
+              <h3 id="mail-workspace-ai-candidate-subject"></h3>
+              <pre id="mail-workspace-ai-candidate-body"></pre>
+              <button class="secondary-btn compact-btn" id="mail-workspace-ai-adopt" type="button" data-i18n="mailWorkspaceAdoptCandidate">使用此草稿</button>
+            </div>
           </section>
           <div class="mail-workspace-preview" id="mail-workspace-preview" hidden><strong data-i18n="mailWorkspaceFinalPreview">最终发送预览</strong><p id="mail-workspace-preview-envelope"></p><h3 id="mail-workspace-preview-subject"></h3><pre id="mail-workspace-preview-body"></pre><label class="checkbox-line"><input id="mail-workspace-confirm" type="checkbox"><span data-i18n="mailWorkspaceConfirm">我已核对收件人、主题和正文，并明确确认发送。</span></label></div>
           <p class="hint" id="mail-workspace-status" aria-live="polite"></p>
@@ -1662,7 +1669,7 @@
               <div><p class="eyebrow" data-i18n="campaignDetailPublishedContentEyebrow">PUBLISHED CONTENT</p><h2 data-i18n="campaignDetailPublishedPerformance">发布内容表现</h2></div>
               <div class="action-row">
                 <span class="campaign-list-count" id="campaign-publication-performance-count" data-i18n="campaignDetailInitialRecordCount">0 条</span>
-                <button class="soft-btn" id="campaign-publications-refresh-all" type="button" data-i18n="campaignDetailRefreshAll">刷新全部</button>
+                <button class="primary-btn" id="campaign-publications-refresh-all" type="button" data-i18n="campaignDetailRefreshAll">一键更新全部视频</button>
               </div>
             </div>
             <div class="campaign-performance-tabs" role="tablist" data-i18n-aria-label="campaignPerformanceTabsAriaLabel" aria-label="表现视图">
@@ -1672,20 +1679,29 @@
             <div id="campaign-performance-overview" role="tabpanel">
               <p class="hint" data-i18n="campaignDetailPerformanceHint">显示每条实际发布内容最近一次可靠观察；缺失指标不会显示为 0。</p>
               <div class="campaign-performance-summary" id="campaign-performance-summary">
-              <article><small data-i18n="campaignDetailTotalViewsLabel">总播放</small><strong id="campaign-performance-total-views">—</strong><span id="campaign-performance-views-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
-              <article><small data-i18n="campaignDetailTotalLikesLabel">总点赞</small><strong id="campaign-performance-total-likes">—</strong><span id="campaign-performance-likes-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
-              <article><small data-i18n="campaignDetailTotalCommentsLabel">总评论</small><strong id="campaign-performance-total-comments">—</strong><span id="campaign-performance-comments-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
-              <article><small data-i18n="campaignDetailAverageEngagement">平均互动率</small><strong id="campaign-performance-average-er">—</strong><span id="campaign-performance-er-coverage" data-i18n="campaignDetailInitialCoverage">0 / 0 条有数据</span></article>
+              <article><small data-i18n="campaignDetailTotalViewsLabel">总播放</small><strong id="campaign-performance-total-views">—</strong><span id="campaign-performance-views-coverage" data-i18n="campaignDetailNoStatisticalPublications">暂无可统计视频</span></article>
+              <article><small data-i18n="campaignDetailTotalLikesLabel">总点赞</small><strong id="campaign-performance-total-likes">—</strong><span id="campaign-performance-likes-coverage" data-i18n="campaignDetailNoStatisticalPublications">暂无可统计视频</span></article>
+              <article><small data-i18n="campaignDetailTotalCommentsLabel">总评论</small><strong id="campaign-performance-total-comments">—</strong><span id="campaign-performance-comments-coverage" data-i18n="campaignDetailNoStatisticalPublications">暂无可统计视频</span></article>
+              <article><small data-i18n="campaignDetailAverageEngagement">平均互动率</small><strong id="campaign-performance-average-er">—</strong><span id="campaign-performance-er-coverage" data-i18n="campaignDetailNoStatisticalPublications">暂无可统计视频</span></article>
               </div>
               <div class="campaign-performance-highlights" id="campaign-performance-highlights"></div>
               <p class="campaign-performance-money" id="campaign-performance-money" data-i18n="campaignDetailInitialMoneySummary">确认成本：— · 历史报价：— · ROI：—（缺少权威回报数据）</p>
               <div class="campaign-performance-trends" id="campaign-performance-trends"></div>
+              <div class="campaign-publication-batch" id="campaign-publication-batch" hidden>
+                <div class="campaign-publication-batch-summary" id="campaign-publication-batch-summary"></div>
+                <div class="action-row">
+                  <button class="soft-btn compact-btn" id="campaign-publication-batch-pause" type="button" data-i18n="campaignBatchPause">暂停</button>
+                  <button class="primary-btn compact-btn" id="campaign-publication-batch-resume" type="button" data-i18n="campaignBatchResume" hidden>继续</button>
+                  <button class="danger-btn compact-btn" id="campaign-publication-batch-cancel" type="button" data-i18n="campaignBatchCancel">取消</button>
+                </div>
+                <div class="campaign-publication-batch-items" id="campaign-publication-batch-items"></div>
+              </div>
             </div>
             <div id="campaign-performance-details" role="tabpanel" hidden>
               <div class="campaign-detail-message" id="campaign-publication-performance-empty" data-i18n="campaignDetailNoPublications">暂无实际发布内容。</div>
               <div class="campaign-publication-performance-list" id="campaign-publication-performance-list"></div>
-              <p class="campaign-form-error" id="campaign-publication-performance-status" role="status" hidden></p>
             </div>
+            <p class="campaign-form-error" id="campaign-publication-performance-status" role="status" hidden></p>
           </section>
 
           <section class="section-card campaign-detail-section campaign-creator-section" id="campaign-detail-panel-creators" data-campaign-section="creator-management" data-campaign-tab-panel="creators">

@@ -153,7 +153,7 @@ class SQLiteStorageFoundationTests(unittest.TestCase):
         self._initialize()
         with self.factory.read_connection() as connection:
             report = validate_schema(connection)
-            self.assertEqual(37, report["table_count"])
+            self.assertEqual(41, report["table_count"])
             tables = {
                 row[0]
                 for row in connection.execute(
@@ -165,6 +165,8 @@ class SQLiteStorageFoundationTests(unittest.TestCase):
                 "mail_drafts", "mail_send_previews", "mail_send_authorizations",
                 "mail_templates", "mail_ai_draft_candidates",
                 "mail_send_attempts", "mail_send_recipient_results",
+                "publication_capture_attempts",
+                "publication_capture_batch_runs", "publication_capture_batch_items",
             } <= tables)
             indexes = {
                 row[0]

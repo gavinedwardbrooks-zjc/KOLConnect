@@ -6,6 +6,7 @@ from email import policy
 from email.parser import BytesParser
 from html.parser import HTMLParser
 import re
+import socket
 from typing import Any, Callable, Mapping
 
 from services.mail_auth_service import MailAuthenticationError
@@ -119,7 +120,7 @@ class MailWorkspaceService:
             raise MailSendError("MAIL_BODY_OBSERVATION_AMBIGUOUS", "邮件存在多个观察位置，请重新同步后再试。", status=409)
         row = dict(rows[0])
         if not row["current_uidvalidity"] or str(row["current_uidvalidity"]) != str(row["uidvalidity"]):
-            raise MailSendError("MAIL_BODY_UIDVALIDITY_CHANGED", "邮箱文件夹身份已变化，请重新同步邮件。", status=409)
+            raise MailSendError("MAIL_UID_GENERATION_CHANGED", "邮箱文件夹版本已变化，请重新同步邮件后再读取正文。", status=409)
         account = dict(self._account_resolver(row["mail_account_id"]))
         resolved_id, _identity = mail_account_identity(account)
         if resolved_id != row["mail_account_id"]:
@@ -129,19 +130,30 @@ class MailWorkspaceService:
                 account, folder=row["folder_name"], imap_factory=self._imap_factory, timeout=15
             )
         except MailAuthenticationError as exc:
-            raise MailSendError("MAIL_BODY_CONNECTION_FAILED", "无法安全读取邮件正文，请检查邮箱连接。", status=503) from exc
+            if "TIMEOUT" in exc.code:
+                raise MailSendError("MAIL_BODY_FETCH_TIMEOUT", "读取邮件正文超时，请稍后重试。", status=504) from exc
+            if exc.stage == "folder":
+                raise MailSendError("MAIL_BODY_NOT_AVAILABLE", "原邮件文件夹当前不可访问，请重新同步邮箱。", status=409) from exc
+            raise MailSendError("MAIL_AUTH_REQUIRED", "邮箱登录或文件夹访问失败，请在设置中重新验证邮箱连接。", status=401) from exc
         try:
             try:
                 if _uidvalidity(mailbox) != str(row["uidvalidity"]):
-                    raise MailSendError("MAIL_BODY_UIDVALIDITY_CHANGED", "邮箱文件夹身份已变化，请重新同步邮件。", status=409)
+                    raise MailSendError("MAIL_UID_GENERATION_CHANGED", "邮箱文件夹版本已变化，请重新同步邮件后再读取正文。", status=409)
                 if _message_size(mailbox, str(row["imap_uid"])) > MAX_RAW_BODY_BYTES:
                     raise MailSendError("MAIL_BODY_TOO_LARGE", "邮件正文超出安全读取限制。", status=413)
                 raw, _metadata = _fetch_payload(mailbox, str(row["imap_uid"]), "(BODY.PEEK[])")
                 body_text, source = safe_message_text(raw)
             except MailSendError:
                 raise
-            except (RuntimeError, UnicodeError, ValueError) as exc:
-                raise MailSendError("MAIL_BODY_READ_FAILED", "邮件正文读取失败，请重新同步后再试。", status=503) from exc
+            except (TimeoutError, socket.timeout) as exc:
+                raise MailSendError("MAIL_BODY_FETCH_TIMEOUT", "读取邮件正文超时，请稍后重试。", status=504) from exc
+            except UnicodeError as exc:
+                raise MailSendError("MAIL_BODY_DECODE_FAILED", "邮件正文编码无法安全解析。", status=422) from exc
+            except (RuntimeError, ValueError) as exc:
+                message = str(exc).casefold()
+                if "fetch failed" in message or "no message data" in message or "size is unavailable" in message:
+                    raise MailSendError("MAIL_MESSAGE_MOVED_OR_DELETED", "原邮件可能已被移动或删除，请重新同步邮箱。", status=410) from exc
+                raise MailSendError("MAIL_BODY_NOT_AVAILABLE", "当前邮件正文暂不可用，请重新同步后再试。", status=503) from exc
         finally:
             try:
                 mailbox.logout()

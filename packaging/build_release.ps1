@@ -1,5 +1,6 @@
 param(
-  [switch]$ResolvePathsOnly
+  [switch]$ResolvePathsOnly,
+  [string]$OutputRoot = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,6 +8,18 @@ $ErrorActionPreference = "Stop"
 $packaging = Split-Path -Parent $MyInvocation.MyCommand.Path
 $root = Split-Path -Parent $packaging
 Set-Location $root
+
+$release = Join-Path $root "release"
+if (-not [string]::IsNullOrWhiteSpace($OutputRoot)) {
+  $release = [System.IO.Path]::GetFullPath((Join-Path $root $OutputRoot))
+  $rootPrefix = [System.IO.Path]::GetFullPath($root).TrimEnd(
+    [System.IO.Path]::DirectorySeparatorChar,
+    [System.IO.Path]::AltDirectorySeparatorChar
+  ) + [System.IO.Path]::DirectorySeparatorChar
+  if (-not $release.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "OutputRoot must remain inside the repository: $release"
+  }
+}
 
 $releaseVersion = "v2.0.2"
 $releaseName = "KOLConnect_$releaseVersion"
@@ -19,7 +32,7 @@ $iconPath = Join-Path $root "assets\KOLConnect.ico"
 if ($ResolvePathsOnly) {
   [ordered]@{
     repository_root = $root
-    release_dir = Join-Path $root "release"
+    release_dir = $release
     work_dir = $workPath
     dist_dir = $distPath
     spec_file = $specFile
@@ -62,7 +75,6 @@ if (-not (Test-Path -LiteralPath $builtExe)) {
   throw "Build did not generate the ONEDIR executable: $builtExe"
 }
 
-$release = Join-Path $root "release"
 $releaseDirectory = Join-Path $release $releaseName
 $releaseExe = Join-Path $releaseDirectory $releaseFileName
 $releaseZip = Join-Path $release "$releaseName`_Windows_x64.zip"

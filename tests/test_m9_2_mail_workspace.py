@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from email.message import EmailMessage
 from pathlib import Path
+import socket
 import sys
 import unittest
 from unittest import mock
@@ -14,7 +15,9 @@ sys.path.insert(0, str(ROOT / "app"))
 
 from services.mail_inbox_facts import mail_account_identity  # noqa: E402
 from services.mail_send_service import MailSendError, MailSendService, SMTPExecutionResult  # noqa: E402
+from services.mail_template_service import MailTemplateService  # noqa: E402
 from services.mail_workspace_service import MailWorkspaceService, reconcile_sent_attempts, safe_message_text  # noqa: E402
+from services.extension_workspace_service import ExtensionWorkspaceError, ExtensionWorkspaceService  # noqa: E402
 from storage.connection import SQLiteConnectionFactory  # noqa: E402
 from storage.schema import apply_schema_migrations  # noqa: E402
 from test_support.runtime_sandbox import test_artifact_path  # noqa: E402
@@ -45,6 +48,17 @@ class FakeMailbox:
         assert (operation, uid, query) == ("fetch", "42", "(BODY.PEEK[])")
         return "OK", [(b"1 FETCH", self.raw)]
     def logout(self): return "BYE", []
+
+
+class MissingMailbox(FakeMailbox):
+    def uid(self, operation, uid, query):
+        self.fetches.append(query)
+        return "NO", [b"message no longer exists"]
+
+
+class TimeoutMailbox(FakeMailbox):
+    def uid(self, operation, uid, query):
+        raise socket.timeout("timed out")
 
 
 class AcceptExecutor:
@@ -108,8 +122,9 @@ class M92MailWorkspaceTests(unittest.TestCase):
         self.insert_message_fact()
         with self.factory.write_transaction() as connection:
             connection.execute("UPDATE mailbox_sync_states SET uidvalidity='8' WHERE mailbox_id='mailbox-inbox'")
-        with self.assertRaisesRegex(MailSendError, "身份已变化"):
+        with self.assertRaises(MailSendError) as raised:
             service.read_body("message-source")
+        self.assertEqual("MAIL_UID_GENERATION_CHANGED", raised.exception.code)
 
     def test_body_size_is_rejected_before_full_body_fetch(self):
         self.insert_message_fact()
@@ -119,6 +134,39 @@ class M92MailWorkspaceTests(unittest.TestCase):
             with self.assertRaisesRegex(MailSendError, "超出安全读取限制"):
                 service.read_body("message-source")
         self.assertEqual(mailbox.fetches, ["(RFC822.SIZE)"])
+
+    def test_body_read_classifies_remote_delete_and_timeout(self):
+        self.insert_message_fact()
+        service = MailWorkspaceService(lambda: self.factory, self.resolver)
+        for mailbox, code in (
+            (MissingMailbox(b""), "MAIL_MESSAGE_MOVED_OR_DELETED"),
+            (TimeoutMailbox(b""), "MAIL_BODY_FETCH_TIMEOUT"),
+        ):
+            with self.subTest(code=code), mock.patch(
+                "services.mail_workspace_service.open_imap_connection", return_value=(mailbox, {})
+            ):
+                with self.assertRaises(MailSendError) as raised:
+                    service.read_body("message-source")
+                self.assertEqual(code, raised.exception.code)
+
+    def test_body_read_classifies_authentication_and_uid_generation(self):
+        self.insert_message_fact()
+        service = MailWorkspaceService(lambda: self.factory, self.resolver)
+        from services.mail_auth_service import MailAuthenticationError
+
+        with mock.patch(
+            "services.mail_workspace_service.open_imap_connection",
+            side_effect=MailAuthenticationError("MAIL_IMAP_AUTH_FAILED", "denied", protocol="imap", stage="auth"),
+        ):
+            with self.assertRaises(MailSendError) as raised:
+                service.read_body("message-source")
+        self.assertEqual("MAIL_AUTH_REQUIRED", raised.exception.code)
+
+        with self.factory.write_transaction() as connection:
+            connection.execute("UPDATE mailbox_sync_states SET uidvalidity='8' WHERE mailbox_id='mailbox-inbox'")
+        with self.assertRaises(MailSendError) as raised:
+            service.read_body("message-source")
+        self.assertEqual("MAIL_UID_GENERATION_CHANGED", raised.exception.code)
 
     def test_html_fallback_strips_active_content_and_attachments(self):
         message = EmailMessage()
@@ -175,6 +223,66 @@ class M92MailWorkspaceTests(unittest.TestCase):
         self.insert_sent_observation(attempt["rfc_message_id"], "2")
         result = reconcile_sent_attempts(self.factory, ACCOUNT_ID)
         self.assertEqual(result["ambiguous"], 1)
+
+    def extension_workspace(self):
+        identity = {
+            "state": "recorded", "canonical_url": "https://www.tiktok.com/@creator",
+            "creator_id": "creator-1", "creator_name": "Creator Name", "account_uid": "tiktok:creator",
+            "account_email": "creator@example.com", "email_state": "present",
+        }
+        creator = mock.Mock()
+        creator.get_extension_account_context.return_value = identity
+        creator.lookup_extension_candidates.return_value = []
+        templates = MailTemplateService(lambda: self.factory)
+        sender = MailSendService(lambda: self.factory, self.resolver)
+        service = ExtensionWorkspaceService(
+            lambda: self.factory, lambda: creator, lambda: templates, lambda: sender, lambda: [dict(ACCOUNT)]
+        )
+        return service, templates
+
+    def test_extension_workspace_persists_one_idempotent_draft_from_authoritative_template(self):
+        service, templates = self.extension_workspace()
+        options = service.options(
+            platform="TikTok", profile_url="https://www.tiktok.com/@creator", audience_type="kol", language="en"
+        )
+        self.assertTrue(any(row["name"] == "Creator collaboration introduction" for row in options["templates"]))
+        self.assertEqual(options["mail_accounts"][0]["mail_account_id"], ACCOUNT_ID)
+        template = templates.get_template("builtin-initial-outreach-en-v1")
+        payload = {
+            "platform": "TikTok", "profile_url": "https://www.tiktok.com/@creator",
+            "recipient_email": "creator@example.com", "creator_name": "Creator Name",
+            "audience_type": "kol", "language": "en", "template_id": template["template_id"],
+            "template_version": template["template_version"], "mail_account_id": ACCOUNT_ID,
+            "idempotency_key": "extension-draft-request-1",
+        }
+        first = service.create_draft(payload)
+        second = service.create_draft(payload)
+        self.assertFalse(first["replayed"])
+        self.assertTrue(second["replayed"])
+        self.assertEqual(first["draft"]["draft_id"], second["draft"]["draft_id"])
+        self.assertEqual(first["draft"]["to_addresses"], ["creator@example.com"])
+        self.assertIn("Creator Name", first["draft"]["body_text"])
+        with self.factory.read_connection() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM mail_drafts").fetchone()[0], 1)
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(mail_templates)")}
+            self.assertIn("audience_type", columns)
+
+    def test_extension_workspace_rejects_recipient_or_template_version_mismatch(self):
+        service, templates = self.extension_workspace()
+        template = templates.get_template("builtin-initial-outreach-en-v1")
+        base = {
+            "platform": "TikTok", "profile_url": "https://www.tiktok.com/@creator",
+            "recipient_email": "other@example.com", "creator_name": "Creator Name",
+            "audience_type": "kol", "language": "en", "template_id": template["template_id"],
+            "template_version": template["template_version"], "mail_account_id": ACCOUNT_ID,
+            "idempotency_key": "extension-draft-request-2",
+        }
+        with self.assertRaises(ExtensionWorkspaceError) as recipient_error:
+            service.create_draft(base)
+        self.assertEqual(recipient_error.exception.code, "EXTENSION_RECIPIENT_MISMATCH")
+        with self.assertRaises(ExtensionWorkspaceError) as version_error:
+            service.create_draft({**base, "recipient_email": "creator@example.com", "template_version": 99})
+        self.assertEqual(version_error.exception.code, "MAIL_TEMPLATE_VERSION_CONFLICT")
 
 
 if __name__ == "__main__":

@@ -72,6 +72,14 @@ class PublicationPerformanceRepository:
             ).fetchone()
         return self._record(row)
 
+    def get(self, observation_id: str) -> dict[str, object] | None:
+        with self.store.factory.read_connection() as connection:
+            row = connection.execute(
+                "SELECT * FROM publication_performance_observations WHERE observation_id=?",
+                (observation_id,),
+            ).fetchone()
+        return self._record(row)
+
     def history(self, publication_id: str) -> list[dict[str, object]]:
         with self.store.factory.read_connection() as connection:
             rows = connection.execute(
@@ -116,11 +124,19 @@ class PublicationPerformanceRepository:
             "cc.cost_currency, p.publication_id, p.publish_link AS publication_url, "
             "p.actual_account_uid, p.platform, p.video_id, p.published_at, "
             "o.observation_id, o.observed_at, "
-            "o.views, o.likes, o.comments, o.shares, o.engagement_rate, o.source, o.confidence "
+            "o.views, o.likes, o.comments, o.shares, o.engagement_rate, o.source, o.confidence, "
+            "oa.field_provenance AS observation_field_provenance "
+            ", a.request_id AS capture_request_id, a.capture_status, "
+            "a.completeness AS capture_completeness, a.safe_error_code AS capture_safe_error_code, "
+            "a.started_at AS capture_started_at, a.completed_at AS capture_completed_at "
             "FROM campaign_creators cc JOIN campaigns c ON c.campaign_id=cc.campaign_id "
             "JOIN creators cr ON cr.creator_id=cc.creator_id "
             "LEFT JOIN campaign_creator_publish_links p ON p.campaign_creator_id=cc.id "
             "LEFT JOIN publication_performance_observations o ON o.publication_id=p.publication_id "
+            "LEFT JOIN publication_capture_attempts oa ON oa.observation_id=o.observation_id "
+            "LEFT JOIN publication_capture_attempts a ON a.request_id=("
+            "SELECT a2.request_id FROM publication_capture_attempts a2 "
+            "WHERE a2.publication_id=p.publication_id ORDER BY a2.started_at DESC,a2.request_id DESC LIMIT 1) "
             f"WHERE {' AND '.join(where)} ORDER BY cc.campaign_id, cc.id, p.position, "
             "o.observed_at, o.observation_id"
         )

@@ -1,0 +1,19 @@
+#kolconnect-publication-capture {
+  all: initial;
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 2147483646;
+  width: min(180px, calc(100vw - 24px));
+  max-width: calc(100vw - 16px);
+}
+
+#kolconnect-publication-capture[data-mode="expanded"] {
+  width: min(360px, calc(100vw - 24px));
+}
+
+@media (max-width: 480px) {
+  #kolconnect-publication-capture[data-mode="expanded"] {
+    width: min(330px, calc(100vw - 16px));
+  }
+}

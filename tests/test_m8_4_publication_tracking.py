@@ -155,7 +155,7 @@ class M84PublicationTrackingTests(unittest.TestCase):
             self.assertEqual(3, connection.execute("SELECT COUNT(*) FROM campaign_creator_publish_links").fetchone()[0])
             self.assertEqual(1, connection.execute("SELECT COUNT(*) FROM video_snapshots").fetchone()[0])
             compatibility = connection.execute("SELECT value FROM storage_metadata WHERE key='application_compatibility'").fetchone()[0]
-            self.assertEqual("m9-2-multilingual-mail-drafts", compatibility)
+            self.assertEqual("extension-ui-v2-3-mail-drafts", compatibility)
 
     def test_append_only_idempotency_latest_missing_zero_and_provenance(self):
         provider = _Provider([

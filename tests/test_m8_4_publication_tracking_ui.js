@@ -14,10 +14,12 @@ assert.match(html, /发布内容表现/);
 assert.match(page, /hydrateLatestPublicationObservations/);
 assert.match(page, /campaignPerformance\?\.publications/);
 assert.match(page, /publications\/\$\{encodeURIComponent\(publicationId\)\}\/refresh/);
-assert.match(page, /campaigns\/\$\{encodeURIComponent\(campaignId\)\}\/publications\/refresh/);
+assert.match(page, /campaigns\/\$\{encodeURIComponent\(campaignId\)\}\/publication-capture-batches/);
+assert.match(page, /X-KOLConnect-Publication-Capture-CSRF/);
+assert.match(page, /schedulePublicationBatchPoll/);
 assert.match(page, /value === null \|\| value === undefined \|\| value === "" \? "—"/);
 assert.match(page, /result\.status === "SUCCESS"/);
-assert.match(page, /campaignDetailBatchRefreshResult/);
+assert.match(html, /一键更新全部视频/);
 assert.doesNotMatch(html, /publication-performance-chart/);
 assert.doesNotMatch(page, /setInterval\s*\(/);
 

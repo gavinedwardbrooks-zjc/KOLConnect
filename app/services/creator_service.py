@@ -951,6 +951,53 @@ class CreatorService:
             "linked_accounts": [account_summary(row) for row in linked_accounts],
         }
 
+    def get_extension_account_context(self, platform: object, profile_url: object) -> dict[str, Any]:
+        """Return bounded authoritative identity for trusted extension workflows."""
+        platform_key = str(platform or "").strip().casefold()
+        platform_labels = {"tiktok": "TikTok", "instagram": "Instagram", "youtube": "YouTube"}
+        expected_platform = platform_labels.get(platform_key)
+        resolved = CreatorURLResolver.resolve_syntax(profile_url)
+        if (expected_platform is None or resolved.get("resolution_status") != "resolved"
+                or resolved.get("input_type") != "profile" or resolved.get("platform") != expected_platform):
+            return {"state": "invalid", "canonical_url": ""}
+        canonical_url = str(resolved.get("canonical_profile_url") or "")
+        account_uid = scraper_module.build_creator_uid({"platform": expected_platform, "url": canonical_url})
+        lookup = self._repository_provider().getExtensionAccountLookup(account_uid)
+        if lookup is None:
+            return {"state": "not_recorded", "canonical_url": canonical_url}
+        if lookup.get("ambiguous"):
+            return {"state": "ambiguous", "canonical_url": canonical_url}
+        creator = lookup.get("creator") if isinstance(lookup.get("creator"), dict) else {}
+        account = lookup.get("account") if isinstance(lookup.get("account"), dict) else {}
+        email = str(account.get("account_email") or "").strip()
+        return {
+            "state": "recorded", "canonical_url": canonical_url,
+            "creator_id": str(creator.get("creator_id") or ""),
+            "creator_name": str(creator.get("name") or creator.get("creator_name") or ""),
+            "account_uid": str(account.get("account_uid") or account_uid),
+            "account_email": email,
+            "email_state": "present" if email else "missing",
+        }
+
+    def lookup_extension_candidates(self, profile_urls: object) -> list[dict[str, Any]]:
+        values = profile_urls if isinstance(profile_urls, list) else []
+        if len(values) > 200:
+            raise ValueError("候选账号数量超过单次查询上限。")
+        results = []
+        for raw_url in values:
+            resolved = CreatorURLResolver.resolve_syntax(raw_url)
+            platform = str(resolved.get("platform") or "")
+            context = self.get_extension_account_context(platform, raw_url) if platform else {
+                "state": "invalid", "canonical_url": ""
+            }
+            results.append({
+                "input_url": str(raw_url or "").strip(),
+                "canonical_url": context.get("canonical_url", ""),
+                "record_state": context.get("state", "invalid"),
+                "email_state": context.get("email_state", "unknown") if context.get("state") == "recorded" else "unknown",
+            })
+        return results
+
     def check_email_deduplication(self, source_lines: list[object]) -> dict[str, Any]:
         """Classify pasted emails against the authoritative CreatorAccount emails.
 

@@ -4,7 +4,7 @@
   top: 88px;
   right: 24px;
   z-index: 2147483647;
-  width: 380px;
+  width: min(380px, calc(100vw - 24px));
   color: #344038;
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
 }
@@ -15,7 +15,7 @@
 
 #kolconnect-next-root .kol-panel {
   overflow: hidden;
-  max-height: calc(100vh - 112px);
+  max-height: min(560px, calc(100vh - 112px));
   border: 1px solid #e9e5dd;
   border-radius: 20px;
   background: #fff;
@@ -56,8 +56,50 @@
 
 #kolconnect-next-root .kol-body {
   overflow: auto;
-  max-height: calc(100vh - 170px);
+  max-height: min(500px, calc(100vh - 170px));
+  padding: 0;
+}
+
+#kolconnect-next-root .kol-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #eee9e1;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
+}
+
+#kolconnect-next-root .kol-tab {
+  min-height: 35px;
+  padding: 7px 4px;
+  background: transparent;
+  color: #7b857a;
+}
+
+#kolconnect-next-root .kol-tab[data-active="true"] {
+  background: #e8f0e5;
+  color: #3f6648;
+}
+
+#kolconnect-next-root .kol-tab:focus-visible,
+#kolconnect-next-root button:focus-visible,
+#kolconnect-next-root input:focus-visible,
+#kolconnect-next-root select:focus-visible {
+  outline: 2px solid #6f9577;
+  outline-offset: 2px;
+}
+
+#kolconnect-next-root .kol-tab-panel:not([hidden]) {
+  display: block;
   padding: 14px;
+}
+
+#kolconnect-next-root .kol-tab-panel[hidden] {
+  display: none;
 }
 
 #kolconnect-next-root .kol-status {
@@ -281,11 +323,91 @@
 }
 
 #kolconnect-next-root .kol-content-section {
-  margin-top: 12px;
+  margin-top: 0;
   padding: 13px;
   border: 1px solid #eee9e1;
   border-radius: 14px;
   background: #fffdf9;
+}
+
+#kolconnect-next-root .kol-data-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+#kolconnect-next-root .kol-range-hint {
+  margin: -5px 0 10px;
+  color: #7a746b;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+#kolconnect-next-root .kol-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #657164;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#kolconnect-next-root .kol-contact-business,
+#kolconnect-next-root .kol-discovery {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 13px;
+  border: 1px solid #e5e9df;
+  border-radius: 14px;
+  background: #f7faf5;
+}
+
+#kolconnect-next-root .kol-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+#kolconnect-next-root .kol-inline-actions button,
+#kolconnect-next-root .kol-contact-business > button {
+  min-height: 36px;
+  padding: 8px 10px;
+}
+
+#kolconnect-next-root .kol-inline-actions .kol-primary,
+#kolconnect-next-root .kol-contact-business .kol-primary,
+#kolconnect-next-root .kol-contact-business .kol-mail-action {
+  background: #77977d;
+  color: #fff;
+}
+
+#kolconnect-next-root .kol-discovery-list {
+  display: grid;
+  gap: 5px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+#kolconnect-next-root .kol-discovery-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 9px;
+  background: #fff;
+  color: #405044;
+  font-size: 12px;
+}
+
+#kolconnect-next-root .kol-discovery-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #kolconnect-next-root .kol-section-title {
@@ -303,6 +425,29 @@
 #kolconnect-next-root .kol-content-summary {
   display: grid;
   gap: 7px;
+  margin-top: 9px;
+}
+
+#kolconnect-next-root .kol-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+#kolconnect-next-root .kol-metric-card {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: 10px;
+  background: #f3f7f0;
+}
+
+#kolconnect-next-root .kol-metric-card strong {
+  overflow: hidden;
+  color: #3f5f45;
+  font-size: 18px;
+  text-overflow: ellipsis;
 }
 
 #kolconnect-next-root .kol-row {
@@ -349,10 +494,69 @@
   color: #a06b55;
 }
 
+#kolconnect-next-root .kol-content-provenance {
+  margin-top: 6px;
+  color: #6f786f;
+  font-size: 11px;
+}
+
+#kolconnect-next-root .kol-content-provenance > summary {
+  cursor: pointer;
+  color: #66866b;
+}
+
+#kolconnect-next-root .kol-content-provenance .kol-content-missing {
+  white-space: pre-wrap;
+}
+
 #kolconnect-next-root .kol-content-link {
   display: inline-block;
   margin-top: 5px;
   color: #66866b;
+}
+
+#kolconnect-next-root .kol-mail-template-preview {
+  margin: 9px 0;
+  padding: 10px 11px;
+  border: 1px solid #dce8da;
+  border-radius: 10px;
+  background: #f5f9f3;
+}
+
+#kolconnect-next-root .kol-mail-template-preview strong,
+#kolconnect-next-root .kol-mail-template-preview p {
+  display: block;
+  overflow-wrap: anywhere;
+  margin: 0;
+  line-height: 1.45;
+}
+
+#kolconnect-next-root .kol-mail-template-preview p {
+  margin-top: 5px;
+  color: #667166;
+  font-size: 12px;
+}
+
+#kolconnect-next-root .kol-discovery-row {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+#kolconnect-next-root .kol-discovery-state {
+  color: #7b857a;
+  font-size: 11px;
+}
+
+#kolconnect-next-root .kol-discovery-candidate {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+#kolconnect-next-root .kol-discovery-candidate .kol-discovery-evidence {
+  color: #7b857a;
+  font-size: 10px;
+  line-height: 1.35;
+  white-space: normal;
 }
 
 #kolconnect-next-root .kol-label {
@@ -365,32 +569,37 @@
   white-space: pre-wrap;
 }
 
-#kolconnect-next-root .kol-actions {
+#kolconnect-next-root .kol-actions,
+#kolconnect-next-root .kol-button-grid {
   position: sticky;
-  bottom: -14px;
+  bottom: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   padding-top: 12px;
-  background: #fff;
+  background: linear-gradient(to bottom, rgba(255,255,255,0.75), #fff 30%);
 }
 
-#kolconnect-next-root .kol-actions button {
+#kolconnect-next-root .kol-actions button,
+#kolconnect-next-root .kol-button-grid button {
   min-height: 39px;
   padding: 8px;
 }
 
-#kolconnect-next-root .kol-actions .kol-primary {
+#kolconnect-next-root .kol-actions .kol-primary,
+#kolconnect-next-root .kol-button-grid .kol-primary {
   background: #8baa8c;
   color: #fff;
 }
 
-#kolconnect-next-root .kol-actions .kol-danger {
+#kolconnect-next-root .kol-actions .kol-danger,
+#kolconnect-next-root .kol-button-grid .kol-danger {
   background: #fff1ee;
   color: #a3544b;
 }
 
-#kolconnect-next-root .kol-actions button:disabled {
+#kolconnect-next-root .kol-actions button:disabled,
+#kolconnect-next-root .kol-button-grid button:disabled {
   cursor: wait;
   opacity: 0.55;
 }
@@ -412,9 +621,36 @@
 }
 
 #kolconnect-next-root.kol-minimized {
-  width: 250px;
+  width: 220px;
 }
 
 #kolconnect-next-root.kol-minimized .kol-body {
   display: none;
+}
+
+@media (max-width: 520px) {
+  #kolconnect-next-root {
+    top: 64px;
+    right: 8px;
+    width: calc(100vw - 16px);
+  }
+
+  #kolconnect-next-root .kol-panel {
+    max-height: min(560px, calc(100vh - 72px));
+    border-radius: 16px;
+  }
+
+  #kolconnect-next-root .kol-body {
+    max-height: min(500px, calc(100vh - 130px));
+  }
+
+  #kolconnect-next-root .kol-preview-field,
+  #kolconnect-next-root .kol-row,
+  #kolconnect-next-root .kol-data-controls {
+    grid-template-columns: 1fr;
+  }
+
+  #kolconnect-next-root .kol-value {
+    text-align: left;
+  }
 }

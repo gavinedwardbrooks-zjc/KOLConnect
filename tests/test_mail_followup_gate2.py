@@ -116,9 +116,9 @@ class MailFollowupGate2Tests(unittest.TestCase):
         return result, fake
 
     def test_schema_six_identity_constraints_and_nonsecret_account(self):
-        self.assertEqual(8, CURRENT_SCHEMA_VERSION)
+        self.assertEqual(11, CURRENT_SCHEMA_VERSION)
         with self.factory.read_connection() as connection:
-            self.assertEqual(8, schema_version(connection))
+            self.assertEqual(11, schema_version(connection))
             names = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             self.assertTrue({"mail_accounts", "mailbox_sync_states", "mail_messages",
                              "mail_message_observations", "mail_message_addresses",
@@ -149,8 +149,8 @@ class MailFollowupGate2Tests(unittest.TestCase):
             connection.execute("UPDATE storage_metadata SET value='5' WHERE key='schema_version'")
         with old_factory.read_connection() as connection:
             self.assertEqual(5, schema_version(connection))
-            self.assertEqual(8, apply_schema_migrations(connection))
-            self.assertEqual(8, apply_schema_migrations(connection))
+            self.assertEqual(11, apply_schema_migrations(connection))
+            self.assertEqual(11, apply_schema_migrations(connection))
             self.assertEqual("Original", connection.execute("SELECT name FROM creators WHERE creator_id='old_creator'").fetchone()[0])
             self.assertEqual("old@example.com", connection.execute("SELECT account_email FROM creator_accounts WHERE account_uid='old_account'").fetchone()[0])
             self.assertEqual("Product", connection.execute("SELECT name FROM products WHERE product_id='old_product'").fetchone()[0])

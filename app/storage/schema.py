@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from storage.errors import SQLiteSchemaUnsupportedError
 
 
-CURRENT_SCHEMA_VERSION = 8
+CURRENT_SCHEMA_VERSION = 11
 
 
 SCHEMA_V1_SQL = r"""
@@ -643,6 +643,105 @@ def apply_schema_migrations(connection, *, migration_reference: str = "") -> int
             )
             connection.commit()
             current = 8
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 8:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS publication_capture_attempts ("
+                "request_id TEXT PRIMARY KEY, publication_id TEXT NOT NULL, "
+                "campaign_creator_id TEXT NOT NULL, refresh_operation_id TEXT NOT NULL, "
+                "platform TEXT NOT NULL, video_id TEXT NOT NULL, canonical_url TEXT NOT NULL, "
+                "capability_hash TEXT NOT NULL UNIQUE, started_at TEXT NOT NULL, expires_at TEXT NOT NULL, "
+                "completed_at TEXT, capture_status TEXT NOT NULL "
+                "CHECK(capture_status IN ('pending','success','partial','insufficient','failed','expired')), "
+                "collector_version TEXT, contract_version TEXT NOT NULL, safe_error_code TEXT, "
+                "completeness TEXT NOT NULL CHECK(completeness IN ('none','partial','complete')), "
+                "field_provenance TEXT NOT NULL, observation_id TEXT, submission_count INTEGER NOT NULL DEFAULT 0, "
+                "UNIQUE(publication_id,refresh_operation_id), "
+                "FOREIGN KEY(publication_id) REFERENCES campaign_creator_publish_links(publication_id) ON DELETE CASCADE)"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_publication_capture_expiry "
+                "ON publication_capture_attempts(capture_status,expires_at)"
+            )
+            connection.execute(
+                "UPDATE storage_metadata SET value='9' WHERE key='schema_version'"
+            )
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key,value) VALUES (?,?)",
+                ("application_compatibility", "campaign-publication-capture-v1"),
+            )
+            connection.commit()
+            current = 9
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 9:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS publication_capture_batch_runs ("
+                "batch_run_id TEXT PRIMARY KEY, campaign_id TEXT NOT NULL REFERENCES campaigns(campaign_id) ON DELETE CASCADE, "
+                "status TEXT NOT NULL CHECK(status IN ('pending_claim','running','paused','completed','cancelled','interrupted')), "
+                "claim_token_hash TEXT NOT NULL UNIQUE, claim_consumed_at TEXT, executor_origin_hash TEXT, "
+                "executor_token_hash TEXT, executor_expires_at TEXT, manifest_hash TEXT NOT NULL, "
+                "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, completed_at TEXT, safe_error_code TEXT)"
+            )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS publication_capture_batch_items ("
+                "item_id TEXT PRIMARY KEY, batch_run_id TEXT NOT NULL REFERENCES publication_capture_batch_runs(batch_run_id) ON DELETE CASCADE, "
+                "publication_id TEXT NOT NULL REFERENCES campaign_creator_publish_links(publication_id) ON DELETE CASCADE, "
+                "campaign_creator_id TEXT NOT NULL, position INTEGER NOT NULL, platform TEXT, video_id TEXT, canonical_url TEXT, "
+                "status TEXT NOT NULL CHECK(status IN ('pending','opening','collecting','success','partial','insufficient','failed','skipped','cancelled','interrupted')), "
+                "safe_error_code TEXT, request_id TEXT REFERENCES publication_capture_attempts(request_id) ON DELETE SET NULL, "
+                "attempt_count INTEGER NOT NULL DEFAULT 0, lease_expires_at TEXT, opened_at TEXT, completed_at TEXT, "
+                "duplicate_of_item_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, "
+                "UNIQUE(batch_run_id,publication_id))"
+            )
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_publication_capture_active_campaign "
+                "ON publication_capture_batch_runs(campaign_id) "
+                "WHERE status IN ('pending_claim','running','paused','interrupted')"
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_publication_capture_batch_queue "
+                "ON publication_capture_batch_items(batch_run_id,status,position)"
+            )
+            connection.execute("UPDATE storage_metadata SET value='10' WHERE key='schema_version'")
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key,value) VALUES (?,?)",
+                ("application_compatibility", "campaign-publication-batch-capture-v1"),
+            )
+            connection.commit()
+            current = 10
+        except Exception:
+            connection.rollback()
+            raise
+    if current == 10:
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            mail_template_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(mail_templates)")}
+            if "audience_type" not in mail_template_columns:
+                connection.execute(
+                    "ALTER TABLE mail_templates ADD COLUMN audience_type TEXT NOT NULL DEFAULT 'all' "
+                    "CHECK(audience_type IN ('all','kol','koc'))"
+                )
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS mail_extension_draft_requests ("
+                "idempotency_key TEXT PRIMARY KEY, request_fingerprint TEXT NOT NULL, "
+                "status TEXT NOT NULL CHECK(status IN ('pending','completed')), "
+                "draft_id TEXT REFERENCES mail_drafts(draft_id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+            )
+            connection.execute("UPDATE storage_metadata SET value='11' WHERE key='schema_version'")
+            connection.execute(
+                "INSERT OR REPLACE INTO storage_metadata(key,value) VALUES (?,?)",
+                ("application_compatibility", "extension-ui-v2-3-mail-drafts"),
+            )
+            connection.commit()
+            current = 11
         except Exception:
             connection.rollback()
             raise

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import json
 import math
 from typing import Any
 
 from domain.money import currency_code, grouped_amounts
 
 
-METRICS = ("views", "likes", "comments", "engagement_rate")
+METRICS = ("views", "likes", "comments", "shares", "engagement_rate")
 
 
 def _number(value: object) -> float | None:
@@ -67,13 +68,26 @@ def _group_publications(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]
                 "campaign_creator_id", "campaign_id", "campaign_name", "creator_id", "creator_name",
             )
         })
+        if row.get("capture_request_id"):
+            publication["latest_capture_attempt"] = {
+                "request_id": row.get("capture_request_id"),
+                "capture_status": row.get("capture_status"),
+                "completeness": row.get("capture_completeness"),
+                "safe_error_code": row.get("capture_safe_error_code"),
+                "started_at": row.get("capture_started_at"),
+                "completed_at": row.get("capture_completed_at"),
+            }
         if row.get("observation_id"):
+            try:
+                field_provenance = json.loads(str(row.get("observation_field_provenance") or "{}"))
+            except (TypeError, ValueError):
+                field_provenance = {}
             publication.setdefault("observations", []).append({
                 key: row.get(key) for key in (
                     "observation_id", "observed_at", "views", "likes", "comments", "shares",
                     "engagement_rate", "source", "confidence",
                 )
-            })
+            } | {"field_provenance": field_provenance if isinstance(field_provenance, dict) else {}})
     for publication in publications.values():
         publication.setdefault("observations", []).sort(
             key=_observation_key
@@ -99,6 +113,17 @@ def publication_trend(publication: dict[str, Any]) -> dict[str, Any]:
             "end_observed_at": latest["observed_at"],
             "status": "decrease" if delta < 0 else ("unchanged" if delta == 0 else "increase"),
         }
+    latest_metrics = {}
+    for metric in METRICS:
+        latest = next((item for item in reversed(observations) if _number(item.get(metric)) is not None), None)
+        provenance = latest.get("field_provenance", {}).get(metric, {}) if latest else {}
+        latest_metrics[metric] = ({
+            "value": _rounded(_number(latest.get(metric))),
+            "observed_at": latest.get("observed_at"),
+            "source": provenance.get("source") or latest.get("source"),
+            "confidence": provenance.get("confidence") or latest.get("confidence"),
+            "missing_reason": provenance.get("missing_reason") or "",
+        } if latest else None)
     return {
         **{key: publication.get(key) for key in (
             "publication_id", "publication_url", "actual_account_uid", "platform", "video_id", "published_at",
@@ -111,6 +136,8 @@ def publication_trend(publication: dict[str, Any]) -> dict[str, Any]:
             )
         } for item in observations],
         "growth": growth,
+        "latest_metrics": latest_metrics,
+        "latest_capture_attempt": publication.get("latest_capture_attempt"),
     }
 
 
@@ -135,7 +162,7 @@ def _coverage(values: list[float | None]) -> dict[str, int | float | None]:
 def campaign_performance(rows: list[dict[str, Any]]) -> dict[str, Any]:
     publications = _group_publications(rows)
     values = {metric: [_latest_valid(item, metric) for item in publications.values()] for metric in METRICS}
-    totals = {metric: _coverage(values[metric]) for metric in ("views", "likes", "comments")}
+    totals = {metric: _coverage(values[metric]) for metric in ("views", "likes", "comments", "shares")}
     valid_er = [value for value in values["engagement_rate"] if value is not None]
     average_er = _rounded(sum(valid_er) / len(valid_er)) if valid_er else None
 

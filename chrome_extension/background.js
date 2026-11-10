@@ -5,11 +5,21 @@ import { buildDiagnosticReport } from "./core/diagnostics.js";
 import {
   CONTENT_ANALYSIS_TIMEOUT_MS,
   ensureContentSummaryConsistency,
-  failedContentAnalysis
+  failedContentAnalysis,
+  normalizeContentRange
 } from "./core/content_analysis.js";
 import { MESSAGE } from "./core/messaging.js";
 import { failedProfile, finalizeProfile } from "./core/schema.js";
-import { addAccount, linkExistingCreator, loadAgencies, lookupAccount, searchCreators, updateAccount } from "./services/local_api.js";
+import {
+  addAccount, assertLocalApiAvailable, createDiscoveryTask, createExtensionMailDraft, linkExistingCreator, loadAgencies,
+  loadExtensionMailOptions, loadLocalApiUrl, lookupAccount, lookupDiscoveryCandidates,
+  previewExtensionMailTemplate, searchCreators, submitPublicationCapture, updateAccount
+} from "./services/local_api.js";
+import { claimAndRunPublicationBatch, resumePublicationBatch } from "./services/publication_batch.js";
+import {
+  collectPublicationFromTab, INSTAGRAM_RECENT_CACHE_KEY, isTrustedInstagramPublishedAt,
+  isTrustedInstagramRecentMetric, mergeInstagramRecentPublishedTimes, publicationIdentity
+} from "./platform/publication_capture.js";
 import {
   allowedUpdateUrl,
   checkForExtensionUpdate,
@@ -18,6 +28,8 @@ import {
 
 const PLATFORMS = [TikTok, Instagram, YouTube];
 const contentControllers = new Map();
+const MAIL_HANDOFF_TTL_MS = 10 * 60 * 1000;
+const mailHandoffKey = (token) => `mail_handoff:${token}`;
 const TIKTOK_ISOLATED_CAPTURE_FILES = [
   "capture/passive_capture_protocol_isolated.js",
   "platform/tiktok_network.js",
@@ -96,11 +108,18 @@ function cancelContentAnalysis(tabId) {
   return true;
 }
 
-async function analyzeContentForTab(tab, sessionId) {
+async function analyzeContentForTab(tab, sessionId, request = {}) {
   const platform = platformForUrl(tab?.url);
-  const contentLimit = Number(platform?.RECENT_CONTENT_LIMIT) || 30;
+  const maximumCount = Number(platform?.RECENT_CONTENT_LIMIT) || 30;
+  const range = normalizeContentRange(request.range, maximumCount);
+  const excludePinned = request.exclude_pinned !== false;
+  const contentLimit = range.type === "last_n_posts"
+    ? Math.min(maximumCount, range.value + (excludePinned ? 3 : 0))
+    : maximumCount;
   if (!tab?.id || !platform) {
-    return failedContentAnalysis("The current page is not a supported creator profile.", { limit: 30 });
+    return failedContentAnalysis("The current page is not a supported creator profile.", {
+      limit: contentLimit, maximumCount, range, excludePinned
+    });
   }
   cancelContentAnalysis(tab.id);
   const controller = new AbortController();
@@ -112,7 +131,9 @@ async function analyzeContentForTab(tab, sessionId) {
   try {
     const analysis = await platform.collectRecentContent(tab.id, {
       limit: contentLimit,
-      excludePinned: true,
+      range,
+      excludePinned,
+      now: Date.now(),
       analysisUrl: tab.url,
       signal: controller.signal,
       onProgress(progress) {
@@ -123,12 +144,44 @@ async function analyzeContentForTab(tab, sessionId) {
         }).catch(() => {});
       }
     });
-    return ensureContentSummaryConsistency(analysis);
+    let checked = ensureContentSummaryConsistency(analysis);
+    if (platform === Instagram && chrome.storage?.session) {
+      const now = Date.now();
+      const stored = await chrome.storage.session.get(INSTAGRAM_RECENT_CACHE_KEY).catch(() => ({}));
+      const previousCache = stored?.[INSTAGRAM_RECENT_CACHE_KEY] || {};
+      checked = mergeInstagramRecentPublishedTimes(checked, previousCache, now);
+      const expiresAt = now + 30 * 60 * 1000;
+      const cache = Object.fromEntries(Object.entries(previousCache)
+        .filter(([, entry]) => Number(entry?.expires_at || 0) > now));
+      for (const item of checked.contents || []) {
+        const shortcode = String(item.video_id || "").trim()
+          || String(item.video_url || "").match(/\/(?:reel|reels|p|tv)\/([A-Za-z0-9_-]+)/i)?.[1];
+        if (!shortcode) continue;
+        const previous = cache[shortcode] || {};
+        cache[shortcode] = {
+          ...previous,
+          expires_at: expiresAt,
+          metrics: Object.fromEntries(["views", "likes", "comments", "shares"].map((name) => {
+            const field = item[name];
+            return [name, isTrustedInstagramRecentMetric(field)
+              ? { value: field.value, source: field.source, confidence: field.confidence }
+              : previous.metrics?.[name] || null];
+          })),
+          published_at: isTrustedInstagramPublishedAt(item.published_at)
+            ? { value: item.published_at.value, source: item.published_at.source, confidence: item.published_at.confidence }
+            : previous.published_at || null,
+        };
+      }
+      await chrome.storage.session.set({ [INSTAGRAM_RECENT_CACHE_KEY]: cache }).catch(() => {});
+    }
+    return checked;
   } catch (error) {
     if (error?.name === "AbortError") {
       throw error;
     }
-    return failedContentAnalysis(error?.message || "Recent content analysis failed.", { limit: 30 });
+    return failedContentAnalysis(error?.message || "Recent content analysis failed.", {
+      limit: contentLimit, maximumCount, range, excludePinned
+    });
   } finally {
     const active = contentControllers.get(tab.id);
     if (active?.sessionId === sessionId) {
@@ -153,6 +206,109 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message?.type === "KOLCONNECT_INSTAGRAM_PUBLISHED_AT_OBSERVED") {
+    const senderIdentity = publicationIdentity(sender.tab?.url || "");
+    const videoId = String(message.video_id || "").trim();
+    const parsed = Date.parse(String(message.published_at || ""));
+    if (sender.id !== chrome.runtime.id || sender.frameId !== 0
+        || senderIdentity?.platform !== "Instagram" || senderIdentity.video_id !== videoId
+        || !Number.isFinite(parsed) || !chrome.storage?.session) {
+      sendResponse({ ok: false, code: "INSTAGRAM_PUBLISHED_AT_INVALID" });
+      return false;
+    }
+    chrome.storage.session.get(INSTAGRAM_RECENT_CACHE_KEY).then((stored) => {
+      const now = Date.now();
+      const cache = stored?.[INSTAGRAM_RECENT_CACHE_KEY] && typeof stored[INSTAGRAM_RECENT_CACHE_KEY] === "object"
+        ? { ...stored[INSTAGRAM_RECENT_CACHE_KEY] } : {};
+      for (const [cachedId, entry] of Object.entries(cache)) {
+        if (Number(entry?.expires_at || 0) <= now) delete cache[cachedId];
+      }
+      cache[videoId] = {
+        ...(cache[videoId] || {}),
+        expires_at: now + 30 * 60 * 1000,
+        published_at: {
+          value: new Date(parsed).toISOString(),
+          source: "reel_detail_dom_exact",
+          confidence: "high"
+        }
+      };
+      return chrome.storage.session.set({ [INSTAGRAM_RECENT_CACHE_KEY]: cache });
+    }).then(() => sendResponse({ ok: true })).catch(() => sendResponse({
+      ok: false, code: "INSTAGRAM_PUBLISHED_AT_CACHE_FAILED"
+    }));
+    return true;
+  }
+  if (message?.type === "KOLCONNECT_PUBLICATION_BATCH_CLAIM") {
+    let senderUrl;
+    try { senderUrl = new URL(sender.url || sender.tab?.url || ""); } catch (_) { return false; }
+    if (sender.id !== chrome.runtime.id || sender.frameId !== 0
+        || !["127.0.0.1", "localhost"].includes(senderUrl.hostname)
+        || senderUrl.port !== "8765") {
+      sendResponse({ ok: false, error: "BATCH_CLAIM_ORIGIN_INVALID" });
+      return false;
+    }
+    claimAndRunPublicationBatch(String(message.batch_run_id || ""), String(message.claim_token || ""))
+      .then(result => sendResponse({ ok: true, ...result }))
+      .catch(error => sendResponse({ ok: false, code: error?.code || "BATCH_CLAIM_FAILED", error: error?.message || "批量采集未启动。" }));
+    return true;
+  }
+  if (message?.type === "KOLCONNECT_PUBLICATION_CAPTURE") {
+    const pageUrl = String(sender.tab?.url || message.page_url || "");
+    if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sender.tab?.id || pageUrl !== String(message.page_url || "")) {
+      sendResponse({ ok: false, error: "当前页面身份无效。" });
+      return false;
+    }
+    const requestRef = String(message.request_id || "").slice(-12);
+    collectPublicationFromTab(sender.tab.id, pageUrl)
+      .then(async (capture) => {
+        const diagnosticEnabled = Boolean((await chrome.storage.local.get({
+          publicationCaptureSafeDiagnostics: false
+        })).publicationCaptureSafeDiagnostics);
+        if (diagnosticEnabled) console.info("[KOLConnect][PublicationCapture]", {
+          stage: capture.diagnostic?.stage || "collector_complete",
+          trace_id: crypto.randomUUID?.() || `capture_${Date.now()}`,
+          request_ref: requestRef,
+          platform: capture.identity?.platform || "unknown",
+          capture_status: capture.capture_status,
+          safe_error_code: capture.safe_error_code || "",
+          fields_present: Object.fromEntries(Object.entries(capture.metrics || {}).map(([name, field]) => [name, field?.value != null])),
+          source_types: [...new Set(Object.values(capture.metrics || {}).map((field) => field?.source).filter(Boolean))],
+          identity_match_count: capture.diagnostic?.identity_match_count || 0,
+          identity_rejected_count: capture.diagnostic?.identity_rejected_count || 0,
+          login_required: Boolean(capture.diagnostic?.login_required),
+          playback_state: capture.diagnostic?.playback_state || "unknown",
+          elapsed_ms: capture.diagnostic?.elapsed_ms || 0,
+        });
+        return submitPublicationCapture({
+          request_id: String(message.request_id || ""), capability_token: String(message.capability_token || ""),
+          page_url: pageUrl, platform: capture.identity?.platform || "", video_id: capture.identity?.video_id || "",
+          capture_status: capture.capture_status, safe_error_code: capture.safe_error_code || "",
+          metrics: capture.metrics || {}, collector_version: chrome.runtime.getManifest().version,
+          contract_version: "publication-capture-v1"
+        });
+      })
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => {
+        console.warn("[KOLConnect][PublicationCapture]", {
+          stage: "submit_rejected", request_ref: requestRef,
+          safe_error_code: error?.code || "CAPTURE_FAILED",
+        });
+        sendResponse({ ok: false, code: error?.code || "CAPTURE_FAILED", error: error?.message || "采集未完成。" });
+      });
+    return true;
+  }
+  if (message?.type === "KOLCONNECT_PUBLICATION_PREVIEW") {
+    const pageUrl = String(sender.tab?.url || message.page_url || "");
+    if (sender.id !== chrome.runtime.id || sender.frameId !== 0 || !sender.tab?.id
+        || pageUrl !== String(message.page_url || "")) {
+      sendResponse({ ok: false, code: "PUBLICATION_PAGE_INVALID" });
+      return false;
+    }
+    collectPublicationFromTab(sender.tab.id, pageUrl, 5000)
+      .then((capture) => sendResponse({ ok: true, capture }))
+      .catch(() => sendResponse({ ok: false, code: "PUBLICATION_PREVIEW_FAILED" }));
+    return true;
+  }
   if (["KOLCONNECT_PASSIVE_CONNECT", "KOLCONNECT_PASSIVE_REPLAY", "KOLCONNECT_PASSIVE_RESET", "KOLCONNECT_PASSIVE_DIAGNOSTICS"].includes(message?.type)) {
     let url;
     try { url = new URL(sender.url); } catch (_) { return false; }
@@ -243,8 +399,91 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then((agencies) => sendResponse({ ok: true, agencies }))
       .catch((error) => sendResponse({
         ok: false,
+        code: error?.code || "AGENCY_LIST_FAILED",
         error: error?.message || "Agency list unavailable."
       }));
+    return true;
+  }
+  if (message?.type === MESSAGE.CREATE_DISCOVERY_TASK) {
+    createDiscoveryTask(message.profile_urls, message.seed_url, message.platform)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, code: error?.code || "DISCOVERY_TASK_FAILED" }));
+    return true;
+  }
+  if (message?.type === MESSAGE.LOOKUP_DISCOVERY_CANDIDATES) {
+    lookupDiscoveryCandidates(message.profile_urls)
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, code: error?.code || "CANDIDATE_LOOKUP_FAILED" }));
+    return true;
+  }
+  if (message?.type === MESSAGE.LOAD_MAIL_OPTIONS) {
+    loadExtensionMailOptions(message.query || {})
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, code: error?.code || "MAIL_OPTIONS_FAILED" }));
+    return true;
+  }
+  if (message?.type === MESSAGE.PREVIEW_MAIL_TEMPLATE) {
+    previewExtensionMailTemplate(message.payload || {})
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, code: error?.code || "MAIL_TEMPLATE_PREVIEW_FAILED" }));
+    return true;
+  }
+  if (message?.type === MESSAGE.CREATE_MAIL_DRAFT) {
+    createExtensionMailDraft(message.payload || {})
+      .then((result) => sendResponse({ ok: true, result }))
+      .catch((error) => sendResponse({ ok: false, code: error?.code || "MAIL_DRAFT_CREATE_FAILED" }));
+    return true;
+  }
+  if (message?.type === MESSAGE.OPEN_MAIL_WORKSPACE) {
+    const context = message.context && typeof message.context === "object" ? message.context : {};
+    const recipientEmail = String(context.recipientEmail || "").trim();
+    const creatorName = String(context.creatorName || "").trim();
+    const manageOnly = context.mode === "manage_templates";
+    const draftId = String(context.draftId || "").trim();
+    if (!creatorName || (!manageOnly && (!draftId || !recipientEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipientEmail)))) {
+      sendResponse({ ok: false, code: "MAIL_CONTEXT_INVALID" });
+      return false;
+    }
+    const token = crypto.randomUUID();
+    const handoff = {
+      expires_at: Date.now() + MAIL_HANDOFF_TTL_MS,
+      context: {
+        creatorId: String(context.creatorId || ""), creatorName, recipientEmail,
+        draftType: "initial_outreach", language: String(context.language || "en"),
+        creatorTier: ["KOL", "KOC"].includes(context.creatorTier) ? context.creatorTier : "",
+        mode: manageOnly ? "manage_templates" : "draft",
+        draftId: manageOnly ? "" : draftId,
+        templateName: String(context.templateName || "")
+      }
+    };
+    assertLocalApiAvailable()
+      .then(() => chrome.storage.session.set({ [mailHandoffKey(token)]: handoff }))
+      .then(() => loadLocalApiUrl())
+      .then((apiUrl) => chrome.tabs.create({
+      url: `${String(apiUrl).replace(/\/$/, "")}/#mail-handoff=${encodeURIComponent(token)}`
+    })).then(() => sendResponse({ ok: true })).catch(() => {
+      chrome.storage.session.remove(mailHandoffKey(token)).catch(() => {});
+      sendResponse({ ok: false, code: "APP_OFFLINE" });
+    });
+    return true;
+  }
+  if (message?.type === MESSAGE.CONSUME_MAIL_HANDOFF) {
+    const senderUrl = String(sender.url || sender.tab?.url || "");
+    const token = String(message.token || "");
+    const localSender = /^http:\/\/(127\.0\.0\.1|localhost):8765\//.test(senderUrl);
+    if (!localSender || !token) {
+      sendResponse({ ok: false, code: "MAIL_HANDOFF_INVALID" });
+      return false;
+    }
+    const key = mailHandoffKey(token);
+    chrome.storage.session.get(key).then((stored) => chrome.storage.session.remove(key)
+      .then(() => stored[key])).then((handoff) => {
+      if (!handoff || handoff.expires_at < Date.now()) {
+        sendResponse({ ok: false, code: "MAIL_HANDOFF_INVALID" });
+        return;
+      }
+      sendResponse({ ok: true, context: handoff.context });
+    }).catch(() => sendResponse({ ok: false, code: "MAIL_HANDOFF_INVALID" }));
     return true;
   }
   if (message?.type === MESSAGE.CHECK_UPDATE) {
@@ -272,7 +511,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message?.type === MESSAGE.ANALYZE_CONTENT) {
     const sessionId = String(message.session_id || "");
-    analyzeContentForTab(sender.tab, sessionId)
+    analyzeContentForTab(sender.tab, sessionId, {
+      range: message.range,
+      exclude_pinned: message.exclude_pinned
+    })
       .then((analysis) => sendResponse({ ok: true, analysis, session_id: sessionId }))
       .catch((error) => sendResponse({
         ok: false,
@@ -287,6 +529,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return false;
 });
+
+chrome.runtime.onStartup?.addListener(() => { resumePublicationBatch(); });
+resumePublicationBatch();
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (!changeInfo.url) return;

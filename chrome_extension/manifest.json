@@ -21,6 +21,7 @@
     "activeTab",
     "scripting",
     "storage",
+    "tabs",
     "webNavigation"
   ],
   "host_permissions": [
@@ -30,8 +31,14 @@
     "*://*.tiktok.com/*",
     "*://*.instagram.com/*",
     "*://*.youtube.com/*"
+    ,"*://youtu.be/*"
   ],
   "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1:8765/*", "http://localhost:8765/*"],
+      "js": ["content/publication_batch_claim.js", "content/mail_workspace_handoff.js"],
+      "run_at": "document_start"
+    },
     {
       "matches": ["https://www.tiktok.com/*", "https://tiktok.com/*", "https://m.tiktok.com/*"],
       "js": ["capture/passive_capture_protocol.js", "capture/passive_capture_main.js"],
@@ -49,16 +56,22 @@
         "*://*.tiktok.com/*",
         "*://*.instagram.com/*",
         "*://*.youtube.com/*"
+        ,"*://youtu.be/*"
       ],
       "js": [
         "config.js",
         "core/analysis_session.js",
         "core/page_support.js",
+        "core/assistant_data.js",
+        "core/publication_capture_code.js",
         "content/update_prompt.js",
+        "content/publication_capture.js",
+        "content/similar_creator_discovery.js",
         "content/floating_assistant.js"
       ],
       "css": [
-        "content/floating_assistant.css"
+        "content/floating_assistant.css",
+        "content/publication_capture.css"
       ],
       "run_at": "document_idle"
     }

@@ -80,6 +80,9 @@ from services.campaign_creator_service import CampaignCreatorService
 from services.campaign_execution_service import CampaignExecutionService
 from services.fx_service import FxService
 from services.publication_tracking_service import PublicationTrackingService
+from services.publication_capture_service import PublicationCaptureService
+from services.publication_capture_batch_service import PublicationCaptureBatchService
+from services.publication_capture_security import PublicationCaptureSessionStore
 from services.dashboard_response_cache import DashboardResponseCache
 from services.creator_service import CreatorService
 from services.similar_creator_search_service import SimilarCreatorSearchService
@@ -147,9 +150,11 @@ from http_handlers import (
     analytics_handler,
     assistant_handler,
     campaign_handler,
+    publication_capture_handler,
     clean_reset_handler,
     creator_handler,
     dashboard_handler,
+    extension_workspace_handler,
     feishu_chat_handler,
     feishu_delete_handler,
     feishu_sync_handler,
@@ -178,6 +183,7 @@ from services.mail_send_service import MailSendError, MailSendService
 from services.mail_template_service import MailTemplateService
 from services.mail_ai_draft_service import MailAIDraftService
 from services.mail_workspace_service import MailWorkspaceService
+from services.extension_workspace_service import ExtensionWorkspaceService
 from storage.paths import SQLiteStoragePaths
 
 
@@ -332,8 +338,10 @@ HANDLERS = [
     assistant_handler,
     analytics_handler,
     dashboard_handler,
+    extension_workspace_handler,
     risk_handler,
     campaign_handler,
+    publication_capture_handler,
     feishu_chat_handler,
     feishu_delete_handler,
     feishu_sync_handler,
@@ -358,8 +366,10 @@ CREATOR_AI_DECISION_SERVICE = None
 FEISHU_CHAT_TRANSPORT = None
 PRODUCTION_MIGRATION_SERVICE = None
 MAIL_SEND_SERVICE = None
+PUBLICATION_CAPTURE_SESSIONS = PublicationCaptureSessionStore()
 MAIL_TEMPLATE_SERVICE = None
 MAIL_AI_DRAFT_SERVICE = None
+EXTENSION_WORKSPACE_SERVICE = None
 MAIL_SEND_SESSIONS = MailSendSessionStore()
 
 
@@ -576,8 +586,6 @@ def normalize_state(raw: dict | None) -> dict:
     if isinstance(raw.get("profiles"), dict):
         state["profiles"].update(raw["profiles"])
     if not state["profiles"].get("selected"):
-        state["profiles"]["selected"] = AUTOMATION_PROFILE_NAME
-    elif state["profiles"]["selected"] == "Default":
         state["profiles"]["selected"] = AUTOMATION_PROFILE_NAME
 
     if isinstance(raw.get("accounts"), dict) and isinstance(raw["accounts"].get("entries"), list):
@@ -871,7 +879,7 @@ def find_chrome_exe() -> Path | None:
     return None
 
 
-def open_chrome_profile(profile: str) -> None:
+def open_chrome_profile(profile: str, url: str | None = None) -> None:
     selected = str(profile or "").strip()
     if not selected:
         raise ChromeProfileError("CHROME_CONFIG_INVALID", "请选择有效的 Chrome Profile。")
@@ -882,12 +890,18 @@ def open_chrome_profile(profile: str) -> None:
     if selected != AUTOMATION_PROFILE_NAME and not (user_data_dir / profile_directory).is_dir():
         raise ChromeProfileError("CHROME_PROFILE_NOT_FOUND", "所选 Chrome Profile 不存在。", status=404)
     try:
-        subprocess.Popen(
-            [
+        command = [
                 str(chrome_exe),
                 f"--user-data-dir={user_data_dir}",
                 f"--profile-directory={profile_directory}",
-            ],
+            ]
+        if url:
+            parsed = urlparse(str(url))
+            if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"} or parsed.port != PORT:
+                raise ChromeProfileError("CHROME_CONFIG_INVALID", "只能打开 KOLConnect 本地任务页面。")
+            command.append(str(url))
+        subprocess.Popen(
+            command,
             cwd=str(DATA_DIR),
         )
     except PermissionError as exc:
@@ -1917,11 +1931,39 @@ def get_mail_send_service() -> MailSendService:
     return MAIL_SEND_SERVICE
 
 
+def _recover_mail_send_state_on_startup(factory: RepositoryFactory) -> int:
+    """Recover durable send attempts only when SQLite is already authoritative."""
+    if not getattr(factory.store, "is_sqlite_authority", False):
+        log_event(
+            "MailSend",
+            "启动恢复已跳过：Mail facts 等待 SQLite authority。",
+        )
+        return 0
+    return get_mail_send_service().recover_interrupted_attempts()
+
+
 def get_mail_template_service() -> MailTemplateService:
     global MAIL_TEMPLATE_SERVICE
     if MAIL_TEMPLATE_SERVICE is None:
         MAIL_TEMPLATE_SERVICE = MailTemplateService(get_mail_connection_factory)
     return MAIL_TEMPLATE_SERVICE
+
+
+def get_extension_workspace_service() -> ExtensionWorkspaceService:
+    global EXTENSION_WORKSPACE_SERVICE
+    if EXTENSION_WORKSPACE_SERVICE is None:
+        def enabled_mail_accounts() -> list[dict]:
+            raw_accounts = STATE.get("mail", {}).get("accounts", []) if isinstance(STATE.get("mail"), dict) else []
+            return [normalize_mail_account(item) for item in raw_accounts if isinstance(item, dict)]
+
+        EXTENSION_WORKSPACE_SERVICE = ExtensionWorkspaceService(
+            get_mail_connection_factory,
+            get_creator_service,
+            get_mail_template_service,
+            get_mail_send_service,
+            enabled_mail_accounts,
+        )
+    return EXTENSION_WORKSPACE_SERVICE
 
 
 def get_mail_ai_draft_service() -> MailAIDraftService:
@@ -2038,6 +2080,41 @@ def get_publication_tracking_service() -> PublicationTrackingService:
         get_campaign_repository,
         observation_repository,
     )
+
+
+def get_publication_capture_service() -> PublicationCaptureService:
+    def attempt_repository():
+        factory = get_active_repository_factory() or _new_repository_factory()
+        return factory.publication_capture()
+
+    def observation_repository():
+        factory = get_active_repository_factory() or _new_repository_factory()
+        return factory.publication_performance()
+
+    return PublicationCaptureService(
+        get_campaign_creator_repository,
+        get_creator_repository,
+        attempt_repository,
+        observation_repository,
+    )
+
+
+def get_publication_capture_batch_service() -> PublicationCaptureBatchService:
+    def batch_repository():
+        factory = get_active_repository_factory() or _new_repository_factory()
+        return factory.publication_capture_batch()
+
+    return PublicationCaptureBatchService(
+        get_campaign_repository,
+        get_campaign_creator_repository,
+        batch_repository,
+        get_publication_capture_service,
+    )
+
+
+def open_publication_batch_claim(url: str) -> None:
+    selected = str(STATE.get("profiles", {}).get("selected") or AUTOMATION_PROFILE_NAME)
+    open_chrome_profile(selected, url)
 
 
 def get_creator_service() -> CreatorService:
@@ -3087,6 +3164,10 @@ class Handler(BaseHTTPRequestHandler):
                 "campaign_execution": get_campaign_execution_service(),
                 "fx": get_fx_service(),
                 "publication_tracking": get_publication_tracking_service(),
+                "publication_capture": get_publication_capture_service(),
+                "publication_capture_batch": get_publication_capture_batch_service(),
+                "publication_capture_sessions": PUBLICATION_CAPTURE_SESSIONS,
+                "open_publication_batch_claim": open_publication_batch_claim,
                 "task": get_task_service(),
                 "risk": get_risk_service(),
                 "build_accounts_payload": build_accounts_payload,
@@ -3099,6 +3180,7 @@ class Handler(BaseHTTPRequestHandler):
                 "mail_templates": get_mail_template_service(),
                 "mail_ai_drafts": get_mail_ai_draft_service(),
                 "mail_workspace": get_mail_workspace_service(),
+                "extension_workspace": get_extension_workspace_service(),
                 "mail_send_sessions": MAIL_SEND_SESSIONS,
                 "get_google_sheets_config": get_google_sheets_config,
                 "get_profiles": get_profiles,
@@ -3302,8 +3384,8 @@ def request_runtime_shutdown() -> bool:
 def run() -> None:
     global _RUNTIME_SERVER, _RUNTIME_SHUTDOWN_THREAD
     # Resolve storage before accepting concurrent first-page API requests.
-    _new_repository_factory(bootstrap_new_install=True)
-    recovered_mail_attempts = get_mail_send_service().recover_interrupted_attempts()
+    startup_factory = _new_repository_factory(bootstrap_new_install=True)
+    recovered_mail_attempts = _recover_mail_send_state_on_startup(startup_factory)
     server = KOLConnectHTTPServer((HOST, PORT), Handler)
     with _RUNTIME_SERVER_LOCK:
         _RUNTIME_SERVER = server
